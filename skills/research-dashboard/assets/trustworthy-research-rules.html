@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trustworthy Research Rules</title>
+  <link rel="stylesheet" href="../assets/research.css">
+  <style>
+    .rule-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    @media (min-width: 720px) { .rule-grid { grid-template-columns: 1fr 1fr; } }
+    .rule-card { border: 1.5px solid var(--g300); border-radius: 12px; background: var(--paper); padding: 18px 20px; }
+    .rule-card[data-rule^="T"] { border-left: 4px solid var(--clay); }
+    .rule-card[data-kind="contract"] { border-left-color: var(--slate); background: rgba(20, 20, 19, 0.04); }
+    .rule-card[data-kind="hallucination"] { border-left-color: var(--clay); background: rgba(217, 119, 87, 0.06); }
+    .rule-card[data-kind="misalignment"] { border-left-color: var(--clay-dark); background: rgba(184, 92, 62, 0.07); }
+    .rule-card[data-kind="stage"] { border-left-color: var(--olive); background: rgba(120, 140, 93, 0.06); }
+    .rule-card .id { color: var(--clay); font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+    .rule-card .title { margin: 4px 0 8px; font-family: var(--serif); font-size: 19px; color: var(--slate); }
+    .rule-card p { margin: 0 0 6px; font-size: 13.5px; }
+    .scope-band { border: 1.5px solid var(--slate); border-radius: 12px; background: var(--paper); padding: 18px 20px; margin: 28px 0; }
+    .scope-band h2 { margin: 0 0 8px; font-size: 22px; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+
+    <header class="masthead">
+      <div class="eyebrow">trust rules - binding</div>
+      <h1>Trustworthy Research <em>Rules</em></h1>
+      <p class="lead">
+        Rules that the HTML surface must satisfy so an auto-research
+        agent's outputs stay grounded, scoped, and audit-ready for the
+        user. Every rule below is binding for files under
+        <code>research_html/</code>.
+      </p>
+      <div class="toolbar">
+        <a class="pill" href="../index.html">Dashboard</a>
+        <a class="pill" href="../README.md">README</a>
+        <a class="pill" href="html-rules.html">HTML Rules</a>
+        <span class="tag">scope: research_html/</span>
+      </div>
+    </header>
+
+    <section class="scope-band" data-section="scope">
+      <h2>Scope &amp; Authority</h2>
+      <p>
+        Authority order, highest first: invocation, project rules,
+        <code>WORKFLOW.md</code> for state, gate, and route definitions,
+        <code>html-rules.html</code> for HTML form, this file for content
+        trust, then individual package content.
+        <code>html-rules.html</code> defines how the HTML is shaped; this
+        file defines what it must say. Rules in this file carry the
+        prefix <code>T</code> so they do not collide with the
+        <code>R</code> rules in <code>html-rules.html</code>.
+      </p>
+    </section>
+
+    <section class="module" data-section="contract">
+      <div class="module-header"><span class="idx">A</span><h2>User / Agent Contract</h2></div>
+      <div class="rule-grid">
+
+        <article class="rule-card" data-rule="T1" data-kind="contract">
+          <div class="id">T1</div>
+          <h3 class="title">No consequential transition without a user ack</h3>
+          <p>
+            The agent must not move a package from brainstorm to
+            in-progress, advance into <code>EXPERIMENT_RUNNING</code>,
+            record a result with verdict <code>pass</code>, move a
+            package into the <code>success</code> lane, or move a package
+            into the <code>fail</code> or archive lane without a user ack
+            recorded on the surface for that specific transition.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T2" data-kind="contract">
+          <div class="id">T2</div>
+          <h3 class="title">First viewport answers six items</h3>
+          <p>
+            Every package page and module page must display, inside the
+            first viewport: workflow state, active gate, primary metric
+            versus that gate, last decision and its evidence path, next
+            route, and the current blocker if one exists. On a page
+            where any of these items is not yet defined (such as a
+            brainstorm page without a metric or gate) the field renders
+            as <code>unmeasured</code>. Detail beyond these six items
+            must be linked, not embedded inline.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T3" data-kind="contract">
+          <div class="id">T3</div>
+          <h3 class="title">Recalled content is unverified evidence</h3>
+          <p>
+            Anything the agent recalls from a prior session, prior
+            package, or training data is unverified. The agent must
+            revalidate it against the live filesystem, runtime artifact,
+            or external source before it can support a transition or
+            appear as a measured value on the surface.
+          </p>
+        </article>
+
+      </div>
+    </section>
+
+    <section class="module" data-section="hallucination">
+      <div class="module-header"><span class="idx">B</span><h2>Hallucination Rules</h2></div>
+      <div class="rule-grid">
+
+        <article class="rule-card" data-rule="T4" data-kind="hallucination">
+          <div class="id">T4</div>
+          <h3 class="title">Citations and verification claims are resolved structured fields</h3>
+          <p>
+            Every cited file path, URL, paper, function, dataset, or
+            method named on the surface, and every claim that the agent
+            has inspected, opened, or checked an artifact, must appear
+            inside an element carrying a structured field attribute
+            (such as <code>data-field</code>) and must resolve to an
+            existing path together with the timestamp of inspection. A
+            citation or verification claim that cannot be resolved
+            renders as <code>unmeasured</code>.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T5" data-kind="hallucination">
+          <div class="id">T5</div>
+          <h3 class="title">Numbers carry an artifact path and timestamp, otherwise unmeasured</h3>
+          <p>
+            Every numeric value on the surface (metric, latency, count,
+            percentage, rank, recall) must carry, at the same element,
+            the artifact path that produced it and the timestamp at
+            which that artifact was last modified. A numeric or status
+            field with no resolved artifact path renders as the literal
+            value <code>unmeasured</code>. Hedge phrases
+            (<em>appears</em>, <em>looks like</em>, <em>seems</em>,
+            <em>trending</em>, <em>approximately</em>), estimates,
+            recalls, and interpolated guesses are not allowed in fields
+            that hold measured values, gate verdicts, or transition
+            reasons; such fields are either a measured value or
+            <code>unmeasured</code>.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T6" data-kind="hallucination">
+          <div class="id">T6</div>
+          <h3 class="title">Verified and recalled render as distinct surface states</h3>
+          <p>
+            Verified content (revalidated in the current session per T3)
+            and recalled content (carried from prior sessions or
+            training data) must be visually and attributively distinct
+            on the surface and must never share a single representation.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T7" data-kind="hallucination">
+          <div class="id">T7</div>
+          <h3 class="title">Only primary artifacts back transition decisions</h3>
+          <p>
+            Logs, csv files, checkpoints, and metric summary files
+            generated by the run are primary artifacts. Tracker entries,
+            prior agent narratives, and result-prose paragraphs are not
+            primary artifacts. A transition decision must cite a primary
+            artifact.
+          </p>
+        </article>
+
+      </div>
+    </section>
+
+    <section class="module" data-section="misalignment">
+      <div class="module-header"><span class="idx">C</span><h2>Misalignment Rules</h2></div>
+      <div class="rule-grid">
+
+        <article class="rule-card" data-rule="T8" data-kind="misalignment">
+          <div class="id">T8</div>
+          <h3 class="title">Hypothesis is restated at every transition page</h3>
+          <p>
+            Every page that owns a transition restates the active plan's
+            hypothesis. The restatement must be string-equal to the
+            plan's hypothesis field after lowercasing and whitespace
+            normalization. A mismatch is treated as a misalignment and
+            must be reconciled before the transition.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T9" data-kind="misalignment">
+          <div class="id">T9</div>
+          <h3 class="title">Every measurement carries metric, dataset, and protocol</h3>
+          <p>
+            Every measurement on the surface carries, at the same
+            element: the metric's name, formula, inputs, deduplication
+            rule, and cutoff; the dataset, split, version or query-set
+            hash, and pool scope; and the evaluation protocol's setting,
+            candidate budget, beam or top-K, reranker, and seed. A
+            result whose protocol does not match the active plan gate
+            is recorded with verdict <code>diagnostic_only</code> and
+            is never recorded with verdict <code>pass</code>. A
+            measurement missing any of these fields is rejected as
+            evidence.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T10" data-kind="misalignment">
+          <div class="id">T10</div>
+          <h3 class="title">Counts of results are reported per validity class</h3>
+          <p>
+            Counts of results are reported per validity class
+            (<code>valid</code>, <code>diagnostic_only</code>,
+            <code>failed</code>, <code>missing</code>) and are never
+            aggregated across these classes.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T11" data-kind="misalignment">
+          <div class="id">T11</div>
+          <h3 class="title">Baseline reference metadata travels with every comparison</h3>
+          <p>
+            Every comparison to a baseline names, at the comparison
+            element, the baseline's source, checkpoint, protocol, and
+            last-verified date.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T12" data-kind="misalignment">
+          <div class="id">T12</div>
+          <h3 class="title">Artifact pointers carry their owning package id</h3>
+          <p>
+            Every artifact pointer on a package page, including baseline
+            pointers, carries the id of the package that owns the
+            pointed-to artifact. A pointer whose owner does not match
+            the page is rejected as evidence.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T13" data-kind="misalignment">
+          <div class="id">T13</div>
+          <h3 class="title">Checkpoint and code commit are pinned at the metric</h3>
+          <p>
+            Every metric produced by a run is paired, at the metric
+            element, with the exact checkpoint path and the exact git
+            commit of the code that produced it. The pair appears next
+            to the metric, not in a separate footer or document.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T14" data-kind="misalignment">
+          <div class="id">T14</div>
+          <h3 class="title">Performance-affecting algorithm changes are surfaced as discrete cards</h3>
+          <p>
+            Any change to a model component (architecture, loss,
+            training schedule, sampling, decoding, indexing, or
+            evaluation logic) that may affect performance is surfaced as
+            a discrete change card naming the component, the code anchor
+            in <code>file:function</code> form, the one-sentence
+            description of the change, the expected sign in
+            <code>{+, -, 0}</code> and magnitude band in
+            <code>{small, medium, large}</code>, and the experiments
+            validating it.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T15" data-kind="misalignment">
+          <div class="id">T15</div>
+          <h3 class="title">Living experiments expose live-status fields</h3>
+          <p>
+            Every experiment in a non-terminal status (queued, running,
+            paused, stale, completed-pending-record) appears on the
+            package surface with: state, last-log timestamp as the
+            liveness indicator, retry count with prior failure entries
+            listed, ETA, runtime root, and the recommended live action
+            together with the cited plan threshold when an early stop
+            is recommended.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T16" data-kind="misalignment">
+          <div class="id">T16</div>
+          <h3 class="title">No-change boundary is restated and affirmed at every transition</h3>
+          <p>
+            Each transition page restates the active no-change boundary,
+            lists the owned-files set declared at the start of the
+            change, and carries an explicit affirmation that the
+            boundary was not crossed. An edit outside the owned-files
+            set is surfaced as a boundary violation.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T17" data-kind="misalignment">
+          <div class="id">T17</div>
+          <h3 class="title">Core docs are kept up to date with every state-changing action</h3>
+          <p>
+            <code>PLAN.md</code>, <code>TRACKER.md</code>,
+            <code>RESULTS.md</code>, and the package's HTML pages are
+            updated in the same session as any state-changing action
+            (implementation, launch, live check, result recording, or
+            route change). Each page displays its last-update timestamp
+            and is marked with <code>data-stale="true"</code> on the
+            surface when its timestamp predates the latest state-changing
+            action recorded for the package.
+          </p>
+        </article>
+
+      </div>
+    </section>
+
+    <section class="module" data-section="stage-surfaces">
+      <div class="module-header"><span class="idx">D</span><h2>Stage Surface Rules</h2></div>
+      <div class="rule-grid">
+
+        <article class="rule-card" data-rule="T18" data-kind="stage" data-stage="brainstorm">
+          <div class="id">T18</div>
+          <h3 class="title">Brainstorm pages display</h3>
+          <p>
+            The direction in one sentence; a flag stating whether the
+            direction preserves or changes the project contribution
+            spine defined in project rules; resolved citations to prior
+            work; a flag if any prior package with category
+            <code>fail</code> shares the same direction.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T19" data-kind="stage" data-stage="plan">
+          <div class="id">T19</div>
+          <h3 class="title">Plan pages display</h3>
+          <p>
+            The hypothesis as a falsifiable claim; the primary metric;
+            the baseline; the budget gate; the seed plan; a one-sentence
+            diff against the prior plan; the no-change boundary.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T20" data-kind="stage" data-stage="implementation">
+          <div class="id">T20</div>
+          <h3 class="title">Implementation pages display</h3>
+          <p>
+            The owned-files set; a diff summary of changed files; an
+            explicit no-change affirmation for the no-change boundary;
+            each reviewer's verdict; the consolidated main-agent
+            decision.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T21" data-kind="stage" data-stage="launch-readiness">
+          <div class="id">T21</div>
+          <h3 class="title">Launch readiness pages display</h3>
+          <p>
+            The resolved GPU id, <code>CUDA_VISIBLE_DEVICES</code>, conda
+            environment, git commit, and dataset path, each marked with
+            verified status; the expected runtime; the dry-run or
+            smoke-test status.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T22" data-kind="stage" data-stage="live">
+          <div class="id">T22</div>
+          <h3 class="title">Live monitoring pages display</h3>
+          <p>
+            A rendered curve of the objective over time; the timestamp
+            of the most recent log line; the count of missed scheduled
+            checks; the recommended next live action with the cited
+            plan threshold.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T23" data-kind="stage" data-stage="result">
+          <div class="id">T23</div>
+          <h3 class="title">Result pages display</h3>
+          <p>
+            A result gate row with all of validity, baseline, plan gate,
+            observed metric, budget, seed, artifacts, verdict, and
+            reason; a supported-claims card; an unsupported-claims card;
+            the protocol-match verdict; the artifact path with its
+            modification timestamp.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="T24" data-kind="stage" data-stage="next-action">
+          <div class="id">T24</div>
+          <h3 class="title">Next-action pages display</h3>
+          <p>
+            The chosen route from the allowed set per the
+            <code>WORKFLOW.md</code> route table; every route considered
+            and rejected, each with a one-sentence reason; the
+            one-sentence reason for the chosen route, citing the
+            evidence path it relies on.
+          </p>
+        </article>
+
+      </div>
+    </section>
+
+    <footer class="footer-note">
+      Binding scope: every HTML file under <code>research_html/</code>.
+      Update this file when a rule needs to change. Companion file:
+      <a href="html-rules.html">html-rules.html</a> defines the form
+      rules; this file defines the content-trust rules.
+    </footer>
+
+  </div>
+</body>
+</html>

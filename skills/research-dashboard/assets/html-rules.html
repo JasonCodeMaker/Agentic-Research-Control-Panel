@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Refinement Rules - HTML over Markdown</title>
+  <link rel="stylesheet" href="../assets/research.css">
+  <style>
+    .rule-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    @media (min-width: 720px) { .rule-grid { grid-template-columns: 1fr 1fr; } }
+    .rule-card { border: 1.5px solid var(--g300); border-radius: 12px; background: var(--paper); padding: 18px 20px; }
+    .rule-card[data-rule^="R"] { border-left: 4px solid var(--clay); }
+    .rule-card[data-kind="guardrail"] { border-left-color: var(--olive); background: rgba(223, 231, 212, 0.35); }
+    .rule-card[data-kind="forbidden"] { border-left-color: var(--clay-dark); background: rgba(242, 215, 202, 0.45); }
+    .rule-card .id { color: var(--clay); font-family: var(--mono); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; }
+    .rule-card .title { margin: 4px 0 8px; font-family: var(--serif); font-size: 19px; color: var(--slate); }
+    .rule-card p { margin: 0 0 6px; font-size: 13.5px; }
+    .rule-card .applies { color: var(--g500); font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 8px; }
+    .scope-band { border: 1.5px solid var(--slate); border-radius: 12px; background: var(--paper); padding: 18px 20px; margin: 28px 0; }
+    .scope-band h2 { margin: 0 0 8px; font-size: 22px; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+
+    <header class="masthead">
+      <div class="eyebrow">refinement rules - binding</div>
+      <h1>HTML <em>Rules</em></h1>
+      <p class="lead">
+        These rules apply to every refinement made under
+        <code>research_html/</code> from this point forward. They are derived
+        from Thariq's article "The Unreasonable Effectiveness of HTML"
+        (May 8, 2026) and the constructive replies in that thread.
+      </p>
+      <div class="toolbar">
+        <a class="pill" href="../index.html">Dashboard</a>
+        <a class="pill" href="../README.md">README</a>
+        <a class="pill" href="trustworthy-research-rules.html">Trust Rules</a>
+        <span class="tag">scope: research_html/</span>
+      </div>
+    </header>
+
+    <section class="scope-band" data-section="scope">
+      <h2>Scope &amp; Authority</h2>
+      <p>
+        These rules govern files inside <code>research_html/</code> only. The
+        canonical Markdown surfaces under
+        <code>research/active/&lt;id&gt;/{PLAN,TRACKER,RESULTS}.md</code> remain
+        the source of truth for plans, tracker rows, and result entries; the
+        HTML surface presents and extends them. When a rule below conflicts
+        with the active <code>WORKFLOW.md</code> or
+        <code>research_html/README.md</code>, the lower-numbered rule here wins
+        for HTML-surface decisions; <code>WORKFLOW.md</code> still wins for
+        workflow state, gates, routes, and stop conditions.
+      </p>
+    </section>
+
+    <section class="module" data-section="benefit-rules">
+      <div class="module-header"><span class="idx">A</span><h2>Required Benefits to Realize</h2></div>
+      <p class="lead" style="font-size: 14px; max-width: 820px;">
+        Each refinement must visibly deliver at least one of these benefits.
+        If a change does not move toward any of them, do not make the change.
+      </p>
+      <div class="rule-grid">
+
+        <article class="rule-card" data-rule="R1" data-kind="benefit">
+          <div class="id">R1 - Long-form readability</div>
+          <h3 class="title">Stay legible past 100 lines</h3>
+          <p>
+            Pages must be skimmable past the 100-line MD threshold. Use
+            sections, sticky navigation, tabs, expand/collapse, and
+            mobile-responsive layout so a reader can locate the relevant card
+            without scrolling the whole document.
+          </p>
+          <p class="applies">Applies to: dashboard, package home, module pages.</p>
+        </article>
+
+        <article class="rule-card" data-rule="R2" data-kind="benefit">
+          <div class="id">R2 - Rich representation</div>
+          <h3 class="title">Use HTML's native expressiveness</h3>
+          <p>
+            Use tables, CSS-styled design data, SVG illustrations, embedded
+            code, images, and inline canvas/spatial layout where they reduce
+            ambiguity. Never approximate rich content with ASCII diagrams,
+            unicode-color characters, or text-only stand-ins for figures.
+          </p>
+          <p class="applies">Applies to: every module that displays metrics, comparisons, or structure.</p>
+        </article>
+
+        <article class="rule-card" data-rule="R3" data-kind="benefit">
+          <h3 class="title">Land plots and diagrams in-page</h3>
+          <div class="id">R3 - Visualizations inline</div>
+          <p>
+            Training curves, latency-recall scatter plots, ablation grids,
+            architecture diagrams, candidate-set heatmaps, and similar
+            artifacts must be embedded inline (SVG preferred, PNG/JPG when
+            unavoidable) on the package or module page they support, not
+            linked away as external attachments.
+          </p>
+          <p class="applies">Applies to: Results, Plan figures, Docs evidence cards.</p>
+        </article>
+
+        <article class="rule-card" data-rule="R4" data-kind="benefit">
+          <div class="id">R4 - Single-URL shareable</div>
+          <h3 class="title">Self-contained, one-link sharing</h3>
+          <p>
+            Every page must render correctly when opened directly from disk or
+            served as a static file. No build step, no dynamic server, no
+            authenticated CDN. External assets are limited to images explicitly
+            committed under the package or shared <code>assets/</code> folder.
+          </p>
+          <p class="applies">Applies to: every HTML file under research_html/.</p>
+        </article>
+
+        <article class="rule-card" data-rule="R5" data-kind="benefit">
+          <div class="id">R5 - Two-way interactivity</div>
+          <h3 class="title">Make HITL controls a first-class element</h3>
+          <p>
+            Where a human decision drives the next agent step, expose a
+            control: a filter, sort, comparison toggle, prompt-builder form,
+            approve/ack/veto button, or copyable paste-back token. The page
+            must be a HITL surface, not a status report.
+          </p>
+          <p class="applies">Applies to: Tracker live-check rows, Results comparisons, decision gates.</p>
+        </article>
+
+        <article class="rule-card" data-rule="R6" data-kind="benefit">
+          <div class="id">R6 - Stable agent anchors</div>
+          <h3 class="title">Every editable unit has a stable id</h3>
+          <p>
+            Every card, field, table row, decision, artifact path, command,
+            and gate carries a stable <code>data-*</code> or <code>id</code>
+            attribute the agent can target without parsing layout. New
+            modules must extend the existing taxonomy
+            (<code>data-card</code>, <code>data-module</code>,
+            <code>data-field</code>, <code>data-artifact</code>,
+            <code>data-decision</code>, <code>data-table</code>,
+            <code>data-exp-id</code>, <code>data-route</code>,
+            <code>data-gate</code>, <code>data-workflow-state</code>) before
+            inventing a new anchor name.
+          </p>
+          <p class="applies">Applies to: every renderer in assets/research.js and every template.</p>
+        </article>
+
+        <article class="rule-card" data-rule="R7" data-kind="benefit">
+          <div class="id">R7 - Edit-by-prompt friendly</div>
+          <h3 class="title">Optimize for "Claude edits, human reads"</h3>
+          <p>
+            Assume edits arrive via prompted patches, not hand-typing.
+            Predictable card structure, one logical concept per card, stable
+            anchors, and explicit field names beat compact prose. A reviewer
+            should still be able to follow a diff, but human typing is no
+            longer the dominant authoring path for HTML files.
+          </p>
+          <p class="applies">Applies to: card layout decisions, field naming, JSON-in-HTML schemas.</p>
+        </article>
+
+        <article class="rule-card" data-rule="R8" data-kind="benefit">
+          <div class="id">R8 - Web of files, not one mega page</div>
+          <h3 class="title">Decompose into linked HTML pages</h3>
+          <p>
+            Keep the <code>dashboard - category - package - module - docs</code>
+            decomposition. New investigative artifacts (failure analyses,
+            candidate previews, ablation explorations) become their own HTML
+            page under <code>packages/&lt;id&gt;/docs/</code>, linked from the
+            owning module. Do not pile new content into one growing page.
+          </p>
+          <p class="applies">Applies to: package growth, docs additions, new investigations.</p>
+        </article>
+
+        <article class="rule-card" data-rule="R9" data-kind="benefit">
+          <div class="id">R9 - Stream-safe structure</div>
+          <h3 class="title">Render usefully even when partial</h3>
+          <p>
+            Structure pages so that each top-level section is independently
+            useful. Do not put critical state (workflow state, current gate,
+            next route) below large content blocks. The first viewport must
+            always answer "what is this and what is next."
+          </p>
+          <p class="applies">Applies to: package home, module pages.</p>
+        </article>
+
+        <article class="rule-card" data-rule="R18" data-kind="benefit">
+          <div class="id">R18 - Audience-tagged context</div>
+          <h3 class="title">Collapse agent-only context by default</h3>
+          <p>
+            Content that is agent-important only - continuity notes, internal
+            reasoning, file-map pointers, "remember for next turn" - must be
+            wrapped in
+            <code>&lt;details data-audience="agent"&gt;&lt;summary&gt;agent context&lt;/summary&gt;...&lt;/details&gt;</code>
+            so the browser collapses it for human readers while it stays in
+            the source for agents. Both-audience and human-only content
+            renders inline without <code>&lt;details&gt;</code>. The
+            <code>data-audience="agent"</code> attribute extends the R6
+            stable-anchor taxonomy. The chat-output form of this rule wraps
+            agent-only blocks in a markdown <code>&gt;</code> blockquote.
+          </p>
+          <p class="applies">Applies to: every package page that carries agent continuity notes; dashboard chrome that exposes agent context.</p>
+        </article>
+
+      </div>
+    </section>
+
+    <section class="module" data-section="guardrail-rules">
+      <div class="module-header"><span class="idx">B</span><h2>Guardrails (must respect)</h2></div>
+      <div class="rule-grid">
+
+        <article class="rule-card" data-rule="R10" data-kind="guardrail">
+          <div class="id">R10 - Markdown stays canonical for plans</div>
+          <h3 class="title">Do not delete or bypass MD source files</h3>
+          <p>
+            <code>PLAN.md</code>, <code>TRACKER.md</code>, and
+            <code>RESULTS.md</code> in <code>research/active/&lt;id&gt;/</code>
+            remain the canonical, PR-reviewable, hand-or-agent-edited surface.
+            HTML pages render or extend them; they do not replace them. Any
+            sync script must be lossless from MD plus runtime JSON to HTML, in
+            that direction by default.
+          </p>
+          <p class="applies">Applies to: any sync, render, or migration script.</p>
+        </article>
+
+        <article class="rule-card" data-rule="R11" data-kind="guardrail">
+          <div class="id">R11 - Semantic HTML, not visual bloat</div>
+          <h3 class="title">Prefer machine-readable structure over decoration</h3>
+          <p>
+            Use <code>&lt;section&gt;</code>, <code>&lt;article&gt;</code>,
+            <code>&lt;table&gt;</code>, <code>&lt;details&gt;</code>,
+            <code>&lt;form&gt;</code>, <code>&lt;script type="application/json"&gt;</code>
+            and <code>data-*</code> attributes. Avoid CSS-only animations,
+            decorative canvas, drag-and-drop fluff, and any visual bling that
+            does not help an agent or a reader extract a fact.
+          </p>
+          <p class="applies">Applies to: every new template, every CSS addition.</p>
+        </article>
+
+        <article class="rule-card" data-rule="R12" data-kind="guardrail">
+          <div class="id">R12 - PR-reviewable changes</div>
+          <h3 class="title">Keep diffs reviewable</h3>
+          <p>
+            HTML is harder to review than MD. Mitigate: one logical card per
+            edit when possible; do not reflow entire files; do not minify;
+            keep one element per line where it aids readability; commit
+            generated and hand-edited HTML in separate commits when both
+            change.
+          </p>
+          <p class="applies">Applies to: every commit touching research_html/.</p>
+        </article>
+
+        <article class="rule-card" data-rule="R13" data-kind="guardrail">
+          <div class="id">R13 - Don't over-systematize</div>
+          <h3 class="title">Skills scaffold, content stays free-form</h3>
+          <p>
+            The existing <code>research-dashboard</code> and
+            <code>research-package</code> skills define the shared chrome and
+            required overview cards. They must not be extended to demand a
+            fixed schema for every investigative HTML file inside
+            <code>packages/&lt;id&gt;/docs/</code>. One-off HTML investigations
+            stay free-form and are linked from the Docs module.
+          </p>
+          <p class="applies">Applies to: skill definitions, package contracts, module library.</p>
+        </article>
+
+      </div>
+    </section>
+
+    <section class="module" data-section="forbidden-rules">
+      <div class="module-header"><span class="idx">C</span><h2>Forbidden Patterns</h2></div>
+      <div class="rule-grid">
+
+        <article class="rule-card" data-rule="R14" data-kind="forbidden">
+          <div class="id">R14 - No ASCII or unicode visual hacks</div>
+          <h3 class="title">No text-art stand-ins</h3>
+          <p>
+            ASCII tables of metrics that should be a real <code>&lt;table&gt;</code>,
+            unicode bar charts, unicode color squares, and ASCII flow
+            diagrams are not acceptable inside research_html/. Use HTML
+            tables, inline SVG, or committed images instead.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="R15" data-kind="forbidden">
+          <div class="id">R15 - No build-step dependencies</div>
+          <h3 class="title">No bundlers, no frameworks</h3>
+          <p>
+            No React, Vue, webpack, Vite, npm, or any toolchain that requires
+            a build step before pages render. Keep <code>assets/research.css</code>
+            and <code>assets/research.js</code> as plain static files. Embed
+            small JSON via <code>&lt;script type="application/json"&gt;</code>;
+            embed small JS in <code>assets/</code> only when needed.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="R16" data-kind="forbidden">
+          <div class="id">R16 - No silent claim aggregation</div>
+          <h3 class="title">Diagnostic vs valid must stay visible</h3>
+          <p>
+            Never aggregate <code>valid</code>, <code>diagnostic_only</code>,
+            <code>failed</code>, or <code>missing</code> rows into a single
+            number without a visual or attribute-level distinction. The
+            user's MSR-VTT Setting 2 compact-budget rule, the Stage-1 vs
+            Stage-2 distinction, and seed/baseline/budget mismatches must
+            stay visible in the UI, not collapsed into prose.
+          </p>
+        </article>
+
+        <article class="rule-card" data-rule="R17" data-kind="forbidden">
+          <div class="id">R17 - No dynamic external dependencies</div>
+          <h3 class="title">No remote scripts, fonts from disk only</h3>
+          <p>
+            Pages must not load remote JavaScript, remote analytics, remote
+            CSS, or external CDN fonts. Everything required to render lives
+            under <code>research_html/assets/</code> or under the owning
+            package directory. This protects offline review and keeps the
+            single-URL share model honest.
+          </p>
+        </article>
+
+      </div>
+    </section>
+
+    <section class="module" data-section="application">
+      <div class="module-header"><span class="idx">D</span><h2>How to Apply These Rules</h2></div>
+
+      <article class="module-card" data-card="application-checklist">
+        <h3>Per-refinement checklist</h3>
+        <ol>
+          <li>State which benefit (R1-R9, R18) the change realizes. If none, do not make the change.</li>
+          <li>Confirm guardrails R10-R13 are not violated.</li>
+          <li>Confirm no forbidden pattern (R14-R17) is introduced.</li>
+          <li>Reuse an existing <code>data-*</code> anchor before inventing a new one.</li>
+          <li>Render the page from disk and from the dashboard before declaring the change done.</li>
+          <li>Commit hand-edits and generated HTML in separate commits if both change.</li>
+        </ol>
+      </article>
+
+      <article class="module-card" data-card="application-tradeoff">
+        <h3>When MD is still the right answer</h3>
+        <p>
+          Plans, trackers, results, and any artifact that lives in PR review
+          remain in <code>research/active/&lt;id&gt;/*.md</code>. The HTML
+          surface renders and extends them, adds visualizations, exposes HITL
+          controls, and presents runtime state. It does not replace the MD.
+        </p>
+      </article>
+
+    </section>
+
+    <footer class="footer-note">
+      Source: Thariq (@trq212), "Using Claude Code: The Unreasonable
+      Effectiveness of HTML", May 8, 2026, plus the public reply thread.
+      These rules are binding for refinements under
+      <code>research_html/</code>. Update this file (not the README) when a
+      rule needs to change.
+    </footer>
+
+  </div>
+</body>
+</html>

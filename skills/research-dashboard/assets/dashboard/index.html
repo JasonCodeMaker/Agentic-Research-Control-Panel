@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Research System Dashboard</title>
+  <link rel="stylesheet" href="assets/research.css">
+</head>
+<body>
+  <div class="shell">
+
+    <header class="masthead" data-section="masthead">
+      <div class="eyebrow">research system template</div>
+      <h1>Research <em>Dashboard</em></h1>
+      <p class="lead">
+        A shared overview surface for research agents and their users. Read the
+        global purpose, lane counts, evidence gates, allowed routes, and
+        binding rule files here before opening any package detail.
+      </p>
+      <div class="toolbar" data-card="dashboard-toolbar">
+        <a class="pill" href="rules/html-rules.html">HTML Rules</a>
+        <a class="pill" href="rules/trustworthy-research-rules.html">Trust Rules</a>
+        <a class="pill" href="README.md">README</a>
+        <a class="pill" href="templates/module-library.html">Module Library</a>
+      </div>
+    </header>
+
+    <nav class="dashboard-nav" data-section="nav" aria-label="Dashboard sections">
+      <a href="#snapshot">Snapshot</a>
+      <a href="#lanes">Lanes</a>
+      <a href="#packages">Packages</a>
+      <a href="#protocol">Protocol</a>
+      <a href="#profile">Project profile</a>
+      <a href="#rules">Rules</a>
+    </nav>
+
+    <section id="snapshot" data-section="snapshot" aria-label="Dashboard snapshot">
+      <article class="context-card" data-card="dashboard-role">
+        <h2>Dashboard Role</h2>
+        <p>
+          This page is the project overview surface. It gives the user a clear
+          picture of how research is organized, and gives the agent the global
+          operating context (purpose, evidence gates, allowed routes, hard
+          constraints, project profile, rule files) before any package is
+          opened.
+        </p>
+        <p>
+          The dashboard does not own claims, gates, validity, or evidence
+          anchors. Those live on package surfaces under
+          <code>packages/&lt;research-id&gt;/</code>, governed by the trust
+          rules in <a href="rules/trustworthy-research-rules.html">trustworthy-research-rules.html</a>.
+        </p>
+      </article>
+    </section>
+
+    <section id="lanes" data-section="lanes" class="dashboard-summary" aria-label="Category counts"></section>
+
+    <section id="packages" data-section="packages" aria-label="Research packages">
+      <h2>Research packages</h2>
+      <p class="lead">
+        Each package is one card. Filter by lane or by next route, sort by
+        recency, and open a package to see its plan, runs, and results.
+      </p>
+      <form class="package-filters" data-card="package-filters" aria-label="Package filters"></form>
+      <main id="dashboard-package-root" class="package-grid"></main>
+    </section>
+
+    <section id="protocol" data-section="protocol" aria-label="Global protocol">
+      <div id="global-context"></div>
+    </section>
+
+    <section id="profile" data-section="profile" aria-label="Project profile">
+      <div id="project-profile-root"></div>
+    </section>
+
+    <section id="rules" data-section="rules" aria-label="Binding rules">
+      <article class="context-card" data-card="rule-link-html">
+        <h2>HTML Rules (R1-R17)</h2>
+        <p>
+          Form rules: how every HTML file under <code>research_html/</code> is
+          shaped. Cover semantic structure, single-URL sharing, stable
+          <code>data-*</code> anchors, web-of-files linking, and forbidden
+          patterns such as ASCII visuals and remote scripts.
+        </p>
+        <p><a href="rules/html-rules.html">Open html-rules.html</a></p>
+      </article>
+      <article class="context-card" data-card="rule-link-trust">
+        <h2>Trust Rules (T1-T24)</h2>
+        <p>
+          Content rules: what package surfaces must say. Cover claim gates,
+          validity classes, evidence anchors, last-updated freshness, and
+          stage-specific page contracts. These rules apply to package pages,
+          not to the dashboard chrome.
+        </p>
+        <p><a href="rules/trustworthy-research-rules.html">Open trustworthy-research-rules.html</a></p>
+      </article>
+    </section>
+
+    <footer class="footer-note">
+      Package cards show name, category-scoped tag, problem, objective, and motivation.
+      Edit package inventory in <code>data/research-packages.js</code>.
+    </footer>
+  </div>
+
+  <script src="data/research-packages.js"></script>
+  <script src="assets/research.js"></script>
+</body>
+</html>
