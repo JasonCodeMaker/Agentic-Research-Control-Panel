@@ -1,6 +1,6 @@
 ---
 name: research-package
-description: "Create a hierarchical research package under research_html/packages/<YYYY-MM-DD-slug>/ as a multi-page HTML surface (overview, plan, implementation, launch, live, results, next-action, tracker, brainstorm) plus docs/ and _agent/. Use this skill whenever the user types /research-package, asks to create / initialize / draft / scaffold a research package, sets up a new research direction or experiment plan, or wants a new package on the dashboard for in-progress / brainstorm / success / fail work. Project-agnostic. Hard requirement: the dashboard at <cwd>/research_html/ must already exist — if it does not, run /research-dashboard first. Each page owns one decision; the binding single-home rule prevents overlap and context pollution."
+description: "Create a hierarchical research package under research_html/packages/<YYYY-MM-DD-slug>/ as a multi-page HTML surface (overview, plan, implementation, results, next-action, tracker, brainstorm) plus docs/ and _agent/. Use this skill whenever the user types /research-package, asks to create / initialize / draft / scaffold a research package, sets up a new research direction or experiment plan, or wants a new package on the dashboard for in-progress / brainstorm / success / fail work. Project-agnostic. Hard requirement: the dashboard at <cwd>/research_html/ must already exist — if it does not, run /research-dashboard first. Each page owns one decision; the binding single-home rule prevents overlap and context pollution. Tracker is the single home for execution state — launch readiness, resource allocation, per-run live cards, and the 10-minute live check all live on tracker.html (the prior launch.html / live.html pages are folded in)."
 argument-hint: "<one-sentence description of the package goal, optionally followed by — category=<lane>, scope=<pages>>"
 allowed-tools: Bash(*), Read, Edit, Write, Glob, Grep
 ---
@@ -78,6 +78,7 @@ Every package object on the dashboard surfaces these fields. If a field is unkno
 | `lastAction` | `--last-action` | The most recent command, edit, or observation (Resume Block field). |
 | `openRuns` | `--open-runs` | tmux/session/job ids or `none` (Resume Block field). |
 | `lastUpdated` | `--last-updated` | ISO date; toggles `data-stale` on pages that predate it. |
+| `experiments` | (post-scaffold edit) | Array `[{id,label?,status,runLink?}]` painted onto `index.html#plan-status`. Update the matching entry's `status` whenever a phase opens/closes (same turn as the tracker row update). Allowed: `pending`/`queued`/`running`/`completed`/`failed`/`skipped`/`blocked`. |
 
 ## Scope-selection heuristic
 
@@ -88,7 +89,7 @@ Pick `--scope` from the prompt's stage:
 | "Brainstorm a direction ..." (category=brainstorm) | `index,docs,_agent` (brainstorm.html is auto-included) |
 | "Create a plan about ..." | `index,plan,tracker,docs,_agent` |
 | "Track the implementation of ..." | `index,plan,implementation,tracker,docs,_agent` |
-| "Run / launch / record live ..." | `index,plan,implementation,launch,live,tracker,docs,_agent` |
+| "Run / launch / record live ..." | `index,plan,implementation,tracker,docs,_agent` (tracker owns launch readiness + per-run live cards) |
 | "Record results / pick the next action" | `--scope all` |
 
 Always-present pages (`index`, `tracker`, `docs`, `_agent`) are appended automatically.
@@ -100,9 +101,13 @@ Every field has exactly one home page; other pages link. This prevents overlap a
 - Owned-files set lives only on `implementation.html`.
 - No-change boundary as declared lives on `plan.html`; downstream affirmation is a boolean + commit hash + link, not a re-list of files.
 - Hypothesis is canonical on `plan.html` and re-stated only on `implementation.html` and `results.html` (T8 transition pages).
-- Per-run state (last-log, missed-checks, ETA) lives only on `live.html`.
 - Per-validity exp counts live only on `results.html`.
-- The three WORKFLOW.md ledger tables (implementation review, resource allocation, latest live check) live only on `tracker.html`. Stage pages link to the tracker row.
+- `tracker.html` is the single home for all execution state (folding the prior `launch.html` and `live.html`):
+  - Pre-launch readiness facts (T21: GPU id, CUDA_VISIBLE_DEVICES, conda env, git commit, dataset path, expected runtime, dry-run, smoke) live only on `tracker.html` in the **Launch readiness** card.
+  - No-change affirmation (T16: boolean + commit hash + link to `implementation.html#owned-files`) and the T1 launch user-ack slot live only on `tracker.html` in the **Launch readiness** card.
+  - Per-run live state (last-log timestamp, missed-checks, retries, ETA, runtime root, recommended action with cited PLAN threshold, optional inline objective curve) lives only on `tracker.html` in the **Per-run cards** section.
+  - The three WORKFLOW.md ledger tables (implementation review, resource allocation, latest live check) live only on `tracker.html`. Stage pages link to the tracker row.
+- Per-phase launcher *commands* (the executable steps) are not contract content — they live next to the scripts they invoke (`packages/<id>/scripts/*.sh` or `packages/<id>/docs/launchers.md`). `tracker.html` rows link to the script, not duplicate its body.
 
 ## ETA discipline (binding)
 
@@ -143,10 +148,10 @@ After scaffolding, patch package-specific details that the script could not know
 
 The scaffold writes generic templates. Patch these `unmeasured` slots when the prompt provides the value:
 
-- `plan.html` &rarr; metric card subfields (`metric-formula`, `metric-dataset`, `metric-protocol`, `metric-dedup`, `metric-cutoff`); baseline subfields (`baseline-checkpoint`, `baseline-protocol`, `baseline-last-verified`); seed plan; plan-diff; experiments-list rows.
+- `plan.html` &rarr; metric card subfields (`metric-formula`, `metric-dataset`, `metric-protocol`, `metric-dedup`, `metric-cutoff`); baseline subfields (`baseline-checkpoint`, `baseline-protocol`, `baseline-last-verified`); seed plan; plan-diff; experiments-list spec rows (Exp ID, Purpose, Owner, Run link — no Status column).
+- `index.html` &rarr; Plan Status card placeholder is auto-painted from inventory `experiments[]` by `renderPlanStatus()`. Do not hand-edit the painted slot; edit the inventory entry instead.
 - `implementation.html` &rarr; owned-files list; diff summary; one `data-card="change"` per algorithm change with `data-field="component"`, `data-field="code-anchor"` in `file:function` form, `data-field="expected-sign"`, `data-field="expected-magnitude"`, `data-field="validating-exp"`.
-- `launch.html` &rarr; the six T21 readiness fields; expected runtime; dry-run / smoke status.
-- `tracker.html` &rarr; Resume Block fields are auto-painted from inventory by `renderResumeBlock()`; you only need to update inventory. Append rows to the three ledger tables via the `data-table-body` selector (see [references/package-contract.md](references/package-contract.md)). The to-do list under `data-field="todo-list"` is strict: each `<li>` must wrap its content in `<label><input type="checkbox"> &hellip;</label>`; add the `checked` attribute when the item is done. Plain `<li>text</li>` is not permitted.
+- `tracker.html` &rarr; Resume Block fields are auto-painted from inventory by `renderResumeBlock()`; you only need to update inventory. Append rows to the three ledger tables via the `data-table-body` selector (see [references/package-contract.md](references/package-contract.md)). Fill the **Launch readiness** card (T21 readiness fields, expected runtime, dry-run / smoke status, T16 no-change affirmation, T1 launch user-ack). Add one **Per-run card** per open experiment under the `[data-section="run-cards"]` host (T22 + T15: state, last-log, missed-checks, retries, ETA, runtime root, cited PLAN threshold, recommended action, optional inline objective SVG). The to-do list under `data-field="todo-list"` is strict: each `<li>` must wrap its content in `<label><input type="checkbox"> &hellip;</label>`; add the `checked` attribute when the item is done. Plain `<li>text</li>` is not permitted.
 - `_agent/context.html` &rarr; canonical paths only; do not duplicate identity fields from `index.html`.
 
 ## Validation
@@ -155,10 +160,20 @@ The scaffold writes generic templates. Patch these `unmeasured` slots when the p
 - `node --check <cwd>/research_html/assets/research.js`
 - Open `<cwd>/research_html/index.html` from disk: the new package appears in the dashboard package grid; lane and route filters narrow it.
 - Open `<cwd>/research_html/packages/<id>/index.html`: status strip, package nav, identity card, and page index render. Missing fields show `unmeasured`.
-- Grep that the three ledger tables exist only on `tracker.html`:
+- Grep that the three ledger tables exist only on `tracker.html` (and not on any sibling stage page):
   ```bash
   grep -nE 'data-table="(implementation-review|resource-allocation|live-check)"' \
-    <cwd>/research_html/packages/<id>/{tracker,implementation,launch,live}.html
+    <cwd>/research_html/packages/<id>/*.html
+  # only tracker.html should match.
+  ```
+- Grep that no stage page links to the retired `launch.html` / `live.html`:
+  ```bash
+  grep -nE '(launch|live)\.html' <cwd>/research_html/packages/<id>/*.html || echo "clean"
+  ```
+- Grep that `plan.html` does not carry a Status column or static `data-validity` chips in the experiments table (state moved to inventory `experiments[]`, painted on `index.html#plan-status`):
+  ```bash
+  grep -nE 'data-table="experiments".*<th>Status</th>|<tbody data-table-body="experiments">.*data-validity' \
+    <cwd>/research_html/packages/<id>/plan.html || echo "clean"
   ```
 - Grep that the hypothesis is restated exactly on `implementation.html` and `results.html`:
   ```bash
@@ -198,5 +213,5 @@ The skill ships a single canonical implementation at `scripts/propagate_facts.py
 
 - `scripts/create_research_package.py` — generates a hierarchical package from this skill's templates, appends one inventory entry to the user's `data/research-packages.js`, and copies `propagate_facts.py` into the new package's `scripts/` directory.
 - `scripts/propagate_facts.py` — Fact Propagation Contract enforcer (see above). Read-only by default; `--bump` advances the cursor.
-- `templates/` — the 12 `string.Template` HTML files (`index`, `plan`, `implementation`, `launch`, `live`, `results`, `next-action`, `tracker`, `brainstorm`, `docs/index`, `docs/source`, `_agent/context`).
+- `templates/` — the 10 `string.Template` HTML files (`index`, `plan`, `implementation`, `results`, `next-action`, `tracker`, `brainstorm`, `docs/index`, `docs/source`, `_agent/context`). Tracker owns launch readiness + per-run live cards; there is no longer a separate `launch.html` or `live.html` template.
 - `references/package-contract.md` — the 12-concept table, single-home rule, append-row recipe, and the four `data-ack` transition slots.

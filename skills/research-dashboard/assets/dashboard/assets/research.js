@@ -9,8 +9,8 @@
     {
       id: "tracker",
       title: "Tracker",
-      purpose: "Resume Block, implementation review, resource allocation, launch provenance, latest live check, and concise decisions.",
-      editHint: "Update the Resume Block, append required table rows, and keep only the latest live check per open run.",
+      purpose: "Single home for execution state: Resume Block, cross-stage to-do, Launch readiness card (T21/T16/T1), implementation review, resource allocation, per-run live cards (T22/T15), and latest live check.",
+      editHint: "Update the Resume Block, append required table rows, fill the Launch readiness card before READY_TO_LAUNCH, and keep only the latest live check per open run.",
     },
     {
       id: "results",
@@ -566,7 +566,7 @@
       '<article class="module-card" id="plan-global" data-card="global-part"><h3>Global Part</h3><div class="kv-grid"><div class="k">Objective</div><div data-field="global-objective">Direction-level research objective.</div><div class="k">Hypothesis</div><div data-field="hypothesis">State the learning, retrieval, data, system, or evaluation hypothesis.</div><div class="k">No-Change Boundary</div><div data-field="no-change-boundary">List architecture, dataset, metric, runtime, or claim boundaries that must not drift.</div></div></article>',
       '<article class="module-card" id="plan-gates" data-card="metric-gates"><h3>Metric Gates &amp; Budgets</h3><div class="kv-grid"><div class="k">Primary Metric</div><div data-field="primary-metric">Objective metric tied to the research claim.</div><div class="k">Baseline</div><div data-field="baseline">Reference artifact, config, protocol, or prior result.</div><div class="k">Budget Gate</div><div data-gate>Compute, data, latency, quality, seed, or resource budget.</div><div class="k">Early Stop</div><div data-field="early-stop">Only active-plan thresholds can trigger early stop.</div></div></article>',
       '<article class="module-card" id="plan-local" data-card="local-part"><h3>Local Part</h3><p data-field="local-objective">Latest executable plan only. Replace this card when the approved active plan changes.</p><div class="notice">Do not preserve obsolete plan history here; record completed evidence in Results and execution state in Tracker.</div></article>',
-      '<article class="module-card" id="plan-experiments" data-card="experiments-list"><h3>Experiments List</h3><ol data-field="experiments-list"><li>Each item should include purpose, config, dependency, command owner, expected artifacts, and success/failure gate.</li></ol></article>',
+      '<article class="module-card" id="plan-experiments" data-card="experiments-list"><h3>Experiments List</h3><ol data-field="experiments-list"><li>Each item should include purpose, config, dependency, command owner, expected artifacts, and success/failure gate.</li></ol><p class="card-text">Per-experiment <em>status</em> is not part of this spec list. It is owned by the tracker resource-allocation row and painted onto <code>index.html#plan-status</code> by <code>renderPlanStatus()</code> from <code>experiments[]</code> in <code>data/research-packages.js</code>.</p></article>',
       '<article class="module-card" id="plan-validation" data-card="validation-plan"><h3>Validation Plan</h3><p data-field="validation">List the cheapest checks before launch: syntax, dry-run manifest, forbidden-knob rejection, path discovery, artifact contract, and metric recomputation.</p></article>',
       '<article class="module-card" id="plan-stop-rule" data-card="stop-rule"><h3>Stop Rule</h3><p data-field="stop-rule">Define when this package should stop, archive, ask the user, or route back to implementation.</p></article>',
       "</div>",
@@ -626,8 +626,6 @@
     { slug: "overview", label: "Overview", href: "index.html" },
     { slug: "plan", label: "Plan", href: "plan.html" },
     { slug: "implementation", label: "Implementation", href: "implementation.html" },
-    { slug: "launch", label: "Launch", href: "launch.html" },
-    { slug: "live", label: "Live", href: "live.html" },
     { slug: "results", label: "Results", href: "results.html" },
     { slug: "next-action", label: "Next action", href: "next-action.html" },
     { slug: "tracker", label: "Tracker", href: "tracker.html" },
@@ -742,6 +740,32 @@
     });
   }
 
+  function renderPlanStatus() {
+    var host = document.querySelector('[data-card="plan-status"] [data-field="plan-status-list"]');
+    if (!host) return;
+    var pkg = currentPackage();
+    if (!pkg) return;
+    var items = Array.isArray(pkg.experiments) ? pkg.experiments : [];
+    if (!items.length) {
+      host.innerHTML = '<div class="empty-state">No experiments declared in inventory. See <a href="plan.html#experiments">plan / experiments</a>.</div>';
+      return;
+    }
+    host.innerHTML = items.map(function (e) {
+      var id = e && e.id ? String(e.id) : "unmeasured";
+      var label = e && e.label ? String(e.label) : "";
+      var status = e && e.status ? String(e.status) : "pending";
+      var run = e && e.runLink ? String(e.runLink) : "tracker.html#resource-allocation";
+      return [
+        '<div class="plan-status-row" data-exp-status-binding="' + htmlEscape(id) + '">',
+        '<span class="exp-id"><a href="plan.html#experiments">' + htmlEscape(id) + "</a></span>",
+        label ? '<span class="exp-label">' + htmlEscape(label) + "</span>" : "",
+        '<span class="chip" data-status="' + htmlEscape(status) + '">' + htmlEscape(status) + "</span>",
+        '<a class="exp-run-link" href="' + htmlEscape(run) + '">run</a>',
+        "</div>",
+      ].join("");
+    }).join("");
+  }
+
   function renderHypothesisCheck() {
     var nodes = document.querySelectorAll("[data-hypothesis-restated]");
     if (!nodes.length) return;
@@ -837,6 +861,7 @@
     renderStatusStrip();
     renderPackageNav();
     renderResumeBlock();
+    renderPlanStatus();
     renderValidityCounts();
     renderHypothesisCheck();
     renderDashboardPackages();

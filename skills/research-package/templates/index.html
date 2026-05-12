@@ -50,6 +50,14 @@
       </article>
     </section>
 
+    <section data-section="plan-status" id="plan-status" aria-label="Plan status">
+      <article class="module-card" data-card="plan-status">
+        <h2>Plan status (painted from inventory)</h2>
+        <p class="card-text">Per-experiment status chips, painted from <code>experiments[]</code> in <code>data/research-packages.js</code>. The plan is the spec; execution state lives on tracker. Updating inventory is the only write path.</p>
+        <div data-field="plan-status-list"></div>
+      </article>
+    </section>
+
     <section data-section="page-index" id="page-index" aria-label="Page index">
       <article class="module-card" data-card="page-index">
         <h2>Pages</h2>
@@ -60,11 +68,9 @@
         <ul>
           <li><a href="plan.html">Plan</a> &mdash; hypothesis, metric, baseline, budget gate, seed plan, experiments list.</li>
           <li><a href="implementation.html">Implementation</a> &mdash; owned-files set, change cards (T14), reviewer verdicts.</li>
-          <li><a href="launch.html">Launch</a> &mdash; readiness facts: GPU / env / commit / dataset / dry-run.</li>
-          <li><a href="live.html">Live</a> &mdash; per-run state, inline objective curve, recommended live action.</li>
           <li><a href="results.html">Results</a> &mdash; result gate table, claims, validity chips, visualizations.</li>
           <li><a href="next-action.html">Next action</a> &mdash; chosen route, considered routes, cited evidence path.</li>
-          <li><a href="tracker.html">Tracker</a> &mdash; Resume Block, ledger tables, to-do list.</li>
+          <li><a href="tracker.html">Tracker</a> &mdash; Resume Block, to-do list, ledger tables, Launch readiness card (T21/T16/T1), per-run live cards (T22/T15).</li>
           <li><a href="docs/">Docs</a> &mdash; method design, contracts, code anchors, audits, references.</li>
         </ul>
       </article>

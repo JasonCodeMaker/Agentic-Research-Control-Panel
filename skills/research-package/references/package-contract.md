@@ -17,14 +17,22 @@ re-list it.
   carry a boolean + commit hash + link to `implementation.html#owned-files`.
 - Hypothesis is canonical on `plan.html`; re-stated only on
   `implementation.html` and `results.html` (T8 transition scoping).
-- Per-run state (last-log, missed-checks, ETA, runtime root) is owned by
-  `live.html`. The tracker's "Open Runs" carries an exp id + state + link.
 - Per-validity exp counts are owned by `results.html`. The tracker shows a
   single open-run number and links to results.
 - Source paths and artifact roots are owned by `index.html`.
-- Implementation review, resource allocation, and latest live check tables are
-  owned by `tracker.html`. Stage pages keep per-decision cards and link to the
-  tracker row.
+- `tracker.html` is the single home for execution state (the prior
+  `launch.html` and `live.html` pages have been folded in):
+  - Implementation review, resource allocation, and latest live check tables.
+  - **Launch readiness** card: T21 readiness fields (GPU id,
+    `CUDA_VISIBLE_DEVICES`, conda env, git commit, dataset path, expected
+    runtime, dry-run, smoke); T16 no-change affirmation (boolean + commit hash
+    + link to `implementation.html#owned-files`); T1 launch user-ack slot.
+  - **Per-run cards** (one per open experiment): T22 per-run state (last-log,
+    missed-checks, retries, ETA, runtime root), recommended action with the
+    cited PLAN threshold, optional inline objective SVG (T15).
+  - Per-phase launcher commands themselves are not contract content — they
+    live next to their scripts in `packages/<id>/scripts/*.sh` (and an
+    optional `docs/launchers.md` runbook). Tracker rows link to the script.
 - Result gate table is owned by `results.html`.
 - Considered routes table is owned by `next-action.html`.
 
@@ -58,16 +66,14 @@ Rules:
 | --- | --- | --- | --- | --- |
 | 1 | Identity | `index.html` | problem, objective, motivation, source path, artifact root, package id, summary line of the primary metric (link to `plan.html` for the full card) | T2, README |
 | 2 | Hypothesis | `plan.html` | falsifiable hypothesis text (canonical) | T8, T19 |
-| 3 | Plan | `plan.html` | metric (name, formula, dataset, protocol, dedup, cutoff); baseline (source, checkpoint, protocol, last-verified date); budget gate; seed plan; experiments list; no-change boundary as declared; one-sentence diff vs prior plan | T9, T11, T16, T19 |
+| 3 | Plan | `plan.html` | metric (name, formula, dataset, protocol, dedup, cutoff); baseline (source, checkpoint, protocol, last-verified date); budget gate; seed plan; **experiments-list spec rows (Exp ID, Purpose, Owner, Run link — no Status column; per-row execution state lives on tracker resource-allocation rows and is painted onto `index.html#plan-status` from inventory)**; no-change boundary as declared; one-sentence diff vs prior plan | T9, T11, T16, T19 |
 | 4 | Implementation changes | `implementation.html` | owned-files set; diff summary; change cards (T14: `file:function`, expected sign, magnitude band, validating exps); reviewer verdicts; integration verdict; adjudication | T14, T20 |
-| 5 | Launch readiness | `launch.html` | GPU id, CUDA_VISIBLE_DEVICES, conda env, git commit, dataset path (each verified); expected runtime; dry-run + smoke status | T21 |
-| 6 | Live monitoring | `live.html` | per open exp: state, last-log timestamp, missed-checks, retries, ETA, runtime root, inline objective curve (SVG), recommended live action with cited threshold | T15, T22, R3 |
-| 7 | Results + analysis | `results.html` | result gate table; per-exp result cards with validity, baseline reference, plan gate, observed metric paired with artifact path + last-modified + checkpoint + git commit, supported / unsupported claims, protocol-match verdict; per-validity counts (chips, never aggregated); inline visualizations | T5, T9, T10, T13, T23, R3, R16 |
-| 8 | Next action | `next-action.html` | chosen route from the allowed set; considered-and-rejected routes table with one-sentence reason each; cited evidence path | T24 |
-| 9 | Tracker (execution ledger) | `tracker.html` | Resume Block (the seven WORKFLOW.md fields); implementation review table; resource allocation table; latest live check table; cross-stage to-do checklist (strict checkbox form) with links | T17, WORKFLOW.md "Tracker Hygiene" + Required Tables |
-| 10 | Source docs | `docs/index.html` + `docs/<slug>.html` | one HTML per source (method-design, metric-contract, dataset-contract, runtime-contract, code-anchors, audits, reviews, references); each carries last-updated and one-line summary on the index | R8, R3, T17 |
-| 11 | Continuity pointer (slim) | `_agent/context.html` | canonical source path, canonical runtime root, minimum context loading order, verification rules before result edits. **No fields duplicated from `index.html`**; references identity by `data-*` selectors | R6, T7 |
-| 12 | Brainstorm-only fields | `brainstorm.html` (only when `category="brainstorm"`) | one-sentence direction; contribution-spine flag (preserves / changes); resolved citations; fail-history flag for prior packages with the same direction | T18 |
+| 5 | Results + analysis | `results.html` | result gate table; per-exp result cards with validity, baseline reference, plan gate, observed metric paired with artifact path + last-modified + checkpoint + git commit, supported / unsupported claims, protocol-match verdict; per-validity counts (chips, never aggregated); inline visualizations | T5, T9, T10, T13, T23, R3, R16 |
+| 6 | Next action | `next-action.html` | chosen route from the allowed set; considered-and-rejected routes table with one-sentence reason each; cited evidence path | T24 |
+| 7 | Tracker (execution state, single home) | `tracker.html` | Resume Block (the seven WORKFLOW.md fields); cross-stage to-do checklist (strict checkbox form) with links; implementation review table; resource allocation table; latest live check table; **Launch readiness card** (T21 readiness fields, expected runtime, dry-run + smoke status, T16 no-change affirmation, T1 launch user-ack); **Per-run cards** section (per open exp: state, last-log, missed-checks, retries, ETA, runtime root, cited PLAN threshold, recommended action, optional inline objective SVG) | T15, T17, T21, T22, R3, WORKFLOW.md "Tracker Hygiene" + Required Tables |
+| 8 | Source docs | `docs/index.html` + `docs/<slug>.html` | one HTML per source (method-design, metric-contract, dataset-contract, runtime-contract, code-anchors, audits, reviews, references); each carries last-updated and one-line summary on the index. Per-phase launcher commands (when documented in HTML rather than inline in scripts) live in `docs/launchers.md`. | R8, R3, T17 |
+| 9 | Continuity pointer (slim) | `_agent/context.html` | canonical source path, canonical runtime root, minimum context loading order, verification rules before result edits. **No fields duplicated from `index.html`**; references identity by `data-*` selectors | R6, T7 |
+| 10 | Brainstorm-only fields | `brainstorm.html` (only when `category="brainstorm"`) | one-sentence direction; contribution-spine flag (preserves / changes); resolved citations; fail-history flag for prior packages with the same direction | T18 |
 
 ## Cross-cutting elements (precise scoping)
 
@@ -78,9 +84,10 @@ Rules:
   present in `pages` render as disabled spans. (R1, R8)
 - **Hypothesis re-statement**: only on `implementation.html` and `results.html`.
   String-equal vs canonical with `data-hypothesis-restated`. (T8)
-- **No-change affirmation**: small card on `launch.html`, `live.html`,
-  `results.html`, `next-action.html` with `affirmed` + `commit-hash` + link to
-  `implementation.html#owned-files`. Never re-list the file set. (T16)
+- **No-change affirmation**: small card on `tracker.html` (inside the Launch
+  readiness card), `results.html`, and `next-action.html` with `affirmed` +
+  `commit-hash` + link to `implementation.html#owned-files`. Never re-list the
+  file set. (T16)
 - **Last-updated + data-stale**: each page carries a `<time>` with the
   page's timestamp; `<html data-stale="true">` toggles when the page predates
   inventory's `lastUpdated`. (T17)
@@ -109,6 +116,7 @@ package contract:
 
 - `hypothesis` &mdash; canonical hypothesis text.
 - `noChangeBoundary` &mdash; one-sentence boundary reference.
+- `experiments` &mdash; ordered array `[{ id, label?, status, runLink? }, …]`. Painted onto `index.html#plan-status` by `renderPlanStatus()`. Allowed `status` values: `pending`, `queued`, `running`, `completed`, `failed`, `skipped`, `blocked`. The painter is the only read path; inventory is the only write path. Stale plan-status rows are a workflow violation if a tracker resource-allocation row reports a different status.
 - `workflowState`, `activeGate`, `primaryMetricVsGate`, `lastDecision`,
   `lastDecisionEvidencePath`, `nextRoute`, `currentBlocker` &mdash; the six T2
   fields plus an evidence-path hint.
@@ -129,6 +137,13 @@ fields is the **only** write path required to keep the Resume Block fresh;
 the static HTML acts as a fallback skeleton. Do not hand-edit the painted
 slots in `tracker.html` — write inventory instead.
 
+`renderPlanStatus()` paints the `<article data-card="plan-status">` on
+`index.html` from the inventory's `experiments[]` array. Each closed phase
+must update the matching `experiments[i].status` in the inventory (one of
+`pending`/`queued`/`running`/`completed`/`failed`/`skipped`/`blocked`) so
+the Overview surface stays in sync with the tracker resource-allocation
+row. Do not hand-edit the painted slot — write inventory instead.
+
 Static slots in the Resume Block kv-grid that are **not** auto-painted (they
 remain author-controlled): `Active plan` link, `Next action` link,
 `Runtime root` code block. These are navigation, not state.
@@ -144,7 +159,7 @@ Each WORKFLOW.md ledger table on the package surface exposes a stable
 | Resource allocation (14 cols) | `tracker.html` | `[data-table-body="resource-allocation"]` |
 | Latest live check (12 cols) | `tracker.html` | `[data-table-body="live-check"]` |
 | Result gate (10 cols) | `results.html` | `[data-table-body="result-gate"]` |
-| Experiments list (5 cols) | `plan.html` | `[data-table-body="experiments"]` |
+| Experiments list (4 cols, spec only) | `plan.html` | `[data-table-body="experiments"]` |
 | Considered routes (4 cols) | `next-action.html` | `[data-table-body="considered-routes"]` |
 
 Recipe for appending one row (any agent, any tool):
@@ -173,7 +188,7 @@ transition lives on a card with `data-ack="<transition>"` and a sibling
 | Transition | Card | `data-ack` value |
 | --- | --- | --- |
 | Move to `READY_TO_LAUNCH` | `implementation.html` adjudication | `ready-to-launch` |
-| Move to `EXPERIMENT_RUNNING` | `launch.html` no-change-affirmation | `experiment-running` |
+| Move to `EXPERIMENT_RUNNING` | `tracker.html` Launch-readiness no-change-affirmation | `experiment-running` |
 | Promote a result to verdict `pass` | `results.html` result-gate `<tr>` | `result-pass` |
 | Move package into `success` / `fail` / `STOPPED` | `next-action.html` chosen-route | `lane-transition` |
 

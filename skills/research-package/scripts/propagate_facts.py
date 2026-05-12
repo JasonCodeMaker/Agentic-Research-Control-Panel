@@ -33,8 +33,10 @@ CURSOR_NAME = ".propagation_cursor"
 SURFACE_MAP: dict[str, list[str]] = {
     "checkpoint": [
         "tracker.html live-check row",
+        "tracker.html resource-allocation Status cell for owning phase",
         "results.html Track 1 row + headline strip + result-gate row for owning phase",
         "manifests/<phase>_canhit100.txt sentinel if a new best",
+        "research_html/data/research-packages.js experiments[i].status for owning phase (typically running → completed)",
     ],
     "candidate_json": [
         "results.html Track 2 (zero-shot) row or Track 3 (scalability) row",
@@ -44,14 +46,19 @@ SURFACE_MAP: dict[str, list[str]] = {
         "tracker.html Resume Block (Last action)",
         "results.html headline strip + result-gate Observed metric cell",
         "research_html/data/research-packages.js (nextRoute, currentBlocker, lastAction, lastUpdated)",
+        "research_html/data/research-packages.js experiments[i].status for the sentinel's phase",
     ],
     "phase_marker": [
-        "tracker.html live-check row, tick to-do for closed phase",
+        "tracker.html live-check row",
+        "tracker.html resource-allocation Status cell (queued → running, or running → completed/failed)",
+        "research_html/data/research-packages.js experiments[i].status for the marked phase",
+        "tick to-do for closed phase",
     ],
     "chain_done": [
         "results.html final tables + verdict chips",
         "next-action.html chosen route + cited evidence",
         "research_html/data/research-packages.js (nextRoute → STOPPED or run_next_experiment_from_step4; openRuns)",
+        "research_html/data/research-packages.js experiments[i].status for every phase the chain closed",
         "tracker.html Resume Block + mark chain row completed + to-do ticks",
     ],
 }

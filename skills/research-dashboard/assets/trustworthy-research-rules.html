@@ -341,23 +341,31 @@
 
         <article class="rule-card" data-rule="T21" data-kind="stage" data-stage="launch-readiness">
           <div class="id">T21</div>
-          <h3 class="title">Launch readiness pages display</h3>
+          <h3 class="title">Launch readiness displays (on tracker.html)</h3>
           <p>
-            The resolved GPU id, <code>CUDA_VISIBLE_DEVICES</code>, conda
+            The Launch readiness card on <code>tracker.html</code> displays
+            the resolved GPU id, <code>CUDA_VISIBLE_DEVICES</code>, conda
             environment, git commit, and dataset path, each marked with
             verified status; the expected runtime; the dry-run or
-            smoke-test status.
+            smoke-test status. This card is the single home for pre-launch
+            readiness (the prior <code>launch.html</code> page has been
+            folded into <code>tracker.html</code>).
           </p>
         </article>
 
         <article class="rule-card" data-rule="T22" data-kind="stage" data-stage="live">
           <div class="id">T22</div>
-          <h3 class="title">Live monitoring pages display</h3>
+          <h3 class="title">Live monitoring displays (on tracker.html)</h3>
           <p>
-            A rendered curve of the objective over time; the timestamp
-            of the most recent log line; the count of missed scheduled
-            checks; the recommended next live action with the cited
-            plan threshold.
+            The per-run cards section on <code>tracker.html</code> displays,
+            per open experiment: a rendered curve of the objective over
+            time (when meaningful); the timestamp of the most recent log
+            line; the count of missed scheduled checks; the recommended
+            next live action with the cited plan threshold. The 10-minute
+            cadence ledger lives in the <code>latest live check</code>
+            table further down the same page. Tracker is the single home
+            for live state (the prior <code>live.html</code> page has been
+            folded into <code>tracker.html</code>).
           </p>
         </article>
 

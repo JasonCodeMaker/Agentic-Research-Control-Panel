@@ -1119,6 +1119,29 @@ button.copy-button:hover {
   border-style: dashed;
 }
 
+.chip[data-status="completed"] { border-color: var(--olive); color: var(--olive); }
+.chip[data-status="running"] { border-color: var(--olive); color: var(--olive); }
+.chip[data-status="failed"] { border-color: var(--clay-dark); color: var(--clay-dark); }
+.chip[data-status="blocked"] { border-color: var(--clay); color: var(--clay-dark); }
+.chip[data-status="skipped"] { border-color: var(--g300); color: var(--g500); border-style: dashed; }
+.chip[data-status="pending"],
+.chip[data-status="queued"] { border-color: var(--g300); color: var(--g500); border-style: dashed; }
+
+.plan-status-row {
+  display: grid;
+  grid-template-columns: 9ch 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--g200);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.plan-status-row:last-child { border-bottom: 0; }
+.plan-status-row .exp-id a { text-decoration: none; }
+.plan-status-row .exp-label { color: var(--slate); }
+.plan-status-row .exp-run-link { font-size: 11px; color: var(--g500); }
+
 .chip[data-unmeasured="true"],
 .chip-unmeasured {
   border-style: dashed;

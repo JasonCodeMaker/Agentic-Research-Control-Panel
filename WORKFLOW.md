@@ -102,7 +102,8 @@ Allowed persistent tracker surfaces:
 - Resume Block
 - short chronological setup or todo bullets
 - required implementation review, resource allocation, and latest live check tables
-- launch notes only when they are still useful
+- Launch readiness card (T21/T16/T1) — pre-launch readiness facts, no-change affirmation, launch user-ack
+- per-run live cards (T22/T15) — one card per open experiment with state, last-log, missed-checks, retries, ETA, runtime root, cited PLAN threshold, recommended action, optional inline objective curve
 
 Avoid these tracker patterns:
 - Do not add `### Current Evidence`.
@@ -125,7 +126,7 @@ Mandatory update triggers:
 Strict format (matches the research-package skill contract):
 - `<ul class="todo-checklist" data-field="todo-list">`
 - Every `<li>` wraps its full content in `<label><input type="checkbox" [checked]> ...</label>`.
-- Each item ends with one link to the page that owns the action (`implementation.html`, `plan.html`, `launch.html`, `live.html`, `results.html`, or `next-action.html`).
+- Each item ends with one link to the page that owns the action (`implementation.html`, `plan.html`, `tracker.html#launch-readiness`, `tracker.html#run-cards`, `tracker.html#live-check`, `results.html`, or `next-action.html`).
 - Plain `<li>text</li>` is not permitted on the to-do list.
 
 Update cadence:
@@ -312,11 +313,11 @@ Live check table update is mandatory and strict:
 
 | Event | Surfaces to update in the same turn |
 | --- | --- |
-| Checkpoint save (`output/**/best_model.pt`) | `tracker.html` live-check row + `results.html` Track 1 + headline strip + result-gate row + sentinel write (if new best) |
+| Checkpoint save (`output/**/best_model.pt`) | `tracker.html` live-check row + `tracker.html` resource-allocation Status + `results.html` Track 1 + headline strip + result-gate row + sentinel write (if new best) + registry `experiments[i].status` for the closing phase |
 | Candidate JSON (`candidates/<label>/<dataset>/*.json`) | `results.html` Track 2 / Track 3 row + rerun of `summarize_results.py` |
-| Sentinel (`manifests/*.txt`) | `tracker.html` Resume Block + `results.html` headline + result-gate Observed metric + registry (`research_html/data/research-packages.js`) status fields |
-| Phase marker (`--- P` / `### P` in chain log) | `tracker.html` live-check + to-do tick for closed phase |
-| Chain done (`=== … done ===`) | `results.html` final tables + verdict chips + `next-action.html` route + registry `nextRoute`/`openRuns` + tracker Resume Block + to-do |
+| Sentinel (`manifests/*.txt`) | `tracker.html` Resume Block + `results.html` headline + result-gate Observed metric + registry (`research_html/data/research-packages.js`) status fields + registry `experiments[i].status` for the sentinel's phase |
+| Phase marker (`--- P` / `### P` in chain log) | `tracker.html` live-check + `tracker.html` resource-allocation Status + registry `experiments[i].status` (`queued` → `running`, or `running` → `completed`/`failed`) + to-do tick for closed phase |
+| Chain done (`=== … done ===`) | `results.html` final tables + verdict chips + `next-action.html` route + registry `nextRoute`/`openRuns` + registry `experiments[i].status` for every phase the chain closed + tracker Resume Block + to-do |
 
 The contract is enforced mechanically by `propagate_facts.py` (skill-shipped, copied into every package's `scripts/`). Each per-turn algorithm includes a **Step 3.5 — Propagation pass** between the tracker live-check update and the §5 status line:
 

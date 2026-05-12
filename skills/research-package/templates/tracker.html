@@ -12,7 +12,7 @@
     <header class="masthead" data-section="masthead">
       <div class="eyebrow">execution ledger</div>
       <h1>Tracker &mdash; $name</h1>
-      <p class="lead">Resume Block plus the three WORKFLOW.md ledger tables (implementation review, resource allocation, latest live check) and a cross-stage to-do list.</p>
+      <p class="lead">Single home for execution state: Resume Block, cross-stage to-do, Launch readiness (T21/T16/T1), the three WORKFLOW.md ledger tables (implementation review, resource allocation, latest live check), and per-run live cards (T22/T15) per open experiment.</p>
       <div class="toolbar"><a class="pill" href="index.html">Overview</a><a class="pill" href="plan.html">Plan</a><a class="pill" href="results.html">Results</a></div>
       <header class="status-strip" data-status-strip aria-label="Package status (T2)"></header>
     </header>
@@ -28,7 +28,7 @@
           <div class="k">Last action</div><div data-field="last-action">unmeasured</div>
           <div class="k">Next action</div><div data-field="next-action"><a href="next-action.html">next-action.html</a></div>
           <div class="k">Runtime root</div><code data-artifact="runtime-root">$artifact_root</code>
-          <div class="k">Open runs</div><div data-field="open-runs">See <a href="live.html">live</a></div>
+          <div class="k">Open runs</div><div data-field="open-runs">See <a href="#run-cards">Per-run cards</a> below</div>
           <div class="k">Blocking issue</div><div data-field="blocking-issue">unmeasured</div>
         </div>
       </article>
@@ -42,6 +42,33 @@
         <ul class="todo-checklist" data-field="todo-list">
           <li><label><input type="checkbox"> unmeasured &mdash; <a href="next-action.html">next action</a></label></li>
         </ul>
+      </article>
+    </section>
+
+    <section data-section="launch-readiness" id="launch-readiness" aria-label="Launch readiness card">
+      <article class="module-card" data-card="launch-readiness">
+        <h2>Launch readiness (T21)</h2>
+        <p class="card-text">Pre-launch facts; fill before the first <code>READY_TO_LAUNCH</code> transition.</p>
+        <div class="kv-grid">
+          <div class="k">GPU id</div><div data-field="gpu-id" data-verification="recalled">unmeasured</div>
+          <div class="k">CUDA_VISIBLE_DEVICES</div><div data-field="cuda-visible" data-verification="recalled">unmeasured</div>
+          <div class="k">Conda env</div><div data-field="conda-env" data-verification="recalled">unmeasured</div>
+          <div class="k">Git commit</div><code data-field="git-commit" data-verification="recalled">unmeasured</code>
+          <div class="k">Dataset path</div><code data-field="dataset-path" data-verification="recalled">unmeasured</code>
+          <div class="k">Expected runtime</div><div data-field="expected-runtime">unmeasured (record est_time=unknown until 30 min of stable throughput)</div>
+          <div class="k">Dry-run status</div><div data-field="dry-run-status">unmeasured</div>
+          <div class="k">Smoke status</div><div data-field="smoke-test-status">unmeasured</div>
+        </div>
+      </article>
+      <article class="module-card" data-card="no-change-affirmation" data-ack="experiment-running" data-ack-value="">
+        <h2>No-change affirmation (T16) + launch ack (T1)</h2>
+        <div class="kv-grid">
+          <div class="k">Affirmed</div><div data-field="affirmed">unmeasured</div>
+          <div class="k">Commit hash</div><code data-field="commit-hash">unmeasured</code>
+          <div class="k">Owned files</div><div><a href="implementation.html#owned-files">implementation / owned files</a></div>
+          <div class="k">User ack (T1)</div><div data-field="user-ack">unmeasured</div>
+        </div>
+        <p class="card-text">T1: do not move to <code>EXPERIMENT_RUNNING</code> without a recorded user ack here.</p>
       </article>
     </section>
 
@@ -63,9 +90,29 @@
         <table class="data-table" data-table="resource-allocation">
           <thead><tr><th>Exp ID</th><th>Purpose</th><th>Dependency</th><th>Target</th><th>Capacity</th><th>Assigned</th><th>Reason</th><th>Agent</th><th>Cmd/CWD/Env</th><th>Session/Job</th><th>Runtime root</th><th>Log path</th><th>Expected duration</th><th>Status</th></tr></thead>
           <tbody data-table-body="resource-allocation">
-            <tr><td data-field="exp-id"><a href="launch.html">unmeasured</a></td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td></tr>
+            <tr><td data-field="exp-id"><a href="#run-cards">unmeasured</a></td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td></tr>
           </tbody>
         </table>
+      </article>
+    </section>
+
+    <section data-section="run-cards" id="run-cards" aria-label="Per-run live cards">
+      <article class="module-card" data-card="run-cards-host">
+        <h2>Per-run cards (T22 + T15)</h2>
+        <p class="card-text">One card per open experiment. Mirrors are not duplicated; the row below is the per-run companion to the latest live check table further down.</p>
+        <article class="module-card" data-card="live-run" data-exp-id="unmeasured">
+          <h3 data-field="exp-title">unmeasured</h3>
+          <div class="kv-grid">
+            <div class="k">State</div><div data-field="run-state">unmeasured</div>
+            <div class="k">Last log</div><time data-field="last-log-time" datetime="">unmeasured</time>
+            <div class="k">Missed checks</div><div data-field="missed-checks">unmeasured</div>
+            <div class="k">Retries</div><div data-field="retry-count">unmeasured</div>
+            <div class="k">ETA</div><div data-field="eta">unmeasured</div>
+            <div class="k">Runtime root</div><code data-artifact="runtime-root">$artifact_root</code>
+            <div class="k">Recommended action</div><div data-field="live-action" data-action="unmeasured">unmeasured</div>
+            <div class="k">Cited threshold</div><div data-field="cited-threshold">unmeasured (cite the owning <a href="plan.html#experiments">plan / experiments</a> threshold)</div>
+          </div>
+        </article>
       </article>
     </section>
 
@@ -75,7 +122,7 @@
         <table class="data-table" data-table="live-check">
           <thead><tr><th>Time</th><th>Exp ID</th><th>Agent</th><th>Run state</th><th>Last log</th><th>Progress</th><th>Latest metrics</th><th>Resource use</th><th>Artifacts</th><th>ETA</th><th>Live action</th><th>Next check</th></tr></thead>
           <tbody data-table-body="live-check">
-            <tr><td>unmeasured</td><td data-field="exp-id"><a href="live.html">unmeasured</a></td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td></tr>
+            <tr><td>unmeasured</td><td data-field="exp-id"><a href="#run-cards">unmeasured</a></td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td></tr>
           </tbody>
         </table>
       </article>
