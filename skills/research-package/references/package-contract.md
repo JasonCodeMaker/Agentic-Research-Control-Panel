@@ -125,6 +125,25 @@ package contract:
 - `lastUpdated` &mdash; ISO date; toggles `data-stale` on pages that predate it.
 - `pages` &mdash; array of stage-page slugs actually present on disk. Drives
   the disabled state in the package nav.
+- `terminationMessage` &mdash; one short paragraph (1-3 sentences) explaining
+  why the package ended. **Required** when `category` is `fail` or `success`;
+  optional otherwise. Surfaced on the dashboard card as a `[FAILED]` /
+  `[SUCCESS]` banner plus an inline "Termination" block by
+  `packageCardHtml()` in `assets/research.js`.
+- `methodsTried` &mdash; one short paragraph (1-3 sentences) naming the
+  approaches the package attempted. **Required** when `category` is `fail`
+  or `success`; optional otherwise. Surfaced on the dashboard card as an
+  inline "Methods tried" block, so future packages can pick up context
+  without re-reading every stage page.
+- `reopenable` &mdash; boolean (default `false`). Set to `true` on a
+  terminated card when the package's outputs (reusable infra, calibrated
+  artifacts, distilled checkpoints, logged traces) remain useful for future
+  work even though the method itself was rejected or superseded. Renders a
+  "&#8631; Available for reopen" badge next to the route chip on the
+  dashboard card. Meaningful only when the card is terminated.
+- `reopenNote` &mdash; one short sentence describing what is reusable and
+  under what condition reopening makes sense. Becomes the hover tooltip on
+  the reopen badge. Optional; included only when `reopenable === true`.
 
 All new fields are optional; missing values render literal `unmeasured`.
 
@@ -195,6 +214,21 @@ transition lives on a card with `data-ack="<transition>"` and a sibling
 The agent must write the user's ack token (e.g. timestamp + initials) into the
 `data-field="user-ack"` slot before recording the transition in the inventory
 or moving the package between dashboard lanes.
+
+When recording the `lane-transition` ack (move into `success` / `fail` /
+`STOPPED`), the agent must update the inventory in the same turn:
+
+1. Flip `category` to `fail` or `success`.
+2. Flip `nextRoute` from `archive_or_stop` to the matching terminal value:
+   `archived` (fail lane) or `adopted` (success lane).
+3. Populate `terminationMessage` and `methodsTried`.
+4. Set `reopenable` (boolean) and, if `true`, write a one-sentence
+   `reopenNote`.
+
+A fail/success card missing the terminal `nextRoute`, `terminationMessage`,
+or `methodsTried` is a contract violation. `reopenable=false` (or omitted)
+is fine when nothing is reusable; `reopenable=true` without a `reopenNote`
+is permitted but discouraged.
 
 ## Output classification (mirrored from SKILL.md)
 

@@ -43,8 +43,10 @@ window.RESEARCH_GLOBAL_PROTOCOL = {
     { route: "run_next_experiment_from_step4", meaning: "Use when the active plan defines the next run." },
     { route: "fix_implementation", meaning: "Use for concrete code or artifact issues." },
     { route: "revise_plan", meaning: "Use when the executable plan changes." },
-    { route: "archive_or_stop", meaning: "Use when evidence says the direction should stop or archive." },
+    { route: "archive_or_stop", meaning: "Use when evidence says the direction should stop or archive (proposed action; not yet realized)." },
     { route: "ask_user", meaning: "Use when a user-level decision blocks progress." },
+    { route: "archived", meaning: "Terminal: package has been moved to the fail lane and is closed. Pair with `reopenable` to signal whether outputs are reusable." },
+    { route: "adopted", meaning: "Terminal: package has been promoted into the active method, pipeline, paper, product, or decision record." },
   ],
   hardConstraints: [
     "Do not infer missing metrics, baselines, paths, commands, or ownership.",

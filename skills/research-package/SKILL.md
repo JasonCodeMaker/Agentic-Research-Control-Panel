@@ -73,7 +73,7 @@ Every package object on the dashboard surfaces these fields. If a field is unkno
 | `primaryMetricVsGate` | `--primary-metric-vs-gate` | One-line "metric=value vs gate" string for the dashboard card. |
 | `lastDecision` | `--last-decision` | One sentence per WORKFLOW.md "Decision" line. |
 | `lastDecisionEvidencePath` | `--last-decision-evidence-path` | Artifact path under runtime root that backs `lastDecision`. |
-| `nextRoute` | `--next-route` | One of `run_next_experiment_from_step4`, `fix_implementation`, `revise_plan`, `archive_or_stop`, `ask_user`. |
+| `nextRoute` | `--next-route` | One of `run_next_experiment_from_step4`, `fix_implementation`, `revise_plan`, `archive_or_stop`, `ask_user` while active; `archived` (fail lane terminal) or `adopted` (success lane terminal) after the lane-transition ack. |
 | `currentBlocker` | `--current-blocker` | One sentence; `unmeasured` if none. |
 | `lastAction` | `--last-action` | The most recent command, edit, or observation (Resume Block field). |
 | `openRuns` | `--open-runs` | tmux/session/job ids or `none` (Resume Block field). |

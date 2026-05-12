@@ -338,9 +338,45 @@
     return '<time data-field="last-updated" datetime="' + htmlEscape(iso) + '">' + htmlEscape(iso) + "</time>";
   }
 
+  function isTerminated(pkg) {
+    var cat = normalizeCategory(pkg.category);
+    return cat === "fail" || cat === "success";
+  }
+
+  function terminationKind(pkg) {
+    return normalizeCategory(pkg.category) === "success" ? "success" : "failed";
+  }
+
+  function terminationBannerHtml(pkg) {
+    if (!isTerminated(pkg)) return "";
+    var kind = terminationKind(pkg);
+    var label = kind === "success" ? "[SUCCESS]" : "[FAILED]";
+    return '<div class="termination-banner termination-' + kind + '" data-termination="' + kind + '">' + label + "</div>";
+  }
+
+  function terminationDetailHtml(pkg) {
+    if (!isTerminated(pkg)) return "";
+    var parts = [];
+    if (pkg.terminationMessage) {
+      parts.push('<p class="card-text termination-summary"><strong>Termination:</strong> ' + htmlEscape(pkg.terminationMessage) + "</p>");
+    }
+    if (pkg.methodsTried) {
+      parts.push('<p class="card-text termination-methods"><strong>Methods tried:</strong> ' + htmlEscape(pkg.methodsTried) + "</p>");
+    }
+    return parts.join("");
+  }
+
+  function reopenBadgeHtml(pkg) {
+    if (!isTerminated(pkg)) return "";
+    if (!pkg.reopenable) return "";
+    var note = pkg.reopenNote ? pkg.reopenNote : "Outputs from this package are reusable for future work.";
+    return ' <span class="reopen-badge" data-reopenable="true" title="' + htmlEscape(note) + '">↻ Available for reopen</span>';
+  }
+
   function packageCardHtml(pkg) {
     return [
-      '<a class="package-card package-link-card" href="' + relativeDetailPath(pkg) + '" data-package-id="' + pkg.id + '" data-category="' + normalizeCategory(pkg.category) + '" data-route="' + htmlEscape(pkg.nextRoute || "unmeasured") + '" data-workflow-state="' + htmlEscape(pkg.workflowState || "unmeasured") + '">',
+      '<a class="package-card package-link-card" href="' + relativeDetailPath(pkg) + '" data-package-id="' + pkg.id + '" data-category="' + normalizeCategory(pkg.category) + '" data-route="' + htmlEscape(pkg.nextRoute || "unmeasured") + '" data-workflow-state="' + htmlEscape(pkg.workflowState || "unmeasured") + '"' + (isTerminated(pkg) ? ' data-terminated="' + terminationKind(pkg) + '"' : "") + ">",
+      terminationBannerHtml(pkg),
       '<div class="card-top">',
       tagBadgeHtml(pkg),
       chipHtml("workflow-state", pkg.workflowState),
@@ -351,9 +387,10 @@
       '<p class="card-text"><strong>Problem:</strong> ' + htmlEscape(pkg.problem) + "</p>",
       '<p class="card-text"><strong>Objective:</strong> ' + htmlEscape(pkg.objective) + "</p>",
       '<p class="card-text"><strong>Motivation:</strong> ' + htmlEscape(pkg.motivation) + "</p>",
+      terminationDetailHtml(pkg),
       '<p class="card-text card-strip"><span><strong>Gate:</strong> ' + fieldOrUnmeasured(pkg.activeGate) + "</span> ",
       '<span><strong>Metric vs gate:</strong> ' + fieldOrUnmeasured(pkg.primaryMetricVsGate) + "</span></p>",
-      '<p class="card-text card-strip"><span><strong>Next route:</strong> ' + chipHtml("route", pkg.nextRoute) + "</span> ",
+      '<p class="card-text card-strip"><span><strong>Next route:</strong> ' + chipHtml("route", pkg.nextRoute) + reopenBadgeHtml(pkg) + "</span> ",
       '<span><strong>Updated:</strong> ' + lastUpdatedHtml(pkg) + "</span></p>",
       "</div>",
       "</a>",

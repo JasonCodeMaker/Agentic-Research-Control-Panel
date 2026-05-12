@@ -169,6 +169,44 @@ h1 em {
   background: #f7e6dc;
 }
 
+.termination-banner {
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-align: center;
+  padding: 6px 10px;
+  font-size: 0.85rem;
+  border-bottom: 1.5px solid currentColor;
+}
+
+.termination-failed {
+  background: var(--rose);
+  color: var(--clay-dark);
+}
+
+.termination-success {
+  background: var(--sage);
+  color: var(--olive);
+}
+
+.termination-summary,
+.termination-methods {
+  background: rgba(0, 0, 0, 0.025);
+  border-left: 3px solid var(--g300);
+  padding: 8px 10px;
+  border-radius: 4px;
+}
+
+.package-card[data-terminated="failed"] .termination-summary,
+.package-card[data-terminated="failed"] .termination-methods {
+  border-left-color: var(--clay-dark);
+}
+
+.package-card[data-terminated="success"] .termination-summary,
+.package-card[data-terminated="success"] .termination-methods {
+  border-left-color: var(--olive);
+}
+
 .package-tag {
   max-width: 100%;
   white-space: normal;
@@ -1096,6 +1134,32 @@ button.copy-button:hover {
 .chip[data-route="archive_or_stop"] {
   border-color: var(--clay);
   color: var(--clay-dark);
+}
+
+.chip[data-route="archived"] {
+  border-color: var(--g500);
+  color: var(--g500);
+  border-style: dashed;
+}
+
+.chip[data-route="adopted"] {
+  border-color: var(--olive);
+  color: var(--olive);
+}
+
+.reopen-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px dashed var(--clay);
+  background: #fff7f1;
+  color: var(--clay-dark);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  cursor: help;
 }
 
 .chip[data-validity="valid"] {
