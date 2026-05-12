@@ -179,8 +179,24 @@ State:
 
 Apply the [Output classification](#output-classification) rule on the report — agent-only continuity notes go in a `>` blockquote so the user is not asked to read them.
 
+## Fact Propagation Contract (binding when a run is live)
+
+Every artifact that lands during a research run (checkpoint, candidate JSON, sentinel, phase marker, chain-done) is a "locked fact" that the agent must propagate to every owning surface — `results.html`, `next-action.html`, registry status fields, tracker Resume Block — in the same turn the artifact is observed. The mechanical check is `scripts/propagate_facts.py`:
+
+```bash
+# every per-turn live cycle
+python <package>/scripts/propagate_facts.py            # list newly-locked facts
+# … agent applies the indicated updates to the listed surfaces …
+python <package>/scripts/propagate_facts.py --bump     # advance the cursor
+```
+
+The cursor lives at `<runtime-root>/manifests/.propagation_cursor` (epoch float). An empty report = nothing to propagate; non-empty = the agent must update the listed surfaces *in the same turn* before scheduling the next wake. The Stop Gate requires an empty report.
+
+The skill ships a single canonical implementation at `scripts/propagate_facts.py`; the scaffolder copies it into every new package's `scripts/` directory so every package inherits the same contract.
+
 ## Bundled resources
 
-- `scripts/create_research_package.py` — generates a hierarchical package from this skill's templates and appends one inventory entry to the user's `data/research-packages.js`.
+- `scripts/create_research_package.py` — generates a hierarchical package from this skill's templates, appends one inventory entry to the user's `data/research-packages.js`, and copies `propagate_facts.py` into the new package's `scripts/` directory.
+- `scripts/propagate_facts.py` — Fact Propagation Contract enforcer (see above). Read-only by default; `--bump` advances the cursor.
 - `templates/` — the 12 `string.Template` HTML files (`index`, `plan`, `implementation`, `launch`, `live`, `results`, `next-action`, `tracker`, `brainstorm`, `docs/index`, `docs/source`, `_agent/context`).
 - `references/package-contract.md` — the 12-concept table, single-home rule, append-row recipe, and the four `data-ack` transition slots.

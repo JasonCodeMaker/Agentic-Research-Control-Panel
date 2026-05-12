@@ -245,6 +245,16 @@ def main() -> int:
         if write_file(out_path, rendered, args.force):
             written.append(out_path)
 
+    # Drop the Fact Propagation Contract enforcer into every package's scripts/.
+    src_script = Path(__file__).resolve().parent / "propagate_facts.py"
+    if src_script.exists():
+        dst_script = package_root / "scripts" / "propagate_facts.py"
+        dst_script.parent.mkdir(parents=True, exist_ok=True)
+        if not dst_script.exists() or args.force:
+            dst_script.write_bytes(src_script.read_bytes())
+            dst_script.chmod(0o755)
+            written.append(dst_script)
+
     inventory_updated = append_inventory(root, package_id, args, pages)
 
     print(f"package_id={package_id}")

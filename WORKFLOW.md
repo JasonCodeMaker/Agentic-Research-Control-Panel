@@ -308,6 +308,27 @@ Live check table update is mandatory and strict:
 - Emitting the §5 status line to the user without updating the live check row in the same turn is a workflow violation.
 - When a run closes (`completed` / `failed` / `blocked`), update the row one final time with the terminal state and `Live action`, then move the run's evidence path to `results.html`; do not delete the closing row in the same turn the run ends.
 
+**Fact Propagation Contract (binding).** Every artifact that lands during a run — checkpoint save, candidate JSON export, sentinel write, phase marker, chain-done — is a "locked fact" that the main agent must propagate to *every* surface that owns a view of it in the same turn the artifact is observed. Owning surfaces:
+
+| Event | Surfaces to update in the same turn |
+| --- | --- |
+| Checkpoint save (`output/**/best_model.pt`) | `tracker.html` live-check row + `results.html` Track 1 + headline strip + result-gate row + sentinel write (if new best) |
+| Candidate JSON (`candidates/<label>/<dataset>/*.json`) | `results.html` Track 2 / Track 3 row + rerun of `summarize_results.py` |
+| Sentinel (`manifests/*.txt`) | `tracker.html` Resume Block + `results.html` headline + result-gate Observed metric + registry (`research_html/data/research-packages.js`) status fields |
+| Phase marker (`--- P` / `### P` in chain log) | `tracker.html` live-check + to-do tick for closed phase |
+| Chain done (`=== … done ===`) | `results.html` final tables + verdict chips + `next-action.html` route + registry `nextRoute`/`openRuns` + tracker Resume Block + to-do |
+
+The contract is enforced mechanically by `propagate_facts.py` (skill-shipped, copied into every package's `scripts/`). Each per-turn algorithm includes a **Step 3.5 — Propagation pass** between the tracker live-check update and the §5 status line:
+
+```text
+3.5. Run `python scripts/propagate_facts.py`. For every event listed in its report,
+     apply the indicated update to its owning surfaces in this same turn. After all
+     surfaces accept, run `propagate_facts.py --bump` to advance the cursor. An empty
+     report is the only valid reason to skip.
+```
+
+Skipping Step 3.5 while the report is non-empty is a workflow violation equivalent to skipping the live-check row update. The Stop Gate (§ Stop Gate below) also requires `propagate_facts.py` to be empty before `STOPPED` is allowed.
+
 Loop continuity: while any run is `queued`, `running`, or `stale`, the main agent must either be actively processing events or have a scheduled re-entry due within 10 minutes (`ScheduleWakeup(delaySeconds<=600)`, `Monitor` filtered on the run's stdout, or `Bash run_in_background` waiting on a terminal condition). Ending a turn while a run is open without an armed re-entry is a workflow violation. On every re-entry, emit one compact §5 status line per open experiment to the user before reasoning about the next action.
 
 If one expected report is missed, mark the run `stale`. If two expected reports are missed, dispatch a liveness check through the experiment agent or resource agent and route from verified state.
@@ -400,4 +421,5 @@ You may end the current execution only in `BLOCKED` or `STOPPED`. Before ending:
 - `results.html` has completed evidence if a run finished
 - runtime artifacts are located or missing artifacts are recorded
 - no open run is untracked
+- `propagate_facts.py` returns an empty report (cursor advanced past every artifact mtime); a non-empty report at the Stop Gate is a workflow violation
 - if any run is still `queued` / `running` / `stale`, a re-entry is armed (`ScheduleWakeup` <= 600 s, `Monitor`, or background `Bash`); ending without an armed re-entry is a violation, not a clean end. The correct end-of-turn shape during the loop is one compact §5 status line per open experiment followed by the schedule call — not a written summary.
