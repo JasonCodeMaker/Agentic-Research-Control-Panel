@@ -64,21 +64,27 @@ Ask in one short batch. If the user gave a broad idea only, ask for objective, c
 
 ## T2 inventory checklist (status strip + dashboard card)
 
-Every package object on the dashboard surfaces these fields. If a field is unknown, pass the empty string and the renderer will paint literal `unmeasured`. Do **not** silently drop them.
+Every package object on the dashboard surfaces these fields. If a field is unknown, pass the empty string and the renderer will paint literal `unmeasured`. Do **not** silently drop them. Required-by-`(category, status)` is enforced by `<root>/data/schema.js` and checked by `<root>/scripts/learnings_lint.py lint-status`.
 
 | Inventory field | CLI flag | What it answers |
 | --- | --- | --- |
-| `workflowState` | `--workflow-state` | One of WORKFLOW.md states (`CONTEXT_LOADED`, `IMPLEMENTING`, `READY_TO_LAUNCH`, `EXPERIMENT_RUNNING`, `LIVE_ANALYSIS`, `RESULT_ANALYSIS`, `NEXT_ACTION_READY`, `BLOCKED`, `STOPPED`). |
-| `activeGate` | `--active-gate` | The plan/spec gate that owns the next decision. |
-| `primaryMetricVsGate` | `--primary-metric-vs-gate` | One-line "metric=value vs gate" string for the dashboard card. |
+| `status` | `--status` | The `(category, status)` cell. Legal values per category come from `data/schema.js`. brainstorm: `EXPLORING`/`PILOT_READY`/`PROMOTED`/`ABANDONED`. in-progress: `CONTEXT_LOADED`/`IMPLEMENTING`/`IMPLEMENTATION_REVIEW`/`READY_TO_LAUNCH`/`EXPERIMENT_RUNNING`/`LIVE_ANALYSIS`/`RESULT_ANALYSIS`/`NEXT_ACTION_READY`/`BLOCKED`. success: `ADOPTED_PENDING_ACK`/`ADOPTED`/`SUPERSEDED`. fail: `ARCHIVED`/`ARCHIVED_REOPENABLE`. `--workflow-state` is kept as a deprecated alias. |
+| `contributionSpineFlag` | `--contribution-spine-flag` | Which project-spine contribution this package touches (id from `RESEARCH_CONTRIBUTION_SPINE` in schema.js). |
+| `direction` | `--direction` | One-sentence research direction. Required for brainstorm. |
+| `activeGate` | `--active-gate` | The plan/spec gate that owns the next decision. Required for in-progress. |
+| `primaryMetricVsGate` | `--primary-metric-vs-gate` | One-line "metric=value vs gate" string for the dashboard card. Required for in-progress. |
 | `lastDecision` | `--last-decision` | One sentence per WORKFLOW.md "Decision" line. |
-| `lastDecisionEvidencePath` | `--last-decision-evidence-path` | Artifact path under runtime root that backs `lastDecision`. |
-| `nextRoute` | `--next-route` | One of `run_next_experiment_from_step4`, `fix_implementation`, `revise_plan`, `archive_or_stop`, `ask_user`. |
-| `currentBlocker` | `--current-blocker` | One sentence; `unmeasured` if none. |
+| `lastDecisionEvidencePath` | `--last-decision-evidence-path` | Artifact path under runtime root that backs `lastDecision`. Verified by `lint-evidence`. |
+| `nextRoute` | `--next-route` | One of `run_next_experiment_from_step4`, `fix_implementation`, `revise_plan`, `archive_or_stop`, `ask_user`. Required for in-progress. |
+| `currentBlocker` | `--current-blocker` | One sentence; `unmeasured` if none. Required when status is `BLOCKED`. |
 | `lastAction` | `--last-action` | The most recent command, edit, or observation (Resume Block field). |
-| `openRuns` | `--open-runs` | tmux/session/job ids or `none` (Resume Block field). |
+| `openRuns` | `--open-runs` | tmux/session/job ids or `none` (Resume Block field). Required when status is `EXPERIMENT_RUNNING` or `LIVE_ANALYSIS`. |
 | `lastUpdated` | `--last-updated` | ISO date; toggles `data-stale` on pages that predate it. |
 | `experiments` | (post-scaffold edit) | Array `[{id,label?,status,runLink?}]` painted onto `index.html#plan-status`. Update the matching entry's `status` whenever a phase opens/closes (same turn as the tracker row update). Allowed: `pending`/`queued`/`running`/`completed`/`failed`/`skipped`/`blocked`. |
+| `methodsTried` | (post-scaffold edit) | Array of `{method, hypothesis, gate, measured, verdict, evidencePath}` rows (verdict ∈ `{pass, fail, inconclusive}`). Appended over the life of the package per the Learnings Update Protocol below. Required for success / fail / brainstorm-`ABANDONED`. |
+| `terminationMessage` | (post-scaffold edit) | One sentence: why this package ended. Required for success / fail / brainstorm-`ABANDONED`. |
+| `adoptionPath` | (post-scaffold edit) | Where the win was adopted (e.g., `CLAUDE.md#current-best`, model code path, downstream package id). Required for success. |
+| `supersededBy` / `promotedTo` / `reopenTrigger` | (post-scaffold edit) | Per-status cross-reference fields. See `data/schema.js`. |
 
 ## Scope-selection heuristic
 
@@ -134,13 +140,22 @@ python ~/.claude/skills/research-package/scripts/create_research_package.py \
   --budget "..." \
   --no-change-boundary "..." \
   --next-action "..." \
-  --workflow-state CONTEXT_LOADED \
+  --status CONTEXT_LOADED \
+  --contribution-spine-flag <id-from-schema.js> \
   --active-gate "..." \
   --next-route ask_user \
   --last-action "scaffolded package" \
   --open-runs "none" \
   --scope index,plan,tracker,docs,_agent
 ```
+
+For a brainstorm package, also pass `--direction "<one-sentence direction>"` so the package is lint-clean at scaffold time. After scaffolding, run:
+
+```bash
+python <root>/scripts/learnings_lint.py lint-status
+```
+
+It exits 0 if all required fields for `(category, status)` are present.
 
 After scaffolding, patch package-specific details that the script could not know (see post-scaffold checklist below).
 
@@ -208,6 +223,40 @@ python <package>/scripts/propagate_facts.py --bump     # advance the cursor
 The cursor lives at `<runtime-root>/manifests/.propagation_cursor` (epoch float). An empty report = nothing to propagate; non-empty = the agent must update the listed surfaces *in the same turn* before scheduling the next wake. The Stop Gate requires an empty report.
 
 The skill ships a single canonical implementation at `scripts/propagate_facts.py`; the scaffolder copies it into every new package's `scripts/` directory so every package inherits the same contract.
+
+## Learnings Update Protocol (binding when a verdict lands)
+
+`methodsTried[]`, `terminationMessage`, and `adoptionPath` on a package entry are the project-wide "what was tried" record consumed by `<root>/learnings.html`. They must be written under an event-trigger × lint-gate × atomic-turn protocol:
+
+| Event | Trigger surface | User ack | Inventory fields written |
+| --- | --- | --- | --- |
+| **E1. Per-experiment verdict finalized** | `results.html` result-gate row gains pass/fail/inconclusive AND artifacts verified | none | Append one `methodsTried[]` row |
+| **E2. In-progress live update** | tracker live-check, plan revision, blocker change | none | `status`, `activeGate`, `primaryMetricVsGate`, `currentBlocker`, `openRuns`, `lastAction`, `lastUpdated` |
+| **E3. Terminal status transition** | `next-action.html` chosen-route → terminal lane move | **T1** | `category` (lane move), `status`, `terminationMessage`; freeze `methodsTried[]` |
+| **E4. Adoption** | CLAUDE.md "Current Best" edit, code merge into `models/` / `trainer/`, or downstream pkg cites the win | **T1** | `adoptionPath` |
+| **E5. Supersession** | Newer success pkg replaces an older one | **T1** | On the *old* pkg: `status = SUPERSEDED`, `supersededBy` |
+| **E6. Reopen marked** | User states a fail pkg should be revisitable | **T1** | `status = ARCHIVED_REOPENABLE`, `reopenTrigger` |
+
+Each `methodsTried` row is exactly six fields, drawn from the witnessing `results.html` row:
+
+```
+{ method, hypothesis, gate, measured, verdict, evidencePath }
+```
+
+`verdict` ∈ `{pass, fail, inconclusive}`. `evidencePath` must resolve to a file or to a stable HTML anchor (`results.html#<exp-id>`). The dashboard-wide tool that drafts and validates these rows is `<root>/scripts/learnings_lint.py` (lives on the dashboard, not in each package). Subcommands:
+
+```bash
+python <root>/scripts/learnings_lint.py lint-status     # schema + cross-ref lint
+python <root>/scripts/learnings_lint.py lint-evidence   # evidencePath resolution
+python <root>/scripts/learnings_lint.py scan-events     # 3 draft writers (E1/E3/E4)
+python <root>/scripts/learnings_lint.py draft-method <pkg-id> <anchor>
+python <root>/scripts/learnings_lint.py draft-terminal <pkg-id>
+python <root>/scripts/learnings_lint.py all
+```
+
+Per-turn closure when any event above fires: update the upstream witness (results.html / next-action.html), then the inventory entry in `data/research-packages.js`, then the tracker Resume Block `lastAction`, then run `learnings_lint.py all`. A non-empty report is a Stop-Gate violation.
+
+`learnings.html` re-derives on load — do not edit it directly.
 
 ## Bundled resources
 

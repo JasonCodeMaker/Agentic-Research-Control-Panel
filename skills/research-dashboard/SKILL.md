@@ -73,8 +73,37 @@ Both-audience content is written once, inline, without the blockquote or `<detai
 - Does not edit per-package content — package surfaces own claims and evidence.
 - Does not change the universal protocol or rule files in user projects — the rule files are bundled with this skill and copied as-is.
 
+## State model and learnings tooling
+
+The dashboard ships a `(category, status)` state machine. Every package carries a `status` field whose legal values depend on its lane:
+
+| category | legal `status` values |
+|---|---|
+| brainstorm | `EXPLORING`, `PILOT_READY`, `PROMOTED`, `ABANDONED` |
+| in-progress | `CONTEXT_LOADED`, `IMPLEMENTING`, `IMPLEMENTATION_REVIEW`, `READY_TO_LAUNCH`, `EXPERIMENT_RUNNING`, `LIVE_ANALYSIS`, `RESULT_ANALYSIS`, `NEXT_ACTION_READY`, `BLOCKED` |
+| success | `ADOPTED_PENDING_ACK`, `ADOPTED`, `SUPERSEDED` |
+| fail | `ARCHIVED`, `ARCHIVED_REOPENABLE` |
+
+Required field sets per `(category, status)` and the structured `methodsTried` row shape are declared in `<root>/data/schema.js` — that file is the single source of truth and is bundled by this skill. The card renderer and the lint tool both import from it.
+
+Terminal-state packages (success / fail / brainstorm-`ABANDONED`) must carry a `terminationMessage` and a `methodsTried[]` array of structured rows (`{method, hypothesis, gate, measured, verdict, evidencePath}`, verdict in `{pass, fail, inconclusive}`). The learnings page (`<root>/learnings.html`, also bundled) is a derived view over `data/research-packages.js` that re-organizes those rows by contribution spine.
+
+The dashboard-wide consistency tool is `<root>/scripts/learnings_lint.py` (Python; reads the JS data files via the bundled `dump_packages.js` node helper):
+
+```bash
+python <root>/scripts/learnings_lint.py lint-status     # schema + cross-ref lint
+python <root>/scripts/learnings_lint.py lint-evidence   # evidencePath resolution
+python <root>/scripts/learnings_lint.py scan-events     # 3 draft writers (E1/E3/E4)
+python <root>/scripts/learnings_lint.py all             # all three at once
+```
+
+The Stop Gate of any learnings-relevant turn requires `learnings_lint.py all` to exit 0.
+
 ## Bundled resources
 
 - `scripts/ensure_dashboard.py` — idempotent scaffold for the dashboard chrome plus rule-file copy.
 - `references/dashboard-contract.md` — required dashboard sections, anchors, and rule citations.
 - `assets/html-rules.html`, `assets/trustworthy-research-rules.html` — the binding rule files copied into every project's `<root>/rules/` so package surfaces can link them with no further setup.
+- `assets/dashboard/data/schema.js` — the `(category, status)` state machine and required-field rules; copied to `<root>/data/schema.js`.
+- `assets/dashboard/learnings.html` — cross-package learnings view (derived; do not edit directly).
+- `assets/dashboard/scripts/learnings_lint.py` + `dump_packages.js` — the dashboard-wide lint and draft tool.

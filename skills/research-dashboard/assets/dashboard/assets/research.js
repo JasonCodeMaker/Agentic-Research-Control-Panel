@@ -147,7 +147,10 @@
   }
 
   function renderDashboardSummary() {
-    var target = byId("dashboard-summary");
+    // The lane summary section uses id="lanes" (for the dashboard-nav anchor)
+    // and class="dashboard-summary" (for styling). Query by class so the
+    // anchor stays correct.
+    var target = document.querySelector(".dashboard-summary") || byId("dashboard-summary");
     if (!target) return;
     target.innerHTML = categories().map(function (category) {
       return [
@@ -171,9 +174,14 @@
       protocolSectionHtml("Evidence Gates", globalProtocol().evidenceGates, "protocol-evidence-gates"),
       routeRulesHtml(),
       hardConstraintsHtml(),
-      projectProfileHtml(),
       tagLegendHtml(),
     ].join("");
+  }
+
+  function renderProjectProfile() {
+    var target = byId("project-profile-root");
+    if (!target) return;
+    target.innerHTML = projectProfileHtml();
   }
 
   function protocolHeroHtml(context) {
@@ -332,6 +340,151 @@
     return '<span class="chip chip-' + kind + '" data-' + kind + '="' + attr + '">' + htmlEscape(label) + "</span>";
   }
 
+  function statusSchema() {
+    return window.RESEARCH_STATUS_SCHEMA || {};
+  }
+
+  function statusFamily(status) {
+    var map = window.RESEARCH_STATUS_FAMILY || {};
+    return map[status] || "unknown";
+  }
+
+  function packageStatus(pkg) {
+    return pkg && (pkg.status || pkg.workflowState) || "";
+  }
+
+  function statusPillHtml(pkg) {
+    var s = packageStatus(pkg);
+    var present = s !== "";
+    var label = present ? s : "unmeasured";
+    var family = present ? statusFamily(s) : "unknown";
+    return [
+      '<span class="chip chip-status status-' + htmlEscape(family) + '"',
+      ' data-status="' + htmlEscape(label) + '"',
+      ' data-status-family="' + htmlEscape(family) + '"',
+      ' title="' + htmlEscape("(category=" + (pkg.category || "?") + ", status=" + label + ")") + '">',
+      htmlEscape(label),
+      "</span>",
+    ].join("");
+  }
+
+  function missingRequiredFields(pkg) {
+    var schema = statusSchema()[normalizeCategory(pkg.category)];
+    if (!schema) return [];
+    var status = packageStatus(pkg);
+    var required = [].concat(schema.required && schema.required._all ? schema.required._all : []);
+    if (status && schema.required && schema.required[status]) {
+      required = required.concat(schema.required[status]);
+    }
+    var missing = [];
+    required.forEach(function (field) {
+      var v = pkg[field];
+      var present = false;
+      if (Array.isArray(v)) {
+        present = v.length > 0;
+      } else if (v != null && String(v).trim() !== "") {
+        present = true;
+      }
+      if (!present && missing.indexOf(field) === -1) missing.push(field);
+    });
+    return missing;
+  }
+
+  function missingFieldsChipHtml(pkg) {
+    var missing = missingRequiredFields(pkg);
+    if (!missing.length) return "";
+    var title = "missing required: " + missing.join(", ");
+    return '<span class="chip chip-warn" data-missing-required="' + htmlEscape(missing.join(",")) + '" title="' + htmlEscape(title) + '">⚠ ' + missing.length + ' missing</span>';
+  }
+
+  function methodsTriedRows(pkg) {
+    return Array.isArray(pkg.methodsTried) ? pkg.methodsTried : [];
+  }
+
+  function verdictCounts(rows) {
+    var c = { pass: 0, fail: 0, inconclusive: 0 };
+    rows.forEach(function (r) {
+      var v = (r && r.verdict) ? String(r.verdict).toLowerCase() : "";
+      if (c[v] != null) c[v] += 1;
+    });
+    return c;
+  }
+
+  function methodsTriedSummaryHtml(pkg, maxRows) {
+    var rows = methodsTriedRows(pkg);
+    if (!rows.length) {
+      return '<div class="methods-tried-empty">' + unmeasuredHtml() + " methodsTried</div>";
+    }
+    var counts = verdictCounts(rows);
+    var head = [
+      '<div class="methods-tried-summary">',
+      '<span class="chip chip-verdict-pass" data-verdict="pass">pass ' + counts.pass + "</span>",
+      '<span class="chip chip-verdict-fail" data-verdict="fail">fail ' + counts.fail + "</span>",
+      '<span class="chip chip-verdict-inc" data-verdict="inconclusive">inconclusive ' + counts.inconclusive + "</span>",
+      '<span class="methods-tried-count">' + rows.length + " methods tried</span>",
+      "</div>",
+    ].join("");
+    var limit = typeof maxRows === "number" ? maxRows : rows.length;
+    var shown = rows.slice(0, limit);
+    var list = [
+      '<ul class="methods-tried-mini">',
+      shown.map(function (r) {
+        var v = (r && r.verdict) ? String(r.verdict).toLowerCase() : "unmeasured";
+        return [
+          '<li data-verdict="' + htmlEscape(v) + '">',
+          '<span class="verdict-tag verdict-' + htmlEscape(v) + '">' + htmlEscape(v) + "</span>",
+          '<span class="method-name">' + htmlEscape((r && r.method) || "unmeasured") + "</span>",
+          "</li>",
+        ].join("");
+      }).join(""),
+      rows.length > limit ? '<li class="more">+ ' + (rows.length - limit) + " more</li>" : "",
+      "</ul>",
+    ].join("");
+    return head + list;
+  }
+
+  function postmortemTileHtml(pkg) {
+    if (normalizeCategory(pkg.category) !== "fail") return "";
+    return [
+      '<div class="card-tile card-tile-postmortem" data-tile="postmortem">',
+      '<div class="tile-label">Post-mortem</div>',
+      '<p class="tile-message"><strong>Why ended:</strong> ' + fieldOrUnmeasured(pkg.terminationMessage) + "</p>",
+      pkg.reopenTrigger ? '<p class="tile-meta"><strong>Reopen trigger:</strong> ' + htmlEscape(pkg.reopenTrigger) + "</p>" : "",
+      methodsTriedSummaryHtml(pkg, 3),
+      "</div>",
+    ].join("");
+  }
+
+  function adoptionTileHtml(pkg) {
+    if (normalizeCategory(pkg.category) !== "success") return "";
+    return [
+      '<div class="card-tile card-tile-adoption" data-tile="adoption">',
+      '<div class="tile-label">Adoption</div>',
+      '<p class="tile-message"><strong>Why kept:</strong> ' + fieldOrUnmeasured(pkg.terminationMessage) + "</p>",
+      '<p class="tile-meta"><strong>Adopted into:</strong> ' + fieldOrUnmeasured(pkg.adoptionPath) + "</p>",
+      pkg.supersededBy ? '<p class="tile-meta"><strong>Superseded by:</strong> ' + htmlEscape(pkg.supersededBy) + "</p>" : "",
+      methodsTriedSummaryHtml(pkg, 3),
+      "</div>",
+    ].join("");
+  }
+
+  function directionTileHtml(pkg) {
+    if (normalizeCategory(pkg.category) !== "brainstorm") return "";
+    var spine = pkg.contributionSpineFlag ? htmlEscape(pkg.contributionSpineFlag) : "unmeasured";
+    return [
+      '<div class="card-tile card-tile-direction" data-tile="direction">',
+      '<div class="tile-label">Direction</div>',
+      '<p class="tile-message">' + fieldOrUnmeasured(pkg.direction) + "</p>",
+      '<p class="tile-meta"><strong>Contribution spine:</strong> ' + spine + "</p>",
+      pkg.promotedTo ? '<p class="tile-meta"><strong>Promoted to:</strong> ' + htmlEscape(pkg.promotedTo) + "</p>" : "",
+      "</div>",
+    ].join("");
+  }
+
+  function terminalTileHtml(pkg) {
+    return postmortemTileHtml(pkg) + adoptionTileHtml(pkg) + directionTileHtml(pkg);
+  }
+
   function lastUpdatedHtml(pkg) {
     var iso = pkg.lastUpdated;
     if (!iso) return unmeasuredHtml();
@@ -339,11 +492,21 @@
   }
 
   function packageCardHtml(pkg) {
+    var status = packageStatus(pkg) || "unmeasured";
+    var cat = normalizeCategory(pkg.category);
+    var isTerminal = cat === "success" || cat === "fail" || cat === "brainstorm";
     return [
-      '<a class="package-card package-link-card" href="' + relativeDetailPath(pkg) + '" data-package-id="' + pkg.id + '" data-category="' + normalizeCategory(pkg.category) + '" data-route="' + htmlEscape(pkg.nextRoute || "unmeasured") + '" data-workflow-state="' + htmlEscape(pkg.workflowState || "unmeasured") + '">',
+      '<a class="package-card package-link-card" href="' + relativeDetailPath(pkg) + '"',
+      ' data-package-id="' + pkg.id + '"',
+      ' data-category="' + cat + '"',
+      ' data-route="' + htmlEscape(pkg.nextRoute || "unmeasured") + '"',
+      ' data-status="' + htmlEscape(status) + '"',
+      ' data-status-family="' + htmlEscape(statusFamily(status)) + '"',
+      ' data-workflow-state="' + htmlEscape(status) + '">',
       '<div class="card-top">',
       tagBadgeHtml(pkg),
-      chipHtml("workflow-state", pkg.workflowState),
+      statusPillHtml(pkg),
+      missingFieldsChipHtml(pkg),
       "</div>",
       '<div class="card-body">',
       '<h3 class="card-title">' + htmlEscape(pkg.name) + "</h3>",
@@ -351,8 +514,11 @@
       '<p class="card-text"><strong>Problem:</strong> ' + htmlEscape(pkg.problem) + "</p>",
       '<p class="card-text"><strong>Objective:</strong> ' + htmlEscape(pkg.objective) + "</p>",
       '<p class="card-text"><strong>Motivation:</strong> ' + htmlEscape(pkg.motivation) + "</p>",
-      '<p class="card-text card-strip"><span><strong>Gate:</strong> ' + fieldOrUnmeasured(pkg.activeGate) + "</span> ",
-      '<span><strong>Metric vs gate:</strong> ' + fieldOrUnmeasured(pkg.primaryMetricVsGate) + "</span></p>",
+      isTerminal ? terminalTileHtml(pkg) : "",
+      cat === "in-progress" ? [
+        '<p class="card-text card-strip"><span><strong>Gate:</strong> ' + fieldOrUnmeasured(pkg.activeGate) + "</span> ",
+        '<span><strong>Metric vs gate:</strong> ' + fieldOrUnmeasured(pkg.primaryMetricVsGate) + "</span></p>",
+      ].join("") : "",
       '<p class="card-text card-strip"><span><strong>Next route:</strong> ' + chipHtml("route", pkg.nextRoute) + "</span> ",
       '<span><strong>Updated:</strong> ' + lastUpdatedHtml(pkg) + "</span></p>",
       "</div>",
@@ -659,7 +825,7 @@
     var pkg = currentPackage();
     if (!pkg) return;
     var html = [
-      statusStripCellHtml("State", "workflow-state", pkg.workflowState, { dataset: "workflow-state" }),
+      statusStripCellHtml("State", "workflow-state", packageStatus(pkg), { dataset: "workflow-state" }),
       statusStripCellHtml("Active gate", "active-gate", pkg.activeGate),
       statusStripCellHtml("Metric vs gate", "primary-metric-vs-gate", pkg.primaryMetricVsGate),
       statusStripCellHtml("Last decision", "last-decision", pkg.lastDecision, { hint: pkg.lastDecisionEvidencePath, hintField: "last-decision-evidence" }),
@@ -707,7 +873,7 @@
     var pkg = currentPackage();
     if (!pkg) return;
     var pairs = [
-      ["workflow-state", pkg.workflowState],
+      ["workflow-state", packageStatus(pkg)],
       ["last-action", pkg.lastAction],
       ["open-runs", pkg.openRuns],
       ["blocking-issue", pkg.currentBlocker],
@@ -788,49 +954,220 @@
     return out.sort();
   }
 
-  function buildPackageFilterForm(form, lanes, routes) {
+  function buildPackageFilterForm(form, lanes, routes, statuses) {
+    // Lanes default to unchecked so the dashboard starts empty until the user
+    // picks one or more categories. (Issue: avoid dumping all packages on load.)
     var laneCheckboxes = lanes.map(function (id) {
-      return '<label><input type="checkbox" name="lane" value="' + htmlEscape(id) + '" checked> ' + htmlEscape(id) + "</label>";
+      return '<label><input type="checkbox" name="lane" value="' + htmlEscape(id) + '"> ' + htmlEscape(id) + "</label>";
     }).join(" ");
     var routeOptions = ['<option value="all">All routes</option>'].concat(routes.map(function (r) {
       return '<option value="' + htmlEscape(r) + '">' + htmlEscape(r) + "</option>";
     })).join("");
+    var statusOptions = ['<option value="all">All statuses</option>'].concat(statuses.map(function (s) {
+      return '<option value="' + htmlEscape(s) + '">' + htmlEscape(s) + "</option>";
+    })).join("");
     form.innerHTML = [
       '<fieldset class="filter-group"><legend>Lane</legend>' + laneCheckboxes + "</fieldset>",
+      '<fieldset class="filter-group"><legend>Status</legend><select name="status">' + statusOptions + "</select></fieldset>",
       '<fieldset class="filter-group"><legend>Next route</legend><select name="route">' + routeOptions + "</select></fieldset>",
-      '<fieldset class="filter-group"><legend>Sort</legend><select name="sort"><option value="recency">Most recent</option><option value="category">By lane</option></select></fieldset>',
+      '<fieldset class="filter-group"><legend>Sort</legend><select name="sort"><option value="recency">Most recent</option><option value="category">By lane</option><option value="status">By status</option></select></fieldset>',
+      '<fieldset class="filter-group filter-meta"><legend>Quality</legend><label><input type="checkbox" name="show-only-missing"> only ⚠ missing-required</label></fieldset>',
     ].join("");
   }
 
   function paintDashboardPackages(form, root) {
-    var lanes = form ? Array.prototype.map.call(form.querySelectorAll('input[name="lane"]:checked'), function (i) { return i.value; }) : null;
+    var lanes = form ? Array.prototype.map.call(form.querySelectorAll('input[name="lane"]:checked'), function (i) { return i.value; }) : [];
     var route = form && form.elements.route ? form.elements.route.value : "all";
+    var statusFilter = form && form.elements.status ? form.elements.status.value : "all";
+    var onlyMissing = form && form.elements["show-only-missing"] ? form.elements["show-only-missing"].checked : false;
     var sort = form && form.elements.sort ? form.elements.sort.value : "recency";
-    var items = packages().slice();
-    if (lanes && lanes.length) items = items.filter(function (p) { return lanes.indexOf(normalizeCategory(p.category)) >= 0; });
+    // Lane filter is always required: no lane selected → no packages rendered.
+    var items = (lanes && lanes.length)
+      ? packages().filter(function (p) { return lanes.indexOf(normalizeCategory(p.category)) >= 0; })
+      : [];
     if (route !== "all") items = items.filter(function (p) { return (p.nextRoute || "unmeasured") === route; });
+    if (statusFilter !== "all") items = items.filter(function (p) { return (packageStatus(p) || "unmeasured") === statusFilter; });
+    if (onlyMissing) items = items.filter(function (p) { return missingRequiredFields(p).length > 0; });
     if (sort === "recency") {
       items.sort(function (a, b) { return String(b.lastUpdated || "").localeCompare(String(a.lastUpdated || "")); });
+    } else if (sort === "status") {
+      items.sort(function (a, b) { return String(packageStatus(a)).localeCompare(String(packageStatus(b))); });
     } else {
       items.sort(function (a, b) { return String(a.category).localeCompare(String(b.category)); });
     }
+    var emptyMessage = (!lanes || lanes.length === 0)
+      ? 'Select a lane above (brain-storm / in-progress / success / fail) to list packages.'
+      : 'No packages match the current filters.';
     root.innerHTML = items.length
       ? items.map(packageCardHtml).join("")
-      : '<div class="empty-state">No packages match the current filters.</div>';
+      : '<div class="empty-state">' + emptyMessage + "</div>";
   }
 
   function renderDashboardPackages() {
     var root = byId("dashboard-package-root");
     if (!root) return;
     var form = document.querySelector('[data-card="package-filters"]');
-    var lanes = distinctSorted(packages().map(function (p) { return normalizeCategory(p.category); }));
+    // Lanes always list all 4 categories (brainstorm / in-progress / success / fail),
+    // regardless of which currently have packages — so the user knows every option.
+    var lanes = categories().map(function (c) { return c.id; });
+    if (!lanes.length) {
+      lanes = distinctSorted(packages().map(function (p) { return normalizeCategory(p.category); }));
+    }
     var routes = distinctSorted(packages().map(function (p) { return p.nextRoute || "unmeasured"; }));
+    var statuses = distinctSorted(packages().map(function (p) { return packageStatus(p) || "unmeasured"; }));
     if (form && form.dataset.bound !== "1") {
       form.dataset.bound = "1";
-      buildPackageFilterForm(form, lanes, routes);
+      buildPackageFilterForm(form, lanes, routes, statuses);
       form.addEventListener("change", function () { paintDashboardPackages(form, root); });
     }
     paintDashboardPackages(form, root);
+  }
+
+  function contributionSpineLookup() {
+    var list = window.RESEARCH_CONTRIBUTION_SPINE || [];
+    var map = {};
+    list.forEach(function (item) { map[item.id] = item.label; });
+    return map;
+  }
+
+  function groupBy(items, keyFn) {
+    var groups = {};
+    items.forEach(function (item) {
+      var k = keyFn(item) || "(unmeasured)";
+      if (!groups[k]) groups[k] = [];
+      groups[k].push(item);
+    });
+    return groups;
+  }
+
+  function methodsTriedTableHtml(pkg) {
+    var rows = methodsTriedRows(pkg);
+    if (!rows.length) return '<p class="lead">' + unmeasuredHtml() + " methodsTried for this package.</p>";
+    return [
+      '<table class="data-table methods-tried-table" data-table="methods-tried">',
+      "<thead><tr>",
+      "<th>Method</th><th>Hypothesis</th><th>Gate</th><th>Measured</th><th>Verdict</th><th>Evidence</th>",
+      "</tr></thead>",
+      "<tbody>",
+      rows.map(function (r) {
+        var v = (r && r.verdict) ? String(r.verdict).toLowerCase() : "unmeasured";
+        var ev = r && r.evidencePath ? '<code>' + htmlEscape(r.evidencePath) + '</code>' : unmeasuredHtml();
+        return [
+          '<tr data-verdict="' + htmlEscape(v) + '">',
+          "<td>" + htmlEscape((r && r.method) || "unmeasured") + "</td>",
+          "<td>" + htmlEscape((r && r.hypothesis) || "unmeasured") + "</td>",
+          "<td>" + htmlEscape((r && r.gate) || "unmeasured") + "</td>",
+          "<td>" + htmlEscape((r && r.measured) || "unmeasured") + "</td>",
+          '<td><span class="verdict-tag verdict-' + htmlEscape(v) + '">' + htmlEscape(v) + "</span></td>",
+          "<td>" + ev + "</td>",
+          "</tr>",
+        ].join("");
+      }).join(""),
+      "</tbody></table>",
+    ].join("");
+  }
+
+  function learningsPackageBlock(pkg, opts) {
+    opts = opts || {};
+    var status = packageStatus(pkg) || "unmeasured";
+    var spineMap = contributionSpineLookup();
+    var spineLabel = spineMap[pkg.contributionSpineFlag] || pkg.contributionSpineFlag || "unmeasured";
+    var extras = [];
+    if (pkg.adoptionPath) extras.push("<strong>Adopted into:</strong> " + htmlEscape(pkg.adoptionPath));
+    if (pkg.supersededBy) extras.push("<strong>Superseded by:</strong> " + htmlEscape(pkg.supersededBy));
+    if (pkg.reopenTrigger) extras.push("<strong>Reopen trigger:</strong> " + htmlEscape(pkg.reopenTrigger));
+    if (pkg.promotedTo) extras.push("<strong>Promoted to:</strong> " + htmlEscape(pkg.promotedTo));
+    return [
+      '<article class="learnings-package" data-package-id="' + htmlEscape(pkg.id) + '" data-status="' + htmlEscape(status) + '">',
+      '<header class="learnings-package-head">',
+      '<h3><a href="' + relativeDetailPath(pkg) + '">' + htmlEscape(pkg.name) + "</a></h3>",
+      statusPillHtml(pkg),
+      '<span class="chip chip-spine" data-spine="' + htmlEscape(pkg.contributionSpineFlag || "unmeasured") + '">' + htmlEscape(spineLabel) + "</span>",
+      "</header>",
+      '<p class="learnings-message"><strong>Why ' + (opts.kind === "fail" ? "ended" : "kept") + ":</strong> " + fieldOrUnmeasured(pkg.terminationMessage) + "</p>",
+      extras.length ? '<p class="learnings-meta">' + extras.join(" · ") + "</p>" : "",
+      methodsTriedTableHtml(pkg),
+      "</article>",
+    ].join("");
+  }
+
+  function learningsGroupHtml(title, items, opts) {
+    if (!items.length) {
+      return [
+        '<section class="learnings-group learnings-group-empty" data-group="' + htmlEscape(opts.id) + '">',
+        "<h2>" + htmlEscape(title) + "</h2>",
+        '<p class="empty-state">No packages in this group.</p>',
+        "</section>",
+      ].join("");
+    }
+    var spineMap = contributionSpineLookup();
+    var bySpine = groupBy(items, function (p) { return p.contributionSpineFlag || "unmeasured"; });
+    var spineKeys = Object.keys(bySpine).sort();
+    return [
+      '<section class="learnings-group" data-group="' + htmlEscape(opts.id) + '">',
+      "<h2>" + htmlEscape(title) + ' <span class="count">(' + items.length + ")</span></h2>",
+      spineKeys.map(function (spineId) {
+        var label = spineMap[spineId] || spineId;
+        return [
+          '<details class="learnings-spine-block" data-spine="' + htmlEscape(spineId) + '" open>',
+          '<summary><strong>' + htmlEscape(label) + '</strong> <span class="count">(' + bySpine[spineId].length + ")</span></summary>",
+          bySpine[spineId].map(function (p) { return learningsPackageBlock(p, opts); }).join(""),
+          "</details>",
+        ].join("");
+      }).join(""),
+      "</section>",
+    ].join("");
+  }
+
+  function learningsHeroHtml(pkgs) {
+    var counts = { adopted: 0, pending: 0, superseded: 0, archived: 0, reopenable: 0, abandoned: 0 };
+    pkgs.forEach(function (p) {
+      var s = packageStatus(p);
+      if (s === "ADOPTED") counts.adopted += 1;
+      else if (s === "ADOPTED_PENDING_ACK") counts.pending += 1;
+      else if (s === "SUPERSEDED") counts.superseded += 1;
+      else if (s === "ARCHIVED") counts.archived += 1;
+      else if (s === "ARCHIVED_REOPENABLE") counts.reopenable += 1;
+      else if (s === "ABANDONED") counts.abandoned += 1;
+    });
+    return [
+      '<section class="learnings-hero" data-card="learnings-hero">',
+      '<div class="k">Cross-package learnings</div>',
+      "<h2>What this project has actually tried</h2>",
+      '<p class="lead">A derived view over <code>data/research-packages.js</code>. Adopted wins and failed attempts grouped by which paper-spine contribution they touch, so the agent reads the full <em>what was tried, what worked, why it failed</em> picture in one pass.</p>',
+      '<div class="learnings-stat-grid">',
+      '<div class="stat-cell"><div class="k">Adopted</div><div class="v">' + counts.adopted + "</div></div>",
+      '<div class="stat-cell"><div class="k">Pending ack</div><div class="v">' + counts.pending + "</div></div>",
+      '<div class="stat-cell"><div class="k">Superseded</div><div class="v">' + counts.superseded + "</div></div>",
+      '<div class="stat-cell"><div class="k">Archived (fail)</div><div class="v">' + counts.archived + "</div></div>",
+      '<div class="stat-cell"><div class="k">Archived · reopenable</div><div class="v">' + counts.reopenable + "</div></div>",
+      '<div class="stat-cell"><div class="k">Abandoned (brainstorm)</div><div class="v">' + counts.abandoned + "</div></div>",
+      "</div>",
+      "</section>",
+    ].join("");
+  }
+
+  function renderLearningsView() {
+    var root = byId("learnings-root");
+    if (!root) return;
+    var all = packages().slice();
+    var adopted = all.filter(function (p) {
+      var s = packageStatus(p);
+      return s === "ADOPTED" || s === "ADOPTED_PENDING_ACK" || s === "SUPERSEDED";
+    });
+    var failed = all.filter(function (p) {
+      var s = packageStatus(p);
+      return s === "ARCHIVED" || s === "ARCHIVED_REOPENABLE";
+    });
+    var reopenable = all.filter(function (p) { return packageStatus(p) === "ARCHIVED_REOPENABLE"; });
+    var abandoned = all.filter(function (p) { return packageStatus(p) === "ABANDONED"; });
+    root.innerHTML = [
+      learningsHeroHtml(all),
+      learningsGroupHtml("Adopted wins", adopted, { id: "adopted", kind: "success" }),
+      learningsGroupHtml("Failed attempts", failed, { id: "failed", kind: "fail" }),
+      learningsGroupHtml("Reopenable archive", reopenable, { id: "reopenable", kind: "fail" }),
+      learningsGroupHtml("Abandoned brainstorm directions", abandoned, { id: "abandoned", kind: "brainstorm" }),
+    ].join("");
   }
 
   function setupCopyButtons() {
@@ -855,6 +1192,7 @@
   document.addEventListener("DOMContentLoaded", function () {
     renderDashboardSummary();
     renderGlobalContext();
+    renderProjectProfile();
     renderCategoryPage();
     renderPackageDetail();
     renderModulePage();
@@ -865,6 +1203,7 @@
     renderValidityCounts();
     renderHypothesisCheck();
     renderDashboardPackages();
+    renderLearningsView();
     setupCopyButtons();
   });
 })();

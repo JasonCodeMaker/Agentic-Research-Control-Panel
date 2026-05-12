@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Learnings — What this project has tried</title>
+  <link rel="stylesheet" href="assets/research.css">
+</head>
+<body>
+  <div class="shell">
+
+    <header class="masthead" data-section="masthead">
+      <div class="eyebrow">cross-package learnings</div>
+      <h1>What this project has actually <em>tried</em></h1>
+      <p class="lead">
+        A derived, read-only view over <code>data/research-packages.js</code>. Adopted wins,
+        archived failures, reopenable attempts, and abandoned brainstorm directions are
+        grouped by which paper-spine contribution they touch, so the agent can ingest
+        every <em>what was tried, what worked, why it failed</em> record in one pass.
+      </p>
+      <div class="toolbar" data-card="learnings-toolbar">
+        <a class="pill" href="index.html">Dashboard</a>
+        <a class="pill" href="categories/success/">Success lane</a>
+        <a class="pill" href="categories/fail/">Fail lane</a>
+        <a class="pill" href="rules/trustworthy-research-rules.html">Trust Rules</a>
+      </div>
+    </header>
+
+    <nav class="dashboard-nav" data-section="nav" aria-label="Learnings sections">
+      <a href="#hero">Overview</a>
+      <a href="#adopted">Adopted wins</a>
+      <a href="#failed">Failed attempts</a>
+      <a href="#reopenable">Reopenable</a>
+      <a href="#abandoned">Abandoned brainstorm</a>
+    </nav>
+
+    <section id="learnings-root" data-section="learnings"></section>
+
+    <footer class="footer-note">
+      This page is derived: it does not own claims, gates, or evidence. To revise a
+      <code>terminationMessage</code>, <code>methodsTried</code> row, or <code>adoptionPath</code>,
+      edit the package entry in <code>data/research-packages.js</code> (and the owning
+      <code>results.html</code> / <code>next-action.html</code>) per the Fact Propagation Contract.
+    </footer>
+  </div>
+
+  <script src="data/schema.js"></script>
+  <script src="data/research-packages.js"></script>
+  <script src="assets/research.js"></script>
+</body>
+</html>

@@ -140,7 +140,9 @@ def append_inventory(root: Path, package_id: str, args: argparse.Namespace, page
         "motivation": args.motivation,
         "hypothesis": args.hypothesis,
         "noChangeBoundary": args.no_change_boundary,
-        "workflowState": args.workflow_state,
+        "status": args.status,
+        "contributionSpineFlag": args.contribution_spine_flag,
+        "direction": args.direction,
         "activeGate": args.active_gate,
         "primaryMetricVsGate": args.primary_metric_vs_gate,
         "lastDecision": args.last_decision,
@@ -194,7 +196,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--artifact-root", default="", dest="artifact_root")
     parser.add_argument("--next-action", required=True, dest="next_action")
     parser.add_argument("--scope", default="index,tracker,docs,_agent", help="comma list of stage pages or 'all'")
-    parser.add_argument("--workflow-state", default="", dest="workflow_state")
+    # `--status` is the canonical flag (matches data/schema.js); `--workflow-state`
+    # is kept as a backwards-compat alias for callers that predate the rename.
+    parser.add_argument("--status", default="", dest="status",
+                        help="(category, status) state from research_html/data/schema.js")
+    parser.add_argument("--workflow-state", default="", dest="status_legacy",
+                        help="deprecated alias for --status; --status wins if both are passed")
+    parser.add_argument("--contribution-spine-flag", default="", dest="contribution_spine_flag",
+                        help="id from RESEARCH_CONTRIBUTION_SPINE in schema.js (e.g. multi-view-encoder)")
+    parser.add_argument("--direction", default="", dest="direction",
+                        help="one-sentence research direction (required for brainstorm packages)")
     parser.add_argument("--active-gate", default="", dest="active_gate")
     parser.add_argument("--primary-metric-vs-gate", default="", dest="primary_metric_vs_gate")
     parser.add_argument("--last-decision", default="", dest="last_decision")
@@ -211,6 +222,9 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    # Resolve the legacy --workflow-state alias.
+    if not args.status and getattr(args, "status_legacy", ""):
+        args.status = args.status_legacy
     root = Path(args.root)
     package_id = args.id or default_id(args.name)
     if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]*", package_id):

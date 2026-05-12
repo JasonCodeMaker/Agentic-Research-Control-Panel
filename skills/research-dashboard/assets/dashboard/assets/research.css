@@ -178,7 +178,7 @@ h1 em {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
-  margin: 32px 0 44px;
+  margin: 44px 0;
 }
 
 @media (max-width: 940px) {
@@ -476,6 +476,7 @@ h1 em {
   grid-template-columns: repeat(auto-fill, minmax(318px, 1fr));
   gap: 18px;
   margin-left: 48px;
+  margin-bottom: 44px;
 }
 
 .subcard-grid {
@@ -1228,5 +1229,241 @@ html[data-stale="true"] .masthead {
 }
 
 .card-strip strong {
+  color: var(--slate);
+}
+
+/* ───────── (category, status) state model ─────────
+   Status pill colored by family. The data-status-family attribute is
+   written by statusPillHtml() and grouped to match the lifecycle stages
+   in data/schema.js. */
+
+.chip-status {
+  font-weight: 600;
+}
+.chip-status.status-idea,
+.chip-status.status-idea-ready { border-color: var(--g500); color: var(--slate); }
+.chip-status.status-idea-done { border-color: var(--olive); color: var(--olive); }
+.chip-status.status-idea-stop { border-color: var(--g300); color: var(--g500); border-style: dashed; }
+.chip-status.status-work { border-color: #4a78c8; color: #2f5aa1; }
+.chip-status.status-launch { border-color: #4a78c8; color: #2f5aa1; background: rgba(74, 120, 200, 0.08); }
+.chip-status.status-live { border-color: var(--olive); color: var(--olive); background: rgba(116, 142, 80, 0.10); }
+.chip-status.status-analyze { border-color: #b58a3b; color: #8a6322; }
+.chip-status.status-stop { border-color: var(--clay); color: var(--clay-dark); }
+.chip-status.status-stop-reopen { border-color: var(--clay); color: var(--clay-dark); border-style: dashed; }
+.chip-status.status-win { border-color: #b58a3b; color: #8a6322; background: rgba(212, 175, 55, 0.10); }
+.chip-status.status-win-pending { border-color: #b58a3b; color: #8a6322; border-style: dashed; }
+.chip-status.status-win-old { border-color: var(--g500); color: var(--g500); border-style: dashed; }
+.chip-status.status-unknown { border-style: dashed; color: var(--g500); }
+
+/* Missing-required warning chip on package cards. */
+.chip-warn {
+  border-color: var(--clay);
+  color: var(--clay-dark);
+  background: rgba(217, 119, 87, 0.08);
+  font-weight: 600;
+}
+
+/* Terminal-state tile inside the package card. */
+.card-tile {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--g200);
+  background: rgba(0, 0, 0, 0.015);
+}
+.card-tile-postmortem { border-left: 3px solid var(--clay-dark); }
+.card-tile-adoption { border-left: 3px solid #b58a3b; }
+.card-tile-direction { border-left: 3px solid var(--g500); }
+.card-tile .tile-label {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--g500);
+  margin-bottom: 4px;
+}
+.card-tile .tile-message {
+  margin: 0 0 4px 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--slate);
+}
+.card-tile .tile-meta {
+  margin: 2px 0;
+  font-size: 12px;
+  color: var(--g500);
+}
+
+/* methodsTried mini-summary (inside card tile) */
+.methods-tried-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0 4px 0;
+}
+.methods-tried-summary .methods-tried-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--g500);
+  margin-left: auto;
+}
+.chip-verdict-pass { border-color: var(--olive); color: var(--olive); }
+.chip-verdict-fail { border-color: var(--clay-dark); color: var(--clay-dark); }
+.chip-verdict-inc { border-color: var(--g500); color: var(--g500); border-style: dashed; }
+.methods-tried-mini {
+  list-style: none;
+  padding: 0;
+  margin: 4px 0 0 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.methods-tried-mini li {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  border-top: 1px dotted var(--g200);
+}
+.methods-tried-mini li:first-child { border-top: 0; }
+.methods-tried-mini li.more { color: var(--g500); font-style: italic; }
+.verdict-tag {
+  flex: 0 0 auto;
+  display: inline-block;
+  min-width: 9ch;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 10.5px;
+  letter-spacing: 0.05em;
+  text-align: center;
+}
+.verdict-pass { background: rgba(116, 142, 80, 0.18); color: var(--olive); }
+.verdict-fail { background: rgba(174, 79, 56, 0.16); color: var(--clay-dark); }
+.verdict-inconclusive { background: rgba(0, 0, 0, 0.06); color: var(--g500); }
+.method-name { color: var(--slate); }
+
+/* ───────── learnings.html ───────── */
+.learnings-hero {
+  padding: 20px 22px;
+  margin: 14px 0 24px 0;
+  border: 1.5px solid var(--g300);
+  border-radius: 14px;
+  background: var(--paper);
+}
+.learnings-hero .k {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--g500);
+}
+.learnings-hero h2 { margin: 4px 0 8px 0; }
+.learnings-hero .lead { margin: 0 0 14px 0; color: var(--slate); }
+.learnings-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.learnings-stat-grid .stat-cell {
+  padding: 10px 12px;
+  border: 1px solid var(--g200);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.015);
+}
+.learnings-stat-grid .stat-cell .k {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--g500);
+}
+.learnings-stat-grid .stat-cell .v {
+  font-family: var(--mono);
+  font-size: 22px;
+  color: var(--slate);
+  margin-top: 4px;
+}
+
+.learnings-group {
+  margin: 22px 0;
+  padding: 18px 18px 6px 18px;
+  border: 1px solid var(--g300);
+  border-radius: 14px;
+  background: var(--paper);
+}
+.learnings-group h2 { margin: 0 0 10px 0; }
+.learnings-group h2 .count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--g500);
+  margin-left: 6px;
+}
+.learnings-group-empty {
+  background: transparent;
+  border-style: dashed;
+}
+
+.learnings-spine-block {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border: 1px dashed var(--g300);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.01);
+}
+.learnings-spine-block > summary {
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  color: var(--slate);
+  padding: 4px 0;
+}
+.learnings-spine-block > summary .count {
+  color: var(--g500);
+  margin-left: 4px;
+}
+
+.learnings-package {
+  margin: 14px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--g200);
+  border-radius: 10px;
+  background: var(--paper);
+}
+.learnings-package-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.learnings-package-head h3 { margin: 0; flex: 1 1 auto; }
+.learnings-package-head h3 a { color: inherit; text-decoration: none; }
+.learnings-package-head h3 a:hover { text-decoration: underline; }
+.learnings-message { margin: 4px 0; color: var(--slate); }
+.learnings-meta { margin: 4px 0 8px 0; font-size: 12px; color: var(--g500); }
+
+.methods-tried-table {
+  width: 100%;
+  font-size: 12.5px;
+  margin-top: 6px;
+}
+.methods-tried-table th {
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--g500);
+}
+.methods-tried-table td {
+  vertical-align: top;
+  padding: 6px 8px;
+  border-top: 1px solid var(--g200);
+}
+.methods-tried-table tr[data-verdict="fail"] td { background: rgba(174, 79, 56, 0.05); }
+.methods-tried-table tr[data-verdict="pass"] td { background: rgba(116, 142, 80, 0.05); }
+
+.chip-spine {
+  border-color: var(--g300);
   color: var(--slate);
 }

@@ -18,6 +18,7 @@
         binding rule files here before opening any package detail.
       </p>
       <div class="toolbar" data-card="dashboard-toolbar">
+        <a class="pill" href="learnings.html">Learnings</a>
         <a class="pill" href="rules/html-rules.html">HTML Rules</a>
         <a class="pill" href="rules/trustworthy-research-rules.html">Trust Rules</a>
         <a class="pill" href="README.md">README</a>
@@ -29,6 +30,7 @@
       <a href="#snapshot">Snapshot</a>
       <a href="#lanes">Lanes</a>
       <a href="#packages">Packages</a>
+      <a href="learnings.html">Learnings</a>
       <a href="#protocol">Protocol</a>
       <a href="#profile">Project profile</a>
       <a href="#rules">Rules</a>
@@ -49,6 +51,21 @@
           anchors. Those live on package surfaces under
           <code>packages/&lt;research-id&gt;/</code>, governed by the trust
           rules in <a href="rules/trustworthy-research-rules.html">trustworthy-research-rules.html</a>.
+        </p>
+      </article>
+      <article class="context-card" data-card="learnings-read-first" data-priority="read-first">
+        <h2>Read first &mdash; <a href="learnings.html">Learnings</a></h2>
+        <p>
+          <strong>Open <a href="learnings.html">learnings.html</a> before proposing a new direction,
+          refinement, or experiment idea.</strong> It is the project-wide index of structured
+          <code>methodsTried</code> rows for every adopted win, archived failure, and abandoned
+          brainstorm &mdash; grouped by which paper-spine contribution they touch.
+        </p>
+        <p>
+          Trigger conditions: (i) before idea-discovery or research-refine; (ii) before promoting
+          a brainstorm package to in-progress; (iii) whenever the user asks "what have we tried?",
+          "why did X fail?", or "did we already do this?". Reading it first prevents re-deriving
+          a method that already has a recorded verdict.
         </p>
       </article>
     </section>
@@ -102,6 +119,7 @@
     </footer>
   </div>
 
+  <script src="data/schema.js"></script>
   <script src="data/research-packages.js"></script>
   <script src="assets/research.js"></script>
 </body>

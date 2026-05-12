@@ -32,6 +32,7 @@ window.RESEARCH_GLOBAL_PROTOCOL = {
   agentRules: [
     { title: "Build Context First", body: "Read the invocation, project profile, package state, active plan, results, and docs before work." },
     { title: "Runtime Truth Wins", body: "Validate live runs, logs, outputs, summaries, and artifact roots before changing state." },
+    { title: "Consult Learnings Before New Directions", body: "Open research_html/learnings.html before proposing a new direction, refinement, or experiment idea, and before promoting a brainstorm package to in-progress. It is the cross-package index of structured methodsTried rows for every adopted win, archived failure, and abandoned brainstorm; reading it first prevents re-deriving a method that already has a recorded verdict." },
   ],
   evidenceGates: [
     { title: "Before Implementation", body: "Ground work in active plan clauses, verified anchors, boundaries, and checks." },
@@ -69,16 +70,25 @@ window.RESEARCH_TAG_ROLES = {
   fail: { role: "failure_reason", label: "Failure reason", meaning: "The core technical reason the direction failed or was not promoted.", examples: ["budget miss", "training collapse"] },
 };
 
-// Package object schema (additive, all fields optional unless noted):
+// Package object schema. Required-by-(category, status) is enforced by
+// data/schema.js; missing required fields render with a ⚠ marker on the
+// card. Universal fields (additive, optional unless noted):
 //   id (required), name (required), category (required), tag, tagMeaning,
+//   status (enum from schema.js — the (category, status) state machine),
 //   sourcePath, runtime, detailPath, problem, objective, motivation,
-//   hypothesis, noChangeBoundary, workflowState, activeGate,
-//   primaryMetricVsGate, lastDecision, lastDecisionEvidencePath, nextRoute,
-//   currentBlocker, lastAction, openRuns, lastUpdated (ISO date),
-//   pages (array of stage-page slugs actually present on disk).
-// Missing optional fields render as the literal string "unmeasured" on the
-// dashboard package card, the per-package status strip, and the tracker
-// Resume Block painted by assets/research.js.
+//   hypothesis, noChangeBoundary, activeGate, primaryMetricVsGate,
+//   lastDecision, lastDecisionEvidencePath, nextRoute, currentBlocker,
+//   lastAction, openRuns, lastUpdated (ISO date), pages, experiments,
+//   contributionSpineFlag (id from RESEARCH_CONTRIBUTION_SPINE in schema.js).
+// Terminal-state fields (success / fail / brainstorm-ABANDONED):
+//   terminationMessage (≤200 char one-sentence why-this-ended),
+//   methodsTried (array of {method, hypothesis, gate, measured, verdict,
+//     evidencePath} rows; verdict ∈ {pass, fail, inconclusive}),
+//   adoptionPath (success only — where the win was adopted),
+//   supersededBy / promotedTo / reopenTrigger (per (category, status)).
+// Brainstorm fields: direction, contributionSpineFlag (both required).
+// Run `python research_html/scripts/learnings_lint.py all` to verify
+// schema compliance and evidencePath resolution across all packages.
 window.RESEARCH_PACKAGES = [];
 """
 

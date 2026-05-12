@@ -1,0 +1,646 @@
+#!/usr/bin/env python3
+"""Dashboard-wide consistency tool for the (category, status) state model.
+
+Reads research_html/data/schema.js + research_html/data/research-packages.js via
+the bundled node helper (dump_packages.js) and runs four kinds of checks:
+
+  lint-status     schema compliance per package (category, status, required, forbidden,
+                  methodsTried row shape, cross-references)
+  lint-evidence   every methodsTried[].evidencePath and lastDecisionEvidencePath
+                  resolves (file/dir exists, optional HTML anchor present)
+  scan-events     three draft writers for the Learnings Update Protocol:
+                    E1 result_gate_verdict_finalized (results.html)
+                    E3 status_transition_pending     (next-action.html)
+                    E4 adoption_pending              (CLAUDE.md / models/ / trainer/)
+  draft-method    print one JSON methodsTried row drafted from a result-gate row
+  draft-terminal  print the terminal field block drafted from next-action.html
+  all             lint-status + lint-evidence + scan-events for every package
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterable
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DASHBOARD_ROOT = REPO_ROOT / "research_html"
+PACKAGES_DIR = DASHBOARD_ROOT / "packages"
+DUMP_SCRIPT = DASHBOARD_ROOT / "scripts" / "dump_packages.js"
+
+VERDICTS = {"pass", "fail", "inconclusive"}
+ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# data loading
+# ─────────────────────────────────────────────────────────────────────────────
+
+def load_data() -> dict:
+    """Run the node helper and parse its JSON dump."""
+    try:
+        out = subprocess.check_output(["node", str(DUMP_SCRIPT)], text=True)
+    except FileNotFoundError:
+        sys.exit("error: 'node' is not installed; cannot read the JS data files.")
+    except subprocess.CalledProcessError as e:
+        sys.exit(f"error: dump_packages.js failed (exit {e.returncode}).")
+    return json.loads(out)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# violation reporting
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class Violation:
+    pkg: str
+    code: str
+    message: str
+    severity: str = "error"  # "error" or "warning"
+
+    def render(self) -> str:
+        tag = "ERROR" if self.severity == "error" else "WARN "
+        return f"  [{tag}] {self.code}: {self.message}"
+
+
+@dataclass
+class Report:
+    title: str
+    violations: list[Violation] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+
+    def add(self, v: Violation) -> None:
+        self.violations.append(v)
+
+    def errors(self) -> list[Violation]:
+        return [v for v in self.violations if v.severity == "error"]
+
+    def warnings(self) -> list[Violation]:
+        return [v for v in self.violations if v.severity == "warning"]
+
+    def render(self, strict: bool = False) -> str:
+        out = [f"=== {self.title} ==="]
+        by_pkg: dict[str, list[Violation]] = {}
+        for v in self.violations:
+            by_pkg.setdefault(v.pkg, []).append(v)
+        for pkg_id, vs in sorted(by_pkg.items()):
+            errs = [v for v in vs if v.severity == "error"]
+            warns = [v for v in vs if v.severity == "warning"]
+            badge = "X" if errs or (strict and warns) else "ok"
+            out.append(f"[{badge}] {pkg_id}")
+            for v in vs:
+                out.append(v.render())
+        for n in self.notes:
+            out.append(f"  note: {n}")
+        out.append(f"--- errors={len(self.errors())} warnings={len(self.warnings())}")
+        return "\n".join(out)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# lint-status
+# ─────────────────────────────────────────────────────────────────────────────
+
+def field_present(v) -> bool:
+    if v is None:
+        return False
+    if isinstance(v, list):
+        return len(v) > 0
+    if isinstance(v, str):
+        return v.strip() != ""
+    return True
+
+
+def lint_status(data: dict) -> Report:
+    """Schema lint per package + cross-package id/dir reconciliation."""
+    rep = Report("lint-status — schema compliance")
+    schema = data["schema"]
+    pkgs = data["packages"]
+    spine_ids = {s["id"] for s in (data.get("contributionSpine") or [])}
+    pkg_ids = {p["id"] for p in pkgs}
+
+    # Per-package schema lint
+    for pkg in pkgs:
+        pid = pkg.get("id", "(no-id)")
+        if not pid or pid == "(no-id)":
+            rep.add(Violation(pid, "missing-id", "package has no id", "error"))
+            continue
+        cat = (pkg.get("category") or "").lower()
+        cat_schema = schema.get(cat)
+        if not cat_schema:
+            rep.add(Violation(pid, "unknown-category", f"category={cat!r} not in schema", "error"))
+            continue
+
+        status = pkg.get("status") or pkg.get("workflowState") or ""
+        if not status:
+            rep.add(Violation(pid, "missing-status", "no status set", "error"))
+        elif status not in cat_schema["states"]:
+            rep.add(Violation(
+                pid, "illegal-status",
+                f"status={status!r} not legal for category={cat!r} (legal: {'|'.join(cat_schema['states'])})",
+                "error",
+            ))
+
+        required = list((cat_schema.get("required") or {}).get("_all") or [])
+        if status and (cat_schema.get("required") or {}).get(status):
+            required.extend(cat_schema["required"][status])
+        for f in required:
+            if not field_present(pkg.get(f)):
+                rep.add(Violation(pid, "missing-required", f"field {f!r} required for ({cat}, {status})", "error"))
+
+        for f in (cat_schema.get("forbidden") or []):
+            if field_present(pkg.get(f)):
+                rep.add(Violation(pid, "forbidden-set", f"field {f!r} must not be set for category={cat!r}", "error"))
+
+        # methodsTried shape
+        rows = pkg.get("methodsTried") or []
+        if not isinstance(rows, list):
+            rep.add(Violation(pid, "methods-not-list", "methodsTried must be an array", "error"))
+            rows = []
+        for i, r in enumerate(rows):
+            for k in ("method", "hypothesis", "gate", "measured", "verdict", "evidencePath"):
+                if not r or not field_present(r.get(k)):
+                    rep.add(Violation(pid, "method-row-missing-field", f"methodsTried[{i}] missing {k!r}", "error"))
+            v = (r or {}).get("verdict")
+            if v and str(v).lower() not in VERDICTS:
+                rep.add(Violation(pid, "method-row-bad-verdict",
+                                  f"methodsTried[{i}] verdict={v!r} not in {sorted(VERDICTS)}", "error"))
+
+        # Contribution spine
+        cs = pkg.get("contributionSpineFlag")
+        if field_present(cs) and cs not in spine_ids:
+            rep.add(Violation(pid, "bad-contribution-spine",
+                              f"contributionSpineFlag={cs!r} not in schema spine ids", "warning"))
+
+        # Date format
+        lu = pkg.get("lastUpdated")
+        if field_present(lu) and not ISO_DATE.match(str(lu)):
+            rep.add(Violation(pid, "bad-date", f"lastUpdated={lu!r} not in YYYY-MM-DD format", "warning"))
+
+        # Cross references (within the registry)
+        for ref_field in ("supersededBy", "promotedTo"):
+            ref = pkg.get(ref_field)
+            if field_present(ref) and ref not in pkg_ids:
+                rep.add(Violation(pid, "stale-xref",
+                                  f"{ref_field}={ref!r} does not match any package id", "error"))
+
+    # Cross-package: dir-on-disk ⇄ entry-in-registry
+    disk_ids = set()
+    if PACKAGES_DIR.exists():
+        disk_ids = {p.name for p in PACKAGES_DIR.iterdir() if p.is_dir()}
+    for did in sorted(disk_ids - pkg_ids):
+        rep.add(Violation(did, "orphan-dir",
+                          f"packages/{did}/ exists on disk but has no entry in research-packages.js", "warning"))
+    for pid in sorted(pkg_ids - disk_ids):
+        # Allowed if pkg.pages == [] (archived to research/<active|archive>/ instead)
+        pkg = next((p for p in pkgs if p["id"] == pid), None)
+        if pkg and (pkg.get("pages") or []) == []:
+            continue
+        rep.add(Violation(pid, "missing-dir",
+                          f"registry entry has pages but packages/{pid}/ does not exist on disk", "warning"))
+
+    return rep
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# lint-evidence
+# ─────────────────────────────────────────────────────────────────────────────
+
+ANCHOR_PATTERNS = [
+    re.compile(r'id\s*=\s*"([^"]+)"'),
+    re.compile(r'data-card\s*=\s*"([^"]+)"'),
+    re.compile(r'data-exp-id\s*=\s*"([^"]+)"'),
+    re.compile(r'data-section\s*=\s*"([^"]+)"'),
+    re.compile(r'data-anchor\s*=\s*"([^"]+)"'),
+    re.compile(r'name\s*=\s*"([^"]+)"'),
+    re.compile(r'data-field\s*=\s*"([^"]+)"'),
+]
+
+
+def resolve_path(raw: str) -> Path | None:
+    """Try a small set of candidate roots and return the first that exists."""
+    raw = raw.strip()
+    if not raw:
+        return None
+    candidates = [
+        REPO_ROOT / raw,
+        DASHBOARD_ROOT / raw,
+    ]
+    if raw.startswith("research_html/"):
+        candidates.append(REPO_ROOT / raw)
+    if raw.startswith("/"):
+        candidates.append(Path(raw))
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
+
+
+def anchor_exists(file_path: Path, anchor: str) -> bool:
+    try:
+        text = file_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    for pat in ANCHOR_PATTERNS:
+        for m in pat.finditer(text):
+            if m.group(1) == anchor:
+                return True
+    return False
+
+
+def check_evidence(pkg_id: str, label: str, raw: str) -> list[Violation]:
+    vs: list[Violation] = []
+    if not raw or not raw.strip():
+        return vs
+    file_part, _, anchor = raw.partition("#")
+    file_part = file_part.strip()
+    anchor = anchor.strip()
+    resolved = resolve_path(file_part) if file_part else None
+    if file_part and resolved is None:
+        vs.append(Violation(pkg_id, "evidence-file-missing",
+                            f"{label}: file not found at any root: {file_part!r}",
+                            "warning"))
+        return vs
+    if anchor and resolved is not None:
+        if resolved.is_dir():
+            vs.append(Violation(pkg_id, "evidence-anchor-on-dir",
+                                f"{label}: anchor {'#' + anchor!r} given but {file_part!r} is a directory",
+                                "error"))
+        elif not anchor_exists(resolved, anchor):
+            vs.append(Violation(pkg_id, "evidence-anchor-missing",
+                                f"{label}: anchor #{anchor!r} not found in {file_part!r}",
+                                "error"))
+    return vs
+
+
+def lint_evidence(data: dict) -> Report:
+    rep = Report("lint-evidence — evidencePath resolution")
+    for pkg in data["packages"]:
+        pid = pkg["id"]
+        # lastDecisionEvidencePath
+        for v in check_evidence(pid, "lastDecisionEvidencePath", pkg.get("lastDecisionEvidencePath") or ""):
+            rep.add(v)
+        # methodsTried evidence paths
+        for i, r in enumerate(pkg.get("methodsTried") or []):
+            ep = (r or {}).get("evidencePath") or ""
+            for v in check_evidence(pid, f"methodsTried[{i}].evidencePath", ep):
+                rep.add(v)
+    return rep
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# scan-events — the three draft writers
+# ─────────────────────────────────────────────────────────────────────────────
+
+TR_SPLIT = re.compile(r"<tr[^>]*>(.*?)</tr>", re.DOTALL)
+TD_SPLIT = re.compile(r"<td[^>]*>(.*?)</td>", re.DOTALL)
+TABLE_GATE = re.compile(
+    r'<table[^>]*data-table\s*=\s*"result-gate"[^>]*>(.*?)</table>',
+    re.DOTALL,
+)
+VALIDITY_CHIP = re.compile(r'data-validity\s*=\s*"([^"]+)"')
+DATA_FIELD_BLOCK = re.compile(
+    r'<div[^>]*data-field\s*=\s*"([^"]+)"[^>]*>(.*?)</div>',
+    re.DOTALL,
+)
+
+
+def strip_html(s: str) -> str:
+    s = re.sub(r"<[^>]+>", " ", s)
+    s = re.sub(r"&amp;", "&", s)
+    s = re.sub(r"&minus;", "-", s)
+    s = re.sub(r"&ge;", ">=", s)
+    s = re.sub(r"&le;", "<=", s)
+    s = re.sub(r"&nbsp;", " ", s)
+    s = re.sub(r"&rarr;", "->", s)
+    s = re.sub(r"&[a-z]+;", "", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def validity_to_verdict(text_chip: str, raw: str) -> str:
+    """Map the result-gate verdict cell to a methodsTried verdict."""
+    chip = (text_chip or "").lower()
+    body = (raw or "").lower()
+    if chip in {"ok", "pass", "valid"} or "pass" in body:
+        return "pass"
+    if chip in {"fail", "failed"} or "fail" in body:
+        return "fail"
+    if chip in {"partial", "diagnostic_only", "diagnostic-only", "unmeasured", "missing", "inconclusive"}:
+        return "inconclusive"
+    if "inconclusive" in body or "diagnostic" in body or "pending" in body:
+        return "inconclusive"
+    return "inconclusive"
+
+
+def parse_result_gate(html: str) -> list[dict]:
+    """Extract result-gate rows. Each row → dict with the 10 columns by name."""
+    m = TABLE_GATE.search(html)
+    if not m:
+        return []
+    block = m.group(1)
+    tbody = re.search(r"<tbody[^>]*>(.*?)</tbody>", block, re.DOTALL)
+    body = tbody.group(1) if tbody else block
+    rows = []
+    for tr_html in TR_SPLIT.findall(body):
+        tds = TD_SPLIT.findall(tr_html)
+        if len(tds) < 9:
+            continue
+        # Columns per resultsContent() template:
+        # 0:Exp ID, 1:Validity, 2:Baseline, 3:PLAN Gate, 4:Observed Metric,
+        # 5:Budget, 6:Seed, 7:Artifact, 8:Verdict, 9:Reason
+        cells = [strip_html(t) for t in tds]
+        chips = [VALIDITY_CHIP.search(t).group(1) if VALIDITY_CHIP.search(t) else "" for t in tds]
+        rows.append({
+            "exp_id": cells[0],
+            "validity_chip": chips[1] if len(chips) > 1 else "",
+            "baseline": cells[2] if len(cells) > 2 else "",
+            "gate": cells[3] if len(cells) > 3 else "",
+            "measured": cells[4] if len(cells) > 4 else "",
+            "budget": cells[5] if len(cells) > 5 else "",
+            "seed": cells[6] if len(cells) > 6 else "",
+            "artifact_chip": chips[7] if len(chips) > 7 else "",
+            "verdict_chip": chips[8] if len(chips) > 8 else "",
+            "verdict_text": cells[8] if len(cells) > 8 else "",
+            "reason": cells[9] if len(cells) > 9 else "",
+        })
+    return rows
+
+
+def pkg_dir(pkg_id: str) -> Path:
+    return PACKAGES_DIR / pkg_id
+
+
+def detect_e1(pkg: dict) -> list[dict]:
+    """E1 result_gate_verdict_finalized: drafts for rows that are not yet in methodsTried."""
+    pid = pkg["id"]
+    pdir = pkg_dir(pid)
+    results = pdir / "results.html"
+    if not results.exists():
+        return []
+    html = results.read_text(encoding="utf-8", errors="ignore")
+    rows = parse_result_gate(html)
+    if not rows:
+        return []
+    # What's already represented in methodsTried. Match a row as represented when:
+    #   - its exp_id token (leading P0/V0/E1/...) appears in any methodsTried.method, OR
+    #   - the full exp_id appears as a substring of any methodsTried.method (case-insensitive), OR
+    #   - the full exp_id appears as a substring of any methodsTried.measured (covers aggregation).
+    method_texts = []
+    represented_tokens = set()
+    for r in (pkg.get("methodsTried") or []):
+        m = (r.get("method") or "")
+        measured = (r.get("measured") or "")
+        method_texts.append((m.lower(), measured.lower()))
+        token = re.match(r"^\s*([A-Za-z][\w-]*?\d[\w-]*)", m)
+        if token:
+            represented_tokens.add(token.group(1).lower())
+
+    def is_represented(eid: str) -> bool:
+        e = eid.lower()
+        if e in represented_tokens:
+            return True
+        for method_l, measured_l in method_texts:
+            if e in method_l or e in measured_l:
+                return True
+        return False
+    drafts = []
+    for r in rows:
+        eid = (r["exp_id"] or "").strip()
+        if not eid:
+            continue
+        # Skip rows still in flight (no decided verdict).
+        v_chip = (r["verdict_chip"] or "").lower()
+        v_text = (r["verdict_text"] or "").lower()
+        if v_chip in {"unmeasured", "missing", ""} and "pending" in v_text + " " + v_chip:
+            continue
+        # Already represented?
+        if is_represented(eid):
+            continue
+        verdict = validity_to_verdict(r["verdict_chip"], r["verdict_text"])
+        # Anchor presence: is there id=<eid> or data-exp-id=<eid> on the row?
+        anchor_present = bool(re.search(rf'(id|data-exp-id|data-card)\s*=\s*"{re.escape(eid)}"', html))
+        drafts.append({
+            "event": "E1 result_gate_verdict_finalized",
+            "exp_id": eid,
+            "anchor_present": anchor_present,
+            "draft": {
+                "method": f"{eid} {r['gate'][:60]}".strip(),
+                "hypothesis": r["gate"] or "(fill from plan.html)",
+                "gate": r["gate"] or "(fill)",
+                "measured": r["measured"] or "(fill)",
+                "verdict": verdict,
+                "evidencePath": f"packages/{pid}/results.html#{eid}" if anchor_present
+                                else f"packages/{pid}/results.html   ⚠ anchor id=\"{eid}\" missing — add it first",
+            },
+            "reason_text": r["reason"],
+        })
+    return drafts
+
+
+def detect_e3(pkg: dict) -> dict | None:
+    """E3 status_transition_pending: if next-action declares a terminal route and status is not terminal."""
+    pid = pkg["id"]
+    pdir = pkg_dir(pid)
+    na = pdir / "next-action.html"
+    if not na.exists():
+        return None
+    html = na.read_text(encoding="utf-8", errors="ignore")
+    fields = {k: strip_html(v) for k, v in DATA_FIELD_BLOCK.findall(html)}
+    route = (fields.get("route") or "").lower()
+    target_state = (fields.get("target-state") or "")
+    reason = (fields.get("reason") or "")
+    verdict = (fields.get("verdict") or "")
+    # Terminal signals: route mentions archive_or_stop, or target_state mentions STOPPED/ADOPTED/SUPERSEDED.
+    terminal_route = ("archive_or_stop" in route) or ("adopt" in route) or ("promote" in route)
+    cat = (pkg.get("category") or "").lower()
+    status = (pkg.get("status") or "").upper()
+    if cat in {"success", "fail"}:
+        return None
+    if cat == "in-progress" and not terminal_route and "STOPPED" not in target_state.upper():
+        return None
+    # Suggest a destination category + status from the route language.
+    is_adoption = ("adopt" in route) or ("promote" in route) or ("adopt" in verdict.lower())
+    suggested_cat = "success" if is_adoption else ("fail" if "archive_or_stop" in route else None)
+    suggested_status = None
+    if suggested_cat == "success":
+        suggested_status = "ADOPTED_PENDING_ACK"
+    elif suggested_cat == "fail":
+        suggested_status = "ARCHIVED"
+    return {
+        "event": "E3 status_transition_pending",
+        "route": route,
+        "target_state": target_state,
+        "verdict": verdict,
+        "suggested_category": suggested_cat,
+        "suggested_status": suggested_status,
+        "current_category": cat,
+        "current_status": status,
+        "draft": {
+            "category": suggested_cat or "(decide)",
+            "status": suggested_status or "(decide)",
+            "terminationMessage": (reason[:180] + "…") if len(reason) > 180 else reason or "(distill from next-action.html#chosen-route reason)",
+            "adoptionPath": "(fill if adopting — CLAUDE.md#current-best or downstream pkg id)" if suggested_cat == "success" else None,
+        },
+        "user_ack_required": True,
+    }
+
+
+def detect_e4(pkg: dict) -> dict | None:
+    """E4 adoption_pending: CLAUDE.md or model code newly cites the package."""
+    pid = pkg["id"]
+    if (pkg.get("category") or "").lower() != "success":
+        return None
+    if field_present(pkg.get("adoptionPath")):
+        return None  # already filled
+    # Scan CLAUDE.md for the pkg id or any of its checkpoint slugs.
+    claude = REPO_ROOT / "CLAUDE.md"
+    if not claude.exists():
+        return None
+    text = claude.read_text(encoding="utf-8", errors="ignore")
+    hits = []
+    if pid in text:
+        hits.append("CLAUDE.md")
+    # Also try the tag (often the checkpoint slug)
+    for r in pkg.get("methodsTried") or []:
+        method = r.get("method") or ""
+        # Pull a slug-like token (letters/digits/_)
+        m = re.search(r"([a-z][a-z0-9_]{6,})", method)
+        if m and m.group(1) in text:
+            hits.append(f"CLAUDE.md (mentions {m.group(1)!r})")
+    if not hits:
+        return None
+    return {
+        "event": "E4 adoption_pending",
+        "hits": hits,
+        "draft": {
+            "adoptionPath": "CLAUDE.md#current-best  (cite the exact subsection)",
+        },
+        "user_ack_required": True,
+    }
+
+
+def scan_events(data: dict, pkg_filter: str | None = None) -> Report:
+    rep = Report("scan-events — Learnings Update Protocol drafts")
+    for pkg in data["packages"]:
+        if pkg_filter and pkg["id"] != pkg_filter:
+            continue
+        pid = pkg["id"]
+        e1s = detect_e1(pkg)
+        e3 = detect_e3(pkg)
+        e4 = detect_e4(pkg)
+        any_event = bool(e1s) or bool(e3) or bool(e4)
+        if not any_event:
+            rep.notes.append(f"{pid}: no pending events")
+            continue
+        rep.notes.append(f"{pid}: {len(e1s)} E1, {1 if e3 else 0} E3, {1 if e4 else 0} E4")
+        for d in e1s:
+            block = "  E1 (verdict finalized) — exp_id=" + d["exp_id"]
+            block += " [anchor: " + ("YES" if d["anchor_present"] else "MISSING") + "]"
+            block += "\n  draft methodsTried row:\n"
+            block += json.dumps(d["draft"], indent=4)
+            rep.notes.append(block)
+        if e3:
+            block = "  E3 (status transition pending) — route=" + (e3["route"] or "(unknown)")
+            block += f" current=({e3['current_category']}/{e3['current_status']})"
+            block += f" suggested=({e3['suggested_category']}/{e3['suggested_status']})"
+            block += "\n  draft terminal block:\n"
+            block += json.dumps(e3["draft"], indent=4)
+            block += "\n  T1 user ack required."
+            rep.notes.append(block)
+        if e4:
+            block = "  E4 (adoption pending) — hits=" + ", ".join(e4["hits"])
+            block += "\n  draft adoption field:\n"
+            block += json.dumps(e4["draft"], indent=4)
+            block += "\n  T1 user ack required."
+            rep.notes.append(block)
+    return rep
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# draft-method / draft-terminal
+# ─────────────────────────────────────────────────────────────────────────────
+
+def cmd_draft_method(data: dict, pkg_id: str, anchor: str) -> int:
+    pkg = next((p for p in data["packages"] if p["id"] == pkg_id), None)
+    if not pkg:
+        print(f"error: pkg {pkg_id!r} not in registry", file=sys.stderr)
+        return 2
+    drafts = detect_e1(pkg)
+    match = next((d for d in drafts if d["exp_id"] == anchor), None)
+    if not match:
+        print(f"no E1 draft found for {pkg_id}#{anchor}", file=sys.stderr)
+        print("hint: either the row is already in methodsTried, or the anchor does not exist.", file=sys.stderr)
+        return 1
+    print(json.dumps(match, indent=2))
+    return 0
+
+
+def cmd_draft_terminal(data: dict, pkg_id: str) -> int:
+    pkg = next((p for p in data["packages"] if p["id"] == pkg_id), None)
+    if not pkg:
+        print(f"error: pkg {pkg_id!r} not in registry", file=sys.stderr)
+        return 2
+    e3 = detect_e3(pkg)
+    if not e3:
+        print(f"no E3 draft for {pkg_id} (no terminal route in next-action.html, or status already terminal).",
+              file=sys.stderr)
+        return 1
+    print(json.dumps(e3, indent=2))
+    return 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CLI
+# ─────────────────────────────────────────────────────────────────────────────
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--strict", action="store_true",
+                        help="treat warnings as errors in the exit code")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("lint-status")
+    sub.add_parser("lint-evidence")
+    p = sub.add_parser("scan-events"); p.add_argument("--pkg")
+    p = sub.add_parser("draft-method"); p.add_argument("pkg_id"); p.add_argument("anchor")
+    p = sub.add_parser("draft-terminal"); p.add_argument("pkg_id")
+    p = sub.add_parser("all"); p.add_argument("--pkg")
+    args = parser.parse_args()
+
+    data = load_data()
+
+    def fail(report: Report) -> bool:
+        return bool(report.errors()) or (args.strict and bool(report.warnings()))
+
+    if args.cmd == "lint-status":
+        rep = lint_status(data)
+        print(rep.render(strict=args.strict))
+        return 1 if fail(rep) else 0
+    if args.cmd == "lint-evidence":
+        rep = lint_evidence(data)
+        print(rep.render(strict=args.strict))
+        return 1 if fail(rep) else 0
+    if args.cmd == "scan-events":
+        rep = scan_events(data, pkg_filter=args.pkg)
+        print(rep.render(strict=args.strict))
+        return 0
+    if args.cmd == "draft-method":
+        return cmd_draft_method(data, args.pkg_id, args.anchor)
+    if args.cmd == "draft-terminal":
+        return cmd_draft_terminal(data, args.pkg_id)
+    if args.cmd == "all":
+        r1 = lint_status(data); print(r1.render(strict=args.strict)); print()
+        r2 = lint_evidence(data); print(r2.render(strict=args.strict)); print()
+        r3 = scan_events(data, pkg_filter=args.pkg); print(r3.render(strict=args.strict))
+        return 1 if (fail(r1) or fail(r2)) else 0
+
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
