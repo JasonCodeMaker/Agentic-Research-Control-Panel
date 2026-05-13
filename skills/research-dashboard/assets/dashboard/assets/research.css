@@ -978,6 +978,12 @@ button.copy-button:hover {
   }
 }
 
+/* Per-package analysis page: Rules section is a single column (one numbered list),
+   so override the dashboard's 2-col grid that pairs HTML-Rules + Trust-Rules cards. */
+body[data-page="analysis"] #rules {
+  grid-template-columns: 1fr;
+}
+
 .status-strip {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));

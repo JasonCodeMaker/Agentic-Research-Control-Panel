@@ -793,6 +793,7 @@
     { slug: "plan", label: "Plan", href: "plan.html" },
     { slug: "implementation", label: "Implementation", href: "implementation.html" },
     { slug: "results", label: "Results", href: "results.html" },
+    { slug: "analysis", label: "Analysis", href: "analysis.html" },
     { slug: "next-action", label: "Next action", href: "next-action.html" },
     { slug: "tracker", label: "Tracker", href: "tracker.html" },
     { slug: "docs", label: "Docs", href: "docs/" },

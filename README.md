@@ -1,13 +1,14 @@
 # Trustworthy Research Pipeline
 
-A research workflow scaffold for Claude Code / Codex. It ships two skills that build a per-project HTML dashboard and per-direction research packages, a `WORKFLOW.md` that the agent follows when implementing each package, and a `CLAUDE.md` that distills the five protocols the agent obeys across every project.
+A research workflow scaffold for Claude Code / Codex. It ships three skills that build a per-project HTML dashboard, scaffold per-direction research packages, and maintain the per-package analysis page (Rules + Insight). Plus a `WORKFLOW.md` that the agent follows when implementing each package, and a `CLAUDE.md` that distills the five protocols the agent obeys across every project.
 
 ## What's in this repo
 
 | File / dir | What it is |
 | --- | --- |
 | `skills/research-dashboard/` | Skill that scaffolds the project-level `research_html/` dashboard (lanes, schema, learnings page, lint tool). |
-| `skills/research-package/` | Skill that scaffolds one research package under `research_html/packages/<YYYY-MM-DD-slug>/` with overview / plan / implementation / results / next-action / tracker / brainstorm pages. |
+| `skills/research-package/` | Skill that scaffolds one research package under `research_html/packages/<YYYY-MM-DD-slug>/` with overview / plan / implementation / results / analysis / next-action / tracker / brainstorm pages. |
+| `skills/research-analysis/` | Skill that initializes and validates the per-package `analysis.html` page (Rules + Insight). Manual-only content discipline; visualization templates for inline-styled HTML/CSS bar charts, heatmaps, and admission matrices. |
 | `WORKFLOW.md` | Seven-step controller the agent follows inside any package. |
 | `CLAUDE.md` | Project-agnostic agent operating context: the five protocols (Workflow, Output Contract, Fact Propagation, Learnings Update, Refinement Guardrails) and the `(category, status)` state model. Consuming projects prepend their own specifics. |
 
@@ -15,13 +16,14 @@ A research workflow scaffold for Claude Code / Codex. It ships two skills that b
 
 ### 1. Install the skills
 
-Copy (or symlink) the two skills into your agent's skills directory.
+Copy (or symlink) the three skills into your agent's skills directory.
 
 **Claude Code:**
 
 ```bash
 cp -r skills/research-dashboard ~/.claude/skills/
 cp -r skills/research-package   ~/.claude/skills/
+cp -r skills/research-analysis  ~/.claude/skills/
 ```
 
 **Codex:**
@@ -29,6 +31,7 @@ cp -r skills/research-package   ~/.claude/skills/
 ```bash
 cp -r skills/research-dashboard ~/.codex/skills/
 cp -r skills/research-package   ~/.codex/skills/
+cp -r skills/research-analysis  ~/.codex/skills/
 ```
 
 Restart the agent so the new skills are picked up.

@@ -97,6 +97,7 @@ Pick `--scope` from the prompt's stage:
 | "Track the implementation of ..." | `index,plan,implementation,tracker,docs,_agent` |
 | "Run / launch / record live ..." | `index,plan,implementation,tracker,docs,_agent` (tracker owns launch readiness + per-run live cards) |
 | "Record results / pick the next action" | `--scope all` |
+| "Distill rules / write deep analysis of results" | add `analysis` (or use `--scope all`); content updates flow through `/research-analysis` thereafter |
 
 Always-present pages (`index`, `tracker`, `docs`, `_agent`) are appended automatically.
 
@@ -108,6 +109,7 @@ Every field has exactly one home page; other pages link. This prevents overlap a
 - No-change boundary as declared lives on `plan.html`; downstream affirmation is a boolean + commit hash + link, not a re-list of files.
 - Hypothesis is canonical on `plan.html` and re-stated only on `implementation.html` and `results.html` (T8 transition pages).
 - Per-validity exp counts live only on `results.html`.
+- `analysis.html` is the single home for hand-curated rules and deep insights distilled from a package's results (see the [`research-analysis`](../research-analysis/SKILL.md) skill). It is scaffolded empty by `--scope analysis` (or `--scope all`); content updates flow through `/research-analysis` thereafter. `results.html` still owns the verdict-level summary; `analysis.html` owns the *why* and the generalizable lessons. Do not auto-populate it from results, tracker, or inventory.
 - `tracker.html` is the single home for all execution state (folding the prior `launch.html` and `live.html`):
   - Pre-launch readiness facts (T21: GPU id, CUDA_VISIBLE_DEVICES, conda env, git commit, dataset path, expected runtime, dry-run, smoke) live only on `tracker.html` in the **Launch readiness** card.
   - No-change affirmation (T16: boolean + commit hash + link to `implementation.html#owned-files`) and the T1 launch user-ack slot live only on `tracker.html` in the **Launch readiness** card.
@@ -262,5 +264,5 @@ Per-turn closure when any event above fires: update the upstream witness (result
 
 - `scripts/create_research_package.py` — generates a hierarchical package from this skill's templates, appends one inventory entry to the user's `data/research-packages.js`, and copies `propagate_facts.py` into the new package's `scripts/` directory.
 - `scripts/propagate_facts.py` — Fact Propagation Contract enforcer (see above). Read-only by default; `--bump` advances the cursor.
-- `templates/` — the 10 `string.Template` HTML files (`index`, `plan`, `implementation`, `results`, `next-action`, `tracker`, `brainstorm`, `docs/index`, `docs/source`, `_agent/context`). Tracker owns launch readiness + per-run live cards; there is no longer a separate `launch.html` or `live.html` template.
+- `templates/` — the 11 `string.Template` HTML files (`index`, `plan`, `implementation`, `results`, `analysis`, `next-action`, `tracker`, `brainstorm`, `docs/index`, `docs/source`, `_agent/context`). Tracker owns launch readiness + per-run live cards; there is no longer a separate `launch.html` or `live.html` template. The `analysis` template is the empty two-block scaffold (Rules + Insight) — its content discipline lives in the [`research-analysis`](../research-analysis/SKILL.md) skill.
 - `references/package-contract.md` — the 12-concept table, single-home rule, append-row recipe, and the four `data-ack` transition slots.

@@ -1,0 +1,14 @@
+<!--
+  One numbered rule. Append inside <ol class="rules-list" data-list="rules">.
+  Replace placeholders: $slug, $rule_prose, $evidence_slug, $evidence_label.
+
+  Constraints:
+  - $rule_prose is plain natural-language prose; no <strong>, <b>, or whole-rule <em>.
+  - Embed the binding numbers/thresholds/named subjects inline so the rule stands alone
+    without re-opening the linked insight.
+  - Evidence link is exactly one inline anchor to #insight-<evidence_slug> on the same page.
+  - Remove the "No rules recorded yet." placeholder when the first real rule lands.
+-->
+<li class="card-text" id="rule-$slug" style="margin-bottom:0.8em;">
+  $rule_prose Evidence: <a href="#insight-$evidence_slug">$evidence_label</a>.
+</li>
