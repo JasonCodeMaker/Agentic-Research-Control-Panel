@@ -43,12 +43,6 @@ def _read_inventory(pkg: str) -> dict:
     return {"category": m_cat.group(1), "status": m_stat.group(1)}
 
 
-def _op_check(pkg: str, scope: str, state: dict) -> tuple[str, list[str]]:
-    """MVP: read-only audit. Phase 2 will plug in validate.py + scan_events."""
-    files = []  # Phase 2 fills this with paths actually inspected.
-    return "passed", files
-
-
 def main() -> int:
     p = argparse.ArgumentParser(prog="research-op")
     p.add_argument("--pkg", required=True, help="package id under research_html/packages/")
@@ -105,27 +99,24 @@ def main() -> int:
         print(json.dumps(envelope, indent=2))
         return 2
 
-    if args.op == "check":
-        validation, files = _op_check(args.pkg, args.scope, state)
-        audit.append(args.pkg, op="check", target=None, event=None,
-                     state_before=state, state_after=state,
-                     validation=validation, rule=None,
-                     files_touched=files, payload={"scope": args.scope},
-                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-        print(f"check OK pkg={args.pkg} state={state['category']}/{state['status']}")
-        return 0
-
-    # Phase 2 invariant check.
     payload = json.loads(args.payload)
-    rej = validate.validate(args.pkg, args.op, target, payload, state)
-    if rej:
-        audit.append(args.pkg, op=args.op, target=target, event=None,
-                     state_before=state, state_after=state,
-                     validation="rejected", rule=rej.rule,
-                     files_touched=[], payload=payload,
-                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-        print(json.dumps(rej.envelope(op=args.op, target=target), indent=2))
-        return 2
+
+    # For check op, inject scope into payload so the handler can access it.
+    if args.op == "check":
+        payload["scope"] = args.scope
+
+    # Phase 2 invariant check — SKIP for check op (no payload to validate).
+    if args.op != "check":
+        rej = validate.validate(args.pkg, args.op, target, payload, state)
+        if rej:
+            audit.append(args.pkg, op=args.op, target=target, event=None,
+                         state_before=state, state_after=state,
+                         validation="rejected", rule=rej.rule,
+                         files_touched=[], payload=payload,
+                         user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
+            print(json.dumps(rej.envelope(op=args.op, target=target), indent=2))
+            return 2
+
     # Phase 3 dispatch — router calls into ops/<op>.py.
     import router  # noqa: E402
     validation, files = router.dispatch(args.op, args.pkg, target, payload, state)
