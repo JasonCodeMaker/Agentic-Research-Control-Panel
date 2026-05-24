@@ -12,7 +12,7 @@ update `transitions.py` in the same commit.
 | I2 | `methodsTried[]` row → paints learnings.html | `(in-progress, RESULT_ANALYSIS / NEXT_ACTION_READY)` + during T1 ack window for `(success, *)` / `(fail, *)` | Source: results.html result-gate row with verdict + verified `evidencePath` (E1) |
 | I3 | tracker live-check row | `(in-progress, EXPERIMENT_RUNNING / LIVE_ANALYSIS)` | One row per open exp; replaces prior row for same `exp_id` |
 | I4 | tracker resource-allocation row | `(in-progress, READY_TO_LAUNCH → EXPERIMENT_RUNNING)` | One per planned exp |
-| I5 | tracker impl-review row | `(in-progress, IMPLEMENTATION_REVIEW / DECISION_ADJUDICATION)` | One per `change_id` |
+| I5 | tracker impl-review row | `(in-progress, IMPLEMENTATION_REVIEW / IMPLEMENTING)` | One per `change_id` |
 | I6 | results.html result-gate row | `(in-progress, EXPERIMENT_RUNNING → RESULT_ANALYSIS)` | One per planned experiment (P0, P1, …); not per measurement |
 | I7 | results.html result block (6-part canon) | `(in-progress, RESULT_ANALYSIS)` | One per result group; obeys canonical 6-part shape |
 | I8 | analysis.html rule / insight subblock | any `(in-progress, *)` after ≥ 1 finalized result-gate row | Owner skill: `research-analysis` (delegates writes to `research-op`) |

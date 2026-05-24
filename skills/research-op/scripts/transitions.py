@@ -49,7 +49,7 @@ INSERT_LEGAL = {
         ("in-progress", s) for s in ("READY_TO_LAUNCH", "EXPERIMENT_RUNNING")
     },
     "tracker-impl-review-row": {
-        ("in-progress", s) for s in ("IMPLEMENTATION_REVIEW", "DECISION_ADJUDICATION", "IMPLEMENTING")
+        ("in-progress", s) for s in ("IMPLEMENTATION_REVIEW", "IMPLEMENTING")
     },
     "results-gate-row": {
         ("in-progress", s) for s in ("EXPERIMENT_RUNNING", "LIVE_ANALYSIS", "RESULT_ANALYSIS")
@@ -115,7 +115,10 @@ CHECK_LEGAL = {(c, s) for c, statuses in STATES.items() for s in statuses}
 
 
 def is_legal(category: str, status: str, op: str, target: str | None) -> bool:
-    """Return True iff (category, status, op, target) is a legal mutation."""
+    """Return True iff (category, status, op, target) is a legal mutation.
+
+    target may be None only when op == "check" (universal across all cells).
+    """
     cell = (category, status)
     if op == "check":
         return cell in CHECK_LEGAL
