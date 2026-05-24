@@ -501,6 +501,38 @@ def rule_verdict_mechanical(pkg, op, target, payload, state) -> Reject | None:
 # Add more rules as they are needed; the spec § 6.2 catalogue grows here.
 
 
+# ---- Analysis-rule rules ----
+
+def rule_analysis_rule_slug_kebab(pkg, op, target, payload) -> Reject | None:
+    if target != "analysis-rule" or op != "insert":
+        return None
+    slug = payload.get("slug", "")
+    if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", slug):
+        return Reject(
+            rule="analysis-rule-slug-kebab",
+            file=None, anchor=None, field="slug",
+            expected="kebab-case slug (lowercase, hyphens, no underscores)",
+            actual=repr(slug),
+            suggested_fix="Lowercase the slug, replace spaces/underscores with hyphens.",
+        )
+    return None
+
+
+def rule_analysis_rule_no_bold(pkg, op, target, payload) -> Reject | None:
+    if target != "analysis-rule" or op != "insert":
+        return None
+    prose = payload.get("prose", "")
+    if "<strong>" in prose or "<b>" in prose:
+        return Reject(
+            rule="analysis-rule-no-bold",
+            file=None, anchor=None, field="prose",
+            expected="rule prose with no <strong> or <b>",
+            actual="bold tag found in prose",
+            suggested_fix="Remove the <strong>/<b> wrappers; rules are plain sentences (inline <em> for sub-clauses is fine).",
+        )
+    return None
+
+
 # ---- Dispatcher ----
 
 # Each entry: (rule_fn, needs_state_arg).
@@ -523,6 +555,8 @@ _RULES: list[tuple[Callable, bool]] = [
     (rule_experiments_pre_launch_only,       True),
     (rule_methodstried_terminal_frozen,      True),
     (rule_verdict_mechanical,                True),
+    (rule_analysis_rule_slug_kebab,          False),
+    (rule_analysis_rule_no_bold,             False),
 ]
 
 

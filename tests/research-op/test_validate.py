@@ -369,3 +369,21 @@ def test_verdict_mechanical_skips_complex_predicate(tmp_path, monkeypatch):
         state={"category": "in-progress", "status": "RESULT_ANALYSIS"},
     )
     assert rej is None  # Stop-Gate handles complex predicates, not us.
+
+
+# ---- analysis-rule-slug-kebab ----
+
+def test_analysis_rule_slug_kebab_passes_valid():
+    rej = validate.rule_analysis_rule_slug_kebab("pkg", "insert", "analysis-rule", {"slug": "my-rule-1"})
+    assert rej is None
+
+
+def test_analysis_rule_slug_kebab_rejects_invalid():
+    for bad in ("MyRule", "my_rule", "my rule", ""):
+        rej = validate.rule_analysis_rule_slug_kebab("pkg", "insert", "analysis-rule", {"slug": bad})
+        assert rej is not None, f"expected reject for {bad!r}"
+
+
+def test_analysis_rule_no_bold_rejects_strong():
+    rej = validate.rule_analysis_rule_no_bold("pkg", "insert", "analysis-rule", {"prose": "<strong>bad</strong>"})
+    assert rej is not None
