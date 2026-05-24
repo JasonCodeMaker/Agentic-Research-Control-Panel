@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import audit
 import transitions  # noqa: E402
+import validate
 
 
 def _read_inventory(pkg: str) -> dict:
@@ -94,8 +95,20 @@ def main() -> int:
         print(f"check OK pkg={args.pkg} state={state['category']}/{state['status']}")
         return 0
 
-    # Insert / Update / Delete arrive in Phase 3.
-    print(f"op={args.op} not yet implemented (Phase 3)", file=sys.stderr)
+    # Phase 2 invariant check.
+    payload = json.loads(args.payload)
+    rej = validate.validate(args.pkg, args.op, target, payload, state)
+    if rej:
+        audit.append(args.pkg, op=args.op, target=target, event=None,
+                     state_before=state, state_after=state,
+                     validation="rejected", rule=rej.rule,
+                     files_touched=[], payload=payload,
+                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
+        print(json.dumps(rej.envelope(op=args.op, target=target), indent=2))
+        return 2
+    # Insert/Update/Delete WRITES land in Phase 3 — for now, log a not-implemented audit
+    # entry so the contract is observable but no bytes hit disk.
+    print(f"op={args.op} target={target} validated; write handler arrives in Phase 3", file=sys.stderr)
     return 3
 
 
