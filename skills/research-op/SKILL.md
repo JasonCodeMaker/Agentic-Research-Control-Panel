@@ -61,10 +61,9 @@ Path: `var/research/<pkg>/_actions.jsonl`. One JSONL line per op invocation (suc
 
 ## Pointers
 
-- [references/matrix.md](references/matrix.md) — the 33-row Insert/Update/Delete/Check legality matrix.
+- [references/matrix.md](references/matrix.md) — the 33-row Insert/Update/Delete/Check legality matrix; also encodes the 18-cell (category, status) state machine.
 - [references/composite-events.md](references/composite-events.md) — the 5 composite events.
 - [references/validate-rules.md](references/validate-rules.md) — Phase 2 invariant catalogue.
-- [references/state-machine.md](references/state-machine.md) — 18-cell (category, status) machine + T1 ack rules.
 
 ## Bundled resources
 
