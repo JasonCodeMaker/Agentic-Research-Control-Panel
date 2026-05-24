@@ -46,7 +46,10 @@ def _read_inventory(pkg: str) -> dict:
 def main() -> int:
     p = argparse.ArgumentParser(prog="research-op")
     p.add_argument("--pkg", required=True, help="package id under research_html/packages/")
-    p.add_argument("--op", choices=["check", "insert", "update", "delete"], required=True)
+    p.add_argument("--op", choices=["check", "insert", "update", "delete"],
+                   help="primitive op (one of --op or --event required)")
+    p.add_argument("--event", help="composite event (chain-done, checkpoint-saved, ...) "
+                   "(one of --op or --event required)")
     p.add_argument("--target", help="target name from references/matrix.md (required for insert/update/delete)")
     p.add_argument("--scope", default="package", help="check scope: package | all")
     p.add_argument("--payload", default="{}", help="JSON payload for insert/update/delete")
@@ -54,6 +57,28 @@ def main() -> int:
 
     t0 = time.monotonic()
     state = _read_inventory(args.pkg)
+
+    if not args.op and not args.event:
+        print("error: one of --op or --event is required", file=sys.stderr)
+        return 1
+    if args.op and args.event:
+        print("error: cannot use --op and --event together", file=sys.stderr)
+        return 1
+
+    # Composite event path
+    if args.event:
+        import events  # noqa: E402
+        import router as _router  # noqa: E402
+        payload_obj = json.loads(args.payload)
+        validation, files = events.fanout(args.event, args.pkg, payload_obj,
+                                          dispatch_fn=lambda o, p, t, pl: _router.dispatch(o, p, t, pl, state))
+        audit.append(args.pkg, op="event", target=None, event=args.event,
+                     state_before=state, state_after=state,
+                     validation=validation, rule=None,
+                     files_touched=files, payload=payload_obj,
+                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
+        print(f"event={args.event} OK files={files}")
+        return 0 if validation == "passed" else 2
 
     # Universal pre-checks (must run before state-gate so malformed inputs produce envelopes).
     rej_json = validate.rule_payload_json_valid(args.pkg, args.op, args.target, args.payload)
