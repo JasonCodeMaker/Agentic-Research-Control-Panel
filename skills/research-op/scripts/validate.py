@@ -143,6 +143,288 @@ def rule_brainstorm_category_only(pkg, op, target, payload, state) -> Reject | N
     return None
 
 
+# ---- Result-gate row rules ----
+
+_RESULT_GATE_FIELDS = {
+    "exp_id", "validity", "baseline", "plan_gate", "observed_metric",
+    "budget_use", "seed_status", "artifact_completeness", "verdict", "reason",
+}
+_VALIDITY_ALLOWED = {"ok", "partial", "fail", "unmeasured"}
+
+
+def rule_result_gate_ten_cols(pkg, op, target, payload) -> Reject | None:
+    """All 10 result-gate columns must be present."""
+    if target != "results-gate-row" or op != "insert":
+        return None
+    missing = _RESULT_GATE_FIELDS - set(payload.keys())
+    if missing:
+        return Reject(
+            rule="result-gate-ten-cols",
+            file=None, anchor=None, field="payload",
+            expected=f"keys include {sorted(_RESULT_GATE_FIELDS)}",
+            actual=f"missing={sorted(missing)}",
+            suggested_fix="Add the missing column(s) to the payload.",
+        )
+    return None
+
+
+def rule_result_gate_validity_enum(pkg, op, target, payload) -> Reject | None:
+    """validity must be one of {ok, partial, fail, unmeasured}."""
+    if target != "results-gate-row" or op != "insert":
+        return None
+    v = payload.get("validity")
+    if v not in _VALIDITY_ALLOWED:
+        return Reject(
+            rule="result-gate-validity-enum",
+            file=None, anchor=None, field="validity",
+            expected=f"one of {sorted(_VALIDITY_ALLOWED)}",
+            actual=repr(v),
+            suggested_fix="Set validity to ok / partial / fail / unmeasured.",
+        )
+    return None
+
+
+# ---- Result-block rules ----
+
+_RESULT_BLOCK_ANCHORS = [
+    'data-block="title"',
+    'data-block="summary"',
+    'data-block="detail"',
+    'data-block="main-table"',
+    'data-block="insight"',
+    'data-block="ablation"',
+]
+_DETAILS_OPEN_RE = re.compile(r"<details\s[^>]*open", re.IGNORECASE)
+
+
+def rule_result_block_six_parts(pkg, op, target, payload) -> Reject | None:
+    """HTML must contain all 6 data-block anchors (or <!-- no ablation --> for ablation)."""
+    if target != "results-block" or op != "insert":
+        return None
+    html = payload.get("html", "")
+    missing = []
+    for anchor in _RESULT_BLOCK_ANCHORS:
+        if anchor == 'data-block="ablation"':
+            if anchor not in html and "<!-- no ablation -->" not in html:
+                missing.append(anchor)
+        elif anchor not in html:
+            missing.append(anchor)
+    if missing:
+        return Reject(
+            rule="result-block-six-parts",
+            file=None, anchor=None, field="html",
+            expected="all 6 data-block anchors present",
+            actual=f"missing={missing}",
+            suggested_fix='Add the missing data-block="..." anchors (or <!-- no ablation --> for ablation).',
+        )
+    return None
+
+
+def rule_result_block_details_closed(pkg, op, target, payload) -> Reject | None:
+    """No <details open> allowed — every <details> must be closed by default."""
+    if target != "results-block" or op != "insert":
+        return None
+    html = payload.get("html", "")
+    if _DETAILS_OPEN_RE.search(html):
+        return Reject(
+            rule="result-block-details-closed",
+            file=None, anchor=None, field="html",
+            expected="no <details open> in block",
+            actual="found <details open>",
+            suggested_fix="Remove the 'open' attribute from all <details> elements.",
+        )
+    return None
+
+
+# ---- Tracker live-check row rules ----
+
+_LIVE_CHECK_FIELDS = {
+    "time", "exp_id", "agent", "run_state", "last_log", "progress",
+    "metrics", "resource", "artifacts", "eta", "action", "next_check",
+}
+
+
+def rule_live_check_twelve_cols(pkg, op, target, payload) -> Reject | None:
+    """All 12 live-check columns must be present."""
+    if target != "tracker-live-check-row" or op != "insert":
+        return None
+    missing = _LIVE_CHECK_FIELDS - set(payload.keys())
+    if missing:
+        return Reject(
+            rule="live-check-twelve-cols",
+            file=None, anchor=None, field="payload",
+            expected=f"keys include {sorted(_LIVE_CHECK_FIELDS)}",
+            actual=f"missing={sorted(missing)}",
+            suggested_fix="Add the missing column(s) to the live-check row payload.",
+        )
+    return None
+
+
+def rule_live_check_time_local(pkg, op, target, payload) -> Reject | None:
+    """time field must be local wall-clock: no trailing Z, no +00:00 offset."""
+    if target != "tracker-live-check-row" or op != "insert":
+        return None
+    t = payload.get("time", "")
+    if t.endswith("Z") or "+00:00" in t:
+        return Reject(
+            rule="live-check-time-local",
+            file=None, anchor=None, field="time",
+            expected="local wall-clock time (no Z, no +00:00)",
+            actual=repr(t),
+            suggested_fix="Use local time without UTC suffix, e.g. '2026-05-24T10:30:00+10:00'.",
+        )
+    return None
+
+
+# ---- Status / lane-crossing rules ----
+
+_SUCCESS_REQUIRED = {"terminationMessage", "adoptionPath"}
+_FAIL_REQUIRED    = {"terminationMessage"}
+
+
+def rule_lane_t1_ack_present(pkg, op, target, payload, state) -> Reject | None:
+    """Lane-crossing status updates require a T1 ack token."""
+    if target != "status" or op != "update":
+        return None
+    to_cat = payload.get("to_category")
+    if to_cat is None or to_cat == state.get("category"):
+        return None  # not a lane crossing
+    ack = payload.get("ack_token", "")
+    if not ack or not str(ack).strip():
+        return Reject(
+            rule="lane-t1-ack-present",
+            file=None, anchor=None, field="ack_token",
+            expected="non-empty ack_token string for lane crossing",
+            actual=repr(ack),
+            suggested_fix="Add ack_token to the payload with the T1 acknowledgement value.",
+        )
+    return None
+
+
+def rule_lane_required_fields(pkg, op, target, payload, state) -> Reject | None:
+    """Lane-crossing updates must include required fields for the destination lane."""
+    if target != "status" or op != "update":
+        return None
+    to_cat = payload.get("to_category")
+    if to_cat is None or to_cat == state.get("category"):
+        return None  # not a lane crossing
+    if to_cat == "success":
+        required = _SUCCESS_REQUIRED
+    elif to_cat == "fail":
+        required = _FAIL_REQUIRED
+    else:
+        return None
+    missing = required - set(payload.keys())
+    if missing:
+        return Reject(
+            rule="lane-required-fields",
+            file=None, anchor=None, field="payload",
+            expected=f"fields {sorted(required)} for destination lane={to_cat!r}",
+            actual=f"missing={sorted(missing)}",
+            suggested_fix=f"Add {sorted(missing)} to the payload before crossing to {to_cat!r}.",
+        )
+    return None
+
+
+# ---- Doc-file / doc-card rules ----
+
+_DOC_PATH_RE = re.compile(r"^research_html/packages/[^/]+/docs/[^/]+\.html$")
+_DOC_CARD_ATTRS = [
+    "data-doc-slug",
+    "data-doc-purpose",
+    "data-doc-audience",
+    "data-doc-status",
+    "data-doc-anchor",
+]
+
+
+def rule_doc_file_path_under_package(pkg, op, target, payload) -> Reject | None:
+    """doc-file path must be under research_html/packages/<pkg>/docs/."""
+    if target != "doc-file" or op != "insert":
+        return None
+    path = payload.get("path", "")
+    if not _DOC_PATH_RE.match(path):
+        return Reject(
+            rule="doc-file-path-under-package",
+            file=path, anchor=None, field="path",
+            expected=r"research_html/packages/<pkg>/docs/<slug>.html",
+            actual=repr(path),
+            suggested_fix="Place doc files under research_html/packages/<pkg>/docs/<slug>.html.",
+        )
+    return None
+
+
+def rule_doc_card_six_parts(pkg, op, target, payload) -> Reject | None:
+    """doc-card HTML must include data-doc-slug and 4 other data-doc-* attrs."""
+    if target != "doc-card" or op != "insert":
+        return None
+    html = payload.get("html", "")
+    missing = [attr for attr in _DOC_CARD_ATTRS if attr not in html]
+    if missing:
+        return Reject(
+            rule="doc-card-six-parts",
+            file=None, anchor=None, field="html",
+            expected=f"all doc-card attrs present: {_DOC_CARD_ATTRS}",
+            actual=f"missing={missing}",
+            suggested_fix="Add the missing data-doc-* attributes to the doc-card HTML.",
+        )
+    return None
+
+
+def rule_doc_group_rationale_present(pkg, op, target, payload) -> Reject | None:
+    """parent_section_html must contain data-doc-group-rationale= attribute."""
+    if target != "doc-card" or op != "insert":
+        return None
+    section_html = payload.get("parent_section_html", "")
+    if "data-doc-group-rationale=" not in section_html:
+        return Reject(
+            rule="doc-group-rationale-present",
+            file=None, anchor=None, field="parent_section_html",
+            expected="data-doc-group-rationale= present in parent section",
+            actual="attribute not found",
+            suggested_fix="Add data-doc-group-rationale='...' to the parent <section> element.",
+        )
+    return None
+
+
+# ---- Delete rules ----
+
+_TERMINAL_CATEGORIES = {"success", "fail"}
+_BLOCKING_STATUSES   = {"running", "completed", "failed"}
+
+
+def rule_experiments_pre_launch_only(pkg, op, target, payload, state) -> Reject | None:
+    """Refuse to delete experiments-row if any experiment is running/completed/failed."""
+    if target != "experiments-row" or op != "delete":
+        return None
+    statuses = payload.get("existing_experiments_status_list", [])
+    blocking = [s for s in statuses if s in _BLOCKING_STATUSES]
+    if blocking:
+        return Reject(
+            rule="experiments-pre-launch-only",
+            file=None, anchor=None, field="existing_experiments_status_list",
+            expected="all experiments in pre-launch state (queued/stale/blocked)",
+            actual=f"blocking statuses found: {blocking}",
+            suggested_fix="Cannot delete experiments-row while runs are running, completed, or failed.",
+        )
+    return None
+
+
+def rule_methodstried_terminal_frozen(pkg, op, target, payload, state) -> Reject | None:
+    """Refuse to delete methodsTried rows when package is in a terminal lane."""
+    if target != "methodsTried" or op != "delete":
+        return None
+    if state.get("category") in _TERMINAL_CATEGORIES:
+        return Reject(
+            rule="methodstried-terminal-frozen",
+            file=None, anchor=None, field="category",
+            expected="non-terminal category (not success or fail)",
+            actual=state["category"],
+            suggested_fix="methodsTried rows are frozen in success/fail packages; do not delete.",
+        )
+    return None
+
+
 def rule_target_known(pkg, op, target, payload, known_targets) -> Reject | None:
     """target must be in transitions.TARGETS (only for non-check ops)."""
     if op == "check" or target is None:
@@ -165,10 +447,23 @@ def rule_target_known(pkg, op, target, payload, known_targets) -> Reject | None:
 
 # Each entry: (rule_fn, needs_state_arg).
 _RULES: list[tuple[Callable, bool]] = [
-    (rule_methodstried_six_fields,      False),
-    (rule_methodstried_verdict_enum,    False),
-    (rule_methodstried_evidence_resolves, False),
-    (rule_brainstorm_category_only,     True),
+    (rule_methodstried_six_fields,           False),
+    (rule_methodstried_verdict_enum,         False),
+    (rule_methodstried_evidence_resolves,    False),
+    (rule_brainstorm_category_only,          True),
+    (rule_result_gate_ten_cols,              False),
+    (rule_result_gate_validity_enum,         False),
+    (rule_result_block_six_parts,            False),
+    (rule_result_block_details_closed,       False),
+    (rule_live_check_twelve_cols,            False),
+    (rule_live_check_time_local,             False),
+    (rule_lane_t1_ack_present,               True),
+    (rule_lane_required_fields,              True),
+    (rule_doc_file_path_under_package,       False),
+    (rule_doc_card_six_parts,                False),
+    (rule_doc_group_rationale_present,       False),
+    (rule_experiments_pre_launch_only,       True),
+    (rule_methodstried_terminal_frozen,      True),
 ]
 
 
