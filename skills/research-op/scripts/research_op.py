@@ -45,7 +45,7 @@ def _read_inventory(pkg: str) -> dict:
 
 def main() -> int:
     p = argparse.ArgumentParser(prog="research-op")
-    p.add_argument("--pkg", required=True, help="package id under research_html/packages/")
+    p.add_argument("--pkg", help="package id under research_html/packages/ (required unless --nl)")
     p.add_argument("--op", choices=["check", "insert", "update", "delete", "scan-events"],
                    help="primitive op (one of --op or --event required)")
     p.add_argument("--event", help="composite event (chain-done, checkpoint-saved, ...) "
@@ -53,7 +53,19 @@ def main() -> int:
     p.add_argument("--target", help="target name from references/matrix.md (required for insert/update/delete)")
     p.add_argument("--scope", default="package", help="check scope: package | all")
     p.add_argument("--payload", default="{}", help="JSON payload for insert/update/delete")
+    p.add_argument("--nl", help="natural-language form: e.g. 'update: set status of <pkg> to BLOCKED'")
     args = p.parse_args()
+
+    # NL escape hatch — real parsing lives in the SKILL.md body (the agent reads the prose,
+    # produces the structured form, and calls the CLI again with explicit --pkg/--op/--target/--payload).
+    if args.nl:
+        print("Natural-language parsing is best done from the SKILL.md body. "
+              "Re-invoke with explicit --pkg / --op / --target / --payload.", file=sys.stderr)
+        return 4
+
+    if not args.pkg:
+        print("error: --pkg is required (unless --nl)", file=sys.stderr)
+        return 1
 
     t0 = time.monotonic()
     state = _read_inventory(args.pkg)
