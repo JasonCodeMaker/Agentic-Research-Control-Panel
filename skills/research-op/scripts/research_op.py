@@ -126,10 +126,16 @@ def main() -> int:
                      user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
         print(json.dumps(rej.envelope(op=args.op, target=target), indent=2))
         return 2
-    # Insert/Update/Delete WRITES land in Phase 3 — for now, log a not-implemented audit
-    # entry so the contract is observable but no bytes hit disk.
-    print(f"op={args.op} target={target} validated; write handler arrives in Phase 3", file=sys.stderr)
-    return 3
+    # Phase 3 dispatch — router calls into ops/<op>.py.
+    import router  # noqa: E402
+    validation, files = router.dispatch(args.op, args.pkg, target, payload, state)
+    audit.append(args.pkg, op=args.op, target=target, event=None,
+                 state_before=state, state_after=state,
+                 validation=validation, rule=None,
+                 files_touched=files, payload=payload,
+                 user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
+    print(f"{args.op} OK pkg={args.pkg} target={target} files={files}")
+    return 0
 
 
 if __name__ == "__main__":
