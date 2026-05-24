@@ -1,6 +1,7 @@
 import sys
 sys.path.insert(0, "skills/research-op/scripts")
 import validate
+from pathlib import Path
 
 
 def test_methodstried_six_fields_passes_when_complete():
@@ -323,3 +324,48 @@ def test_methodstried_terminal_frozen_rejects_in_fail():
     rej = validate.rule_methodstried_terminal_frozen("pkg", "delete", "methodsTried", {}, state)
     assert rej is not None
     assert rej.rule == "methodstried-terminal-frozen"
+
+
+def _make_plan(tmp_path, pkg, predicate):
+    p = tmp_path / "research_html" / "packages" / pkg / "plan.html"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(
+        f'<html><span data-objective-field="success.predicate">{predicate}</span></html>'
+    )
+    return p
+
+
+def test_verdict_mechanical_pass_when_measured_meets_gate(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _make_plan(tmp_path, "pkg", "measured >= 0.85")
+    rej = validate.rule_verdict_mechanical(
+        "pkg", "update", "results-verdict",
+        {"measured": "0.87", "verdict": "pass"},
+        state={"category": "in-progress", "status": "RESULT_ANALYSIS"},
+    )
+    assert rej is None
+
+
+def test_verdict_mechanical_rejects_pass_when_measured_below_gate(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _make_plan(tmp_path, "pkg", "measured >= 0.85")
+    rej = validate.rule_verdict_mechanical(
+        "pkg", "update", "results-verdict",
+        {"measured": "0.82", "verdict": "pass"},
+        state={"category": "in-progress", "status": "RESULT_ANALYSIS"},
+    )
+    assert rej is not None
+    assert rej.rule == "verdict-mechanical"
+    assert "fail" in rej.expected
+    assert "pass" in rej.actual
+
+
+def test_verdict_mechanical_skips_complex_predicate(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _make_plan(tmp_path, "pkg", "measured > baseline + 0.02")
+    rej = validate.rule_verdict_mechanical(
+        "pkg", "update", "results-verdict",
+        {"measured": "0.82", "verdict": "pass"},
+        state={"category": "in-progress", "status": "RESULT_ANALYSIS"},
+    )
+    assert rej is None  # Stop-Gate handles complex predicates, not us.

@@ -440,6 +440,64 @@ def rule_target_known(pkg, op, target, payload, known_targets) -> Reject | None:
     return None
 
 
+def rule_verdict_mechanical(pkg, op, target, payload, state) -> Reject | None:
+    """If we're writing a verdict, the verdict must match success.predicate(measured)."""
+    if target != "results-verdict" or op != "update":
+        return None
+    measured = payload.get("measured")
+    verdict  = payload.get("verdict")
+    if measured is None or verdict is None:
+        return Reject(
+            rule="verdict-mechanical",
+            file=None, anchor=None, field="payload",
+            expected="payload has both `measured` and `verdict`",
+            actual=f"measured={measured!r}, verdict={verdict!r}",
+            suggested_fix="Provide both fields; the rule needs the measured value to compute the expected verdict.",
+        )
+    # Read frozen success.predicate from plan.html
+    plan = Path(f"research_html/packages/{pkg}/plan.html").read_text()
+    m = re.search(r'data-objective-field="success\.predicate"[^>]*>([^<]+)<', plan)
+    if not m:
+        return Reject(
+            rule="verdict-mechanical",
+            file=f"research_html/packages/{pkg}/plan.html", anchor=None,
+            field="success.predicate",
+            expected="plan.html has data-objective-field=\"success.predicate\" with a value",
+            actual="no success.predicate slot found",
+            suggested_fix="Define success.predicate on plan.html before recording any verdict.",
+        )
+    predicate = m.group(1).strip()
+    # Evaluate the predicate mechanically. Supported forms: `measured >= 0.85`,
+    # `measured > baseline + 0.02`, etc. For MVP, only `measured >= <float>` is supported;
+    # any other shape downgrades to inconclusive instead of refusing.
+    pm = re.match(r"measured\s*>=\s*([0-9.]+)", predicate)
+    if not pm:
+        # Predicate too complex for mechanical eval — skip this rule, let Stop-Gate handle.
+        return None
+    threshold = float(pm.group(1))
+    try:
+        m_val = float(measured)
+    except (TypeError, ValueError):
+        return Reject(
+            rule="verdict-mechanical",
+            file=None, anchor=None, field="measured",
+            expected="numeric measured value",
+            actual=repr(measured),
+            suggested_fix="Coerce measured to a number before recording the verdict.",
+        )
+    expected_verdict = "pass" if m_val >= threshold else "fail"
+    if verdict != expected_verdict:
+        return Reject(
+            rule="verdict-mechanical",
+            file=f"research_html/packages/{pkg}/plan.html", anchor=None,
+            field="verdict",
+            expected=f"verdict={expected_verdict} (predicate {predicate} with measured={m_val})",
+            actual=f"verdict={verdict}",
+            suggested_fix=f"Set verdict={expected_verdict}; the measured value {'meets' if expected_verdict == 'pass' else 'does not meet'} the gate.",
+        )
+    return None
+
+
 # Add more rules as they are needed; the spec § 6.2 catalogue grows here.
 
 
@@ -464,6 +522,7 @@ _RULES: list[tuple[Callable, bool]] = [
     (rule_doc_group_rationale_present,       False),
     (rule_experiments_pre_launch_only,       True),
     (rule_methodstried_terminal_frozen,      True),
+    (rule_verdict_mechanical,                True),
 ]
 
 
