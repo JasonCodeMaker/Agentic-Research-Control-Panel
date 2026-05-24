@@ -2,3 +2,7 @@
 
 # research-op local audit logs and runtime state
 var/
+
+# Python bytecode
+__pycache__/
+*.pyc
