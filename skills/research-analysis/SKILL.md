@@ -26,6 +26,7 @@ Authority order, highest first:
 - `analysis.html` owns *why it happened* (Insight) and *what future packages must not repeat* (Rules). **Hand-curated only. No auto-population. No propagate_facts hook. No `methodsTried` writes.**
 - Rules in `analysis.html` are **NOT** `methodsTried[]` in `data/research-packages.js`. `methodsTried` is a per-experiment verdict record consumed by `learnings.html`. Rules are generalized, transferable design constraints consumed by humans+agents to avoid repeating mistakes. The two co-exist and answer different questions.
 - Stage order on the package nav: `overview → plan → implementation → results → analysis → next-action → tracker → docs`. Analysis sits between `results` and `next-action`.
+- File writes to `analysis.html` (and removals) go through `/research-op insert --target analysis-rule` / `--target analysis-insight` / `--target last-updated-time`. This skill owns the **editorial decision** (when a rule is warranted, what counts as an insight); `/research-op` owns the **file format** (where to insert, what shape, lint compliance). Lint (`scripts/lint_analysis.py`) stays in this skill.
 
 ## Pre-flight checks
 
@@ -71,11 +72,11 @@ Remove the placeholder when the first real rule lands.
 ### Insight block — strict format
 
 - Container: `<div class="insight-body" data-block="insight-body">`.
-- Each insight is a `<details open class="insight-subblock" id="insight-<slug>">` card.
+- Each insight is a `<details class="insight-subblock" id="insight-<slug>">` card. **Always `<details>` (closed); never `<details open>`.**
 - The `<summary>` is the clickable title bar (one line, no nested elements).
 - The `<details>` body is a single inner `<div>` with consistent padding; inside it: narrative paragraphs (`<p class="card-text">`), optional `<h4>` sub-headings, inline-styled visualizations from [references/viz-templates.md](references/viz-templates.md), and one caption paragraph immediately after each visualization.
 - Every visualization caption is a `<p class="card-text" style="font-size:0.88rem; color:#555;">` paragraph that starts with `<em>Reading:</em>` and explains what the reader should take away.
-- **`<details open>`** is the default so the most recent insight is visible without a click; older insights stay open too unless the user explicitly collapses one.
+- **Closed by default (binding):** every insight sub-block renders closed. The summary line is the index; readers click to expand. This rule supersedes any earlier guidance that said the most recent insight should be `<details open>`.
 - Each sub-block has a stable deep-link anchor (`id="insight-<slug>"`) so rules can cite it.
 - **Manual update only.** Never auto-populate an insight from `results.html`, `tracker.html`, or `data/research-packages.js`.
 
@@ -138,18 +139,31 @@ Behavior:
   - `analysis` in `STAGE_PAGES` (in `<root>/assets/research.js`)
   - `body[data-page="analysis"] #rules { grid-template-columns: 1fr; }` in `<root>/assets/research.css`
   - Both ship from the `research-dashboard` skill — emit a warning with the patch command if absent.
+- After init, every subsequent edit to `analysis.html` goes through `/research-op insert --target analysis-rule|analysis-insight` (this skill's `add-rule` and `add-insight` subcommands are thin wrappers around those).
 
 ### `add-insight <package-id> <slug> <title>`
 
-Append one new `<details>` sub-block to the Insight block. The agent then hand-edits the body. The script only stamps the wrapper with the slug, title, and `last-updated` and clears any `No insight content yet.` placeholder.
+Append one new `<details>` sub-block to the Insight block. The agent then hand-edits the body. This skill delegates the file write to `/research-op`:
 
-In practice the agent calls `Edit` directly on `analysis.html` using `templates/insight-subblock.html` as the boilerplate. No script is required; the operation is just a structured copy-paste.
+```bash
+python skills/research-op/scripts/research_op.py \
+  --pkg <package-id> --op insert --target analysis-insight \
+  --payload '{"slug":"<slug>","title":"<title>","body":"<body html>"}'
+```
+
+`/research-op` writes the `<details class="insight-subblock" id="insight-<slug>">` wrapper closed by default; the agent edits the inner body via `Edit` after the wrapper lands. This skill no longer ships its own scaffolding script for insight additions.
 
 ### `add-rule <package-id> <slug> <evidence-slug>`
 
-Append one new numbered `<li>` to the Rules block. The agent hand-edits the prose. The script stamps the wrapper with the rule slug and a link to `#insight-<evidence-slug>` and clears any `No rules recorded yet.` placeholder.
+Append one new numbered `<li>` to the Rules block. The agent hand-crafts the prose; this skill delegates the file write to `/research-op`:
 
-In practice the agent calls `Edit` directly using `templates/rule-bullet.html`.
+```bash
+python skills/research-op/scripts/research_op.py \
+  --pkg <package-id> --op insert --target analysis-rule \
+  --payload '{"slug":"<slug>","evidence_slug":"<evidence-slug>","prose":"<rule prose>"}'
+```
+
+`/research-op` runs the analysis-rule Phase 2 rules (slug kebab-case, single Evidence link, no bold on rule body) and either writes or rejects with the structured envelope. This skill no longer ships its own scaffolding script for rule additions.
 
 ### `lint <package-id-or-all>`
 
