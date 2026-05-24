@@ -1,6 +1,6 @@
 ---
 name: research-package
-description: "Create a hierarchical research package under research_html/packages/<YYYY-MM-DD-slug>/ as a multi-page HTML surface (overview, plan, implementation, results, next-action, tracker, brainstorm) plus docs/ and _agent/. Use this skill whenever the user types /research-package, asks to create / initialize / draft / scaffold a research package, sets up a new research direction or experiment plan, or wants a new package on the dashboard for in-progress / brainstorm / success / fail work. Also use this skill whenever the user asks to edit, update, extend, or restructure an existing results.html — including updating the headline result, adding or removing Track tables (in-distribution / zero-shot / scalability / ablation), restructuring <details> collapse blocks for multi-seed / ablation / superseded / diagnostic-only data, choosing what to open vs collapse by default, or applying the recommended results-page pattern. Project-agnostic. Hard requirement: the dashboard at <cwd>/research_html/ must already exist — if it does not, run /research-dashboard first. Each page owns one decision; the binding single-home rule prevents overlap and context pollution. Tracker is the single home for execution state — launch readiness, resource allocation, per-run live cards, and the 10-minute live check all live on tracker.html (the prior launch.html / live.html pages are folded in)."
+description: "Create a hierarchical research package under research_html/packages/<YYYY-MM-DD-slug>/ as a multi-page HTML surface (overview, plan, implementation, results, next-action, tracker, brainstorm) plus docs/ and _agent/. Use this skill whenever the user types /research-package, asks to create / initialize / draft / scaffold a research package, sets up a new research direction or experiment plan, or wants a new package on the dashboard for in-progress / brainstorm / success / fail work. Also use this skill whenever the user asks to edit, update, extend, or restructure an existing results.html — including updating the headline result, adding or removing Track tables (in-distribution / zero-shot / scalability / ablation), restructuring <details> collapse blocks for multi-seed / ablation / superseded / diagnostic-only data (all closed by default — never <details open>), or applying the recommended results-page pattern. Project-agnostic. Hard requirement: the dashboard at <cwd>/research_html/ must already exist — if it does not, run /research-dashboard first. Each page owns one decision; the binding single-home rule prevents overlap and context pollution. Tracker is the single home for execution state — launch readiness, resource allocation, per-run live cards, and the 10-minute live check all live on tracker.html (the prior launch.html / live.html pages are folded in)."
 argument-hint: "<one-sentence description of the package goal, optionally followed by — category=<lane>, scope=<pages>>"
 allowed-tools: Bash(*), Read, Edit, Write, Glob, Grep
 ---
@@ -80,7 +80,7 @@ Every package object on the dashboard surfaces these fields. If a field is unkno
 | `lastAction` | `--last-action` | The most recent command, edit, or observation (Resume Block field). |
 | `openRuns` | `--open-runs` | tmux/session/job ids or `none` (Resume Block field). Required when status is `EXPERIMENT_RUNNING` or `LIVE_ANALYSIS`. |
 | `lastUpdated` | `--last-updated` | ISO date; toggles `data-stale` on pages that predate it. |
-| `experiments` | (post-scaffold edit) | Array `[{id,label?,status,runLink?}]` painted onto `index.html#plan-status`. Update the matching entry's `status` whenever a phase opens/closes (same turn as the tracker row update). Allowed: `pending`/`queued`/`running`/`completed`/`failed`/`skipped`/`blocked`. |
+| `experiments` | (post-scaffold edit) | Array `[{id, label?, purpose, after, output, gate, status, runLink?, docsAnchor?}]` painted onto both `index.html#plan-status` (status chips by `renderPlanStatus()`) and `plan.html#experiments` (pipeline timeline by `renderPipelineTimeline()`). See [Pipeline timeline](#pipeline-timeline-binding) for the binding per-field rules and caps. Update the matching entry's `status` whenever a phase opens/closes (same turn as the tracker row update). Allowed `status`: `pending`/`queued`/`running`/`completed`/`failed`/`skipped`/`blocked`. |
 | `methodsTried` | (post-scaffold edit) | Array of `{method, hypothesis, gate, measured, verdict, evidencePath}` rows (verdict ∈ `{pass, fail, inconclusive}`). Appended over the life of the package per the Learnings Update Protocol below. Required for success / fail / brainstorm-`ABANDONED`. |
 | `terminationMessage` | (post-scaffold edit) | One sentence: why this package ended. Required for success / fail / brainstorm-`ABANDONED`. |
 | `adoptionPath` | (post-scaffold edit) | Where the win was adopted (e.g., `CLAUDE.md#current-best`, model code path, downstream package id). Required for success. |
@@ -117,13 +117,69 @@ Every field has exactly one home page; other pages link. This prevents overlap a
   - The three WORKFLOW.md ledger tables (implementation review, resource allocation, latest live check) live only on `tracker.html`. Stage pages link to the tracker row.
 - Per-phase launcher *commands* (the executable steps) are not contract content — they live next to the scripts they invoke (`packages/<id>/scripts/*.sh` or `packages/<id>/docs/launchers.md`). `tracker.html` rows link to the script, not duplicate its body.
 
+## Pipeline timeline (binding)
+
+The per-experiment specification has exactly one home: the pipeline timeline painted on `plan.html#experiments` from the inventory's `experiments[]` array. The same array also paints the status chips on `index.html#plan-status` &mdash; both surfaces are derived from inventory, so updating inventory is the only write path and both surfaces refresh together. This is the third arm of the single-home rule: phase-level *spec* lives in inventory; phase-level *execution state* still lives in tracker rows; phase-level *deep contract* (full input/output schemas, sentinel format, code anchors, commands) still lives in `docs/pipeline.html`. Hand-coded `<table data-table="experiments">` on `plan.html` is forbidden &mdash; `learnings_lint.py lint-status` errors on it (rule `plan-static-experiments-table`).
+
+For brainstorm or single-phase packages where the timeline is over-engineered, leave `experiments[]` empty (or with one entry) and the timeline renders an empty-state. Never replace the painted slot with a static table.
+
+### Per-node field contract
+
+Each entry in `experiments[]` carries the following fields when the timeline is in use:
+
+| # | Field | Source | Hard cap | Purpose |
+| --- | --- | --- | --- | --- |
+| 1 | `id` | inventory | matches `P\d+` or `P\d+[a-z]?` for fan-out shards | anchor + visual marker |
+| 2 | `purpose` | inventory | **&le; 12 words, leading action verb** (`Audit`, `Generate`, `Train`, `Evaluate`, `Compare`, &hellip;) | one-line action statement |
+| 3 | `after` | inventory | array of phase ids, `[]` for the first phase; every id resolves to another `experiments[].id` | dependency edges; the renderer draws fan-out / join when entries share an `after` value |
+| 4 | `output` | inventory | exactly ONE key artifact (file path or named blob); no `\n`; full output list lives in `docs/pipeline.html` | what downstream phases consume |
+| 5 | `gate` | inventory | exactly ONE measurable predicate; **no top-level `AND` / `OR`** (the lint flags compound predicates) | when this phase is DONE |
+| 6 | `status` | inventory | one of `pending`/`queued`/`running`/`completed`/`failed`/`skipped`/`blocked` | painted as a chip on the node |
+| 7 | `runLink?` | inventory | **dashboard-root-relative path starting with `packages/<pkg-id>/`** (e.g. `packages/2026-05-15-foo/tracker.html#resource-allocation`); the renderer prepends `RESEARCH_ROOT_PREFIX` so the link resolves both from the dashboard and from inside the package | execution surface |
+| 8 | `docsAnchor?` | inventory; defaults to `docs/pipeline.html#<id_lowercase>` | **plan.html-relative** path (e.g. `docs/baseline-xpool.html`, `docs/baseline-xpool.html#feature-extraction`); must resolve to a file on disk under `packages/<pkg-id>/`. If the package uses per-phase doc pages instead of a single `docs/pipeline.html`, set `docsAnchor` explicitly per phase (lint rule `experiment-docs-anchor-missing` errors when the explicit path does not resolve; `experiment-docs-anchor-default-missing` warns when the default fires but `docs/pipeline.html` does not exist). | deep-dive link |
+
+The hard caps are discipline levers: a phase whose `purpose` needs more than 12 words or whose `gate` is compound is almost always two phases hiding inside one. Split it. `learnings_lint.py lint-status` enforces the caps and the `after` resolution.
+
+### Consequences for the deep contract
+
+When the timeline is in use, `docs/pipeline.html` &sect;6 (per-phase spec) stops repeating `purpose` and `gate`. Each phase block opens with one backlink &mdash; e.g., "P0 &mdash; see <a href="../plan.html#experiments">plan.html#experiments</a> for purpose + gate" &mdash; and the rest of the block covers HOW only: full input/output schemas, sentinel format and content, code anchors (`file:function`), multi-GPU policy, resume pattern, error handling. Each `<h3>` in &sect;6 carries an `id="p0"`, `id="p1"`, &hellip; so the timeline's `docsAnchor` deep-link scrolls to the right block.
+
+### Renderer + lint
+
+- `renderPipelineTimeline()` in `assets/research.js` paints the timeline from `experiments[]` into the `[data-section="pipeline-timeline"] [data-field="pipeline-timeline-list"]` slot on `plan.html`.
+- CSS lives under `.pipeline-timeline` in `assets/research.css`.
+- `learnings_lint.py lint-status` enforces:
+  - `experiments[].purpose` word count &le; 12 (error if exceeded);
+  - `experiments[].gate` has no top-level `AND` / `OR` (error if compound);
+  - `experiments[].after` is a list and every id resolves to another `experiments[].id` (error otherwise);
+  - `experiments[].output` is single-line (error if multiline);
+  - `experiments[].runLink`, when present, starts with `packages/<pkg-id>/` (error otherwise &mdash; rule `experiment-runlink-not-rooted`);
+  - `experiments[].docsAnchor`, when present, resolves to a file under `packages/<pkg-id>/` (error otherwise &mdash; rule `experiment-docs-anchor-missing`); when absent, the default `docs/pipeline.html#<id_lowercase>` must resolve (warning otherwise &mdash; rule `experiment-docs-anchor-default-missing`);
+  - `plan.html` contains the painted `<section data-section="pipeline-timeline">` slot and does **not** contain a hand-coded `<table data-table="experiments">` (error otherwise &mdash; rule `plan-static-experiments-table` / `plan-missing-pipeline-timeline`).
+
+  The purpose/gate/output/after rules fire only when the field is present, so legacy entries with just `{id, label, status, runLink}` are lint-clean for the timeline content but still subject to the runLink and static-table rules above.
+
 ## ETA discipline (binding)
 
 Do not pre-estimate run duration. `plan.html` rows, launcher manifests, allocation rows, and live-check rows record `est_time=unknown` until the run has executed at least 30 minutes of stable throughput; after that, derive ETA from observed throughput and update on every 10-minute report.
 
 ## Results page pattern (recommended)
 
-When scaffolding or editing `results.html`, follow the recommended structure in [references/results-page-pattern.md](references/results-page-pattern.md). The pattern captures the section ordering (hypothesis → eval-banner → headline → result-gate → tracks → validity → footer), the per-Track module pattern with `<details>` collapse hierarchy (open for current-best comparison; closed for multi-seed cross-tabs, ablations, superseded variants, and diagnostic-only data in that order), the 2–4-card headline metric-strip pattern, eval-banner usage when a canonical-policy distinction exists, and the rule that result-gate rows are per-planned-experiment (P0, P1, …), not per-measurement (sweep cells / multi-seed validations / ablation cells live in track tables). The pattern is R13-compatible: it is a recommendation derived from the panda-scaleup canonical example, not a binding scaffold. Deviate when the package's shape calls for it.
+When scaffolding or editing `results.html`, follow the recommended structure in [references/results-page-pattern.md](references/results-page-pattern.md). The pattern captures the section ordering (hypothesis → eval-banner → headline → result-gate → tracks → validity → footer), the per-Track module pattern with `<details>` collapse hierarchy (**all `<details>` blocks closed by default — never write `<details open>`**; ordering top-to-bottom: current-best comparison, multi-seed cross-tabs, ablations, superseded variants, diagnostic-only), the 2–4-card headline metric-strip pattern, eval-banner usage when a canonical-policy distinction exists, and the rule that result-gate rows are per-planned-experiment (P0, P1, …), not per-measurement (sweep cells / multi-seed validations / ablation cells live in track tables). The pattern is R13-compatible: it is a recommendation derived from the panda-scaleup canonical example, not a binding scaffold. Deviate when the package's shape calls for it.
+
+## Docs/* page style (project-local override)
+
+When the host project ships its own doc-template and doc-style-guide under `research_html/templates/`, prefer those over this skill's bundled minimal `templates/docs/source.html` for any new doc under `research_html/packages/<pkg-id>/docs/`. The GRDR project (`/home/uqzzha35/Project/SemanticID/GRDR/`) is the canonical example:
+
+- **Skeleton:** `research_html/templates/doc-template.html` — content-agnostic shell (masthead with eyebrow + h1 + lead + toolbar + `data-status-strip` + `data-package-nav`, footer `<time data-field="last-updated">`, three trailing `<script>` tags) plus one labelled demo of every block primitive (`pre.diagram`, `pre.code`, `.callout` + `.warn` + `.ok`, `table.data-table`, `span.pill-mono` + `.frozen`/`.trained`/`.kmeans`, `h2.stage-title` + `span.step-num`, `p.card-text.kv-mini`).
+- **Style guide:** `research_html/templates/doc-style-guide.html` — when to reach for each primitive (rules + rendered examples + copy snippets). Re-read before authoring a new doc.
+- **Exemplar:** the GRDR-local `research_html/packages/2026-05-16-panda-pseudo-queries-multiview/docs/training_pipeline.html` shows a fully-fleshed-out doc under this style (7 numbered stages, 2 appendices, footer time).
+
+Hard rules: keep the shell verbatim (`data-status-strip`, `data-package-nav`, footer `<time>`, the three trailing `<script>` tags); do not invent new block classes; do not add page-local CSS beyond the primitive overrides at the top of the template; bump the footer date with a short scope phrase on every meaningful edit.
+
+Section composition is content-agnostic: the template prescribes the shell and the primitives, not section count, section order, or section topics. A perf-fix doc can be one card; a full pipeline walk-through can be eight. Use only the primitives that earn their place.
+
+When the host project ships no such templates, fall back to this skill's `templates/docs/source.html` (minimal shell only).
 
 ## Creation Workflow
 
@@ -169,7 +225,7 @@ After scaffolding, patch package-specific details that the script could not know
 
 The scaffold writes generic templates. Patch these `unmeasured` slots when the prompt provides the value:
 
-- `plan.html` &rarr; metric card subfields (`metric-formula`, `metric-dataset`, `metric-protocol`, `metric-dedup`, `metric-cutoff`); baseline subfields (`baseline-checkpoint`, `baseline-protocol`, `baseline-last-verified`); seed plan; plan-diff; experiments-list spec rows (Exp ID, Purpose, Owner, Run link — no Status column).
+- `plan.html` &rarr; metric card subfields (`metric-formula`, `metric-dataset`, `metric-protocol`, `metric-dedup`, `metric-cutoff`); baseline subfields (`baseline-checkpoint`, `baseline-protocol`, `baseline-last-verified`); seed plan; plan-diff. The **Pipeline timeline** section under `[data-section="pipeline-timeline"]` is auto-painted from inventory `experiments[]` by `renderPipelineTimeline()` &mdash; do not hand-edit the painted slot and do not add a `<table data-table="experiments">` next to it; populate the inventory entry's `purpose`/`after`/`output`/`gate`/`status`/`runLink` fields instead. Brainstorm or single-phase packages leave `experiments[]` empty (or with one entry) and the timeline renders an empty-state. See [Pipeline timeline](#pipeline-timeline-binding) for the binding contract.
 - `index.html` &rarr; Plan Status card placeholder is auto-painted from inventory `experiments[]` by `renderPlanStatus()`. Do not hand-edit the painted slot; edit the inventory entry instead.
 - `implementation.html` &rarr; owned-files list; diff summary; one `data-card="change"` per algorithm change with `data-field="component"`, `data-field="code-anchor"` in `file:function` form, `data-field="expected-sign"`, `data-field="expected-magnitude"`, `data-field="validating-exp"`.
 - `tracker.html` &rarr; Resume Block fields are auto-painted from inventory by `renderResumeBlock()`; you only need to update inventory. Append rows to the three ledger tables via the `data-table-body` selector (see [references/package-contract.md](references/package-contract.md)). Fill the **Launch readiness** card (T21 readiness fields, expected runtime, dry-run / smoke status, T16 no-change affirmation, T1 launch user-ack). Add one **Per-run card** per open experiment under the `[data-section="run-cards"]` host (T22 + T15: state, last-log, missed-checks, retries, ETA, runtime root, cited PLAN threshold, recommended action, optional inline objective SVG). The to-do list under `data-field="todo-list"` is strict: each `<li>` must wrap its content in `<label><input type="checkbox"> &hellip;</label>`; add the `checked` attribute when the item is done. Plain `<li>text</li>` is not permitted.
@@ -191,10 +247,20 @@ The scaffold writes generic templates. Patch these `unmeasured` slots when the p
   ```bash
   grep -nE '(launch|live)\.html' <cwd>/research_html/packages/<id>/*.html || echo "clean"
   ```
-- Grep that `plan.html` does not carry a Status column or static `data-validity` chips in the experiments table (state moved to inventory `experiments[]`, painted on `index.html#plan-status`):
+- Grep that `plan.html` has the painted timeline slot and does NOT carry any static experiments table (single-home rule &mdash; the timeline is the only valid form):
   ```bash
-  grep -nE 'data-table="experiments".*<th>Status</th>|<tbody data-table-body="experiments">.*data-validity' \
-    <cwd>/research_html/packages/<id>/plan.html || echo "clean"
+  grep -nE 'data-section="pipeline-timeline"|data-table(-body)?="experiments"' \
+    <cwd>/research_html/packages/<id>/plan.html
+  # expect exactly one match for the pipeline-timeline slot and none for any data-table*="experiments".
+  ```
+- Grep that `docs/pipeline.html` does not re-state `<b>Gate:</b>` on every phase block (gate is owned by inventory and painted on the timeline):
+  ```bash
+  grep -nE '<b>Gate:</b>' <cwd>/research_html/packages/<id>/docs/pipeline.html || echo "clean"
+  ```
+- Grep that every &sect;6 phase `<h3>` carries an `id="p<N>"` anchor that the timeline's `docsAnchor` deep-link can target:
+  ```bash
+  grep -cE '<h3 id="p[0-9]+(?:[a-z])?">' <cwd>/research_html/packages/<id>/docs/pipeline.html
+  # should equal the number of experiments[] entries on that package.
   ```
 - Grep that the hypothesis is restated exactly on `implementation.html` and `results.html`:
   ```bash
@@ -217,18 +283,9 @@ Apply the [Output classification](#output-classification) rule on the report —
 
 ## Fact Propagation Contract (binding when a run is live)
 
-Every artifact that lands during a research run (checkpoint, candidate JSON, sentinel, phase marker, chain-done) is a "locked fact" that the agent must propagate to every owning surface — `results.html`, `next-action.html`, registry status fields, tracker Resume Block — in the same turn the artifact is observed. The mechanical check is `scripts/propagate_facts.py`:
+Fact propagation is owned by the `/research-op` skill, not this one. Every artifact that lands during a research run (checkpoint, candidate JSON, sentinel, phase marker, chain-done) is detected by `/research-op scan-events` and fanned out atomically by `/research-op event <name>` through Pattern B validation. The cursor advances on successful fan-out; manual `--bump` is no longer needed.
 
-```bash
-# every per-turn live cycle
-python <package>/scripts/propagate_facts.py            # list newly-locked facts
-# … agent applies the indicated updates to the listed surfaces …
-python <package>/scripts/propagate_facts.py --bump     # advance the cursor
-```
-
-The cursor lives at `<runtime-root>/manifests/.propagation_cursor` (epoch float). An empty report = nothing to propagate; non-empty = the agent must update the listed surfaces *in the same turn* before scheduling the next wake. The Stop Gate requires an empty report.
-
-The skill ships a single canonical implementation at `scripts/propagate_facts.py`; the scaffolder copies it into every new package's `scripts/` directory so every package inherits the same contract.
+Per-package `scripts/propagate_facts.py` byte-copies are no longer shipped by this skill.
 
 ## Learnings Update Protocol (binding when a verdict lands)
 
@@ -266,8 +323,7 @@ Per-turn closure when any event above fires: update the upstream witness (result
 
 ## Bundled resources
 
-- `scripts/create_research_package.py` — generates a hierarchical package from this skill's templates, appends one inventory entry to the user's `data/research-packages.js`, and copies `propagate_facts.py` into the new package's `scripts/` directory.
-- `scripts/propagate_facts.py` — Fact Propagation Contract enforcer (see above). Read-only by default; `--bump` advances the cursor.
+- `scripts/create_research_package.py` — generates a hierarchical package from this skill's templates and appends one inventory entry to the user's `data/research-packages.js`.
 - `templates/` — the 11 `string.Template` HTML files (`index`, `plan`, `implementation`, `results`, `analysis`, `next-action`, `tracker`, `brainstorm`, `docs/index`, `docs/source`, `_agent/context`). Tracker owns launch readiness + per-run live cards; there is no longer a separate `launch.html` or `live.html` template. The `analysis` template is the empty two-block scaffold (Rules + Insight) — its content discipline lives in the [`research-analysis`](../research-analysis/SKILL.md) skill.
 - `references/package-contract.md` — the 12-concept table, single-home rule, append-row recipe, and the four `data-ack` transition slots.
-- `references/results-page-pattern.md` — recommended structure for `results.html` derived from the panda-scaleup canonical example: section ordering (hypothesis → eval-banner → headline → result-gate → tracks → validity → footer), Track module pattern with `<details>` collapse hierarchy (open for current-best comparison; closed for multi-seed / ablation / superseded / diagnostic-only), 2–4-card headline metric-strip pattern, and the rule that result-gate rows are per-planned-experiment (not per-measurement).
+- `references/results-page-pattern.md` — recommended structure for `results.html` derived from the panda-scaleup canonical example: section ordering (hypothesis → eval-banner → headline → result-gate → tracks → validity → footer), Track module pattern with `<details>` collapse hierarchy (**all `<details>` blocks closed by default — never `<details open>`**; order top-to-bottom: current-best, multi-seed, ablation, superseded, diagnostic-only), 2–4-card headline metric-strip pattern, and the rule that result-gate rows are per-planned-experiment (not per-measurement).
