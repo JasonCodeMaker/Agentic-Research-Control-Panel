@@ -46,7 +46,7 @@ def _read_inventory(pkg: str) -> dict:
 def main() -> int:
     p = argparse.ArgumentParser(prog="research-op")
     p.add_argument("--pkg", required=True, help="package id under research_html/packages/")
-    p.add_argument("--op", choices=["check", "insert", "update", "delete"],
+    p.add_argument("--op", choices=["check", "insert", "update", "delete", "scan-events"],
                    help="primitive op (one of --op or --event required)")
     p.add_argument("--event", help="composite event (chain-done, checkpoint-saved, ...) "
                    "(one of --op or --event required)")
@@ -57,6 +57,15 @@ def main() -> int:
 
     t0 = time.monotonic()
     state = _read_inventory(args.pkg)
+
+    # Scan-events path (read-only, no state-gate, no validation).
+    if args.op == "scan-events":
+        import scan_events  # noqa: E402
+        found = scan_events.scan(args.pkg)
+        for ev in found:
+            print(json.dumps(ev))
+        # Caller is expected to invoke --event for each; bump only after the agent confirms.
+        return 0
 
     if not args.op and not args.event:
         print("error: one of --op or --event is required", file=sys.stderr)
