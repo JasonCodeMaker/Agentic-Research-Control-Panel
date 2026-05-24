@@ -24,7 +24,7 @@ Every research package must contain:
 
 - `README.md`, `plan.html`, `tracker.html`, `results.html` (plus `index.html`, `next-action.html`, optional `implementation.html` and `brainstorm.html`)
 - `docs/` and `_agent/` directories
-- A `scripts/` directory whose `propagate_facts.py` is a byte-copy of the skill master
+- A `scripts/` directory for any package-local one-off scripts (optional). Fact propagation is handled centrally by `/research-op scan-events`, not by per-package byte-copies.
 
 Use `bash scripts/dev/new_research.sh <slug>` (or `/research-package`) to create research packages. Do not create ad-hoc top-level research folders outside `research/`.
 
@@ -38,13 +38,13 @@ Stable shared entrypoints stay in `scripts/`; one-off experiment scripts belong 
 
 Every artifact that lands during a research run (checkpoint, candidate JSON, sentinel, phase marker, chain-done) is a "locked fact" that the agent must propagate to every owning surface — `results.html`, `next-action.html`, registry status fields, tracker Resume Block — in the same turn the artifact is observed.
 
-The mechanical check is `scripts/propagate_facts.py` (shipped with the `research-package` skill, copied into every package's `scripts/` directory):
+The mechanical check is `/research-op scan-events` (shipped with the `research-op` skill at `skills/research-op/scripts/research_op.py`):
 
 ```bash
 # every per-turn live cycle
-python research_html/packages/<pkg-id>/scripts/propagate_facts.py            # list newly-locked facts
-# … agent applies the indicated updates to the listed surfaces …
-python research_html/packages/<pkg-id>/scripts/propagate_facts.py --bump     # advance the cursor
+python skills/research-op/scripts/research_op.py --pkg <pkg-id> --op scan-events   # list newly-locked facts as JSON event lines
+# … agent invokes --event <name> --payload <json> per event for atomic fan-out …
+# The cursor advances on the next successful --event invocation (no separate --bump step).
 ```
 
 The cursor lives at `<runtime-root>/manifests/.propagation_cursor` (epoch float). An empty report = nothing to propagate. A non-empty report at the Stop Gate is a workflow violation.
