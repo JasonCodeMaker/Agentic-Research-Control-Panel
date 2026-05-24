@@ -61,8 +61,28 @@ def main() -> int:
     t0 = time.monotonic()
     state = _read_inventory(args.pkg)
 
-    # Phase 1 state-gate.
+    # Universal pre-checks (must run before state-gate so malformed inputs produce envelopes).
+    rej_json = validate.rule_payload_json_valid(args.pkg, args.op, args.target, args.payload)
+    if rej_json:
+        audit.append(args.pkg, op=args.op, target=args.target, event=None,
+                     state_before=state, state_after=state,
+                     validation="rejected", rule=rej_json.rule,
+                     files_touched=[], payload={"_raw": args.payload},
+                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
+        print(json.dumps(rej_json.envelope(op=args.op, target=args.target, phase="universal-check"), indent=2))
+        return 2
     target = args.target if args.op != "check" else None
+    rej_tgt = validate.rule_target_known(args.pkg, args.op, target, json.loads(args.payload), transitions.TARGETS)
+    if rej_tgt:
+        audit.append(args.pkg, op=args.op, target=target, event=None,
+                     state_before=state, state_after=state,
+                     validation="rejected", rule=rej_tgt.rule,
+                     files_touched=[], payload=json.loads(args.payload),
+                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
+        print(json.dumps(rej_tgt.envelope(op=args.op, target=target, phase="universal-check"), indent=2))
+        return 2
+
+    # Phase 1 state-gate.
     if not transitions.is_legal(state["category"], state["status"], args.op, target):
         envelope = {
             "rejected": True,

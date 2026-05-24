@@ -143,6 +143,21 @@ def rule_brainstorm_category_only(pkg, op, target, payload, state) -> Reject | N
     return None
 
 
+def rule_target_known(pkg, op, target, payload, known_targets) -> Reject | None:
+    """target must be in transitions.TARGETS (only for non-check ops)."""
+    if op == "check" or target is None:
+        return None
+    if target not in known_targets:
+        return Reject(
+            rule="target-known",
+            file=None, anchor=None, field="target",
+            expected=f"one of {sorted(known_targets)[:8]}... (see references/matrix.md)",
+            actual=repr(target),
+            suggested_fix="Pick a target listed in references/matrix.md or transitions.TARGETS.",
+        )
+    return None
+
+
 # Add more rules as they are needed; the spec § 6.2 catalogue grows here.
 
 
