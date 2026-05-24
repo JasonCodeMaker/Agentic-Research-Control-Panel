@@ -16,6 +16,8 @@ def tmp_package(tmp_path, monkeypatch):
         "  { id: 'test-pkg', category: 'in-progress', status: 'CONTEXT_LOADED' },\n"
         "];\n"
     )
+    (root / "scripts").mkdir()
+    (root / "scripts" / "learnings_lint.py").write_text("#!/usr/bin/env python3\nimport sys\nsys.exit(0)\n")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("RESEARCH_RUNTIME_ROOT", str(tmp_path / "var" / "research"))
     return tmp_path
