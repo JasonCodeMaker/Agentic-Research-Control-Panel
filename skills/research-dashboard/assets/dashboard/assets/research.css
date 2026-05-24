@@ -905,6 +905,45 @@ button.copy-button:hover {
   overflow-x: auto;
 }
 
+.data-table th.data-table-sort {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  padding-right: 18px;
+}
+
+.data-table th.data-table-sort:hover {
+  color: var(--g700, #2a2f3a);
+}
+
+.data-table th.data-table-sort::after {
+  content: "\2195";
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  color: var(--g400, #aab0bb);
+  opacity: 0.7;
+}
+
+.data-table th.data-table-sort[aria-sort="ascending"]::after {
+  content: "\25B2";
+  color: var(--g700, #2a2f3a);
+  opacity: 1;
+}
+
+.data-table th.data-table-sort[aria-sort="descending"]::after {
+  content: "\25BC";
+  color: var(--g700, #2a2f3a);
+  opacity: 1;
+}
+
+.data-table th.data-table-sort:focus {
+  outline: 2px solid var(--clay, #c47a4a);
+  outline-offset: -2px;
+}
+
 .notice {
   border: 1.5px solid var(--oat);
   border-left: 4px solid var(--clay);
@@ -978,8 +1017,6 @@ button.copy-button:hover {
   }
 }
 
-/* Per-package analysis page: Rules section is a single column (one numbered list),
-   so override the dashboard's 2-col grid that pairs HTML-Rules + Trust-Rules cards. */
 body[data-page="analysis"] #rules {
   grid-template-columns: 1fr;
 }

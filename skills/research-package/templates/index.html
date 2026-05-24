@@ -53,7 +53,7 @@
     <section data-section="plan-status" id="plan-status" aria-label="Plan status">
       <article class="module-card" data-card="plan-status">
         <h2>Plan status (painted from inventory)</h2>
-        <p class="card-text">Per-experiment status chips, painted from <code>experiments[]</code> in <code>data/research-packages.js</code>. The plan is the spec; execution state lives on tracker. Updating inventory is the only write path.</p>
+        <p class="card-text">Per-experiment status chips, painted from <code>experiments[]</code> in <code>data/research-packages.js</code>. Mirrors the <a href="plan.html#experiments">plan / pipeline timeline</a> &mdash; both surfaces are painted from the same inventory array, so editing inventory updates both at once. Run links are dashboard-root-relative (<code>packages/&lt;pkg-id&gt;/&hellip;</code>); the renderer prepends <code>RESEARCH_ROOT_PREFIX</code> automatically.</p>
         <div data-field="plan-status-list"></div>
       </article>
     </section>

@@ -72,16 +72,12 @@
       </article>
     </section>
 
-    <section data-section="experiments" id="experiments" aria-label="Experiments list">
-      <article class="module-card" data-card="experiments">
-        <h2>Experiments list</h2>
-        <table class="data-table" data-table="experiments">
-          <thead><tr><th>Exp ID</th><th>Purpose</th><th>Owner</th><th>Run link</th></tr></thead>
-          <tbody data-table-body="experiments">
-            <tr><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td><a href="tracker.html#resource-allocation">tracker / resource allocation</a></td></tr>
-          </tbody>
-        </table>
-        <p class="card-text" style="margin-top:10px;">Execution state for each row is owned by the tracker resource-allocation row linked above. A concise per-experiment status chip is painted on the package <a href="index.html#plan-status">Overview / Plan Status</a> from inventory.</p>
+    <section data-section="pipeline-timeline" id="experiments" aria-label="Pipeline timeline">
+      <article class="module-card" data-card="pipeline-timeline">
+        <h2>Pipeline timeline (painted from inventory)</h2>
+        <p class="card-text">Single home for per-experiment spec + status. Each node carries 5 written spec fields (<code>id</code>, <code>purpose</code>, <code>after</code>, <code>output</code>, <code>gate</code>) + 2 painted indicators (status chip, deep-link). Purpose is &le; 12 words leading with an action verb; gate is one measurable predicate; output is one key artifact. Full input/output schemas, sentinel format, code anchors, and commands live in <a href="docs/pipeline.html">docs/pipeline.html</a>; this slot mirrors the same <code>experiments[]</code> array that paints <a href="index.html#plan-status">overview / plan status</a>. Update inventory, not this slot. Hand-coded experiments tables on this page are forbidden (lint rule <code>plan-static-experiments-table</code>).</p>
+        <ol class="pipeline-timeline" data-field="pipeline-timeline-list" aria-label="Pipeline phases"></ol>
+        <p class="card-text"><em>Brainstorm or single-phase packages:</em> leave <code>experiments[]</code> empty (or with one node) and the timeline renders an empty-state. Do not replace this section with a static table.</p>
       </article>
     </section>
 

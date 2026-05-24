@@ -1190,6 +1190,91 @@
     });
   }
 
+  function parseNumericCell(text) {
+    if (text == null) return NaN;
+    var s = String(text).replace(/−/g, "-").replace(/,/g, "");
+    var m = s.match(/-?\d+(?:\.\d+)?/);
+    return m ? parseFloat(m[0]) : NaN;
+  }
+
+  function tableIsSortable(table) {
+    if (table.getAttribute("data-sortable") === "false") return false;
+    if (table.querySelector("td[rowspan], th[rowspan]")) return false;
+    if (!table.tHead || !table.tBodies || !table.tBodies[0]) return false;
+    return true;
+  }
+
+  function sortTableByColumn(table, colIdx, dir) {
+    var tbody = table.tBodies[0];
+    var rows = Array.prototype.slice.call(tbody.rows);
+    rows.forEach(function (r, i) {
+      if (r.getAttribute("data-orig-idx") == null) r.setAttribute("data-orig-idx", i);
+    });
+    var numericCount = 0;
+    var values = rows.map(function (r) {
+      var cell = r.cells[colIdx];
+      var txt = cell ? cell.textContent.trim() : "";
+      var n = parseNumericCell(txt);
+      if (!isNaN(n)) numericCount++;
+      return { row: r, text: txt, num: n };
+    });
+    var allNumeric = numericCount > 0 && numericCount === values.length;
+    values.sort(function (a, b) {
+      var cmp;
+      if (allNumeric) {
+        cmp = a.num - b.num;
+      } else {
+        var an = isNaN(a.num), bn = isNaN(b.num);
+        if (an && !bn) cmp = 1;
+        else if (!an && bn) cmp = -1;
+        else cmp = a.text.localeCompare(b.text, undefined, { numeric: true });
+      }
+      if (cmp === 0) {
+        cmp = parseInt(a.row.getAttribute("data-orig-idx"), 10)
+            - parseInt(b.row.getAttribute("data-orig-idx"), 10);
+      }
+      return dir === "descending" ? -cmp : cmp;
+    });
+    var frag = document.createDocumentFragment();
+    values.forEach(function (v) { frag.appendChild(v.row); });
+    tbody.appendChild(frag);
+  }
+
+  function enhanceSortableTables(root) {
+    var scope = root || document;
+    var tables = scope.querySelectorAll("table.data-table");
+    Array.prototype.forEach.call(tables, function (table) {
+      if (table.getAttribute("data-sort-enhanced") === "1") return;
+      if (!tableIsSortable(table)) return;
+      var ths = table.tHead.rows[0] ? table.tHead.rows[0].cells : [];
+      Array.prototype.forEach.call(ths, function (th, idx) {
+        if (th.getAttribute("data-sort") === "off") return;
+        th.classList.add("data-table-sort");
+        th.setAttribute("aria-sort", "none");
+        th.setAttribute("tabindex", "0");
+        var onActivate = function () {
+          var cur = th.getAttribute("aria-sort");
+          var next = cur === "ascending" ? "descending" : "ascending";
+          Array.prototype.forEach.call(ths, function (other) {
+            if (other !== th && other.classList.contains("data-table-sort")) {
+              other.setAttribute("aria-sort", "none");
+            }
+          });
+          th.setAttribute("aria-sort", next);
+          sortTableByColumn(table, idx, next);
+        };
+        th.addEventListener("click", onActivate);
+        th.addEventListener("keydown", function (e) {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onActivate();
+          }
+        });
+      });
+      table.setAttribute("data-sort-enhanced", "1");
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     renderDashboardSummary();
     renderGlobalContext();
@@ -1206,5 +1291,6 @@
     renderDashboardPackages();
     renderLearningsView();
     setupCopyButtons();
+    enhanceSortableTables();
   });
 })();

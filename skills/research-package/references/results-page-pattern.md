@@ -41,11 +41,13 @@ Inside one track module, the order is:
 
 ### Collapse hierarchy inside one track
 
-Use nested `<details>` blocks for supplementary tables, in this priority order from top to bottom:
+Use nested `<details>` blocks for supplementary tables, in this priority order from top to bottom.
+
+**Default state rule (binding):** every `<details>` block on a results page is rendered **closed** by default. Do not write `<details open>` — not for current-best comparisons, not for "the most recent" block, not for the dominant decision axis. The main canonical table already lives outside `<details>` and is what the reader sees on load; anything inside `<details>` is supplementary and must require a click. This rule supersedes any earlier guidance that defaulted current-best blocks to `<details open>`.
 
 | Order | Variant | Default state | Summary text pattern |
 |---|---|---|---|
-| 1 | Current-best comparison (when it's the dominant decision axis, e.g. codebook-width head-to-head) | `<details open>` | `<b>Codebook-size comparison (c=512 / c=1024 / c=2048, …) — current vs prior best</b>` |
+| 1 | Current-best comparison (when it's the dominant decision axis, e.g. codebook-width head-to-head) | `<details>` (closed) | `<b>Codebook-size comparison (c=512 / c=1024 / c=2048, …) — current vs prior best</b> — click to expand` |
 | 2 | Multi-seed cross-tab of the same comparison | `<details>` (closed) | `<b>c=1024 multi-seed cross-tab (s42, s220, s3407)</b> — click to expand` |
 | 3 | Beam / hyperparameter ablation | `<details>` (closed) | `<b>Beam-width ablation (S1 beam=150, S2 beam=250) on best ckpt</b> — click to expand` |
 | 4 | Superseded prior variant kept for provenance | `<details>` (closed) | `<b>old c=512 1.65M trajectory (superseded by c=1024)</b> — click to expand` |
@@ -113,6 +115,22 @@ The result-gate is the verdict-level table for **planned experiments** (the rows
 - A planned experiment that became diagnostic-only after the fact still gets a gate row, with the diagnostic-only chip and reason cited.
 
 If the package has no `plan.html#experiments-list` yet (rare; brainstorm or pre-plan packages), omit the entire result-gate section. The validity-summary section still runs from whatever validity chips appear in track tables.
+
+## Sortable tables (binding)
+
+Every `<table class="data-table">` is **automatically click-to-sort** in the browser, via the shared `enhanceSortableTables()` enhancer in [`research_html/assets/research.js`](../../../research_html/assets/research.js). The enhancer attaches a click listener to each `<th>`, infers numeric vs string column type from the first numeric token in each cell, and toggles `aria-sort="ascending"`/`"descending"` with chevron affordances styled in `research_html/assets/research.css`. No per-page wiring is needed — just use `<table class="data-table">`.
+
+Opt out **only** when the table uses `rowspan` (or `colspan` on body cells), since spanning cells break row reordering. Mark such tables with the explicit attribute:
+
+```html
+<table class="data-table" data-sortable="false" data-table="<slug>">
+```
+
+The enhancer also auto-skips any table containing `td[rowspan]` / `th[rowspan]`, so leaving the attribute off is non-fatal — but **always write `data-sortable="false"` on rowspan tables anyway**, so the intent is declarative and a later refactor that removes the rowspan does not silently re-enable sorting on a table the author meant to lock.
+
+Per-column opt-out (rare): add `data-sort="off"` on the individual `<th>` to skip just that column (e.g. a "notes" column where sorting is meaningless).
+
+Do not hand-roll per-page sort scripts. If a table needs a stable initial order, write the `<tbody>` rows in that order — the enhancer preserves original order as the stable tiebreaker.
 
 ## Concision via collapse, not via cutting columns
 
@@ -186,8 +204,8 @@ A minimal skeleton to copy into a new results.html, in addition to the binding s
       <li><b>Compact-budget note:</b> …</li>
     </ul>
 
-    <details open>
-      <summary><b>Codebook-size comparison (current vs prior best)</b></summary>
+    <details>
+      <summary><b>Codebook-size comparison (current vs prior best)</b> — click to expand</summary>
       <p class="card-text">…</p>
       <table class="data-table" data-table="track-<slug>-codebook">…</table>
     </details>

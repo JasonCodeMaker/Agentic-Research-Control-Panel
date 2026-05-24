@@ -66,7 +66,7 @@ Rules:
 | --- | --- | --- | --- | --- |
 | 1 | Identity | `index.html` | problem, objective, motivation, source path, artifact root, package id, summary line of the primary metric (link to `plan.html` for the full card) | T2, README |
 | 2 | Hypothesis | `plan.html` | falsifiable hypothesis text (canonical) | T8, T19 |
-| 3 | Plan | `plan.html` | metric (name, formula, dataset, protocol, dedup, cutoff); baseline (source, checkpoint, protocol, last-verified date); budget gate; seed plan; **experiments-list spec rows (Exp ID, Purpose, Owner, Run link — no Status column; per-row execution state lives on tracker resource-allocation rows and is painted onto `index.html#plan-status` from inventory)**; no-change boundary as declared; one-sentence diff vs prior plan | T9, T11, T16, T19 |
+| 3 | Plan | `plan.html` | metric (name, formula, dataset, protocol, dedup, cutoff); baseline (source, checkpoint, protocol, last-verified date); budget gate; seed plan; **pipeline timeline painted from inventory `experiments[]` (id, purpose, after, output, gate, status, runLink, docsAnchor) — replaces the legacy Experiments List table for packages with 3+ sequential phases; the inventory is the single source of truth for per-phase purpose / dependencies / output / gate, and `docs/pipeline.html` §6 covers HOW only**; no-change boundary as declared; one-sentence diff vs prior plan | T9, T11, T16, T19 |
 | 4 | Implementation changes | `implementation.html` | owned-files set; diff summary; change cards (T14: `file:function`, expected sign, magnitude band, validating exps); reviewer verdicts; integration verdict; adjudication | T14, T20 |
 | 5 | Results (verdicts) | `results.html` | result gate table; per-exp result cards with validity, baseline reference, plan gate, observed metric paired with artifact path + last-modified + checkpoint + git commit, supported / unsupported claims, protocol-match verdict; per-validity counts (chips, never aggregated); inline visualizations | T5, T9, T10, T13, T23, R3, R16 |
 | 5b | Deep analysis (why + rules) | `analysis.html` | two blocks in fixed order: **Rules** (numbered `<ol class="rules-list">`, each `<li id="rule-<slug>">` plain prose + one `Evidence: <a href="#insight-<slug>">` link) and **Insight** (`<div class="insight-body">` of collapsible `<details id="insight-<slug>">` cards with narrative paragraphs and inline-styled visualizations + captions). Manual update only. See [`research-analysis`](../../research-analysis/SKILL.md). | (this skill) |
@@ -117,7 +117,7 @@ package contract:
 
 - `hypothesis` &mdash; canonical hypothesis text.
 - `noChangeBoundary` &mdash; one-sentence boundary reference.
-- `experiments` &mdash; ordered array `[{ id, label?, status, runLink? }, …]`. Painted onto `index.html#plan-status` by `renderPlanStatus()`. Allowed `status` values: `pending`, `queued`, `running`, `completed`, `failed`, `skipped`, `blocked`. The painter is the only read path; inventory is the only write path. Stale plan-status rows are a workflow violation if a tracker resource-allocation row reports a different status.
+- `experiments` &mdash; ordered array `[{ id, label?, purpose, after, output, gate, status, runLink?, docsAnchor? }, …]`. Painted onto `index.html#plan-status` by `renderPlanStatus()` (status chips), and onto `plan.html#experiments` by `renderPipelineTimeline()` (vertical pipeline of nodes). Allowed `status` values: `pending`, `queued`, `running`, `completed`, `failed`, `skipped`, `blocked`. **Timeline-field caps**: `purpose` &le; 12 words leading with an action verb; `gate` is exactly one measurable predicate (no top-level `AND` / `OR`); `output` is exactly one key artifact (single line); `after` is a list of phase ids that must each resolve to another `experiments[].id`; `docsAnchor` defaults to `docs/pipeline.html#<id_lowercase>`. The painters are the only read path; inventory is the only write path. Caps are enforced by `learnings_lint.py lint-status` and fire only when the field is present, so legacy entries with just `{ id, label, status, runLink }` remain lint-clean. Stale plan-status rows are a workflow violation if a tracker resource-allocation row reports a different status.
 - `workflowState`, `activeGate`, `primaryMetricVsGate`, `lastDecision`,
   `lastDecisionEvidencePath`, `nextRoute`, `currentBlocker` &mdash; the six T2
   fields plus an evidence-path hint.
@@ -145,6 +145,17 @@ must update the matching `experiments[i].status` in the inventory (one of
 the Overview surface stays in sync with the tracker resource-allocation
 row. Do not hand-edit the painted slot — write inventory instead.
 
+`renderPipelineTimeline()` paints the `[data-section="pipeline-timeline"]`
+slot on `plan.html` from the same `experiments[]` array. Each node renders
+the inventory's five spec fields (`id`, `purpose`, `after`, `output`,
+`gate`), a status chip painted from `status`, and a deep-link to
+`docs/pipeline.html#<id_lowercase>` (overridable via `docsAnchor`). The
+timeline is the single home for per-phase spec on packages with 3+
+sequential phases — the legacy Experiments List table is retired for those
+packages, and `docs/pipeline.html` §6 drops the `<b>Gate:</b>` and
+`<b>Purpose:</b>` re-statements (each block opens with a one-line backlink
+to the inventory-owned spec and focuses on HOW only).
+
 Static slots in the Resume Block kv-grid that are **not** auto-painted (they
 remain author-controlled): `Active plan` link, `Next action` link,
 `Runtime root` code block. These are navigation, not state.
@@ -160,7 +171,7 @@ Each WORKFLOW.md ledger table on the package surface exposes a stable
 | Resource allocation (14 cols) | `tracker.html` | `[data-table-body="resource-allocation"]` |
 | Latest live check (12 cols) | `tracker.html` | `[data-table-body="live-check"]` |
 | Result gate (10 cols) | `results.html` | `[data-table-body="result-gate"]` |
-| Experiments list (4 cols, spec only) | `plan.html` | `[data-table-body="experiments"]` |
+| Pipeline timeline (painted from inventory) | `plan.html` | `[data-section="pipeline-timeline"] [data-field="pipeline-timeline-list"]` (auto-painted by `renderPipelineTimeline()`; no manual rows). Legacy `[data-table-body="experiments"]` is retained for packages with fewer than 3 sequential phases. |
 | Considered routes (4 cols) | `next-action.html` | `[data-table-body="considered-routes"]` |
 
 Recipe for appending one row (any agent, any tool):
