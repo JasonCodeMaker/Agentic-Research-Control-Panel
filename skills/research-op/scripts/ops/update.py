@@ -5,6 +5,10 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+# Matches a complete JS string literal (single- or double-quoted) with backslash escapes.
+# Used to capture the full existing value even when it contains commas/newlines/braces.
+_JS_STRING = r"(?:'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\")"
+
 
 def _update_inventory_field(pkg: str, field: str, value) -> str:
     """Set `<pkg>.<field> = <value>` in research-packages.js, replacing the existing value."""
@@ -12,11 +16,11 @@ def _update_inventory_field(pkg: str, field: str, value) -> str:
     text = p.read_text()
     pat = re.compile(
         r"(\{[^{}]*?id:\s*['\"]" + re.escape(pkg) + r"['\"][^{}]*?"
-        + field + r":\s*)([^,\n}]+)",
+        + field + r":\s*)(" + _JS_STRING + r"|[^,\n}]+)",
         re.DOTALL,
     )
     m = pat.search(text)
-    new_val = json.dumps(value) if not isinstance(value, str) else f"'{value}'"
+    new_val = json.dumps(value)
     if m:
         new_text = text[:m.start(2)] + new_val + text[m.end(2):]
     else:
@@ -60,7 +64,8 @@ def update_experiments_status(pkg: str, payload: dict) -> list[str]:
         raise SystemExit(f"package {pkg} or its experiments array not found")
     # Within the experiments array, find the entry with matching id and update status.
     exp_pat = re.compile(
-        r"(\{[^{}]*?id:\s*['\"]" + re.escape(exp_id) + r"['\"][^{}]*?status:\s*)([^,\n}]+)",
+        r"(\{[^{}]*?id:\s*['\"]" + re.escape(exp_id) + r"['\"][^{}]*?status:\s*)("
+        + _JS_STRING + r"|[^,\n}]+)",
         re.DOTALL,
     )
     array_start = m.start(1)
