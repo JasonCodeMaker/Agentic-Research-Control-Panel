@@ -21,7 +21,6 @@ STAGE_PAGES: dict[str, tuple[str, str]] = {
     "implementation": ("implementation.html", "implementation.html"),
     "results": ("results.html", "results.html"),
     "analysis": ("analysis.html", "analysis.html"),
-    "next-action": ("next-action.html", "next-action.html"),
     "tracker": ("tracker.html", "tracker.html"),
     "brainstorm": ("brainstorm.html", "brainstorm.html"),
     "docs": ("docs/index.html", "docs/index.html"),
@@ -111,7 +110,7 @@ def template_mapping(args: argparse.Namespace, package_id: str, doc_title: str =
         "no_change_boundary": args.no_change_boundary,
         "source_path": args.source_path,
         "artifact_root": args.artifact_root,
-        "next_action": args.next_action,
+        "next_action": args.next_action or "unmeasured",
         "last_updated": args.last_updated,
         "doc_title": doc_title or "Source document",
     }
@@ -195,7 +194,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-change-boundary", default="unmeasured", dest="no_change_boundary")
     parser.add_argument("--source-path", default="", dest="source_path")
     parser.add_argument("--artifact-root", default="", dest="artifact_root")
-    parser.add_argument("--next-action", required=True, dest="next_action")
+    parser.add_argument("--next-action", default="", dest="next_action",
+                        help="one-line headline for the chosen-route panel on tracker.html#chosen-route")
     parser.add_argument("--scope", default="index,tracker,docs,_agent", help="comma list of stage pages or 'all'")
     # `--status` is the canonical flag (matches data/schema.js); `--workflow-state`
     # is kept as a backwards-compat alias for callers that predate the rename.

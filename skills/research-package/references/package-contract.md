@@ -7,6 +7,27 @@ control). Trust rules `T1-T24` in `rules/trustworthy-research-rules.html` and
 the seven-step controller in `WORKFLOW.md` are binding for every package page.
 HTML form rules `R1-R17` in `rules/html-rules.html` apply to every file.
 
+## Per-page audience model (canon)
+
+Every page is **conditionally** partitioned into at most two zones:
+
+- `<section data-audience="user">` &mdash; always visible. HCI-tuned:
+  &le; 18-word lines, painted summaries, chip rows, viz. **Must not** contain
+  `data-ack`, `data-table-body` ledger rows, kv-grids longer than ~6 rows, or
+  `file:function` code anchors.
+- `<details data-audience="agent">` &mdash; collapsed by default. Carries
+  ledger tables, ack slots, full kv-grid contracts, code anchors, reviewer-
+  defense prose.
+
+The split is **conditional, not universal**. Pages whose owned decision is
+naturally compact (`plan.html`, `analysis.html`, `docs/index.html`) stay
+single-audience and skip the split. Pages whose decision drags in heavy
+agent-write content (`index.html`, `implementation.html`, `tracker.html`,
+`results.html`) get the split. Default for new pages = single audience.
+
+Companion spec:
+`docs/superpowers/specs/2026-05-24-trustworthy-pipeline-html-design.md`.
+
 ## Single-home rule
 
 Every field has exactly one home page. Other pages link to it; they never
@@ -33,8 +54,13 @@ re-list it.
   - Per-phase launcher commands themselves are not contract content — they
     live next to their scripts in `packages/<id>/scripts/*.sh` (and an
     optional `docs/launchers.md` runbook). Tracker rows link to the script.
-- Result gate table is owned by `results.html`.
-- Considered routes table is owned by `next-action.html`.
+- Result gate table is owned by `results.html` (agent zone).
+- Chosen-route + considered-routes panel is owned by `tracker.html#chosen-route`
+  (agent zone). The standalone `next-action.html` is **retired** per the
+  page-7 canon of the HTML design spec
+  (`docs/superpowers/specs/2026-05-24-trustworthy-pipeline-html-design.md`).
+  Inbound links of the form `next-action.html#chosen-route` are rewritten
+  to `tracker.html#chosen-route`.
 
 ## To-do checklist (strict format)
 
@@ -70,8 +96,8 @@ Rules:
 | 4 | Implementation changes | `implementation.html` | owned-files set; diff summary; change cards (T14: `file:function`, expected sign, magnitude band, validating exps); reviewer verdicts; integration verdict; adjudication | T14, T20 |
 | 5 | Results (verdicts) | `results.html` | result gate table; per-exp result cards with validity, baseline reference, plan gate, observed metric paired with artifact path + last-modified + checkpoint + git commit, supported / unsupported claims, protocol-match verdict; per-validity counts (chips, never aggregated); inline visualizations | T5, T9, T10, T13, T23, R3, R16 |
 | 5b | Deep analysis (why + rules) | `analysis.html` | two blocks in fixed order: **Rules** (numbered `<ol class="rules-list">`, each `<li id="rule-<slug>">` plain prose + one `Evidence: <a href="#insight-<slug>">` link) and **Insight** (`<div class="insight-body">` of collapsible `<details id="insight-<slug>">` cards with narrative paragraphs and inline-styled visualizations + captions). Manual update only. See [`research-analysis`](../../research-analysis/SKILL.md). | (this skill) |
-| 6 | Next action | `next-action.html` | chosen route from the allowed set; considered-and-rejected routes table with one-sentence reason each; cited evidence path | T24 |
-| 7 | Tracker (execution state, single home) | `tracker.html` | Resume Block (the seven WORKFLOW.md fields); cross-stage to-do checklist (strict checkbox form) with links; implementation review table; resource allocation table; latest live check table; **Launch readiness card** (T21 readiness fields, expected runtime, dry-run + smoke status, T16 no-change affirmation, T1 launch user-ack); **Per-run cards** section (per open exp: state, last-log, missed-checks, retries, ETA, runtime root, cited PLAN threshold, recommended action, optional inline objective SVG) | T15, T17, T21, T22, R3, WORKFLOW.md "Tracker Hygiene" + Required Tables |
+| 6 | Chosen route + considered routes (panel) | `tracker.html#chosen-route` (agent zone; folded in from the retired `next-action.html` per page-7 canon) | chosen route from the allowed set; considered-and-rejected routes table with one-sentence reason each; cited evidence path | T24 |
+| 7 | Tracker (execution state, single home) | `tracker.html` | User zone: To-do checklist (strict checkbox form), **Exp directory atlas** (phase-grouped path index per exp), **Latest live check** (top-5 truncation + collapsed `<details class="live-check-history">`). Agent zone: Resume Block (seven WORKFLOW.md fields), **Chosen route panel** (T24+T1, see row 6), **Launch readiness card** (T21 fields, T16 no-change affirmation, T1 launch ack), Resource allocation table, **Per-run cards** (T22+T15), impl-review **pointer card** (single line linking to `implementation.html#changes` / `#adjudication`). | T15, T17, T21, T22, T24, R3, WORKFLOW.md "Tracker Hygiene" + Required Tables |
 | 8 | Source docs | `docs/index.html` + `docs/<slug>.html` | one HTML per source (method-design, metric-contract, dataset-contract, runtime-contract, code-anchors, audits, reviews, references); each carries last-updated and one-line summary on the index. Per-phase launcher commands (when documented in HTML rather than inline in scripts) live in `docs/launchers.md`. | R8, R3, T17 |
 | 9 | Continuity pointer (slim) | `_agent/context.html` | canonical source path, canonical runtime root, minimum context loading order, verification rules before result edits. **No fields duplicated from `index.html`**; references identity by `data-*` selectors | R6, T7 |
 | 10 | Brainstorm-only fields | `brainstorm.html` (only when `category="brainstorm"`) | one-sentence direction; contribution-spine flag (preserves / changes); resolved citations; fail-history flag for prior packages with the same direction | T18 |
@@ -86,7 +112,7 @@ Rules:
 - **Hypothesis re-statement**: only on `implementation.html` and `results.html`.
   String-equal vs canonical with `data-hypothesis-restated`. (T8)
 - **No-change affirmation**: small card on `tracker.html` (inside the Launch
-  readiness card), `results.html`, and `next-action.html` with `affirmed` +
+  readiness card) and `results.html` (agent zone) with `affirmed` +
   `commit-hash` + link to `implementation.html#owned-files`. Never re-list the
   file set. (T16)
 - **Last-updated + data-stale**: each page carries a `<time>` with the
@@ -172,7 +198,7 @@ Each WORKFLOW.md ledger table on the package surface exposes a stable
 | Latest live check (12 cols) | `tracker.html` | `[data-table-body="live-check"]` |
 | Result gate (10 cols) | `results.html` | `[data-table-body="result-gate"]` |
 | Pipeline timeline (painted from inventory) | `plan.html` | `[data-section="pipeline-timeline"] [data-field="pipeline-timeline-list"]` (auto-painted by `renderPipelineTimeline()`; no manual rows). Legacy `[data-table-body="experiments"]` is retained for packages with fewer than 3 sequential phases. |
-| Considered routes (4 cols) | `next-action.html` | `[data-table-body="considered-routes"]` |
+| Considered routes (4 cols) | `tracker.html` (agent zone, `#chosen-route`) | `[data-table-body="considered-routes"]` |
 
 Recipe for appending one row (any agent, any tool):
 
@@ -202,7 +228,7 @@ transition lives on a card with `data-ack="<transition>"` and a sibling
 | Move to `READY_TO_LAUNCH` | `implementation.html` adjudication | `ready-to-launch` |
 | Move to `EXPERIMENT_RUNNING` | `tracker.html` Launch-readiness no-change-affirmation | `experiment-running` |
 | Promote a result to verdict `pass` | `results.html` result-gate `<tr>` | `result-pass` |
-| Move package into `success` / `fail` / `STOPPED` | `next-action.html` chosen-route | `lane-transition` |
+| Move package into `success` / `fail` / `STOPPED` | `tracker.html#chosen-route` chosen-route card | `lane-transition` |
 
 The agent must write the user's ack token (e.g. timestamp + initials) into the
 `data-field="user-ack"` slot before recording the transition in the inventory

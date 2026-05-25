@@ -12,41 +12,109 @@
     <header class="masthead" data-section="masthead">
       <div class="eyebrow">execution ledger</div>
       <h1>Tracker &mdash; $name</h1>
-      <p class="lead">Single home for execution state: Resume Block, cross-stage to-do, Launch readiness (T21/T16/T1), the three WORKFLOW.md ledger tables (implementation review, resource allocation, latest live check), and per-run live cards (T22/T15) per open experiment.</p>
-      <div class="toolbar"><a class="pill" href="index.html">Overview</a><a class="pill" href="plan.html">Plan</a><a class="pill" href="results.html">Results</a></div>
+      <p class="lead">Single home for execution state. User zone: To-do &middot; Exp directory atlas &middot; Latest live check. Agent zone: Resume Block &middot; Launch readiness (T21/T16/T1) &middot; Chosen route panel (folded from the retired next-action page) &middot; Resource allocation &middot; Per-run cards &middot; impl-review pointer.</p>
+      <div class="toolbar"><a class="pill" href="index.html">Overview</a><a class="pill" href="plan.html">Plan</a><a class="pill" href="results.html">Results</a><a class="pill" href="#chosen-route">Chosen route</a></div>
       <header class="status-strip" data-status-strip aria-label="Package status (T2)"></header>
     </header>
 
     <nav class="package-nav" data-package-nav aria-label="Package pages"></nav>
 
-    <section data-section="resume-block" id="resume-block" aria-label="Resume Block">
-      <article class="module-card" data-card="resume-block">
+    <section data-audience="user" data-section="user-zone" id="user-zone" aria-label="User zone">
+
+      <article class="module-card" data-card="todo" id="todo">
+        <h2>To-do</h2>
+        <p class="card-text">Each item links to the page that owns the action. Strict format: every <code>&lt;li&gt;</code> wraps its content in <code>&lt;label&gt;&lt;input type="checkbox"&gt; &hellip;&lt;/label&gt;</code>; add the <code>checked</code> attribute when the item is done.</p>
+        <ul class="todo-checklist" data-field="todo-list">
+          <li><label><input type="checkbox"> unmeasured &mdash; <a href="#chosen-route">chosen route</a></label></li>
+        </ul>
+      </article>
+
+      <article class="module-card directory-atlas-card" data-card="directory-atlas" id="directory-atlas">
+        <h2>Exp directory atlas</h2>
+        <p class="card-text">Phase-grouped path index &mdash; <code>logs / outputs / ckpts / launcher</code> per exp. Block state-color: running=clay, completed=olive, pending=g300. Strict projection of <code>resourceAllocation[]</code> &mdash; every atlas path must also appear in the matching resource-allocation row.</p>
+        <div class="directory-atlas" data-list="directory-atlas">
+          <section class="phase-group" data-phase="P0">
+            <h3>P0 &mdash; <em>phase purpose</em></h3>
+            <div class="exp-block" data-exp-id="unmeasured" data-state="pending">
+              <header class="exp-block-header">
+                <code data-field="exp-id">unmeasured</code>
+                <span class="chip exp-state-chip" data-field="exp-state-chip">pending</span>
+              </header>
+              <dl class="path-lines">
+                <dt>runtime root</dt><dd><code data-artifact="runtime-root">$artifact_root</code></dd>
+                <dt>logs</dt><dd><code data-artifact="logs">unmeasured</code></dd>
+                <dt>outputs</dt><dd><code data-artifact="outputs">(none &mdash; unmeasured)</code></dd>
+                <dt>ckpts</dt><dd><code data-artifact="ckpts">(in outputs)</code></dd>
+                <dt>launcher</dt><dd><code data-artifact="launcher">(inline &hellip;)</code></dd>
+              </dl>
+            </div>
+          </section>
+        </div>
+      </article>
+
+      <article class="module-card live-check-card" data-card="live-check-user" id="live-check">
+        <h2>Latest live check</h2>
+        <p class="card-text">Top 5 rows by <code>time</code> desc; the rest collapse into <code>&lt;details class="live-check-history"&gt;</code> below. Single home for live-check data &mdash; the agent zone holds a pointer, not a duplicate table.</p>
+        <table class="data-table live-check-table" data-table="live-check" data-row-cap="5">
+          <thead><tr><th>Time</th><th>Exp ID</th><th>Agent</th><th>Run state</th><th>Last log</th><th>Progress</th><th>Latest metrics</th><th>Resource use</th><th>Artifacts</th><th>ETA</th><th>Live action</th><th>Next check</th></tr></thead>
+          <tbody data-table-body="live-check">
+            <tr><td>unmeasured</td><td data-field="exp-id">unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td></tr>
+          </tbody>
+        </table>
+        <details class="live-check-history">
+          <summary>show full history (0 older rows)</summary>
+          <table class="data-table live-check-history-table" data-table="live-check-history" data-row-cap="all">
+            <thead><tr><th>Time</th><th>Exp ID</th><th>Agent</th><th>Run state</th><th>Last log</th><th>Progress</th><th>Latest metrics</th><th>Resource use</th><th>Artifacts</th><th>ETA</th><th>Live action</th><th>Next check</th></tr></thead>
+            <tbody data-table-body="live-check-history"></tbody>
+          </table>
+        </details>
+      </article>
+
+    </section>
+
+    <details data-audience="agent" data-section="agent-zone" id="agent-zone">
+      <summary>Agent context</summary>
+
+      <article class="module-card" data-card="resume-block" id="resume-block">
         <h2>Resume Block</h2>
         <div class="kv-grid">
           <div class="k">Current state</div><div data-workflow-state data-field="workflow-state">unmeasured</div>
           <div class="k">Active plan</div><div data-field="active-plan"><a href="plan.html">plan.html</a></div>
           <div class="k">Last action</div><div data-field="last-action">unmeasured</div>
-          <div class="k">Next action</div><div data-field="next-action"><a href="next-action.html">next-action.html</a></div>
+          <div class="k">Next action</div><div data-field="next-action"><b>Chosen route:</b> <em>unmeasured</em> &mdash; full panel <a href="#chosen-route">below</a>.</div>
           <div class="k">Runtime root</div><code data-artifact="runtime-root">$artifact_root</code>
           <div class="k">Open runs</div><div data-field="open-runs">See <a href="#run-cards">Per-run cards</a> below</div>
           <div class="k">Blocking issue</div><div data-field="blocking-issue">unmeasured</div>
         </div>
       </article>
-    </section>
 
-    <section data-section="todo" id="todo" aria-label="To-do list">
-      <article class="module-card" data-card="todo">
-        <h2>To-do</h2>
-        <p class="card-text">Each item links to the page that owns the action.</p>
-        <p class="card-text">Each item links to the page that owns the action. Strict format: every <code>&lt;li&gt;</code> wraps its content in <code>&lt;label&gt;&lt;input type="checkbox"&gt; &hellip;&lt;/label&gt;</code>; add the <code>checked</code> attribute when the item is done.</p>
-        <ul class="todo-checklist" data-field="todo-list">
-          <li><label><input type="checkbox"> unmeasured &mdash; <a href="next-action.html">next action</a></label></li>
-        </ul>
-      </article>
-    </section>
+      <section class="chosen-route-panel" data-section="chosen-route" id="chosen-route" aria-label="Chosen route panel (merged from next-action)">
+        <article class="module-card chosen-route-card" data-card="chosen-route" data-ack="lane-transition" data-ack-value="">
+          <h2>Chosen route + lane-transition ack (T24 + T1)</h2>
+          <div class="kv-grid">
+            <div class="k">Route</div><div data-route data-field="chosen-route">$next_action</div>
+            <div class="k">Reason (one sentence)</div><div data-field="chosen-route-reason">unmeasured</div>
+            <div class="k">Evidence path</div><code data-artifact="chosen-route-evidence">unmeasured</code>
+            <div class="k">User ack (T1)</div><div data-field="user-ack">unmeasured</div>
+          </div>
+          <p class="card-text">T1: do not move into <code>success</code> / <code>fail</code> / <code>STOPPED</code> without a recorded user ack here. Read by <code>learnings_lint.py draft-terminal</code> to draft the E3 terminal block.</p>
+        </article>
+        <article class="module-card considered-routes-card" data-card="considered-routes">
+          <h3>Considered routes</h3>
+          <table class="data-table considered-routes-table" data-table="considered-routes">
+            <thead><tr><th>Route</th><th>Considered?</th><th>One-sentence reason</th><th>Evidence path</th></tr></thead>
+            <tbody data-table-body="considered-routes">
+              <tr><td data-route="run_next_experiment_from_step4"><code>run_next_experiment_from_step4</code></td><td data-field="considered">unmeasured</td><td data-field="reason">unmeasured</td><td><code data-artifact="evidence-path">unmeasured</code></td></tr>
+              <tr><td data-route="fix_implementation"><code>fix_implementation</code></td><td data-field="considered">unmeasured</td><td data-field="reason">unmeasured</td><td><code data-artifact="evidence-path">unmeasured</code></td></tr>
+              <tr><td data-route="revise_plan"><code>revise_plan</code></td><td data-field="considered">unmeasured</td><td data-field="reason">unmeasured</td><td><code data-artifact="evidence-path">unmeasured</code></td></tr>
+              <tr><td data-route="archive_or_stop"><code>archive_or_stop</code></td><td data-field="considered">unmeasured</td><td data-field="reason">unmeasured</td><td><code data-artifact="evidence-path">unmeasured</code></td></tr>
+              <tr><td data-route="ask_user"><code>ask_user</code></td><td data-field="considered">unmeasured</td><td data-field="reason">unmeasured</td><td><code data-artifact="evidence-path">unmeasured</code></td></tr>
+            </tbody>
+          </table>
+        </article>
+      </section>
 
-    <section data-section="launch-readiness" id="launch-readiness" aria-label="Launch readiness card">
-      <article class="module-card" data-card="launch-readiness">
+      <article class="module-card" data-card="launch-readiness" id="launch-readiness">
         <h2>Launch readiness (T21)</h2>
         <p class="card-text">Pre-launch facts; fill before the first <code>READY_TO_LAUNCH</code> transition.</p>
         <div class="kv-grid">
@@ -55,11 +123,12 @@
           <div class="k">Conda env</div><div data-field="conda-env" data-verification="recalled">unmeasured</div>
           <div class="k">Git commit</div><code data-field="git-commit" data-verification="recalled">unmeasured</code>
           <div class="k">Dataset path</div><code data-field="dataset-path" data-verification="recalled">unmeasured</code>
-          <div class="k">Expected runtime</div><div data-field="expected-runtime">unmeasured (record est_time=unknown until 30 min of stable throughput)</div>
+          <div class="k">Expected runtime</div><div data-field="expected-runtime">unmeasured (est_time=unknown until 30 min of stable throughput)</div>
           <div class="k">Dry-run status</div><div data-field="dry-run-status">unmeasured</div>
           <div class="k">Smoke status</div><div data-field="smoke-test-status">unmeasured</div>
         </div>
       </article>
+
       <article class="module-card" data-card="no-change-affirmation" data-ack="experiment-running" data-ack-value="">
         <h2>No-change affirmation (T16) + launch ack (T1)</h2>
         <div class="kv-grid">
@@ -70,22 +139,8 @@
         </div>
         <p class="card-text">T1: do not move to <code>EXPERIMENT_RUNNING</code> without a recorded user ack here.</p>
       </article>
-    </section>
 
-    <section data-section="implementation-review" id="implementation-review" aria-label="Implementation review table">
-      <article class="module-card">
-        <h2>Implementation review</h2>
-        <table class="data-table" data-table="implementation-review">
-          <thead><tr><th>Change ID</th><th>Purpose</th><th>Unit</th><th>Owned files</th><th>Scope</th><th>No-change boundary</th><th>Reviewer verdict</th><th>Finding class</th><th>Required fix</th><th>Main decision</th><th>Style/Minimal</th><th>Complexity</th><th>Out-of-scope</th><th>Validation</th><th>Integration</th></tr></thead>
-          <tbody data-table-body="implementation-review">
-            <tr><td data-field="change-id"><a href="implementation.html">unmeasured</a></td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td data-decision>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td></tr>
-          </tbody>
-        </table>
-      </article>
-    </section>
-
-    <section data-section="resource-allocation" id="resource-allocation" aria-label="Resource allocation table">
-      <article class="module-card">
+      <article class="module-card" data-card="resource-allocation">
         <h2>Resource allocation</h2>
         <table class="data-table" data-table="resource-allocation">
           <thead><tr><th>Exp ID</th><th>Purpose</th><th>Dependency</th><th>Target</th><th>Capacity</th><th>Assigned</th><th>Reason</th><th>Agent</th><th>Cmd/CWD/Env</th><th>Session/Job</th><th>Runtime root</th><th>Log path</th><th>Expected duration</th><th>Status</th></tr></thead>
@@ -94,12 +149,10 @@
           </tbody>
         </table>
       </article>
-    </section>
 
-    <section data-section="run-cards" id="run-cards" aria-label="Per-run live cards">
-      <article class="module-card" data-card="run-cards-host">
+      <article class="module-card" data-card="run-cards-host" id="run-cards">
         <h2>Per-run cards (T22 + T15)</h2>
-        <p class="card-text">One card per open experiment. Mirrors are not duplicated; the row below is the per-run companion to the latest live check table further down.</p>
+        <p class="card-text">One card per open experiment.</p>
         <article class="module-card" data-card="live-run" data-exp-id="unmeasured">
           <h3 data-field="exp-title">unmeasured</h3>
           <div class="kv-grid">
@@ -114,19 +167,13 @@
           </div>
         </article>
       </article>
-    </section>
 
-    <section data-section="live-check" id="live-check" aria-label="Latest live check">
-      <article class="module-card">
-        <h2>Latest live check</h2>
-        <table class="data-table" data-table="live-check">
-          <thead><tr><th>Time</th><th>Exp ID</th><th>Agent</th><th>Run state</th><th>Last log</th><th>Progress</th><th>Latest metrics</th><th>Resource use</th><th>Artifacts</th><th>ETA</th><th>Live action</th><th>Next check</th></tr></thead>
-          <tbody data-table-body="live-check">
-            <tr><td>unmeasured</td><td data-field="exp-id"><a href="#run-cards">unmeasured</a></td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td><td>unmeasured</td></tr>
-          </tbody>
-        </table>
+      <article class="module-card pointer-card" data-card="impl-review-pointer">
+        <h2>Implementation review</h2>
+        <p class="card-text">Implementation review now lives in <a href="implementation.html#changes"><code>implementation.html#changes</code></a> and <a href="implementation.html#adjudication"><code>implementation.html#adjudication</code></a>. The 15-col mirror previously embedded here was retired (page-3 canon: implementation review is single-home on <code>implementation.html</code>).</p>
       </article>
-    </section>
+
+    </details>
 
     <footer class="footer-note">
       <time data-field="last-updated" datetime="$last_updated">$last_updated</time>

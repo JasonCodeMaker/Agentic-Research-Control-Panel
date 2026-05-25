@@ -25,9 +25,45 @@
 
     <nav class="package-nav" data-package-nav aria-label="Package pages"></nav>
 
-    <section data-section="identity" id="identity" aria-label="Identity">
-      <article class="module-card" data-card="identity">
+    <section data-audience="user" data-section="user-zone" id="user-zone" aria-label="User zone">
+
+      <article class="module-card identity-card" data-card="identity-tldr">
         <h2>Identity</h2>
+        <ul class="identity-tldr-list" data-list="identity-tldr">
+          <li class="identity-tldr-line" data-field="problem-tldr"><span class="identity-tldr-k">Problem</span> <span class="identity-tldr-v">$problem</span></li>
+          <li class="identity-tldr-line" data-field="objective-tldr"><span class="identity-tldr-k">Objective</span> <span class="identity-tldr-v">$objective</span></li>
+          <li class="identity-tldr-line" data-field="motivation-tldr"><span class="identity-tldr-k">Motivation</span> <span class="identity-tldr-v">$motivation</span></li>
+        </ul>
+      </article>
+
+      <article class="module-card headline-card" data-card="headline" data-headline-kind="freeform">
+        <h2 data-field="headline-title">Headline</h2>
+        <div class="headline-body" data-block="headline-body">
+          <p class="card-text" data-field="headline-text"><em>Unmeasured &mdash; painted from <code>pkg.headline</code> by <code>renderHeadline()</code> once the package declares a headline kind (metric / baselines / evaluation / infrastructure / freeform).</em></p>
+        </div>
+      </article>
+
+      <article class="module-card plan-progress-card" data-card="plan-progress">
+        <h2>Plan progress</h2>
+        <p class="card-text">Per-experiment status chips, painted from <code>experiments[]</code>. Mirrors <a href="plan.html#experiments">plan / pipeline timeline</a>; both are painted from the same inventory array.</p>
+        <div class="plan-progress-chips" data-field="plan-status-list"></div>
+      </article>
+
+      <article class="module-card key-insight-card" data-card="key-insight" data-empty="true" hidden>
+        <h2>Key insight so far</h2>
+        <p class="card-text" data-field="key-insight">
+          <em>No key insight yet. Painted from <code>pkg.keyInsight</code>; auto-hidden when empty.</em>
+        </p>
+        <p class="card-text"><a href="analysis.html">Open analysis &rarr;</a></p>
+      </article>
+
+    </section>
+
+    <details data-audience="agent" data-section="agent-zone" id="agent-zone">
+      <summary>Agent context</summary>
+
+      <article class="module-card" data-card="identity-full">
+        <h2>Identity (full)</h2>
         <div class="kv-grid">
           <div class="k">Problem</div>
           <div data-field="problem">$problem</div>
@@ -36,7 +72,7 @@
           <div class="k">Motivation</div>
           <div data-field="motivation">$motivation</div>
           <div class="k">Primary metric (summary)</div>
-          <div data-field="primary-metric-summary">See <a href="plan.html#metric">Plan / metric</a></div>
+          <div data-field="primary-metric-summary">See <a href="plan.html#plan-invariants">Plan / invariants</a></div>
         </div>
       </article>
 
@@ -48,33 +84,21 @@
           <div class="artifact-row"><div class="kind">html package</div><code data-artifact="html-package">research_html/packages/$package_id/</code></div>
         </div>
       </article>
-    </section>
 
-    <section data-section="plan-status" id="plan-status" aria-label="Plan status">
-      <article class="module-card" data-card="plan-status">
-        <h2>Plan status (painted from inventory)</h2>
-        <p class="card-text">Per-experiment status chips, painted from <code>experiments[]</code> in <code>data/research-packages.js</code>. Mirrors the <a href="plan.html#experiments">plan / pipeline timeline</a> &mdash; both surfaces are painted from the same inventory array, so editing inventory updates both at once. Run links are dashboard-root-relative (<code>packages/&lt;pkg-id&gt;/&hellip;</code>); the renderer prepends <code>RESEARCH_ROOT_PREFIX</code> automatically.</p>
-        <div data-field="plan-status-list"></div>
-      </article>
-    </section>
-
-    <section data-section="page-index" id="page-index" aria-label="Page index">
       <article class="module-card" data-card="page-index">
         <h2>Pages</h2>
-        <p class="card-text">
-          One concern per page. Open the page that owns the next decision.
-          Pages not yet created render as disabled in the package nav above.
-        </p>
+        <p class="card-text">One concern per page. Open the page that owns the next decision. Pages not yet created render as disabled in the package nav above.</p>
         <ul>
-          <li><a href="plan.html">Plan</a> &mdash; hypothesis, metric, baseline, budget gate, seed plan, experiments list.</li>
-          <li><a href="implementation.html">Implementation</a> &mdash; owned-files set, change cards (T14), reviewer verdicts.</li>
-          <li><a href="results.html">Results</a> &mdash; result gate table, claims, validity chips, visualizations.</li>
-          <li><a href="next-action.html">Next action</a> &mdash; chosen route, considered routes, cited evidence path.</li>
-          <li><a href="tracker.html">Tracker</a> &mdash; Resume Block, to-do list, ledger tables, Launch readiness card (T21/T16/T1), per-run live cards (T22/T15).</li>
-          <li><a href="docs/">Docs</a> &mdash; method design, contracts, code anchors, audits, references.</li>
+          <li><a href="plan.html">Plan</a> &mdash; objective contract (5 invariants) and the pipeline timeline.</li>
+          <li><a href="implementation.html">Implementation</a> &mdash; plan coverage map, change blocks (T14), test rule catalog, adjudication.</li>
+          <li><a href="results.html">Results</a> &mdash; per-phase result blocks (user) + result-gate ledger (agent).</li>
+          <li><a href="tracker.html">Tracker</a> &mdash; to-do, exp directory atlas, live check, Resume Block, Launch readiness, <a href="tracker.html#chosen-route">chosen route</a>, resource allocation, run cards.</li>
+          <li><a href="analysis.html">Analysis</a> &mdash; manual Rules + Insight (single-audience).</li>
+          <li><a href="docs/">Docs</a> &mdash; grouped source documents with 5-attr agent metadata.</li>
         </ul>
       </article>
-    </section>
+
+    </details>
 
     <footer class="footer-note">
       <time data-field="last-updated" datetime="$last_updated">$last_updated</time>

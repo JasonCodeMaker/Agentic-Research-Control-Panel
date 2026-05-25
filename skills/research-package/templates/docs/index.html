@@ -12,43 +12,56 @@
     <header class="masthead" data-section="masthead">
       <div class="eyebrow">package docs</div>
       <h1>Docs &mdash; $name</h1>
-      <p class="lead">Source material that grounds the plan, implementation, runs, and results: method design, metric/dataset/runtime contracts, code anchors, audits, reviews, references.</p>
+      <p class="lead">Source material that grounds the plan, implementation, runs, and results. Grouped by the group-design rule: 4&ndash;7 groups &middot; each group is a predictable cluster &middot; full coverage &middot; &ge; 2 docs per group.</p>
       <div class="toolbar"><a class="pill" href="../">Overview</a><a class="pill" href="../../../index.html">Dashboard</a></div>
       <header class="status-strip" data-status-strip aria-label="Package status (T2)"></header>
     </header>
 
     <nav class="package-nav" data-package-nav aria-label="Package pages"></nav>
 
-    <section data-section="docs-grid" id="docs-grid" aria-label="Source documents">
-      <h2>Source documents</h2>
-      <div class="package-grid">
-        <article class="module-card" data-card="doc-source" data-doc-card="method-design">
-          <h3 data-field="doc-title">Method design</h3>
-          <p class="card-text" data-field="doc-summary">unmeasured &mdash; one-line summary of the method-design source.</p>
-          <p class="card-text"><a href="method-design.html">Open</a> &middot; <time data-field="last-updated" datetime="$last_updated">$last_updated</time></p>
-        </article>
-        <article class="module-card" data-card="doc-source" data-doc-card="metric-contract">
-          <h3 data-field="doc-title">Metric contract</h3>
-          <p class="card-text" data-field="doc-summary">unmeasured &mdash; metric name, formula, dataset, protocol, dedup rule, cutoff.</p>
-          <p class="card-text"><a href="metric-contract.html">Open</a> &middot; <time data-field="last-updated" datetime="$last_updated">$last_updated</time></p>
-        </article>
-        <article class="module-card" data-card="doc-source" data-doc-card="dataset-contract">
-          <h3 data-field="doc-title">Dataset contract</h3>
-          <p class="card-text" data-field="doc-summary">unmeasured &mdash; split, version, query-set hash, pool scope.</p>
-          <p class="card-text"><a href="dataset-contract.html">Open</a> &middot; <time data-field="last-updated" datetime="$last_updated">$last_updated</time></p>
-        </article>
-        <article class="module-card" data-card="doc-source" data-doc-card="runtime-contract">
-          <h3 data-field="doc-title">Runtime contract</h3>
-          <p class="card-text" data-field="doc-summary">unmeasured &mdash; expected runtime root, log layout, artifact layout.</p>
-          <p class="card-text"><a href="runtime-contract.html">Open</a> &middot; <time data-field="last-updated" datetime="$last_updated">$last_updated</time></p>
-        </article>
-        <article class="module-card" data-card="doc-source" data-doc-card="code-anchors">
-          <h3 data-field="doc-title">Code anchors</h3>
-          <p class="card-text" data-field="doc-summary">unmeasured &mdash; canonical file:function references for the implementation.</p>
-          <p class="card-text"><a href="code-anchors.html">Open</a> &middot; <time data-field="last-updated" datetime="$last_updated">$last_updated</time></p>
-        </article>
-      </div>
-    </section>
+    <p class="docs-index-lead card-text" data-field="docs-index-lead">Group count: <span data-field="docs-group-count">0</span>. Group ids: <span data-field="docs-group-ids">unmeasured</span>. Replace this line with the actual group set declared below.</p>
+
+    <div class="docs-groups" data-list="docs-groups">
+
+      <section class="docs-group" data-doc-group="contracts" data-doc-group-kind="contracts" data-doc-group-rationale="frozen interface contracts for plan / metric / dataset / runtime — reader expects to find these first when verifying any downstream claim">
+        <header class="docs-group-header">
+          <h2>Contracts</h2>
+          <p class="card-text">Frozen interface documents that any downstream surface re-states from via T8.</p>
+        </header>
+        <div class="docs-grid">
+          <article class="module-card doc-card"
+                   data-doc-id="objective-contract"
+                   data-doc-group="contracts"
+                   data-doc-topics="contract objective metric baseline"
+                   data-doc-related-pages="plan.html#plan-invariants results.html#hypothesis-restated"
+                   data-doc-cited-by-tasks="">
+            <header class="doc-card-header">
+              <h3 data-field="doc-title">Objective contract</h3>
+              <time class="doc-updated" data-field="last-updated" datetime="$last_updated">$last_updated</time>
+            </header>
+            <p class="doc-tldr" data-field="doc-tldr">Full Objective Integrity Contract &mdash; hypothesis, metric formula, baseline ckpt, budget, success predicate, no-change boundary file list, seed plan.</p>
+            <div class="doc-tags">
+              <span class="chip doc-tag">contract</span>
+              <span class="chip doc-tag">objective</span>
+              <span class="chip doc-tag">metric</span>
+              <span class="chip doc-tag">baseline</span>
+            </div>
+            <details class="doc-preview">
+              <summary>Preview &mdash; <a class="doc-open" href="objective-contract.html">open full &rarr;</a></summary>
+              <p class="doc-preview-body" data-field="doc-preview-body">unmeasured &mdash; 2&ndash;3 sentences with a concrete reason to open the doc.</p>
+              <p class="doc-related"><strong>Related pages:</strong> <a href="../plan.html#plan-invariants"><code>plan.html#plan-invariants</code></a> &middot; <a href="../results.html#hypothesis-restated"><code>results.html#hypothesis-restated</code></a></p>
+              <p class="doc-cited-by"><strong>Cited by tasks:</strong> <em>unmeasured</em></p>
+            </details>
+          </article>
+        </div>
+      </section>
+
+    </div>
+
+    <article class="module-card pointer-card" data-card="group-design-rule-pointer">
+      <h2>Group-design rule</h2>
+      <p class="card-text">Adding a new doc that doesn't fit an existing group? Run the 6-step group-design rule (read inputs &middot; cardinality + coherence rules &middot; form candidates &middot; defend rationale &middot; inclusion rule &middot; Stop-Gate). Full canon: see <code>core_components.md</code> &sect; Docs page.</p>
+    </article>
 
     <footer class="footer-note">
       <time data-field="last-updated" datetime="$last_updated">$last_updated</time>

@@ -12,29 +12,29 @@
     <header class="masthead" data-section="masthead">
       <div class="eyebrow">analysis</div>
       <h1>Analysis &mdash; $name</h1>
-      <p class="lead">Manual deep analysis of the results plus the rules distilled from it. This page is updated by hand only on explicit user instruction; nothing is auto-generated.</p>
-      <div class="toolbar"><a class="pill" href="index.html">Overview</a><a class="pill" href="results.html">Results</a><a class="pill" href="next-action.html">Next action</a><a class="pill" href="tracker.html">Tracker</a></div>
+      <p class="lead">Hand-curated Rules + Insight. Manual-update only on explicit user instruction; nothing auto-populates from results or tracker.</p>
+      <div class="toolbar"><a class="pill" href="index.html">Overview</a><a class="pill" href="results.html">Results</a><a class="pill" href="tracker.html#chosen-route">Chosen route</a><a class="pill" href="tracker.html">Tracker</a></div>
       <header class="status-strip" data-status-strip aria-label="Package status (T2)"></header>
     </header>
 
     <nav class="package-nav" data-package-nav aria-label="Package pages"></nav>
 
     <section data-section="rules" id="rules" aria-label="Distilled rules">
-      <article class="module-card" data-card="rules">
+      <article class="module-card rules-card" data-card="rules">
         <h2>Rules</h2>
-        <p class="card-text">Concise rules distilled from this package's results. Each rule names a concrete pitfall or wrong direction that future research-package algorithm design should avoid. Manually maintained &mdash; rules are added or revised only when a result clearly warrants a generalizable lesson, not on every run. Each rule is a numbered bullet written in plain natural language, with enough context that both a human reader and an agent can understand and apply it without re-reading the originating insight, plus a short evidence link back to that insight.</p>
-        <ol class="rules-list" data-list="rules" style="padding-left:1.4em; line-height:1.55;">
+        <p class="card-text">Numbered rules distilled from this package's results. Each rule names a concrete pitfall or wrong direction future algorithm design should avoid. Plain natural language; each rule ends with an evidence link to the originating insight subblock.</p>
+        <ol class="rules-list" data-list="rules">
           <li class="card-text"><em>No rules recorded yet.</em></li>
         </ol>
       </article>
     </section>
 
     <section data-section="insight" id="insight" aria-label="Deep analysis">
-      <article class="module-card" data-card="insight">
+      <article class="module-card insight-card" data-card="insight">
         <h2>Insight</h2>
-        <p class="card-text">Deep analysis of the experimental results &mdash; mechanism diagnostics, visualizations, tables, charts, and any narrative that goes beyond the verdict-level summary in <a href="results.html">results.html</a>. <strong>Updated only on explicit user instruction</strong>; do not auto-populate from results or tracker. Each insight below is a collapsible sub-block &mdash; click its title bar to expand or collapse.</p>
+        <p class="card-text">Deep analysis &mdash; mechanism diagnostics, visualizations, comparison tables, narrative beyond the verdict-level read on <a href="results.html">results.html</a>. Each insight below is a collapsible sub-block; click the summary to expand.</p>
         <div class="insight-body" data-block="insight-body">
-          <p class="card-text"><em>No insight content yet.</em></p>
+          <p class="card-text"><em>No insight content yet. New insights follow the canonical 6-part subblock shape: summary &middot; lead paragraph &middot; comparison table or chart &middot; one-sentence reading &middot; optional mechanism note &middot; provenance.</em></p>
         </div>
       </article>
     </section>

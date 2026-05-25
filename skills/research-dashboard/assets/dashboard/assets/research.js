@@ -794,7 +794,6 @@
     { slug: "implementation", label: "Implementation", href: "implementation.html" },
     { slug: "results", label: "Results", href: "results.html" },
     { slug: "analysis", label: "Analysis", href: "analysis.html" },
-    { slug: "next-action", label: "Next action", href: "next-action.html" },
     { slug: "tracker", label: "Tracker", href: "tracker.html" },
     { slug: "docs", label: "Docs", href: "docs/" },
     { slug: "brainstorm", label: "Brainstorm", href: "brainstorm.html" },
@@ -956,10 +955,12 @@
   }
 
   function buildPackageFilterForm(form, lanes, routes, statuses) {
-    // Lanes default to unchecked so the dashboard starts empty until the user
-    // picks one or more categories. (Issue: avoid dumping all packages on load.)
+    // brainstorm + in-progress default to checked (the two active lanes the
+    // user typically wants on load); success + fail default to unchecked.
+    var DEFAULT_ON = { brainstorm: true, "in-progress": true };
     var laneCheckboxes = lanes.map(function (id) {
-      return '<label><input type="checkbox" name="lane" value="' + htmlEscape(id) + '"> ' + htmlEscape(id) + "</label>";
+      var checked = DEFAULT_ON[id] ? " checked" : "";
+      return '<label><input type="checkbox" name="lane" value="' + htmlEscape(id) + '"' + checked + "> " + htmlEscape(id) + "</label>";
     }).join(" ");
     var routeOptions = ['<option value="all">All routes</option>'].concat(routes.map(function (r) {
       return '<option value="' + htmlEscape(r) + '">' + htmlEscape(r) + "</option>";
@@ -1275,6 +1276,547 @@
     });
   }
 
+  // ============================================================
+  // Per-page canon painters (HTML design spec 2026-05-24).
+  // Each painter is a graceful no-op when its host element or its
+  // backing inventory field is absent — the static template renders
+  // a usable placeholder otherwise.
+  // ============================================================
+
+  function renderUserZoneIdentity() {
+    var pkg = currentPackage();
+    if (!pkg) return;
+    var map = {
+      "problem-tldr": pkg.problemTldr,
+      "objective-tldr": pkg.objectiveTldr,
+      "motivation-tldr": pkg.motivationTldr,
+    };
+    Object.keys(map).forEach(function (field) {
+      var v = map[field];
+      if (v == null) return;
+      var node = document.querySelector('[data-card="identity-tldr"] [data-field="' + field + '"] .identity-tldr-v');
+      if (node) node.textContent = String(v);
+    });
+  }
+
+  function renderHeadline() {
+    var card = document.querySelector('[data-card="headline"]');
+    if (!card) return;
+    var pkg = currentPackage();
+    if (!pkg || !pkg.headline) return;
+    var h = pkg.headline;
+    var kind = String(h.kind || "freeform");
+    card.setAttribute("data-headline-kind", kind);
+    var title = card.querySelector('[data-field="headline-title"]');
+    if (title) title.textContent = String(h.name || "Headline");
+    var body = card.querySelector('[data-block="headline-body"]');
+    if (!body) return;
+    var html = "";
+    if (kind === "metric") {
+      html = '<p class="card-text"><b>' + htmlEscape(h.metricLabel || "Metric") + ":</b> " +
+             '<span class="num">' + htmlEscape(h.value || "unmeasured") + "</span>" +
+             (h.evidencePath ? ' &middot; <code>' + htmlEscape(h.evidencePath) + "</code>" : "") + "</p>";
+    } else if (kind === "baselines") {
+      var rows = Array.isArray(h.baselines) ? h.baselines : [];
+      html = "<ul>" + rows.map(function (b) {
+        return "<li><code>" + htmlEscape(b.id || "baseline") + "</code> &mdash; " +
+               htmlEscape(b.note || "unmeasured") + "</li>";
+      }).join("") + "</ul>";
+    } else if (kind === "evaluation" || kind === "infrastructure") {
+      html = '<p class="card-text">' + htmlEscape(h.summary || "unmeasured") + "</p>";
+    } else {
+      html = '<p class="card-text">' + htmlEscape(h.text || h.summary || "unmeasured") + "</p>";
+    }
+    body.innerHTML = html;
+  }
+
+  function renderKeyInsight() {
+    var card = document.querySelector('[data-card="key-insight"]');
+    if (!card) return;
+    var pkg = currentPackage();
+    var v = pkg && pkg.keyInsight ? String(pkg.keyInsight).trim() : "";
+    if (!v) {
+      card.setAttribute("data-empty", "true");
+      card.setAttribute("hidden", "");
+      return;
+    }
+    card.removeAttribute("hidden");
+    card.setAttribute("data-empty", "false");
+    var slot = card.querySelector('[data-field="key-insight"]');
+    if (slot) slot.textContent = v;
+  }
+
+  function renderObjectiveContract() {
+    var card = document.querySelector('[data-card="plan-invariants"]');
+    if (!card) return;
+    var pkg = currentPackage();
+    if (!pkg || !pkg.objectiveContract) return;
+    var c = pkg.objectiveContract;
+    var map = {
+      "hypothesis-one-line": c.hypothesisOneLine,
+      "metric-one-line": c.metric,
+      "baseline-one-line": c.baseline,
+      "budget-one-line": c.budget,
+      "success-predicate": c.successPredicate,
+    };
+    Object.keys(map).forEach(function (field) {
+      if (map[field] == null) return;
+      var node = card.querySelector('[data-field="' + field + '"] .invariant-v');
+      if (node) node.textContent = String(map[field]);
+    });
+  }
+
+  function computeNextUp(exps) {
+    if (!Array.isArray(exps) || !exps.length) return { nextEligible: null, runningNow: null };
+    var byId = {};
+    exps.forEach(function (e) { if (e && e.id) byId[e.id] = e; });
+    var running = exps.filter(function (e) { return e && e.status === "running"; }).map(function (e) { return e.id; });
+    var next = null;
+    for (var i = 0; i < exps.length; i++) {
+      var e = exps[i];
+      if (!e || e.status !== "pending") continue;
+      var after = Array.isArray(e.after) ? e.after : [];
+      var depsDone = after.every(function (d) {
+        var dep = byId[d];
+        return dep && (dep.status === "completed" || dep.status === "skipped");
+      });
+      if (depsDone) { next = e.id; break; }
+    }
+    return { nextEligible: next, runningNow: running.length ? running.join(", ") : null };
+  }
+
+  function renderPipelineTimeline() {
+    var host = document.querySelector('[data-card="pipeline-timeline"] [data-field="pipeline-timeline-list"]');
+    if (!host) return;
+    var pkg = currentPackage();
+    var exps = pkg && Array.isArray(pkg.experiments) ? pkg.experiments : [];
+    var banner = document.querySelector('[data-card="pipeline-timeline"] [data-field="pipeline-next-up"]');
+    if (banner) {
+      var nu = computeNextUp(exps);
+      banner.innerHTML = "<em>Next eligible: " + htmlEscape(nu.nextEligible || "none") + "</em>" +
+                        (nu.runningNow ? " &middot; <em>Running now: " + htmlEscape(nu.runningNow) + "</em>" : "");
+    }
+    if (!exps.length) {
+      host.innerHTML = '<li class="empty-state">No experiments in inventory.</li>';
+      return;
+    }
+    host.innerHTML = exps.map(function (e) {
+      var id = e && e.id ? String(e.id) : "unmeasured";
+      var status = e && e.status ? String(e.status) : "pending";
+      var purpose = e && e.purpose ? String(e.purpose) : "unmeasured";
+      var output = e && e.output ? String(e.output) : "unmeasured";
+      var gate = e && (e.gatePredicate || e.gate) ? String(e.gatePredicate || e.gate) : "unmeasured";
+      var after = Array.isArray(e && e.after) ? e.after : [];
+      var locked = e && e.lockedAt ? true : false;
+      var hasEvidence = e && e.gateEvidence && e.gateEvidence.artifactPath;
+      var docsAnchor = e && e.docsAnchor ? String(e.docsAnchor) : ("docs/pipeline.html#" + id.toLowerCase());
+      return [
+        '<li class="pipeline-node" data-phase-id="' + htmlEscape(id) + '" data-phase-status="' + htmlEscape(status) + '">',
+        '<div class="pipeline-node-head">',
+        '<code class="phase-id">' + htmlEscape(id) + "</code>",
+        '<span class="chip" data-status="' + htmlEscape(status) + '">' + htmlEscape(status) + "</span>",
+        hasEvidence ? '<span class="chip" title="' + htmlEscape(e.gateEvidence.artifactPath) + '">&#9989; evidence</span>' : "",
+        locked ? '<span class="chip">&#128274; locked</span>' : "",
+        "</div>",
+        '<div class="pipeline-node-body">',
+        '<p class="card-text"><b>purpose:</b> ' + htmlEscape(purpose) + "</p>",
+        '<p class="card-text"><b>after:</b> ' + (after.length ? after.map(htmlEscape).join(", ") : "<em>none</em>") + "</p>",
+        '<p class="card-text"><b>output:</b> ' + htmlEscape(output) + "</p>",
+        '<p class="card-text"><b>gate predicate:</b> ' + htmlEscape(gate) + "</p>",
+        '<p class="card-text"><a href="' + htmlEscape(docsAnchor) + '">' + htmlEscape(docsAnchor) + "</a></p>",
+        "</div>",
+        "</li>",
+      ].join("");
+    }).join("");
+  }
+
+  function renderImplementationPhaseStrip() {
+    var host = document.querySelector('[data-card="phase-strip"] [data-list="phase-strip"]');
+    if (!host) return;
+    var pkg = currentPackage();
+    var exps = pkg && Array.isArray(pkg.experiments) ? pkg.experiments : [];
+    var changes = pkg && pkg.implementation && Array.isArray(pkg.implementation.changes) ? pkg.implementation.changes : [];
+    if (!exps.length) {
+      host.innerHTML = '<li class="empty-state">No experiments in inventory.</li>';
+      return;
+    }
+    var byPhase = {};
+    changes.forEach(function (c, idx) {
+      var ids = Array.isArray(c && c.phaseIds) ? c.phaseIds : [];
+      ids.forEach(function (p) {
+        if (!byPhase[p]) byPhase[p] = [];
+        byPhase[p].push(idx + 1);
+      });
+    });
+    host.innerHTML = exps.map(function (e) {
+      var id = e && e.id ? String(e.id) : "unmeasured";
+      var status = e && e.status ? String(e.status) : "pending";
+      var nums = byPhase[id] || [];
+      var reuse = nums.length === 0 ? "true" : "false";
+      var nlabel = nums.length ? nums.join("+") : "&mdash;";
+      return [
+        '<li class="phase-strip-cell"',
+        ' data-phase-id="' + htmlEscape(id) + '"',
+        ' data-phase-status="' + htmlEscape(status) + '"',
+        ' data-reuse-only="' + reuse + '">',
+        '<code>' + htmlEscape(id) + "</code>",
+        '<span class="phase-strip-changes">' + nlabel + "</span>",
+        '<span class="chip" data-status="' + htmlEscape(status) + '">' + htmlEscape(status) + "</span>",
+        "</li>",
+      ].join("");
+    }).join("");
+  }
+
+  var PSEUDO_TOKEN_RE = /(#[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?\b)|(\b(?:if|else|elif|for|while|def|return|import|from|as|in|with|class|try|except|finally|raise|pass|break|continue|lambda|yield|and|or|not|True|False|None)\b)|(--?[A-Za-z][\w-]*)/g;
+
+  function tokenizePseudoCode(src) {
+    return String(src == null ? "" : src).replace(/[&<>]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c];
+    }).replace(PSEUDO_TOKEN_RE, function (_, comment, str, num, kw, flag) {
+      if (comment) return '<span class="tok-comment">' + comment + "</span>";
+      if (str)     return '<span class="tok-string">' + str + "</span>";
+      if (num)     return '<span class="tok-number">' + num + "</span>";
+      if (kw)      return '<span class="tok-keyword">' + kw + "</span>";
+      if (flag)    return '<span class="tok-flag">' + flag + "</span>";
+      return "";
+    });
+  }
+
+  function rollupTestState(tests) {
+    if (!Array.isArray(tests) || !tests.length) return { state: "pending", text: "0 tests" };
+    var pass = 0, fail = 0, pending = 0, na = 0;
+    tests.forEach(function (t) {
+      var s = t && t.state ? String(t.state) : "pending";
+      if (s === "pass") pass++;
+      else if (s === "fail") fail++;
+      else if (s === "n/a") na++;
+      else pending++;
+    });
+    var state = fail ? "fail" : (pending ? (pass ? "partial" : "pending") : (pass ? "pass" : "pending"));
+    var icon = state === "pass" ? "&#128994;" : state === "fail" ? "&#128308;" : state === "partial" ? "&#128992;" : "&#9675;";
+    return { state: state, text: icon + " " + pass + " pass &middot; " + pending + " pending" + (fail ? " &middot; " + fail + " fail" : "") };
+  }
+
+  function changeTestsTodoHtml(tests) {
+    if (!Array.isArray(tests) || !tests.length) {
+      return '<li class="test-row" data-state="pending"><span class="test-state-icon">&#9675;</span> <em>no tests declared</em></li>';
+    }
+    var icons = { pass: "&#9989;", fail: "&#10060;", pending: "&#9675;", "n/a": "&oslash;" };
+    return tests.map(function (t) {
+      var s = t && t.state ? String(t.state) : "pending";
+      var id = t && t.testId ? String(t.testId) : "test-id";
+      var note = t && t.note ? String(t.note) : "";
+      var ev = t && t.evidencePath ? String(t.evidencePath) : "";
+      return '<li class="test-row" data-state="' + htmlEscape(s) + '">' +
+             '<span class="test-state-icon">' + (icons[s] || icons.pending) + "</span> " +
+             '<code>' + htmlEscape(id) + "</code>" +
+             (note ? " &mdash; " + htmlEscape(note) : "") +
+             (ev ? ' &middot; <code>' + htmlEscape(ev) + "</code>" : "") +
+             "</li>";
+    }).join("");
+  }
+
+  function renderImplementationChanges() {
+    var host = document.querySelector('[data-list="change-blocks"]');
+    if (!host) return;
+    var pkg = currentPackage();
+    var changes = pkg && pkg.implementation && Array.isArray(pkg.implementation.changes) ? pkg.implementation.changes : [];
+    if (!changes.length) return;
+    var h2 = host.querySelector("h2.section-h2");
+    host.innerHTML = (h2 ? h2.outerHTML : "<h2 class=\"section-h2\">Change blocks</h2>") + changes.map(function (c, i) {
+      var id = c && c.id ? String(c.id) : "change-" + (i + 1);
+      var title = c && c.title ? String(c.title) : "unmeasured";
+      var critical = c && c.critical === true;
+      var reason = c && c.criticalReason ? String(c.criticalReason) : "wiring";
+      var summary = c && (critical ? c.blockSummary : c.oneLineSummary) || "unmeasured";
+      var serves = Array.isArray(c && c.phaseIds) ? c.phaseIds : [];
+      var rollup = rollupTestState(c && c.tests);
+      var locked = c && c.lockedAt ? true : false;
+      var pseudo = c && c.pseudoCode ? String(c.pseudoCode) : "";
+      var firstLine = pseudo.split("\n")[0] || "";
+      var fnameMatch = firstLine.match(/^#\s*([\w./-]+\.[a-z]+)/);
+      var fname = fnameMatch ? fnameMatch[1] : "code";
+      return [
+        '<article class="change-block module-card" data-change-id="' + htmlEscape(id) + '" data-critical="' + (critical ? "true" : "false") + '" data-critical-reason="' + htmlEscape(reason) + '">',
+        '<header class="change-block-header">',
+        "<h3>" + htmlEscape(title) + "</h3>",
+        '<div class="change-chips">',
+        '<span class="chip change-chip change-chip-critical" data-critical="' + (critical ? "true" : "false") + '">' + (critical ? "critical &middot; " + htmlEscape(reason) : "wiring") + "</span>",
+        '<span class="chip change-chip change-chip-rollup" data-rollup="' + htmlEscape(rollup.state) + '">' + rollup.text + "</span>",
+        locked ? '<span class="chip change-chip change-chip-lock">&#128274; locked</span>' : "",
+        "</div>",
+        "</header>",
+        '<p class="change-serves"><strong>serves:</strong> ' + (serves.length ? serves.map(function (p) {
+          return '<a href="plan.html#' + htmlEscape(p) + '"><code>' + htmlEscape(p) + "</code></a>";
+        }).join(" &middot; ") : "<em>no phases declared</em>") + "</p>",
+        '<p class="change-summary">' + htmlEscape(summary) + "</p>",
+        pseudo ? ([
+          '<details class="change-pseudo-details"><summary>Pseudo-code</summary>',
+          '<div class="pseudo-block">',
+          '<header class="pseudo-block-header">',
+          '<span class="pseudo-dot pseudo-dot--r"></span>',
+          '<span class="pseudo-dot pseudo-dot--y"></span>',
+          '<span class="pseudo-dot pseudo-dot--g"></span>',
+          '<span class="pseudo-filename">' + htmlEscape(fname) + "</span>",
+          "</header>",
+          '<pre class="pseudo-body"><code>' + tokenizePseudoCode(pseudo) + "</code></pre>",
+          "</div></details>",
+        ].join("")) : "",
+        '<details class="change-tests-details"><summary>Test todo</summary>',
+        '<ol class="test-rows">' + changeTestsTodoHtml(c && c.tests) + "</ol>",
+        "</details>",
+        "</article>",
+      ].join("");
+    }).join("");
+  }
+
+  function renderImplementationAdjudication() {
+    var card = document.querySelector('[data-card="adjudication"]');
+    if (!card) return;
+    var pkg = currentPackage();
+    var a = pkg && pkg.implementation && pkg.implementation.adjudication;
+    if (!a) return;
+    var map = {
+      "main-decision": a.decision,
+      "evidence-used": a.evidenceUsed,
+      "user-ack": a.userAck,
+    };
+    Object.keys(map).forEach(function (field) {
+      if (map[field] == null) return;
+      var node = card.querySelector('[data-field="' + field + '"]');
+      if (node) node.textContent = String(map[field]);
+    });
+    if (a.ackLockedAt) {
+      var t = card.querySelector('[data-field="ack-locked-at"]');
+      if (t) { t.textContent = String(a.ackLockedAt); t.setAttribute("datetime", String(a.ackLockedAt)); }
+      card.setAttribute("data-ack-value", String(a.ackLockedAt));
+    }
+  }
+
+  function renderImplementationAgentDetail() {
+    var host = document.querySelector('[data-list="changes-agent-detail"]');
+    if (!host) return;
+    var pkg = currentPackage();
+    var changes = pkg && pkg.implementation && Array.isArray(pkg.implementation.changes) ? pkg.implementation.changes : [];
+    if (!changes.length) return;
+    host.innerHTML = changes.map(function (c, i) {
+      var id = c && c.id ? String(c.id) : "change-" + (i + 1);
+      var anchors = Array.isArray(c && c.codeAnchors) ? c.codeAnchors : [];
+      return [
+        "<li>",
+        '<strong data-field="change-id">' + htmlEscape(id) + "</strong>",
+        '<div class="kv-grid">',
+        '<div class="k">Code anchors</div><div>' + (anchors.length ? anchors.map(function (a) { return "<code>" + htmlEscape(a) + "</code>"; }).join(" &middot; ") : "<em>none</em>") + "</div>",
+        '<div class="k">Expected sign</div><div>' + htmlEscape(c && c.expectedSign || "unmeasured") + "</div>",
+        '<div class="k">Magnitude band</div><div>' + htmlEscape(c && c.magnitudeBand || "unmeasured") + "</div>",
+        '<div class="k">Validating exps</div><div>' + htmlEscape(c && c.validatingExp || "unmeasured") + "</div>",
+        "</div>",
+        "</li>",
+      ].join("");
+    }).join("");
+  }
+
+  function renderDirectoryAtlas() {
+    var host = document.querySelector('[data-list="directory-atlas"]');
+    if (!host) return;
+    var pkg = currentPackage();
+    var dirs = pkg && pkg.tracker && Array.isArray(pkg.tracker.experimentDirectories) ? pkg.tracker.experimentDirectories : [];
+    if (!dirs.length) return;
+    var byPhase = {};
+    dirs.forEach(function (d) {
+      var p = d && d.phase ? String(d.phase) : "unphased";
+      if (!byPhase[p]) byPhase[p] = [];
+      byPhase[p].push(d);
+    });
+    var html = "";
+    Object.keys(byPhase).forEach(function (phase) {
+      html += '<section class="phase-group" data-phase="' + htmlEscape(phase) + '">';
+      html += "<h3>" + htmlEscape(phase) + "</h3>";
+      byPhase[phase].forEach(function (d) {
+        var paths = (d && d.paths) || {};
+        var state = d && d.state ? String(d.state) : "pending";
+        html += '<div class="exp-block" data-exp-id="' + htmlEscape(d.expId || "unmeasured") + '" data-state="' + htmlEscape(state) + '">';
+        html += '<header class="exp-block-header"><code>' + htmlEscape(d.expId || "unmeasured") + '</code><span class="chip exp-state-chip">' + htmlEscape(state) + "</span></header>";
+        html += '<dl class="path-lines">';
+        ["runtimeRoot", "logs", "outputs", "ckpts", "launcher"].forEach(function (k) {
+          var label = k === "runtimeRoot" ? "runtime root" : k;
+          html += "<dt>" + label + "</dt><dd><code>" + htmlEscape(paths[k] || "unmeasured") + "</code></dd>";
+        });
+        html += "</dl></div>";
+      });
+      html += "</section>";
+    });
+    host.innerHTML = html;
+  }
+
+  function renderChosenRoutePanel() {
+    var card = document.querySelector('[data-card="chosen-route"]');
+    if (!card) return;
+    var pkg = currentPackage();
+    var cr = pkg && pkg.chosenRoute;
+    if (!cr) return;
+    var map = {
+      "chosen-route": cr.route,
+      "chosen-route-reason": cr.reason,
+      "user-ack": cr.userAck,
+    };
+    Object.keys(map).forEach(function (field) {
+      if (map[field] == null) return;
+      var node = card.querySelector('[data-field="' + field + '"]');
+      if (node) node.textContent = String(map[field]);
+    });
+    if (cr.evidencePath) {
+      var ep = card.querySelector('[data-artifact="chosen-route-evidence"]');
+      if (ep) ep.textContent = String(cr.evidencePath);
+    }
+    // Resume Block headline cell sync.
+    var rbCell = document.querySelector('[data-card="resume-block"] [data-field="next-action"]');
+    if (rbCell && cr.route) {
+      rbCell.innerHTML = "<b>Chosen route:</b> <code>" + htmlEscape(cr.route) + "</code> &mdash; " +
+                        htmlEscape(cr.reason || "unmeasured") +
+                        '. Full panel <a href="#chosen-route">below</a>.';
+    }
+    // Considered routes table.
+    var considered = Array.isArray(pkg.consideredRoutes) ? pkg.consideredRoutes : [];
+    if (considered.length) {
+      var tbody = document.querySelector('[data-table-body="considered-routes"]');
+      if (tbody) {
+        tbody.innerHTML = considered.map(function (r) {
+          return "<tr>" +
+                 '<td data-route="' + htmlEscape(r.route || "") + '"><code>' + htmlEscape(r.route || "unmeasured") + "</code></td>" +
+                 "<td>" + htmlEscape(r.considered || "unmeasured") + "</td>" +
+                 "<td>" + htmlEscape(r.reason || "unmeasured") + "</td>" +
+                 '<td><code>' + htmlEscape(r.evidencePath || "unmeasured") + "</code></td>" +
+                 "</tr>";
+        }).join("");
+      }
+    }
+  }
+
+  function renderResultBlocks() {
+    var host = document.querySelector('[data-list="result-blocks"]');
+    if (!host) return;
+    var pkg = currentPackage();
+    var blocks = pkg && Array.isArray(pkg.resultBlocks) ? pkg.resultBlocks : [];
+    if (!blocks.length) return;
+    host.innerHTML = blocks.map(function (b) {
+      var phaseId = b && b.phaseId ? String(b.phaseId) : "unmeasured";
+      var title = b && b.title ? String(b.title) : (phaseId + " &mdash; result");
+      var summary = b && b.summary ? String(b.summary) : "unmeasured";
+      var detail = b && b.detail ? String(b.detail) : "";
+      var main = b && b.mainTable;
+      var insights = Array.isArray(b && b.insights) ? b.insights : [];
+      var ablations = Array.isArray(b && b.ablations) ? b.ablations : [];
+      var mainHtml = "";
+      if (main && Array.isArray(main.rows)) {
+        var headers = Array.isArray(main.columns) ? main.columns : Object.keys(main.rows[0] || {});
+        mainHtml = '<table class="data-table block-main-table"><thead><tr>' +
+                   headers.map(function (h) { return "<th>" + htmlEscape(h) + "</th>"; }).join("") +
+                   "</tr></thead><tbody>" +
+                   main.rows.map(function (row) {
+                     return "<tr>" + headers.map(function (h) {
+                       var v = row[h];
+                       return '<td' + (typeof v === "number" ? ' class="num"' : "") + ">" + htmlEscape(v == null ? "&mdash;" : v) + "</td>";
+                     }).join("") + "</tr>";
+                   }).join("") +
+                   "</tbody></table>";
+      }
+      return [
+        '<article class="result-block" data-result-block data-phase-id="' + htmlEscape(phaseId) + '">',
+        "<h2>" + htmlEscape(title) + "</h2>",
+        '<p class="block-summary">' + htmlEscape(summary) + "</p>",
+        detail ? '<details class="block-detail"><summary>Full methodology &amp; provenance</summary><p class="card-text">' + htmlEscape(detail) + "</p></details>" : "",
+        mainHtml,
+        '<section class="block-insight"><h4>Insight</h4><ul class="block-insight-bullets">' +
+          (insights.length ? insights.map(function (s) { return "<li>" + htmlEscape(s) + "</li>"; }).join("") :
+                             '<li><em>No cells measured yet.</em></li>') +
+          "</ul></section>",
+        ablations.length ? '<details class="block-ablation"><summary>Ablations / peer tables</summary><ul>' +
+          ablations.map(function (a) { return "<li>" + htmlEscape(a.title || "ablation") + "</li>"; }).join("") +
+          "</ul></details>" : "",
+        "</article>",
+      ].join("");
+    }).join("");
+  }
+
+  function renderInsightSubblocks() {
+    var host = document.querySelector('[data-block="insight-body"]');
+    if (!host) return;
+    var pkg = currentPackage();
+    var insights = pkg && Array.isArray(pkg.analysisInsights) ? pkg.analysisInsights : [];
+    if (!insights.length) return;
+    host.innerHTML = insights.map(function (s) {
+      var id = s && s.id ? String(s.id) : "insight";
+      var title = s && s.title ? String(s.title) : "Insight";
+      var lead = s && s.lead ? String(s.lead) : "";
+      var reading = s && s.reading ? String(s.reading) : "";
+      var mechanism = s && s.mechanism ? String(s.mechanism) : "";
+      var prov = s && s.provenance ? String(s.provenance) : "";
+      return [
+        '<details class="insight-subblock" id="insight-' + htmlEscape(id) + '">',
+        "<summary>" + htmlEscape(title) + "</summary>",
+        '<div class="insight-subblock-body">',
+        lead ? '<p class="card-text">' + htmlEscape(lead) + "</p>" : "",
+        reading ? '<p class="insight-reading">' + htmlEscape(reading) + "</p>" : "",
+        mechanism ? "<h4>Mechanism</h4><p class=\"card-text\">" + htmlEscape(mechanism) + "</p>" : "",
+        prov ? '<p class="insight-provenance">' + htmlEscape(prov) + "</p>" : "",
+        "</div></details>",
+      ].join("");
+    }).join("");
+  }
+
+  function renderDocsIndex() {
+    var host = document.querySelector('[data-list="docs-groups"]');
+    if (!host) return;
+    var pkg = currentPackage();
+    var groups = pkg && Array.isArray(pkg.docsGroups) ? pkg.docsGroups : [];
+    if (!groups.length) return;
+    // Update lead.
+    var ids = groups.map(function (g) { return g.id; }).filter(Boolean);
+    var leadCount = document.querySelector('[data-field="docs-group-count"]');
+    if (leadCount) leadCount.textContent = String(groups.length);
+    var leadIds = document.querySelector('[data-field="docs-group-ids"]');
+    if (leadIds) leadIds.textContent = ids.join(", ");
+    host.innerHTML = groups.map(function (g) {
+      var docs = Array.isArray(g && g.docs) ? g.docs : [];
+      return [
+        '<section class="docs-group" data-doc-group="' + htmlEscape(g.id || "") +
+          '" data-doc-group-kind="' + htmlEscape(g.kind || "") +
+          '" data-doc-group-rationale="' + htmlEscape(g.rationale || "") + '">',
+        '<header class="docs-group-header"><h2>' + htmlEscape(g.title || g.id || "group") + "</h2>" +
+          (g.lead ? '<p class="card-text">' + htmlEscape(g.lead) + "</p>" : "") + "</header>",
+        '<div class="docs-grid">',
+        docs.map(function (d) {
+          var topics = Array.isArray(d.topics) ? d.topics : [];
+          var related = Array.isArray(d.relatedPages) ? d.relatedPages : [];
+          var citedBy = Array.isArray(d.citedByTasks) ? d.citedByTasks : [];
+          return [
+            '<article class="module-card doc-card"',
+            ' data-doc-id="' + htmlEscape(d.id || "") + '"',
+            ' data-doc-group="' + htmlEscape(g.id || "") + '"',
+            ' data-doc-topics="' + htmlEscape(topics.join(" ")) + '"',
+            ' data-doc-related-pages="' + htmlEscape(related.join(" ")) + '"',
+            ' data-doc-cited-by-tasks="' + htmlEscape(citedBy.join(" ")) + '">',
+            '<header class="doc-card-header">',
+            "<h3>" + htmlEscape(d.title || d.id || "doc") + "</h3>",
+            '<time class="doc-updated" datetime="' + htmlEscape(d.lastUpdated || "") + '">' + htmlEscape(d.lastUpdated || "") + "</time>",
+            "</header>",
+            '<p class="doc-tldr">' + htmlEscape(d.tldr || "unmeasured") + "</p>",
+            '<div class="doc-tags">' + topics.map(function (t) { return '<span class="chip doc-tag">' + htmlEscape(t) + "</span>"; }).join("") + "</div>",
+            '<details class="doc-preview">',
+            '<summary>Preview &mdash; <a class="doc-open" href="' + htmlEscape(d.href || (d.id + ".html")) + '">open full &rarr;</a></summary>',
+            d.preview ? '<p class="doc-preview-body">' + htmlEscape(d.preview) + "</p>" : "",
+            related.length ? '<p class="doc-related"><strong>Related pages:</strong> ' + related.map(function (r) { return '<a href="../' + htmlEscape(r) + '"><code>' + htmlEscape(r) + "</code></a>"; }).join(" &middot; ") + "</p>" : "",
+            citedBy.length ? '<p class="doc-cited-by"><strong>Cited by tasks:</strong> ' + citedBy.map(function (c) { return "<code>" + htmlEscape(c) + "</code>"; }).join(" &middot; ") + "</p>" : "",
+            "</details>",
+            "</article>",
+          ].join("");
+        }).join(""),
+        "</div></section>",
+      ].join("");
+    }).join("");
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     renderDashboardSummary();
     renderGlobalContext();
@@ -1290,6 +1832,21 @@
     renderHypothesisCheck();
     renderDashboardPackages();
     renderLearningsView();
+    // Per-page canon painters (HTML design spec 2026-05-24).
+    renderUserZoneIdentity();
+    renderHeadline();
+    renderKeyInsight();
+    renderObjectiveContract();
+    renderPipelineTimeline();
+    renderImplementationPhaseStrip();
+    renderImplementationChanges();
+    renderImplementationAdjudication();
+    renderImplementationAgentDetail();
+    renderDirectoryAtlas();
+    renderChosenRoutePanel();
+    renderResultBlocks();
+    renderInsightSubblocks();
+    renderDocsIndex();
     setupCopyButtons();
     enhanceSortableTables();
   });

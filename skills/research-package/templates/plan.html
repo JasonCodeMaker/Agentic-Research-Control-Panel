@@ -12,72 +12,34 @@
     <header class="masthead" data-section="masthead">
       <div class="eyebrow">plan</div>
       <h1>Plan &mdash; $name</h1>
-      <p class="lead">Hypothesis, metric, baseline, budget gate, seed plan, experiments list, and the no-change boundary as declared.</p>
-      <div class="toolbar"><a class="pill" href="index.html">Overview</a><a class="pill" href="../../index.html">Dashboard</a></div>
+      <p class="lead">The frozen Objective Integrity Contract and the pipeline timeline. Long-form detail (full metric formula, baseline ckpt paths, no-change boundary file list, seed plan) lives in <a href="docs/objective-contract.html">docs/objective-contract.html</a>.</p>
+      <div class="toolbar"><a class="pill" href="index.html">Overview</a><a class="pill" href="../../index.html">Dashboard</a><a class="pill" href="docs/objective-contract.html">Contract detail</a></div>
       <header class="status-strip" data-status-strip aria-label="Package status (T2)"></header>
     </header>
 
     <nav class="package-nav" data-package-nav aria-label="Package pages"></nav>
 
-    <section data-section="hypothesis" id="hypothesis" aria-label="Hypothesis">
-      <article class="module-card" data-card="hypothesis">
-        <h2>Hypothesis (canonical, T19)</h2>
-        <p data-field="hypothesis-text" data-verification="recalled">$hypothesis</p>
-      </article>
-    </section>
-
-    <section data-section="metric" id="metric" aria-label="Primary metric and budget">
-      <article class="module-card" data-card="metric">
-        <h2>Primary metric</h2>
-        <div class="kv-grid">
-          <div class="k">Name</div><div data-field="metric-name">$primary_metric</div>
-          <div class="k">Formula</div><div data-field="metric-formula">unmeasured</div>
-          <div class="k">Dataset</div><div data-field="metric-dataset">unmeasured</div>
-          <div class="k">Protocol</div><div data-field="metric-protocol">unmeasured</div>
-          <div class="k">Dedup rule</div><div data-field="metric-dedup">unmeasured</div>
-          <div class="k">Cutoff</div><div data-field="metric-cutoff">unmeasured</div>
-        </div>
-      </article>
-
-      <article class="module-card" data-card="baseline">
-        <h2>Baseline (T11)</h2>
-        <div class="kv-grid">
-          <div class="k">Source</div><div data-field="baseline-source">$baseline</div>
-          <div class="k">Checkpoint</div><div data-field="baseline-checkpoint">unmeasured</div>
-          <div class="k">Protocol</div><div data-field="baseline-protocol">unmeasured</div>
-          <div class="k">Last verified</div><div data-field="baseline-last-verified">unmeasured</div>
-        </div>
-      </article>
-
-      <article class="module-card" data-card="budget-gate">
-        <h2>Budget gate</h2>
-        <p data-field="budget-gate">$budget</p>
-      </article>
-
-      <article class="module-card" data-card="seed-plan">
-        <h2>Seed plan</h2>
-        <p data-field="seed-plan">unmeasured</p>
-      </article>
-    </section>
-
-    <section data-section="diff" id="diff" aria-label="Plan diff and boundary">
-      <article class="module-card" data-card="plan-diff">
-        <h2>Diff vs prior plan (one sentence)</h2>
-        <p data-field="plan-diff">unmeasured</p>
-      </article>
-
-      <article class="module-card" data-card="no-change-boundary">
-        <h2>No-change boundary (declared, T16)</h2>
-        <p data-field="no-change-boundary">$no_change_boundary</p>
+    <section data-section="plan-invariants" id="plan-invariants" aria-label="Plan invariants">
+      <article class="module-card plan-invariants-card" data-card="plan-invariants">
+        <h2>Plan invariants</h2>
+        <p class="card-text">Five painted &le; 15-word lines from <code>objectiveContract</code> &mdash; the canonical T8 string-equal source. Each line drops detail into <a href="docs/objective-contract.html">docs/objective-contract.html</a>.</p>
+        <ol class="plan-invariants-list" data-list="plan-invariants" data-field="plan-invariants-list">
+          <li class="plan-invariant" data-field="hypothesis-one-line" data-invariant="hypothesis"><span class="invariant-k">Hypothesis</span> <span class="invariant-v">$hypothesis</span></li>
+          <li class="plan-invariant" data-field="metric-one-line" data-invariant="metric"><span class="invariant-k">Metric</span> <span class="invariant-v">$primary_metric</span></li>
+          <li class="plan-invariant" data-field="baseline-one-line" data-invariant="baseline"><span class="invariant-k">Baseline</span> <span class="invariant-v">$baseline</span></li>
+          <li class="plan-invariant" data-field="budget-one-line" data-invariant="budget"><span class="invariant-k">Budget</span> <span class="invariant-v">$budget</span></li>
+          <li class="plan-invariant" data-field="success-predicate" data-invariant="success-predicate"><span class="invariant-k">Success predicate</span> <span class="invariant-v">unmeasured</span></li>
+        </ol>
       </article>
     </section>
 
     <section data-section="pipeline-timeline" id="experiments" aria-label="Pipeline timeline">
-      <article class="module-card" data-card="pipeline-timeline">
-        <h2>Pipeline timeline (painted from inventory)</h2>
-        <p class="card-text">Single home for per-experiment spec + status. Each node carries 5 written spec fields (<code>id</code>, <code>purpose</code>, <code>after</code>, <code>output</code>, <code>gate</code>) + 2 painted indicators (status chip, deep-link). Purpose is &le; 12 words leading with an action verb; gate is one measurable predicate; output is one key artifact. Full input/output schemas, sentinel format, code anchors, and commands live in <a href="docs/pipeline.html">docs/pipeline.html</a>; this slot mirrors the same <code>experiments[]</code> array that paints <a href="index.html#plan-status">overview / plan status</a>. Update inventory, not this slot. Hand-coded experiments tables on this page are forbidden (lint rule <code>plan-static-experiments-table</code>).</p>
+      <article class="module-card pipeline-card" data-card="pipeline-timeline">
+        <h2>Pipeline timeline</h2>
+        <p class="pipeline-next-up" data-field="pipeline-next-up" aria-label="Next-up banner"><em>Next eligible: unmeasured</em></p>
+        <p class="card-text">Single home for per-experiment spec + status, painted from <code>experiments[]</code> in <code>data/research-packages.js</code>. Each node carries 5 spec fields (<code>id</code>, <code>purpose</code>, <code>after</code>, <code>output</code>, <code>gatePredicate</code>) + 3 painted indicators (<code>status</code> chip, <code>[&#9989; evidence]</code> chip when locked, <code>[&#128274; locked]</code> chip when frozen). Update inventory, not this slot. Hand-coded experiments tables are forbidden (lint rule <code>plan-static-experiments-table</code>).</p>
         <ol class="pipeline-timeline" data-field="pipeline-timeline-list" aria-label="Pipeline phases"></ol>
-        <p class="card-text"><em>Brainstorm or single-phase packages:</em> leave <code>experiments[]</code> empty (or with one node) and the timeline renders an empty-state. Do not replace this section with a static table.</p>
+        <p class="card-text"><em>Brainstorm or single-phase packages:</em> leave <code>experiments[]</code> empty (or with one node) and the timeline renders an empty-state.</p>
       </article>
     </section>
 
