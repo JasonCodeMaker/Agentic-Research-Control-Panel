@@ -5,35 +5,30 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-# Matches a complete JS string literal (single- or double-quoted) with backslash escapes.
-# Used to capture the full existing value even when it contains commas/newlines/braces.
-_JS_STRING = r"(?:'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\")"
+from . import _pkg_block
 
 
 def _update_inventory_field(pkg: str, field: str, value) -> str:
     """Set `<pkg>.<field> = <value>` in research-packages.js, replacing the existing value."""
     p = Path("research_html/data/research-packages.js")
     text = p.read_text()
-    pat = re.compile(
-        r"(\{[^{}]*?id:\s*['\"]" + re.escape(pkg) + r"['\"][^{}]*?"
-        + field + r":\s*)(" + _JS_STRING + r"|[^,\n}]+)",
-        re.DOTALL,
-    )
-    m = pat.search(text)
+    bounds = _pkg_block.find_package_block(text, pkg)
+    if bounds is None:
+        raise SystemExit(f"package {pkg} not found in inventory")
+    pkg_start, pkg_end = bounds
+    block = text[pkg_start:pkg_end]
+    fv = _pkg_block.find_top_level_field_value(block, field)
     new_val = json.dumps(value)
-    if m:
-        new_text = text[:m.start(2)] + new_val + text[m.end(2):]
+    if fv is None:
+        id_fv = _pkg_block.find_top_level_field_value(block, "id")
+        if id_fv is None:
+            raise SystemExit(f"package {pkg} has no id field in its block")
+        _, id_end = id_fv
+        new_block = block[:id_end] + f", {field}: {new_val}" + block[id_end:]
     else:
-        # Field absent — insert after id.
-        pat2 = re.compile(
-            r"(\{[^{}]*?id:\s*['\"]" + re.escape(pkg) + r"['\"])",
-            re.DOTALL,
-        )
-        m2 = pat2.search(text)
-        if not m2:
-            raise SystemExit(f"package {pkg} not found in inventory")
-        new_text = text[:m2.end()] + f", {field}: {new_val}" + text[m2.end():]
-    p.write_text(new_text)
+        value_start, value_end = fv
+        new_block = block[:value_start] + new_val + block[value_end:]
+    p.write_text(text[:pkg_start] + new_block + text[pkg_end:])
     return str(p)
 
 
@@ -54,30 +49,35 @@ def update_experiments_status(pkg: str, payload: dict) -> list[str]:
     new_status = payload["to"]
     p = Path("research_html/data/research-packages.js")
     text = p.read_text()
-    # Locate the package block, then find the experiment entry by id within it.
-    pkg_pat = re.compile(
-        r"\{[^{}]*?id:\s*['\"]" + re.escape(pkg) + r"['\"].*?experiments:\s*\[([^\]]*)\]",
-        re.DOTALL,
-    )
-    m = pkg_pat.search(text)
-    if not m:
-        raise SystemExit(f"package {pkg} or its experiments array not found")
-    # Within the experiments array, find the entry with matching id and update status.
-    exp_pat = re.compile(
-        r"(\{[^{}]*?id:\s*['\"]" + re.escape(exp_id) + r"['\"][^{}]*?status:\s*)("
-        + _JS_STRING + r"|[^,\n}]+)",
-        re.DOTALL,
-    )
-    array_start = m.start(1)
-    array_end = m.end(1)
-    array_text = text[array_start:array_end]
-    em = exp_pat.search(array_text)
-    if not em:
+    bounds = _pkg_block.find_package_block(text, pkg)
+    if bounds is None:
+        raise SystemExit(f"package {pkg} not found in inventory")
+    pkg_start, pkg_end = bounds
+    block = text[pkg_start:pkg_end]
+    fv = _pkg_block.find_top_level_field_value(block, "experiments")
+    if fv is None:
+        raise SystemExit(f"package {pkg} has no experiments array")
+    arr_start, arr_end = fv  # at '[' .. one past ']'
+    array_text = block[arr_start:arr_end]
+    item_bounds = _pkg_block.find_array_item_by_id(array_text, exp_id)
+    if item_bounds is None:
         raise SystemExit(f"experiment {exp_id} not found in package {pkg}")
-    new_val = f"'{new_status}'"
-    new_array = array_text[:em.start(2)] + new_val + array_text[em.end(2):]
-    new_text = text[:array_start] + new_array + text[array_end:]
-    p.write_text(new_text)
+    item_start, item_end = item_bounds
+    item_text = array_text[item_start:item_end]
+    new_val = json.dumps(new_status)
+    status_fv = _pkg_block.find_top_level_field_value(item_text, "status")
+    if status_fv is None:
+        id_fv = _pkg_block.find_top_level_field_value(item_text, "id")
+        if id_fv is None:
+            raise SystemExit(f"experiment {exp_id} has no id field?")
+        _, id_end = id_fv
+        new_item = item_text[:id_end] + f", status: {new_val}" + item_text[id_end:]
+    else:
+        vs, ve = status_fv
+        new_item = item_text[:vs] + new_val + item_text[ve:]
+    new_array = array_text[:item_start] + new_item + array_text[item_end:]
+    new_block = block[:arr_start] + new_array + block[arr_end:]
+    p.write_text(text[:pkg_start] + new_block + text[pkg_end:])
     return [str(p)]
 
 

@@ -5,6 +5,8 @@ import re
 from datetime import datetime
 from pathlib import Path
 
+from . import _pkg_block
+
 
 def _bump_last_updated(path: Path) -> None:
     """Update the <time data-field='last-updated'> on a touched HTML file."""
@@ -22,32 +24,32 @@ def _append_to_inventory_array(pkg: str, array_field: str, entry: dict) -> str:
     """Append `entry` to the named array in the package's inventory entry. Returns the file path edited."""
     p = Path("research_html/data/research-packages.js")
     text = p.read_text()
-    # Find the package entry block (tolerant; for MVP).
-    pat = re.compile(
-        r"(\{[^{}]*?id:\s*['\"]" + re.escape(pkg) + r"['\"][^{}]*?"
-        + array_field + r":\s*\[)([^\]]*?)(\][^{}]*?\})",
-        re.DOTALL,
-    )
-    m = pat.search(text)
-    if not m:
-        # Array not present yet — add it.
-        pat2 = re.compile(
-            r"(\{[^{}]*?id:\s*['\"]" + re.escape(pkg) + r"['\"][^{}]*?)(\})",
-            re.DOTALL,
-        )
-        m2 = pat2.search(text)
-        if not m2:
-            raise SystemExit(f"package {pkg} not found in inventory")
+    bounds = _pkg_block.find_package_block(text, pkg)
+    if bounds is None:
+        raise SystemExit(f"package {pkg} not found in inventory")
+    pkg_start, pkg_end = bounds
+    block = text[pkg_start:pkg_end]
+    fv = _pkg_block.find_top_level_field_value(block, array_field)
+    if fv is None:
+        # Array absent — add it as a new top-level field just before the closing '}'.
+        insert_at = pkg_end - 1
+        while insert_at > pkg_start and text[insert_at - 1] in " \t":
+            insert_at -= 1
         insertion = f"\n    {array_field}: [{json.dumps(entry)}],\n  "
-        new_text = text[:m2.end(1)] + insertion + text[m2.end(1):]
+        new_text = text[:insert_at] + insertion + text[insert_at:]
     else:
-        existing = m.group(2).strip()
-        sep = "" if not existing else ",\n      "
-        new_text = (
-            text[:m.start(2)]
-            + (existing + sep + json.dumps(entry) if existing else json.dumps(entry))
-            + text[m.start(3):]
-        )
+        value_start, value_end = fv  # value_start at '[', value_end one past ']'
+        inner = block[value_start + 1:value_end - 1]
+        stripped = inner.strip()
+        if stripped:
+            new_inner = inner.rstrip()
+            if not new_inner.endswith(","):
+                new_inner += ","
+            new_inner += "\n      " + json.dumps(entry) + "\n    "
+        else:
+            new_inner = json.dumps(entry)
+        new_block = block[:value_start + 1] + new_inner + block[value_end - 1:]
+        new_text = text[:pkg_start] + new_block + text[pkg_end:]
     p.write_text(new_text)
     return str(p)
 
