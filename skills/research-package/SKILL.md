@@ -321,6 +321,14 @@ Per-turn closure when any event above fires: update the upstream witness (result
 
 `learnings.html` re-derives on load — do not edit it directly.
 
+### Auto-applier (event manifests)
+
+`<root>/scripts/propagate_apply.py` (shipped by the `research-dashboard` skill) is the deterministic executor for events E1, E3, E4, E5, and E6. A launcher (or the agent) writes a small JSON manifest under `var/research/<pkg-id>/manifests/` with one of these event keys: `verdict_finalized` (E1) · `status_changed` (E2-style top-level status) · `adoption` (E4) · `supersession` (E5) · `reopen` (E6). The applier reads every unapplied manifest, writes the deterministic surface edits, marks the manifest `.applied`, and is idempotent on re-run. See `research-dashboard/SKILL.md` § *Event-manifest applier* for the full schema.
+
+For E2 (in-progress live update), `propagate_apply.py --auto-derive` scans every package on demand and fills **blank** `currentBlocker` / `nextRoute` fields based on `experiments[].status`. Non-blank fields stay untouched — they are treated as human-curated and require an explicit `state_derived` manifest to overwrite.
+
+When wired to a Claude Code `Stop` hook (recipe at `research-dashboard/references/stop-fact-propagation-hook.md`), the applier + auto-derive + `learnings_lint.py all` chain runs on every turn end with no model tokens spent on the propagation step.
+
 ## Bundled resources
 
 - `scripts/create_research_package.py` — generates a hierarchical package from this skill's templates and appends one inventory entry to the user's `data/research-packages.js`.

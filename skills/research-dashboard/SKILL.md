@@ -99,11 +99,52 @@ python <root>/scripts/learnings_lint.py all             # all three at once
 
 The Stop Gate of any learnings-relevant turn requires `learnings_lint.py all` to exit 0.
 
+## Event-manifest applier (auto-propagation)
+
+`<root>/scripts/propagate_apply.py` is the dashboard-wide executor for inventory events. Read event manifests from `var/research/<pkg-id>/manifests/*.json`, apply the deterministic surface edits to `data/research-packages.js`, the package's `results.html`, and the package's `tracker.html`, then mark each manifest `.applied`. Dry-run by default; `--write` commits.
+
+Supported events (filenames are conventional, not enforced — the `event` key inside the JSON drives dispatch):
+
+| Event key | Payload (required + optional) | Surfaces written |
+| --- | --- | --- |
+| `verdict_finalized` | `exp_id, row_anchor, measured, verdict, evidencePath, gate, hypothesis, lastActionPhrase` | registry `methodsTried[]` append + `experiments[i].status=completed` + results-row cells + tracker Last action |
+| `status_changed` | `status, [category, lastActionPhrase]` | registry `status` (+ optional `category` lane move) |
+| `adoption` | `adoptionPath, [lastActionPhrase]` | registry `status=ADOPTED, category=success, adoptionPath` |
+| `supersession` | `supersededBy, [lastActionPhrase]` | registry `status=SUPERSEDED, supersededBy` |
+| `reopen` | `reopenTrigger, [lastActionPhrase]` | registry `status=ARCHIVED_REOPENABLE, reopenTrigger` |
+| `state_derived` | any of `currentBlocker, nextRoute, activeGate, primaryMetricVsGate` | registry top-level fields (subset that's provided) |
+
+```bash
+python <root>/scripts/propagate_apply.py --auto-derive --write
+```
+
+`--auto-derive` is the passive change detector. Before/after applying pending manifests, it scans every package's `experiments[].status` and writes a `_auto_state_<sha>.json` draft into that package's `manifests/` dir if the derived `currentBlocker` / `nextRoute` differs from the registry. **Conservative policy**: only overrides a field when it is currently **blank** in the registry. Non-blank values are treated as human-curated and stay untouched — overwrite them with an explicit `state_derived` manifest if you need to.
+
+Derivation rules (computed from `experiments[].status` + `category`):
+
+| Package state | Derived `currentBlocker` | Derived `nextRoute` |
+| --- | --- | --- |
+| `category in {success, fail}` | `""` | `archive_or_stop` |
+| any experiment `failed` | `experiments[] failed: <ids>` | `archive_or_stop` |
+| any experiment `blocked` | `experiments[] blocked: <ids>` | `run_next_experiment_from_step4` |
+| any experiment `running` | `""` | `run_next_experiment_from_step4` |
+| all experiments terminal | `""` | `archive_or_stop` |
+| any experiment `pending` / `queued` | `""` | `run_next_experiment_from_step4` |
+
+Each manifest is idempotent: a sibling `.applied` sidecar (`<manifest>.applied`) is touched on successful `--write`, and discovery skips manifests with that sidecar. Re-running `--auto-derive --write` after the registry catches up produces zero diff and zero new drafts.
+
+A companion helper `<root>/scripts/emit_verdict_manifest.py` parses a trainer chain log (`Candidate-expanded retrieval: {...}` dict line) and writes a `verdict_finalized` JSON shaped for `propagate_apply.py`. Call it from a launcher's chain-done block.
+
+For zero-prompt auto-apply at every Stop, wire the Claude Code Stop hook documented in [`references/stop-fact-propagation-hook.md`](references/stop-fact-propagation-hook.md).
+
 ## Bundled resources
 
 - `scripts/ensure_dashboard.py` — idempotent scaffold for the dashboard chrome plus rule-file copy.
 - `references/dashboard-contract.md` — required dashboard sections, anchors, and rule citations.
+- `references/stop-fact-propagation-hook.md` — Claude Code `Stop` hook recipe that wires `propagate_apply.py --auto-derive --write` + `learnings_lint.py all` at every turn end.
 - `assets/html-rules.html`, `assets/trustworthy-research-rules.html` — the binding rule files copied into every project's `<root>/rules/` so package surfaces can link them with no further setup.
 - `assets/dashboard/data/schema.js` — the `(category, status)` state machine and required-field rules; copied to `<root>/data/schema.js`.
 - `assets/dashboard/learnings.html` — cross-package learnings view (derived; do not edit directly).
 - `assets/dashboard/scripts/learnings_lint.py` + `dump_packages.js` — the dashboard-wide lint and draft tool.
+- `assets/dashboard/scripts/propagate_apply.py` — event-manifest executor (`verdict_finalized`, `status_changed`, `adoption`, `supersession`, `reopen`, `state_derived`) with `--auto-derive` drift scanner.
+- `assets/dashboard/scripts/emit_verdict_manifest.py` — launcher-side helper that parses a trainer log into a `verdict_finalized` manifest.
