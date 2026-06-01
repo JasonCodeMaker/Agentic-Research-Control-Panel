@@ -3,6 +3,7 @@
 # research-op local audit logs and runtime state
 var/
 demo/
+.source
 
 # Python bytecode
 __pycache__/
