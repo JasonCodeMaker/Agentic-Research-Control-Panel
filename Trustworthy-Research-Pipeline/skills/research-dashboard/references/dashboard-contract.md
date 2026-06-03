@@ -57,6 +57,7 @@ Required dashboard sections (each must carry the matching `data-section` anchor)
   as overview + agent context, and points readers to package surfaces for
   claims and evidence.
 - `lanes`: the four lane summary cells produced by `renderDashboardSummary()`.
+- `packages`: the full package grid populated by `renderPackages()`.
 - `protocol`: the global-protocol panels populated by `renderGlobalContext()`.
 - `profile`: a `#project-profile-root` slot for project-specific specialization.
 - `rules`: two cards with `data-card="rule-link-html"` and

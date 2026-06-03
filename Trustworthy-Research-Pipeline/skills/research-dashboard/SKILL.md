@@ -1,6 +1,6 @@
 ---
 name: research-dashboard
-description: "Set up, repair, or validate the global research_html/ HTML dashboard scaffold for any research project. Use this skill whenever the user types /research-dashboard, asks to create or initialize a research dashboard, repair a broken research_html/ scaffold, install the four lane pages (brainstorm / in-progress / success / fail) before creating research packages, bring a project under the binding HTML rules R1-R17 and Trustworthy Research rules T1-T24, or set up the global research-system protocol for autonomous research agents. Project-agnostic: works in any repository the user opens. The dashboard chrome is overview-only — claims, evidence, and stage transitions live on package pages, not on the dashboard."
+description: "Set up, repair, or validate the global research_html/ HTML dashboard scaffold for any research project. Use this skill whenever the user types /research-dashboard, asks to create or initialize a research dashboard, repair a broken research_html/ scaffold, install the four lane pages (brainstorm / in-progress / success / fail) before creating research packages, bring a project under the binding HTML rules R1-R18 and Trustworthy Research rules T1-T24, or set up the global research-system protocol for autonomous research agents. Project-agnostic: works in any repository the user opens. The dashboard chrome is overview-only — claims, evidence, and stage transitions live on package pages, not on the dashboard."
 argument-hint: "[<root path, defaults to ./research_html>]"
 allowed-tools: Bash(*), Read, Edit, Write, Glob, Grep
 ---
@@ -17,7 +17,7 @@ This skill is project-agnostic. The dashboard contract is identical for every pr
 
 Authority order, highest first:
 1. The user's invocation arguments (e.g. `/research-dashboard ./my_research_html`).
-2. Form rules `R1–R17` in `<root>/rules/html-rules.html`.
+2. Form rules `R1–R18` in `<root>/rules/html-rules.html`.
 3. Trustworthy Research rules `T1–T24` in `<root>/rules/trustworthy-research-rules.html`.
 4. The contract documented in `references/dashboard-contract.md` (this skill).
 
@@ -39,7 +39,7 @@ Both-audience content is written once, inline, without the blockquote or `<detai
 
 1. **Resolve the dashboard root.** Default to `<cwd>/research_html`. If the user passes a path argument, honor it. Use absolute paths internally; do not assume the cwd matches the user's intent without confirming when ambiguous.
 
-2. **Detect existing dashboard.** Check whether the root already exists. If it does, treat user edits as authoritative — do not overwrite without `--force`. Required files are listed in [references/dashboard-contract.md](references/dashboard-contract.md).
+2. **Detect existing dashboard.** Check whether the root already exists. If it does, treat user edits as authoritative — do not overwrite without `--force`. Required files are listed in [references/dashboard-contract.md](references/dashboard-contract.md). On the **repair** path (root exists but is broken or partial), still run the idempotent script in step 3 — it only writes files that are missing — then read that required-file list and report any file still absent after the run.
 
 3. **Run the bundled script.** The scaffold script lives at `~/.claude/skills/research-dashboard/scripts/ensure_dashboard.py`. It writes a minimal compliant scaffold (idempotent: existing files are preserved) plus copies the binding rule files from this skill's `assets/` into `<root>/rules/`. Invoke it as:
 
@@ -56,12 +56,14 @@ Both-audience content is written once, inline, without the blockquote or `<detai
    node --check <root>/data/research-packages.js
    ```
 
-   Then grep for the eight required `data-section` anchors and the two rule-file links in `<root>/index.html`:
+   Then grep for the six required content `data-section` anchors (the index also carries `masthead` and `nav` chrome anchors, which the check ignores) and the two rule-file links in `<root>/index.html`:
 
    ```bash
    grep -E 'data-section="(snapshot|lanes|packages|protocol|profile|rules)"' <root>/index.html
    grep -E 'rules/html-rules.html|rules/trustworthy-research-rules.html' <root>/index.html
    ```
+
+   If `ensure_dashboard.py` raised, confirm the skill is installed at `~/.claude/skills/research-dashboard/`. If `node --check` exits non-zero, the copied JS is malformed — inspect the matching file in this skill's `assets/dashboard/`. If the anchor grep returns nothing, `index.html` was not written — re-run step 3 with `--force`.
 
 5. **Keep the dashboard project-agnostic.** Project objective, success rule, and cautions belong in `window.RESEARCH_PROJECT_PROFILE` inside `<root>/data/research-packages.js`. Do not edit the universal protocol cards in the same file; those are shared chrome.
 
@@ -86,7 +88,7 @@ The dashboard ships a `(category, status)` state machine. Every package carries 
 
 Required field sets per `(category, status)` and the structured `methodsTried` row shape are declared in `<root>/data/schema.js` — that file is the single source of truth and is bundled by this skill. The card renderer and the lint tool both import from it.
 
-Terminal-state packages (success / fail / brainstorm-`ABANDONED`) must carry a `terminationMessage` and a `methodsTried[]` array of structured rows (`{method, hypothesis, gate, measured, verdict, evidencePath}`, verdict in `{pass, fail, inconclusive}`). The learnings page (`<root>/learnings.html`, also bundled) is a derived view over `data/research-packages.js` that re-organizes those rows by contribution spine.
+Terminal-state `success` packages must carry a `terminationMessage`, a `methodsTried[]` array of structured rows (`{method, hypothesis, gate, measured, verdict, evidencePath}`, verdict in `{pass, fail, inconclusive}`), and an `adoptionPath`; `fail` packages require the `terminationMessage` and `methodsTried[]`; brainstorm-`ABANDONED` requires `terminationMessage` only (`methodsTried` is forbidden for the brainstorm category). The learnings page (`<root>/learnings.html`, also bundled) is a derived view over `data/research-packages.js` that re-organizes those rows by contribution spine.
 
 The dashboard-wide consistency tool is `<root>/scripts/learnings_lint.py` (Python; reads the JS data files via the bundled `dump_packages.js` node helper):
 
@@ -107,7 +109,7 @@ Supported events (filenames are conventional, not enforced — the `event` key i
 
 | Event key | Payload (required + optional) | Surfaces written |
 | --- | --- | --- |
-| `verdict_finalized` | `exp_id, row_anchor, measured, verdict, evidencePath, gate, hypothesis, lastActionPhrase` | registry `methodsTried[]` append + `experiments[i].status=completed` + results-row cells + tracker Last action |
+| `verdict_finalized` | `exp_id, row_anchor, measured, verdict, [evidencePath, gate, hypothesis, lastActionPhrase]` | registry `methodsTried[]` append + `experiments[i].status=completed` + results-row cells + tracker Last action |
 | `status_changed` | `status, [category, lastActionPhrase]` | registry `status` (+ optional `category` lane move) |
 | `adoption` | `adoptionPath, [lastActionPhrase]` | registry `status=ADOPTED, category=success, adoptionPath` |
 | `supersession` | `supersededBy, [lastActionPhrase]` | registry `status=SUPERSEDED, supersededBy` |
@@ -139,7 +141,7 @@ For zero-prompt auto-apply at every Stop, wire the Claude Code Stop hook documen
 
 ## Bundled resources
 
-- `scripts/ensure_dashboard.py` — idempotent scaffold for the dashboard chrome plus rule-file copy.
+- `scripts/ensure_dashboard.py` — idempotent scaffold. Mirrors this skill's entire `assets/dashboard/` tree into `<root>/` — `index.html`, `learnings.html`, `module.html`, `package-template.html`, the four `categories/<lane>/index.html` lane pages, `assets/research.css` + `assets/research.js`, `data/schema.js`, `scripts/*`, and `templates/module-library.html` — and copies the rule files. The agent does not manage these chrome files individually; they are installed and refreshed automatically.
 - `references/dashboard-contract.md` — required dashboard sections, anchors, and rule citations.
 - `references/stop-fact-propagation-hook.md` — Claude Code `Stop` hook recipe that wires `propagate_apply.py --auto-derive --write` + `learnings_lint.py all` at every turn end.
 - `assets/html-rules.html`, `assets/trustworthy-research-rules.html` — the binding rule files copied into every project's `<root>/rules/` so package surfaces can link them with no further setup.

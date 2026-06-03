@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Framework Design — The Trustworthy Auto-Research Pipeline</title>
+<style>
+  :root{
+    --bg:#fbfaf7; --surface:#ffffff; --ink:#1c1d22; --ink-soft:#4a4d57; --ink-faint:#71747f;
+    --line:#e7e3da; --line-soft:#efece4;
+    --accent:#9a3b2e; --accent-soft:#f2e3df; --accent-ink:#7d2f24;
+    --chip-bg:#f0ede6; --chip-ink:#3a3c44; --mono-bg:#f4f1ea; --mono-ink:#46362f; --zebra:#faf8f3;
+    --have-ink:#2f6f43; --have-bg:#e3f0e6; --have-line:#9cc6a9;
+    --part-ink:#9a6a1c; --part-bg:#f6ecd6; --part-line:#d8b878;
+    --miss-ink:#9a3b2e; --miss-bg:#f4ddd7; --miss-line:#d49f93;
+    --blue-ink:#2c4a78; --blue-bg:#e4ebf5; --blue-line:#a6bbdc;
+    --maxw:940px;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Noto Sans",sans-serif;
+    font-size:16.5px;line-height:1.62;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+  main{max-width:var(--maxw);margin:0 auto;padding:8px 24px 70px;}
+
+  header.hero{background:linear-gradient(165deg,#23242b 0%,#33271f 100%);color:#f6f1e9;border-bottom:3px solid var(--accent);}
+  .hero-inner{max-width:var(--maxw);margin:0 auto;padding:56px 24px 44px;}
+  .hero .kicker{text-transform:uppercase;letter-spacing:.18em;font-size:12px;font-weight:700;color:#d8a99f;margin:0 0 16px;}
+  .hero h1{font-size:clamp(26px,4.2vw,42px);line-height:1.12;margin:0 0 18px;font-weight:800;letter-spacing:-.01em;}
+  .hero .standfirst{font-size:clamp(16px,2.1vw,19px);line-height:1.55;color:#ddd6cb;margin:0 0 26px;max-width:720px;}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;}
+  .chip{display:inline-block;background:rgba(255,255,255,.08);color:#f1e9dd;border:1px solid rgba(255,255,255,.16);
+    border-radius:999px;padding:5px 13px;font-size:12.5px;font-weight:600;}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0 0;}
+  .legend .k{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:#e9e1d6;}
+  .dot{width:13px;height:13px;border-radius:3px;border:1px solid rgba(255,255,255,.3);display:inline-block;}
+  .dot.have{background:#5fae77;} .dot.part{background:#d8b878;} .dot.miss{background:#cf7f70;}
+
+  nav.toc{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px 24px;margin:34px 0;}
+  nav.toc h2{margin:0 0 12px;font-size:13px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-faint);}
+  nav.toc ol{margin:0;padding-left:0;list-style:none;counter-reset:toc;}
+  nav.toc li{counter-increment:toc;}
+  nav.toc li a{display:flex;align-items:baseline;gap:12px;text-decoration:none;color:var(--ink-soft);
+    padding:7px 8px;border-radius:6px;border-bottom:1px solid var(--line-soft);font-size:15px;}
+  nav.toc li:last-child a{border-bottom:none;}
+  nav.toc li a:hover{background:var(--accent-soft);color:var(--accent-ink);}
+  nav.toc li a::before{content:counter(toc,decimal-leading-zero);color:var(--accent);font-weight:700;font-variant-numeric:tabular-nums;font-size:13px;min-width:22px;}
+
+  section{margin:0 0 14px;scroll-margin-top:18px;}
+  .sec-head{margin:50px 0 8px;padding-top:16px;border-top:1px solid var(--line);}
+  .sec-head .num{display:inline-block;font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin-bottom:8px;}
+  h2.sec-title{font-size:clamp(22px,3vw,28px);line-height:1.18;margin:0 0 6px;font-weight:800;letter-spacing:-.01em;}
+  h3{font-size:18.5px;line-height:1.3;margin:30px 0 8px;font-weight:700;}
+  h4{font-size:15.5px;line-height:1.3;margin:22px 0 6px;font-weight:700;}
+  p{margin:0 0 14px;color:var(--ink-soft);}
+  main p strong{color:var(--ink);}
+  .lead{font-size:16.5px;color:var(--ink-soft);}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(154,59,46,.3);}
+  code,.path{font-family:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;}
+  code{background:var(--mono-bg);color:var(--mono-ink);border-radius:4px;padding:1px 5px;font-size:13px;}
+  .path{display:inline-block;background:var(--mono-bg);color:var(--mono-ink);font-size:11.5px;border-radius:5px;padding:1px 6px;border:1px solid #e3dccf;word-break:break-all;}
+
+  .panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px 24px;margin:18px 0;box-shadow:0 1px 2px rgba(40,30,20,.03);}
+  .panel .ptitle{font-size:11.5px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink-faint);margin:0 0 14px;text-align:center;}
+  .scroll{overflow-x:auto;}
+
+  /* PLANES */
+  .planes{display:flex;flex-direction:column;gap:9px;}
+  .plane{display:grid;grid-template-columns:130px 1fr;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface);}
+  .plane .plabel{padding:12px 12px;display:flex;flex-direction:column;justify-content:center;color:#fff;}
+  .plane .plabel .pn{font-size:12.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;}
+  .plane .plabel .pp{font-size:10.5px;opacity:.85;margin-top:3px;}
+  .plane.base .plabel{background:#33271f;}
+  .plane.auto .plabel{background:#2c4a78;}
+  .plane.ssot .plabel{background:#5a6a4d;}
+  .plane.hooks .plabel{background:#9a3b2e;}
+  .plane.control .plabel{background:#9a3b2e;}
+  .plane.exec .plabel{background:#33271f;}
+  .plane.trust .plabel{background:#2f6f43;}
+  .plane.mem .plabel{background:#5a6a4d;}
+  .plane .pbody{padding:11px 13px;display:flex;flex-wrap:wrap;gap:7px;align-items:center;}
+  .planes .pdown{align-self:center;text-align:center;color:var(--accent);font-size:16px;line-height:.6;}
+  .planes .pdown::before{content:"\2195";}
+  .spine-band{border:1.5px solid var(--blue-line);border-radius:10px;background:linear-gradient(180deg,#eef3fa,#dfe8f5);
+    padding:11px 14px;display:flex;align-items:center;gap:12px;}
+  .spine-band .sb-tag{flex:none;background:#2c4a78;color:#fff;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;border-radius:6px;padding:6px 11px;}
+  .spine-band .sb-txt{font-size:12.5px;color:#274063;} .spine-band .sb-txt b{color:#1c2f4d;}
+
+  .ic{display:inline-block;font-size:12px;font-weight:600;border-radius:6px;padding:5px 10px;border:1px solid;}
+  .ic.have{background:var(--have-bg);color:var(--have-ink);border-color:var(--have-line);}
+  .ic.part{background:var(--part-bg);color:var(--part-ink);border-color:var(--part-line);}
+  .ic.miss{background:var(--miss-bg);color:var(--miss-ink);border-color:var(--miss-line);}
+  .ic.blue{background:var(--blue-bg);color:var(--blue-ink);border-color:var(--blue-line);}
+
+  /* TREE */
+  .tree{display:flex;flex-direction:column;gap:8px;}
+  .tier{border:1.5px solid var(--blue-line);border-left-width:5px;border-radius:9px;background:var(--surface);padding:12px 15px;}
+  .tier .tlvl{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--blue-ink);}
+  .tier .tholds{font-size:12.5px;color:var(--ink-soft);margin-top:3px;}
+  .tier .tgate{font-size:11px;color:var(--ink-faint);margin-top:5px;}
+  .tier .tgate b{color:var(--accent-ink);}
+
+  /* FLOW */
+  .flow{display:flex;align-items:stretch;flex-wrap:nowrap;min-width:min-content;gap:0;}
+  .node{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+    background:linear-gradient(160deg,#fff,#f6f2ea);border:1.5px solid var(--accent);border-radius:9px;
+    padding:11px 11px;min-width:108px;max-width:134px;text-align:center;box-shadow:0 1px 2px rgba(80,40,20,.06);}
+  .node .n-num{font-size:10px;font-weight:800;color:var(--accent);letter-spacing:.08em;}
+  .node .n-name{font-size:13.5px;font-weight:700;color:var(--ink);margin-top:2px;line-height:1.2;}
+  .node .n-now{font-size:10.5px;color:var(--ink-soft);margin-top:6px;line-height:1.3;}
+  .arrow{align-self:center;display:flex;align-items:center;color:var(--accent);font-size:20px;font-weight:700;padding:0 5px;flex:none;}
+  .arrow::before{content:"\2192";}
+  .arrow.down{align-self:center;transform:rotate(90deg);}
+  .node.have{border-color:var(--have-line);background:linear-gradient(160deg,#fff,var(--have-bg));}
+  .node.have .n-num,.node.have .n-name{color:var(--have-ink);}
+  .node.part{border-color:var(--part-line);background:linear-gradient(160deg,#fff,var(--part-bg));}
+  .node.part .n-num{color:var(--part-ink);} .node.part .n-name{color:#5e451a;}
+  .node.miss{border-color:var(--miss-line);background:linear-gradient(160deg,#fff,var(--miss-bg));}
+  .node.miss .n-num,.node.miss .n-name{color:var(--miss-ink);}
+  .node.blue{border-color:var(--blue-line);background:linear-gradient(160deg,#fff,var(--blue-bg));}
+  .node.blue .n-num,.node.blue .n-name{color:var(--blue-ink);}
+  .node .tag{position:absolute;top:-9px;right:-6px;font-size:8.5px;font-weight:800;text-transform:uppercase;border-radius:999px;padding:2px 6px;border:1px solid;}
+  .node .tag.have{background:var(--have-bg);color:var(--have-ink);border-color:var(--have-line);}
+  .node .tag.part{background:var(--part-bg);color:var(--part-ink);border-color:var(--part-line);}
+  .node .tag.miss{background:var(--miss-bg);color:var(--miss-ink);border-color:var(--miss-line);}
+  .loopback{margin-top:15px;border-top:2px dashed var(--accent);padding-top:12px;}
+  .loopback .lp{display:inline-block;background:var(--accent);color:#fff;border-radius:999px;padding:5px 14px;font-size:12.5px;font-weight:700;}
+  .loopback .lp::before{content:"\21BA  ";}
+  .loopback span.t{display:block;margin-top:8px;font-size:13px;color:var(--ink-faint);}
+
+  /* DIAL */
+  .dial{margin:6px 0 4px;}
+  .dial-track{display:flex;border:1.5px solid var(--blue-line);border-radius:10px;overflow:hidden;}
+  .dial-stop{flex:1 1 0;padding:13px 12px;text-align:center;border-right:1.5px solid var(--blue-line);background:linear-gradient(180deg,#fff,var(--blue-bg));}
+  .dial-stop:last-child{border-right:none;}
+  .dial-stop .ds-n{font-size:13.5px;font-weight:800;color:var(--blue-ink);}
+  .dial-stop .ds-d{font-size:11px;color:var(--ink-soft);margin-top:4px;line-height:1.3;}
+  .dial-ends{display:flex;justify-content:space-between;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-faint);margin-top:7px;}
+
+  /* TABLES */
+  table{border-collapse:collapse;width:100%;font-size:13.5px;min-width:600px;background:var(--surface);}
+  caption{caption-side:top;text-align:left;font-size:12.5px;color:var(--ink-faint);padding:10px 4px 8px;font-style:italic;}
+  th,td{padding:9px 12px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line-soft);}
+  thead th{background:#33271f;color:#f3ece1;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.03em;}
+  thead.blue-head th{background:#1f2e3f;color:#eaf0f7;}
+  tbody tr:nth-child(even){background:var(--zebra);}
+  tbody td:first-child{font-weight:700;color:var(--ink);}
+  .table-wrap{border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+  .pill{display:inline-block;font-size:11px;font-weight:800;border-radius:999px;padding:2px 9px;border:1px solid;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;}
+  .pill.have{background:var(--have-bg);color:var(--have-ink);border-color:var(--have-line);}
+  .pill.part{background:var(--part-bg);color:var(--part-ink);border-color:var(--part-line);}
+  .pill.miss{background:var(--miss-bg);color:var(--miss-ink);border-color:var(--miss-line);}
+  .pill.blue{background:var(--blue-bg);color:var(--blue-ink);border-color:var(--blue-line);}
+
+  /* CALLOUT + NOTE */
+  .note{background:#fdfbf6;border:1px dashed var(--accent);border-radius:10px;padding:16px 20px;margin:22px 0 8px;}
+  .note h4{margin:0 0 9px;color:var(--accent-ink);font-size:13px;text-transform:uppercase;letter-spacing:.06em;}
+  .note ol,.note ul{margin:0;padding-left:20px;}
+  .note li{margin:0 0 9px;font-size:14.5px;color:var(--ink-soft);}
+  .note li:last-child{margin-bottom:0;} .note li b{color:var(--ink);}
+  .callout{border-left:4px solid var(--accent);background:var(--accent-soft);border-radius:0 9px 9px 0;padding:12px 16px;margin:16px 0;font-size:14.5px;color:#5e2a20;}
+  .callout b{color:var(--accent-ink);}
+  .callout-blue{border-left:4px solid var(--blue-ink);background:var(--blue-bg);border-radius:0 9px 9px 0;padding:12px 16px;margin:16px 0;font-size:14.5px;color:#274063;}
+  .callout-blue b{color:var(--blue-ink);}
+
+  /* journey steps */
+  .journey{display:flex;flex-direction:column;gap:8px;margin:16px 0;}
+  .jstep{display:grid;grid-template-columns:96px 1fr 1fr;gap:0;border:1.5px solid var(--line);border-radius:9px;overflow:hidden;background:var(--surface);}
+  .jstep .jnum{padding:12px 12px;background:#33271f;color:#f3ece1;font-size:12px;font-weight:800;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;}
+  .jstep .jnum .jn{font-size:16px;font-weight:800;}
+  .jstep .jnum .jpl{font-size:9px;font-weight:700;opacity:.8;margin-top:5px;text-transform:uppercase;letter-spacing:.04em;}
+  .jstep .jsee,.jstep .jdo{padding:10px 13px;border-left:1px solid var(--line-soft);}
+  .jstep .jsee-label,.jstep .jdo-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-faint);margin-bottom:4px;}
+  .jstep .jsee{background:#fdfcf9;}
+  .jstep .jdo{background:#fafaf7;}
+  .jstep p{font-size:13px;margin:0;color:var(--ink-soft);}
+
+  /* one-system additions */
+  .step{scroll-margin-top:18px;border-top:1px solid var(--line-soft);margin-top:30px;padding-top:6px;}
+  .step .slabel{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);margin-top:18px;}
+  .steptag{display:inline-block;font-size:10px;font-weight:700;border-radius:999px;padding:2px 9px;border:1px solid var(--blue-line);background:var(--blue-bg);color:var(--blue-ink);text-transform:uppercase;letter-spacing:.03em;}
+  .gone{text-decoration:line-through;color:var(--ink-faint);}
+
+  footer{background:#23242b;color:#cfc8bd;border-top:3px solid var(--accent);margin-top:46px;}
+  footer .fin{max-width:var(--maxw);margin:0 auto;padding:30px 24px 40px;}
+  footer h3{color:#f3ece1;margin:0 0 8px;font-size:15px;text-transform:uppercase;letter-spacing:.08em;}
+  footer p{color:#b6afa4;font-size:13.5px;}
+  footer .roots{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0;}
+  footer .roots .path{background:rgba(255,255,255,.07);color:#e6ddcf;border-color:rgba(255,255,255,.12);}
+
+  @media(max-width:720px){
+    .plane{grid-template-columns:1fr;}
+    .jstep{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="hero-inner">
+    <p class="kicker">Detailed design &mdash; usage-first, one system</p>
+    <h1>Framework Design — The Trustworthy Auto-Research Pipeline</h1>
+    <p class="standfirst">
+      The detailed-design layer between the north-star
+      (<span class="path" style="color:#d8a99f;">plan/target-architecture.html</span>) and implementation. It is organised
+      the way you <em>use</em> it: a single <strong>seven-step journey is the spine</strong>, and every plane, skill,
+      library, and gate is introduced as the machinery one step of that journey actuates. <strong>One system</strong>
+      &mdash; no base/auto split, one mutation surface &mdash; with every hard constraint enforced by a gate, a lib check,
+      or a privilege split, never a prompt.
+    </p>
+    <div class="chips">
+      <span class="chip">usage-first &mdash; the journey is the spine</span>
+      <span class="chip">one system (no base/auto wall)</span>
+      <span class="chip">human-as-PM control plane</span>
+      <span class="chip">4 planes + Scope SSOT backbone</span>
+      <span class="chip">one mutation surface</span>
+      <span class="chip">enforce, don&rsquo;t instruct</span>
+      <span class="chip">11 skills + 3 libs</span>
+    </div>
+    <div class="legend">
+      <span class="k"><span class="dot have"></span> REUSED &mdash; base pipeline mechanism, used as-is</span>
+      <span class="k"><span class="dot part"></span> EXTEND &mdash; existing piece, widened</span>
+      <span class="k"><span class="dot miss"></span> NEW &mdash; net-new unit to build</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <nav class="toc" aria-label="Table of contents">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#journey">How you use it &mdash; the seven-step journey (the spine)</a></li>
+      <li><a href="#machine">The machine the journey runs on &mdash; four planes + the Scope SSOT backbone</a></li>
+      <li><a href="#steps">Step by step &mdash; the machinery each step actuates</a></li>
+      <li><a href="#catalog">The unified catalog &mdash; skills, libraries, reused base</a></li>
+      <li><a href="#trace">Traceability &mdash; every function &amp; invariant to a journey step</a></li>
+    </ol>
+  </nav>
+
+  <!-- ============================
+       01 THE JOURNEY (SPINE)
+       ============================ -->
+  <section id="journey">
+    <div class="sec-head">
+      <span class="num">Section 01</span>
+      <h2 class="sec-title">How you use it — the seven-step journey</h2>
+    </div>
+    <p class="lead">
+      This is the spine of the whole design, and everything else hangs off it. The pipeline is a <strong>management
+      interface</strong>: you are the project manager, the agent is a managed worker whose tasks, state, evidence, and next
+      actions are made visible and governable (this is Solve&nbsp;#2 made literal). The seven steps below are <em>your</em>
+      workflow; every component in &sect;3&ndash;&sect;5 exists only to serve one of them. That is also the
+      <strong>complexity filter</strong> the spec demands &mdash; if a skill, lib, or gate can&rsquo;t be traced to a step
+      you actually perform, it doesn&rsquo;t get built.
+    </p>
+
+    <div class="journey">
+      <div class="jstep">
+        <div class="jnum"><div class="jn">1</div><div class="jpl">Control</div>Setup<br>(once)</div>
+        <div class="jsee"><div class="jsee-label">You see</div><p>An empty four-lane dashboard (brainstorm / in-progress / success / fail).</p></div>
+        <div class="jdo"><div class="jdo-label">You do</div><p>Run <code>/research-dashboard</code> &mdash; it scaffolds <code>research_html/</code>, the binding HTML/Trust rules, and the project-local Stop hook. &rarr; <a href="#step-1">&sect;3.1</a></p></div>
+      </div>
+      <div class="jstep">
+        <div class="jnum"><div class="jn">2</div><div class="jpl">Backbone</div>Define<br>Project</div>
+        <div class="jsee"><div class="jsee-label">You see</div><p>A proposed <b>Project</b> node: north-star objective, contribution spine, non-goals.</p></div>
+        <div class="jdo"><div class="jdo-label">You do</div><p>Ratify it (or edit the yardstick &mdash; PM-write-only). The Project gate is <b>mandatory user ratification</b>. Skill: <code>research-scope</code>. &rarr; <a href="#step-2">&sect;3.2</a></p></div>
+      </div>
+      <div class="jstep">
+        <div class="jnum"><div class="jn">3</div><div class="jpl">Control</div>Create<br>Dir + Task</div>
+        <div class="jsee"><div class="jsee-label">You see</div><p>A new <b>Direction</b> (hypothesis / metric / baselines / success-predicate) and the 4-stop autonomy dial.</p></div>
+        <div class="jdo"><div class="jdo-label">You do</div><p>Set the Task objective and pick the <b>per-task autonomy level</b>. <code>research-scope</code> scaffolds the Direction as a research-package. &rarr; <a href="#step-3">&sect;3.3</a></p></div>
+      </div>
+      <div class="jstep">
+        <div class="jnum"><div class="jn">4</div><div class="jpl">Exec + Trust</div>Run</div>
+        <div class="jsee"><div class="jsee-label">You see</div><p>Live state, claims + evidence, jury verdicts, real-time dashboard updates.</p></div>
+        <div class="jdo"><div class="jdo-label">You do</div><p>Ack at Supervised / Checkpoints; nothing at Async / Autonomous. <code>research-auto</code> drives R1&rarr;R7; gates pull the yardstick from the SSOT; acquit gates call the verifier; cite-checks run in R2/R6. &rarr; <a href="#step-4">&sect;3.4</a></p></div>
+      </div>
+      <div class="jstep">
+        <div class="jnum"><div class="jn">5</div><div class="jpl">Control</div>Away<br>modes</div>
+        <div class="jsee"><div class="jsee-label">You see (on return)</div><p>A PACK&rsquo;d dashboard narrative, the Triage queue, and any pending decisions.</p></div>
+        <div class="jdo"><div class="jdo-label">You do</div><p>UNPACK the dashboard; dispose Triage items; T1-ack terminal transitions. The agent never self-acquits and never edits the objective while away. &rarr; <a href="#step-5">&sect;3.5</a></p></div>
+      </div>
+      <div class="jstep">
+        <div class="jnum"><div class="jn">6</div><div class="jpl">Backbone</div>Scope<br>change</div>
+        <div class="jsee"><div class="jsee-label">You see</div><p>The Triage queue + transition lineage (from&rarr;to / trigger / cause / delta / invalidates / reopens).</p></div>
+        <div class="jdo"><div class="jdo-label">You do</div><p>Ratify or reject via Triage (agent proposes, human disposes). On ratify: a versioned SSOT transition; propagation runs carry / invalidate / reopen; the dial auto-reverts affected Tasks; the agent re-grounds. &rarr; <a href="#step-6">&sect;3.6</a></p></div>
+      </div>
+      <div class="jstep">
+        <div class="jnum"><div class="jn">7</div><div class="jpl">Memory</div>Self-<br>learning</div>
+        <div class="jsee"><div class="jsee-label">You see</div><p>A staged rule/skill diff on the dashboard, from <code>research-reflect</code> (a read-only proposer).</p></div>
+        <div class="jdo"><div class="jdo-label">You do</div><p>Review it; invoke <code>research-apply</code> (the privileged, human-gated lander) on approval &mdash; it runs a fresh jury-at-landing and stamps provenance. Proposer &ne; applier, structurally. &rarr; <a href="#step-7">&sect;3.7</a></p></div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>Why this is the redesign.</b> In the earlier draft this journey was the <em>last</em> section, after the components.
+      Promoting it to the spine is the whole change &mdash; and it is what dissolved the base/auto split. Once every component
+      is <em>derived from</em> a step you actually perform, there is no &ldquo;second system&rdquo; left to wall off, and no
+      dependency-law test left to write. Usage-first <em>is</em> one-system.
+    </div>
+  </section>
+
+  <!-- ============================
+       02 THE MACHINE / PLANES
+       ============================ -->
+  <section id="machine">
+    <div class="sec-head">
+      <span class="num">Section 02</span>
+      <h2 class="sec-title">The machine the journey runs on — four planes + the Scope SSOT backbone</h2>
+    </div>
+    <p class="lead">
+      The journey runs on the north-star&rsquo;s machine: <strong>four planes, one concern each, threaded by the Scope SSOT
+      backbone</strong>. The <strong>control</strong> plane is where you steer; the <strong>execution</strong> plane does the
+      research; the <strong>trust</strong> plane gates what is allowed and what is true; the <strong>memory</strong> plane is
+      what compounds. The planes are a <em>conceptual</em> cross-section &mdash; which concern a unit serves &mdash; not
+      directories. Physically it is <strong>one catalog</strong>.
+    </p>
+
+    <div class="panel">
+      <p class="ptitle">The Scope SSOT backbone threading the four planes &mdash; control steers down, trust gates the middle, memory feeds back up</p>
+      <div class="planes">
+        <div class="spine-band">
+          <span class="sb-tag">Scope SSOT</span>
+          <span class="sb-txt"><b>The backbone.</b> <code>lib/scope_ssot/</code> &mdash; the single versioned home for intent (Project&rarr;Direction&rarr;Task). Every plane reads its yardstick from here; nothing acts under a scope the SSOT doesn&rsquo;t currently declare. Passive: it runs nothing; only a gated scope-op writes to it.</span>
+        </div>
+        <div class="pdown"></div>
+        <div class="plane control">
+          <div class="plabel"><span class="pn">Control</span><span class="pp">problem #2 &middot; steps 1,3,5,6</span></div>
+          <div class="pbody">
+            <span class="ic part">research-dashboard (+ SSOT projection)</span>
+            <span class="ic miss">User-led Task / Objective surface</span>
+            <span class="ic miss">Per-task autonomy dial</span>
+            <span class="ic have">T1 terminal-ack gates</span>
+            <span class="ic miss">PACK / UNPACK + Triage</span>
+          </div>
+        </div>
+        <div class="pdown"></div>
+        <div class="plane exec">
+          <div class="plabel"><span class="pn">Execution</span><span class="pp">the 7 roles &middot; step 4</span></div>
+          <div class="pbody">
+            <span class="ic miss">research-scope (R1)</span>
+            <span class="ic miss">research-lit (R2)</span>
+            <span class="ic miss">research-ideate (R3)</span>
+            <span class="ic have">WORKFLOW.md experiment (R4)</span>
+            <span class="ic part">Verify (R5)</span>
+            <span class="ic miss">research-write (R6)</span>
+            <span class="ic have">Remember (R7)</span>
+          </div>
+        </div>
+        <div class="pdown"></div>
+        <div class="plane trust">
+          <div class="plabel"><span class="pn">Trust</span><span class="pp">problem #1 &middot; step 4</span></div>
+          <div class="pbody">
+            <span class="ic part">research-op reject-before-write (now incl. scope ops)</span>
+            <span class="ic have">metric oracle</span>
+            <span class="ic miss">verifier &mdash; cross-model jury</span>
+            <span class="ic miss">cite_check &mdash; fetch-don&rsquo;t-fabricate</span>
+            <span class="ic have">pre-registration / TDD</span>
+            <span class="ic have">_actions.jsonl audit</span>
+          </div>
+        </div>
+        <div class="pdown"></div>
+        <div class="plane mem">
+          <div class="plabel"><span class="pn">Memory</span><span class="pp">problem #3 &middot; step 7</span></div>
+          <div class="pbody">
+            <span class="ic have">content memory (learnings, methodsTried, failed-idea banlist)</span>
+            <span class="ic miss">research-reflect (proposer)</span>
+            <span class="ic miss">research-apply (lander)</span>
+            <span class="ic miss">SSOT-version-stamped memory</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>One catalog, not two trees</h3>
+    <p>
+      Because the design is scoped to this repo and the base is reused (and, where a journey step needs it, extended) in
+      place, the whole machine lives under one root as one peer catalog of skills + libraries + shared contracts. There is no
+      <code>auto/</code> sibling and no import wall.
+    </p>
+    <div class="panel">
+      <p class="ptitle">The one system &mdash; one root, one skills catalog, one protocol pair</p>
+      <div class="tree">
+        <div class="tier">
+          <div class="tlvl">Trustworthy-Research-Pipeline/ &mdash; the one system (this repo)</div>
+          <div class="tholds">
+            <b>CLAUDE.md</b> &mdash; one protocol file (the universal protocols + the outer auto protocol, extended in place) &middot;
+            <b>WORKFLOW.md</b> &mdash; one controller: the existing 7-step experiment loop is the <em>inner</em> R4 cycle; the <em>outer</em> R1&rarr;R7 loop wraps it &middot;
+            <b>skills/</b> &mdash; one catalog of peers: <code>research-dashboard</code>, <code>research-package</code>, <code>research-analysis</code>, <code>research-op</code> <span class="pill have">reused</span> + <code>research-scope</code>, <code>research-auto</code>, <code>research-lit</code>, <code>research-ideate</code>, <code>research-write</code>, <code>research-reflect</code>, <code>research-apply</code> <span class="pill miss">new</span> &middot;
+            <b>lib/</b> &mdash; <code>scope_ssot</code>, <code>verifier</code>, <code>cite_check</code> (deterministic, passive) &middot;
+            <b>shared-references/</b> &mdash; typed handoff schemas, dial table, Triage protocol, acquit-gate table &middot;
+            <b>tests/</b> &mdash; TDD-first per unit (research-op gate incl. scope ops, scope_ssot fold/guards, verifier, cite_check &hellip;) &middot;
+            <b>var/research/&lt;pkg&gt;/</b> &mdash; <code>_actions.jsonl</code> (audit) + <code>transitions.jsonl</code> (scope history), git-ignored
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <b>What the one-system reframe deletes.</b> The earlier two-tree draft&rsquo;s
+      <span class="gone">auto/ sibling tree</span>, <span class="gone">Seam-A / Seam-B registration plumbing</span>,
+      <span class="gone">test_dependency_law.py</span>, the <span class="gone">auto-namespaced-token grep</span>, and the
+      <span class="gone">duplicate CLAUDE.md / WORKFLOW.md</span> are all removed. The dependency direction is still
+      auto-capability&rarr;base-mechanism, but it needs no test to police it, because there is no second tree and no
+      base-edit introduced solely to cross a border. This is the single biggest cut against the spec&rsquo;s
+      <em>minimize-complexity</em> mandate.
+    </div>
+  </section>
+
+  <!-- ============================
+       03 STEP BY STEP (THE HEART)
+       ============================ -->
+  <section id="steps">
+    <div class="sec-head">
+      <span class="num">Section 03</span>
+      <h2 class="sec-title">Step by step — the machinery each step actuates</h2>
+    </div>
+    <p class="lead">
+      The heart of the design. Each journey step is taken in turn, and the components it needs are introduced as its
+      extension &mdash; the skill(s) it invokes, the lib(s)/gate(s) it hits, the SSOT level it touches, and the core problem
+      it discharges. Reused base mechanism is marked <span class="pill have">reused</span>, widened pieces
+      <span class="pill part">extend</span>, net-new units <span class="pill miss">new</span>.
+    </p>
+
+    <!-- 3.1 SETUP -->
+    <div class="step" id="step-1">
+      <div class="slabel"><span class="steptag">Step 1 &middot; Setup</span> <span class="steptag">Control</span> <span class="steptag">problem&nbsp;#2</span></div>
+      <h3>Setup &mdash; stand up the dashboard</h3>
+      <p>
+        <code>research-dashboard</code> <span class="pill have">reused</span> scaffolds <code>research_html/</code> (the four
+        lanes), the binding HTML rules R1&ndash;R17 and Trust rules T1&ndash;T24, and the project-local <code>Stop</code>
+        hook. The single widening for the auto layer: the Stop hook gains
+        <code>scope_ssot.assert_consistent</code> <span class="pill part">extend</span> next to the existing
+        <code>propagate_apply</code> + <code>learnings_lint</code>, so the dashboard&rsquo;s rendered intent can never
+        silently drift from the SSOT (invariant&nbsp;3). The model&rarr;user half of HCI alignment is this dashboard.
+      </p>
+    </div>
+
+    <!-- 3.2 DEFINE PROJECT -->
+    <div class="step" id="step-2">
+      <div class="slabel"><span class="steptag">Step 2 &middot; Define Project</span> <span class="steptag">Backbone</span> <span class="steptag">SSOT: Project</span></div>
+      <h3>Define Project &mdash; the SSOT root and its non-negotiable</h3>
+      <p>
+        <code>research-scope</code> <span class="pill miss">new</span> proposes the Project node; you ratify it. The write is
+        a <strong>scope op through <code>research-op</code></strong> &mdash; the same single mutation surface that gates every
+        package edit (see &sect;3.4) &mdash; so it is reject-before-write and audited like any other op. The SSOT is
+        hierarchical, and <strong>the level of a change sets the gate strength</strong>: this is what reconciles
+        &ldquo;user-monitored&rdquo; with &ldquo;autonomous&rdquo;.
+      </p>
+      <div class="panel">
+        <p class="ptitle">Three SSOT levels &mdash; a change at one level invalidates only its dependents, and its level sets the gate</p>
+        <div class="tree">
+          <div class="tier"><div class="tlvl">Project (global)</div><div class="tholds">north-star objective &middot; contribution spine &middot; non-goals</div><div class="tgate"><b>change gate:</b> mandatory user ratification &mdash; maximal irreversibility</div></div>
+          <div class="tier" style="margin-left:26px;"><div class="tlvl">Direction (regime)</div><div class="tholds">hypothesis &middot; metric &middot; baselines &middot; success predicate</div><div class="tgate"><b>change gate:</b> user ratification + cross-model evidence audit</div></div>
+          <div class="tier" style="margin-left:52px;"><div class="tlvl">Task</div><div class="tholds">active experiment &middot; config &middot; gate &middot; autonomy level</div><div class="tgate"><b>change gate:</b> agent may update + async notify (light ack)</div></div>
+        </div>
+      </div>
+      <p>
+        <strong>The non-negotiable: the SSOT owns the <em>yardstick</em>, never the <em>reading</em>.</strong> It defines what
+        to measure and what counts as success; it must never hold or override a measured value &mdash; or it becomes the
+        ultimate deception engine (edit the truth to fit the result). Six invariants keep it a trust anchor rather than a new
+        failure mode:
+      </p>
+      <div class="table-wrap scroll">
+        <table>
+          <caption>Table 1 &mdash; drop any invariant and the SSOT degrades into a deception engine, a complexity bomb, a second source of truth, or supervised-always. Each is enforced at a coded point (&sect;5, Table&nbsp;7).</caption>
+          <thead><tr><th>Invariant</th><th>Failure mode if dropped</th></tr></thead>
+          <tbody>
+            <tr><td>1. Owns the yardstick, never the reading</td><td>&ldquo;highest priority&rdquo; would launder weak results &mdash; catastrophic deception</td></tr>
+            <tr><td>2. Versioned, not a mutable snapshot</td><td>in-place edits lose history and enable silent goalpost-moving</td></tr>
+            <tr><td>3. Canonical; surfaces are projections</td><td>a second copy that drifts is context pollution; surfaces render from it</td></tr>
+            <tr><td>4. Passive reference, not orchestrator</td><td>a god-module that runs things bloats and fights minimize-complexity</td></tr>
+            <tr><td>5. Priority enforced in the gates, not declared</td><td>gates pull the yardstick from it, so the agent can&rsquo;t act under a stale scope</td></tr>
+            <tr><td>6. Graduated gating by level</td><td>global = hard human gate, task = async notify; else user-monitoring kills autonomy</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 3.3 CREATE DIRECTION + TASK -->
+    <div class="step" id="step-3">
+      <div class="slabel"><span class="steptag">Step 3 &middot; Create Direction + Task</span> <span class="steptag">Control</span> <span class="steptag">SSOT: Direction / Task</span></div>
+      <h3>Create Direction + Task &mdash; and pick the autonomy dial</h3>
+      <p>
+        <code>research-scope</code> scaffolds the Direction <em>as</em> a research-package (the reused
+        <code>research-package</code> <span class="pill have">reused</span> skill &mdash; a Direction &asymp; a package). You
+        set the Task objective and pick the autonomy level. The Task/Objective surface <em>is</em> the Task level of the SSOT:
+        the user&rarr;model half of HCI alignment.
+      </p>
+      <div class="panel">
+        <p class="ptitle">The 4-stop autonomy dial &mdash; set per Task, never globally</p>
+        <div class="dial">
+          <div class="dial-track">
+            <div class="dial-stop"><div class="ds-n">Supervised</div><div class="ds-d">human acks every transition &middot; same-model review ok &middot; synchronous</div></div>
+            <div class="dial-stop"><div class="ds-n">Checkpoints</div><div class="ds-d">pause at terminal / acquit gates (T1) &middot; cross-model on terminal &middot; per-checkpoint summary</div></div>
+            <div class="dial-stop"><div class="ds-n">Async</div><div class="ds-d">terminal only, non-blocking &middot; cross-model on every acquit &middot; continuous PACK push</div></div>
+            <div class="dial-stop"><div class="ds-n">Autonomous</div><div class="ds-d">no gates during, final review after &middot; <b>cross-family mandatory</b> &middot; end-of-run report</div></div>
+          </div>
+          <div class="dial-ends"><span>&larr; max human control</span><span>max autonomy &rarr;</span></div>
+        </div>
+      </div>
+      <p>
+        The dial&rsquo;s substance is a <strong>coupling</strong>: more autonomy automatically buys more verifier
+        independence, so throughput and trust scale <em>together</em>, never against each other. That coupling has
+        <strong>one source of truth</strong> &mdash; the <code>autonomy_level &rarr; required-independence</code> table is a
+        single constant owned by the <code>verifier</code> lib (&sect;3.4). <code>research-auto</code> passes only the
+        <code>autonomy_level</code> read from the Task node; it never re-implements the tiers.
+      </p>
+      <div class="table-wrap scroll">
+        <table>
+          <caption>Table 2 &mdash; each autonomy level dials three couplings at once. This coupling is the mechanism&rsquo;s substance.</caption>
+          <thead><tr><th>Autonomy level</th><th>Human gates</th><th>Required verifier independence</th><th>Report cadence</th></tr></thead>
+          <tbody>
+            <tr><td>Supervised</td><td>every state transition</td><td>metric-gate + same-model review acceptable</td><td>synchronous, in-turn</td></tr>
+            <tr><td>Checkpoints</td><td>terminal / acquit gates only (T1)</td><td>cross-model on terminal gates</td><td>per-checkpoint summary</td></tr>
+            <tr><td>Async</td><td>terminal only, non-blocking</td><td>cross-model on every acquit</td><td>continuous async push to dashboard</td></tr>
+            <tr><td>Autonomous</td><td>none during; final review after</td><td><b>cross-family mandatory</b>, always</td><td>async + end-of-run report</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 3.4 RUN -->
+    <div class="step" id="step-4">
+      <div class="slabel"><span class="steptag">Step 4 &middot; Run</span> <span class="steptag">Execution + Trust</span> <span class="steptag">problem&nbsp;#1</span></div>
+      <h3>Run &mdash; the two-loop execution, gated by the trust substrate</h3>
+      <p>
+        <code>research-auto</code> <span class="pill miss">new</span> is the only normal front door. It drives one Task through
+        the seven roles at the dialed autonomy in a <strong>two-loop</strong> shape: the <em>inner</em> loop is the base
+        pipeline&rsquo;s experiment sub-cycle, <strong>reused verbatim as R4</strong> (it must not be re-implemented); the
+        <em>outer</em> loop is research-auto ticking one Task through R1&rarr;R7, then on to the next Direction
+        (DEEPEN / BROADEN / PIVOT / CONCLUDE &mdash; where a PIVOT is a scope-change Triage item, never a silent reroute). For
+        absent-user operation the tick is wall-clock (<code>/loop</code> or Cron), and at each tick it reconstructs state by
+        <em>reading</em> external memory &mdash; holding nothing load-bearing across a tick.
+      </p>
+      <div class="panel scroll">
+        <p class="ptitle">The seven roles &mdash; outer research-auto over Directions; inner reused experiment sub-cycle</p>
+        <div class="flow">
+          <div class="node miss"><span class="tag miss">new</span><span class="n-num">R1</span><span class="n-name">Scope</span><span class="n-now">research-scope; yardstick; Triage gate</span></div>
+          <div class="arrow"></div>
+          <div class="node miss"><span class="tag miss">new</span><span class="n-num">R2</span><span class="n-name">Search/Read</span><span class="n-now">research-lit + cite_check</span></div>
+          <div class="arrow"></div>
+          <div class="node miss"><span class="tag miss">new</span><span class="n-num">R3</span><span class="n-name">Ideate</span><span class="n-now">diverge-converge + banlist</span></div>
+          <div class="arrow"></div>
+          <div class="node have"><span class="tag have">reused</span><span class="n-num">R4</span><span class="n-name">Experiment</span><span class="n-now">base WORKFLOW.md, verbatim</span></div>
+          <div class="arrow"></div>
+          <div class="node part"><span class="tag part">extend</span><span class="n-num">R5</span><span class="n-name">Verify</span><span class="n-now">verifier; producer&ne;judge</span></div>
+          <div class="arrow"></div>
+          <div class="node miss"><span class="tag miss">new</span><span class="n-num">R6</span><span class="n-name">Write</span><span class="n-now">research-write; cite_check</span></div>
+          <div class="arrow"></div>
+          <div class="node have"><span class="tag have">reused</span><span class="n-num">R7</span><span class="n-name">Remember</span><span class="n-now">learnings + SSOT stamp</span></div>
+        </div>
+        <div class="loopback"><span class="lp">DEEPEN / BROADEN / PIVOT / CONCLUDE</span>
+          <span class="t">PIVOT files a Triage item (never a silent reroute) &middot; results-insert illegal until the SSOT yardstick is filed &middot; no base skill invokes git</span>
+        </div>
+      </div>
+
+      <h4>The single mutation surface &mdash; where the old &ldquo;seam&rdquo; used to be</h4>
+      <p>
+        Every write in the run &mdash; package content <em>and</em> scope transitions &mdash; routes through
+        <code>research-op</code>&rsquo;s reject-before-write gate <span class="pill part">extend</span>. Scope/intent writes are
+        simply a <strong>new op category</strong> in the existing <code>(category, status, op, target)</code> matrix;
+        <code>scope_ssot</code> is the passive store the gate writes into. There is no registration hook and no parallel gate:
+        &ldquo;single mutation surface&rdquo; is now literally true across both domains, and the prior Seam-A/Seam-B fork is
+        <span class="gone">closed</span>.
+      </p>
+
+      <h4>The verifier, layered: DRIVE, but never ACQUIT</h4>
+      <p>
+        The deliverable is idea&rarr;paper, so the verifier covers both branches: the experiment branch has an unfakeable
+        metric oracle; the document branch has no oracle and leans on independent critique + citation existence. They are
+        layered &mdash; a cheap deterministic gate catches mechanical cheats, freeing an expensive cross-model jury to judge
+        meaning &mdash; and the producer never signs off its own work.
+      </p>
+      <div class="panel scroll">
+        <p class="ptitle">Two enforced layers + the human layer the dial chooses &mdash; one principle: producer &ne; judge</p>
+        <div class="flow">
+          <div class="node have"><span class="tag have">reused</span><span class="n-num">L1</span><span class="n-name">Deterministic</span><span class="n-now">reject-before-write &middot; metric oracle &middot; cite-exists</span></div>
+          <div class="arrow"></div>
+          <div class="node miss"><span class="tag miss">new</span><span class="n-num">L2</span><span class="n-name">Cross-model jury</span><span class="n-now">fresh, different-family judge on acquit gates</span></div>
+          <div class="arrow"></div>
+          <div class="node part"><span class="tag part">extend</span><span class="n-num">L3</span><span class="n-name">Human</span><span class="n-now">final acquit at the dial&rsquo;s chosen gates (T1)</span></div>
+        </div>
+      </div>
+      <p>
+        The <code>verifier</code> lib <span class="pill miss">new</span> spawns a fresh, different-family judge, passes it
+        <strong>file paths only</strong> (never shared context), and checks <code>judge-identity &ne; producer-identity</code>
+        &mdash; the producing role has no acquit write path. The <code>cite_check</code> lib
+        <span class="pill miss">new</span> resolves every citation against external indexes (arXiv&rarr;CrossRef&rarr;Semantic
+        Scholar&rarr;optional relevance) and rejects an unresolved citation before write &mdash; a network fact, never a
+        model&rsquo;s memory. L2 is the single highest-leverage new piece, and it is exactly what the dial escalates.
+      </p>
+
+      <h4>Enforce, don&rsquo;t instruct</h4>
+      <p>Every failure mode of problem&nbsp;#1 gets a mechanical counter, reached during the run &mdash; not a prompt that asks the model to behave.</p>
+      <div class="table-wrap scroll">
+        <table>
+          <caption>Table 3 &mdash; each failure mode of context-pollution / deception, and the mechanism that forecloses it.</caption>
+          <thead><tr><th>Failure mode</th><th>Counter in the substrate</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td>Context pollution / goal drift</td><td>typed <code>(category, status)</code> state machine + single-home surfaces</td><td><span class="pill have">reused</span></td></tr>
+            <tr><td>Out-of-contract edits / silent non-compliance</td><td>reject-before-write through the one mutation surface (research-op)</td><td><span class="pill have">reused</span></td></tr>
+            <tr><td>Self-acquittal (judging its own work)</td><td>independent cross-model judge on acquit gates (DRIVE, not ACQUIT)</td><td><span class="pill miss">new</span></td></tr>
+            <tr><td>Moving the goalposts (yardstick-gaming)</td><td>the gate pulls its yardstick from the SSOT; changing it is an audited transition</td><td><span class="pill miss">new</span></td></tr>
+            <tr><td>Hallucinated numbers / citations</td><td>metric oracle (experiments) + cite_check existence (documents)</td><td><span class="pill have">reused</span> / <span class="pill miss">new</span></td></tr>
+            <tr><td>Post-hoc rationalization</td><td>pre-registration (protocol before results) + TDD (watch the test fail)</td><td><span class="pill have">reused</span></td></tr>
+            <tr><td>Undetectable behaviour</td><td>append-only audit log <code>_actions.jsonl</code> &mdash; every op, success or reject</td><td><span class="pill have">reused</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 3.5 AWAY MODES -->
+    <div class="step" id="step-5">
+      <div class="slabel"><span class="steptag">Step 5 &middot; Away modes</span> <span class="steptag">Control</span> <span class="steptag">problem&nbsp;#2</span></div>
+      <h3>Away modes &mdash; the agent owes you context</h3>
+      <p>
+        At Async / Autonomous the agent owes context upward. Each async push is a <strong>PACK</strong>&rsquo;d narrative for an
+        absent reader &mdash; a typed bundle of <code>{attempted, found, hypothesis-state, next-action, blocking-decision}</code>
+        &mdash; written via <code>research-op</code> so it lands on the right package surface and appends one audit line. You
+        <strong>UNPACK</strong> by reading the dashboard, not the raw <code>_actions.jsonl</code>. The surfaces are a Common
+        Information Space, not a store you must mine. Three constraints keep the PM interface honest:
+      </p>
+      <div class="note">
+        <h4>Three constraints that keep the interface honest</h4>
+        <ol>
+          <li><b>DRIVE, but cannot ACQUIT.</b> The agent may not declare its own gated work successful (that is L2/L3) and may not edit the objective/yardstick. Trust comes from the verifier at the gate, never from the PM&ndash;worker relationship&rsquo;s implied trust.</li>
+          <li><b>Scope changes enter through the admission gate, not the worker&rsquo;s pen.</b> The agent <em>proposes</em> a revision as a Triage item; the human <em>disposes</em>; the objective cascade stays PM-write-only (&sect;3.6).</li>
+          <li><b>The agent owes context upward.</b> It actively PACKs evidence so the returning human can cheaply UNPACK and re-ground &mdash; the dashboard is that narrative, not a compliance trail.</li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- 3.6 SCOPE CHANGE -->
+    <div class="step" id="step-6">
+      <div class="slabel"><span class="steptag">Step 6 &middot; Scope change</span> <span class="steptag">Backbone + Control</span> <span class="steptag">non-stationarity</span></div>
+      <h3>Scope change &mdash; the goalposts move, auditably</h3>
+      <p>
+        Research is non-stationary; the objective <em>will</em> move. <code>research-scope</code> files the change as a
+        <strong>Triage item</strong> (agent proposes); you dispose. On ratification, <code>scope_ssot</code> records a
+        versioned, evidence-anchored <strong>transition</strong> (<code>from&rarr;to</code> / trigger / cause / delta /
+        invalidates / reopens) &mdash; the one place where moving the goalposts becomes auditable rather than silent &mdash;
+        and runs a propagation pass over dependent memory:
+      </p>
+      <div class="panel scroll"><div class="flow">
+        <div class="node have"><span class="n-num">&middot;</span><span class="n-name">Carry</span><span class="n-now">unaffected by the change &mdash; stays active</span></div>
+        <div class="arrow"></div>
+        <div class="node part"><span class="n-num">&middot;</span><span class="n-name">Invalidate</span><span class="n-now">measured on an old yardstick &mdash; archived, not deleted</span></div>
+        <div class="arrow"></div>
+        <div class="node miss"><span class="n-num">&middot;</span><span class="n-name">Reopen</span><span class="n-now">a failed idea may be viable under the new scope</span></div>
+      </div></div>
+      <p>
+        The same transition propagates to the <strong>dial</strong>: a Direction- or Project-level change
+        <strong>auto-reverts every affected Task toward Supervised</strong> and locks it there until the agent re-grounds
+        (read the new version, acknowledge the changed yardstick, emit a re-alignment artifact). Autonomy is earned against a
+        shared understanding; when the purpose shifts, that grounding is stale, so standing autonomy is withdrawn until it is
+        rebuilt. Because the SSOT is a DAG, a node multi-homed under several Directions is invalidated only when its
+        <em>last</em> owning Direction drops it (reference-counted).
+      </p>
+    </div>
+
+    <!-- 3.7 SELF-LEARNING -->
+    <div class="step" id="step-7">
+      <div class="slabel"><span class="steptag">Step 7 &middot; Self-learning</span> <span class="steptag">Memory</span> <span class="steptag">problem&nbsp;#3</span></div>
+      <h3>Self-learning &mdash; the project gets better at itself, human-gated</h3>
+      <p>
+        The outer loop that makes the harness improve. It reads what the rest of the machine emits, distils durable lessons,
+        and proposes changes to the harness&rsquo;s own rules &mdash; but never lands them without a human gate.
+      </p>
+      <div class="panel scroll"><div class="flow">
+        <div class="node have"><span class="tag have">reused</span><span class="n-num">S1</span><span class="n-name">Observe</span><span class="n-now">_actions.jsonl + transcripts + transitions</span></div>
+        <div class="arrow"></div>
+        <div class="node miss"><span class="tag miss">new</span><span class="n-num">S2</span><span class="n-name">Reflect</span><span class="n-now">doom-loops, repeated failures, scope thrash</span></div>
+        <div class="arrow"></div>
+        <div class="node miss"><span class="tag miss">new</span><span class="n-num">S3</span><span class="n-name">Propose</span><span class="n-now">staged rule/skill diffs &rarr; pending/</span></div>
+        <div class="arrow"></div>
+        <div class="node part"><span class="tag part">extend</span><span class="n-num">S4</span><span class="n-name">Human land</span><span class="n-now">research-apply; jury-at-landing</span></div>
+      </div></div>
+      <p>
+        The load-bearing defence is a <strong>structural privilege split</strong>: <code>research-reflect</code>
+        <span class="pill miss">new</span> is a read-only proposer with <em>no write tool on the live corpus</em> &mdash; it can
+        only stage diffs to <code>pending/</code>. <code>research-apply</code> <span class="pill miss">new</span> is the only
+        unit with corpus-write privilege; it requires an explicit human act, runs a fresh jury-at-landing via the verifier,
+        and stamps provenance. Two skills, two tool-permission sets &mdash; harder to erode under context pressure than a
+        subcommand flag. Every memory entry is stamped with the SSOT version that produced it, so the failed-idea banlist is
+        scope-conditional, not absolute, and recurring scope-thrash is itself a doom-loop the reflector surfaces. Built last,
+        because it consumes what the other steps emit.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================
+       04 UNIFIED CATALOG
+       ============================ -->
+  <section id="catalog">
+    <div class="sec-head">
+      <span class="num">Section 04</span>
+      <h2 class="sec-title">The unified catalog — skills, libraries, reused base</h2>
+    </div>
+    <p class="lead">
+      One catalog of thin, single-purpose units, each earning its place by serving a journey step. The kind is chosen by one
+      rule: anything whose correctness must hold regardless of model attention is a deterministic Python
+      <strong>library</strong>; everything that is a unit of agent work is a thin <strong>SKILL.md</strong> with a
+      trigger-only description. The base&rsquo;s four skills are reused (research-op widened only to admit scope ops). The set
+      is deliberately small: <strong>4 reused + 7 new skills + 3 libs</strong>.
+    </p>
+    <div class="table-wrap scroll">
+      <table>
+        <caption>Table 4 &mdash; the master catalog. Every unit maps to a journey step, a plane, a single responsibility, an enforcement point, and the surveyed idiom it grafts.</caption>
+        <thead>
+          <tr><th>Unit</th><th>Kind</th><th>Journey step</th><th>Plane</th><th>Single responsibility</th><th>Enforcement point</th><th>Source idiom</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>research-dashboard</td><td><span class="pill have">reused</span></td><td>1, 4&ndash;5</td><td>Control</td><td>Scaffold research_html/ + rules + Stop hook; SSOT projection</td><td>R1&ndash;R17 / T1&ndash;T24 lints; assert_consistent in Stop hook</td><td>superpowers SessionStart/Stop</td></tr>
+          <tr><td>research-package</td><td><span class="pill have">reused</span></td><td>3</td><td>Execution</td><td>Scaffold a Direction as a fixed multi-page surface</td><td>single-home page rules</td><td>&mdash;</td></tr>
+          <tr><td>research-analysis</td><td><span class="pill have">reused</span></td><td>7</td><td>Memory</td><td>Rules + Insights distillation (manual)</td><td>analysis lint</td><td>&mdash;</td></tr>
+          <tr><td>research-op</td><td><span class="pill part">extend</span></td><td>2, 4, 6</td><td>Trust</td><td>The one mutation surface &mdash; package <em>and</em> scope ops</td><td>(category,status,op,target) matrix + invariants + audit; scope op category added</td><td>academic-research-skills single-writer</td></tr>
+          <tr><td>research-scope</td><td><span class="pill miss">new</span></td><td>2, 3, 6</td><td>Control / Backbone</td><td>Intent nodes + transitions + Triage admission gate</td><td>scope-op gate + Triage (agent proposes, human disposes)</td><td>academic-research-skills checkpoints</td></tr>
+          <tr><td>research-auto</td><td><span class="pill miss">new</span></td><td>4, 5</td><td>Execution</td><td>Orchestrate R1&ndash;R7 at dial; outer loop; PACK</td><td>passes only autonomy_level; verifier selects tier; gates pull yardstick</td><td>two-loop + composed-mode + dial</td></tr>
+          <tr><td>research-lit</td><td><span class="pill miss">new</span></td><td>4 (R2)</td><td>Execution</td><td>Multi-source retrieval + per-claim cite_check</td><td>cite_check reject-before-write on unresolved citations</td><td>ARIS research-lit</td></tr>
+          <tr><td>research-ideate</td><td><span class="pill miss">new</span></td><td>4 (R3)</td><td>Execution</td><td>Diverge-converge; consult scope-conditional banlist first</td><td>scope-conditional banlist check</td><td>ARIS failed-idea banlist</td></tr>
+          <tr><td>research-write</td><td><span class="pill miss">new</span></td><td>4 (R6)</td><td>Execution</td><td>Grounded-only IMRAD + review&harr;revise; every claim traces to a verified artifact or source</td><td>VerifiedRegistry whitelist + cite_check</td><td>VerifiedRegistry + reviser</td></tr>
+          <tr><td>research-reflect</td><td><span class="pill miss">new</span></td><td>7</td><td>Memory</td><td>Read-only proposer; detect doom-loops; stage diffs to pending/</td><td>no Write/Edit privilege on live corpus (structural)</td><td>ARIS meta-optimize</td></tr>
+          <tr><td>research-apply</td><td><span class="pill miss">new</span></td><td>7</td><td>Memory</td><td>Land a staged diff on explicit human act; jury-at-landing</td><td>only corpus-write privilege; cannot be auto-invoked</td><td>ARIS meta-apply</td></tr>
+          <tr><td>lib/scope_ssot</td><td><span class="pill blue">lib</span></td><td>2, 3, 6</td><td>Backbone</td><td>Fold transitions&rarr;scope; propagation; yardstick guard; assert_consistent</td><td>yardstick-vs-reading guard + assert_consistent (inv #1,#3,#4)</td><td>research-state.yaml + versioned lineage</td></tr>
+          <tr><td>lib/verifier</td><td><span class="pill blue">lib</span></td><td>4 (R5)</td><td>Trust</td><td>Fresh different-family judge; owns autonomy&rarr;independence table</td><td>producer&ne;judge identity check; single independence table</td><td>ARIS reviewer-independence</td></tr>
+          <tr><td>lib/cite_check</td><td><span class="pill blue">lib</span></td><td>4 (R2, R6)</td><td>Trust</td><td>Multi-index citation existence resolve</td><td>unresolved citation rejected before write</td><td>4-layer citation check</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <h4>Why three of them are libraries, not skills</h4>
+      <p style="font-size:14.5px;margin:0;color:var(--ink-soft);">
+        <code>scope_ssot</code>, <code>verifier</code>, and <code>cite_check</code> expose plain Python functions &mdash; no
+        LLM, no slash command, no model-invocation. A skill is a prompt the model reads and may rationalize around; a lib is
+        code that runs the same way every time. Putting the load-bearing checks (the yardstick guard, producer&ne;judge, the
+        independence table, citation existence) in libs is what makes &ldquo;enforce, don&rsquo;t instruct&rdquo; real rather
+        than aspirational. The libs are passive &mdash; they hold no scheduler and call no Skill tool, so they structurally
+        cannot become a god-module (SSOT invariant&nbsp;4).
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================
+       05 TRACEABILITY
+       ============================ -->
+  <section id="trace">
+    <div class="sec-head">
+      <span class="num">Section 05</span>
+      <h2 class="sec-title">Traceability — every function &amp; invariant to a journey step</h2>
+    </div>
+    <p class="lead">
+      The audit ledger that proves the design is complete before any code is written. Every one of the
+      <strong>31 north-star functions</strong> maps to the journey step that uses it, the plane it serves, and the single unit
+      that owns it; every <strong>16 invariant</strong> pins to one concrete enforcement point. The old Seam decision matrix
+      and dependency-law tables are gone &mdash; both were resolved into &ldquo;one mutation surface&rdquo;.
+    </p>
+
+    <h3>(a) Function &rarr; journey step &rarr; home</h3>
+    <div class="table-wrap scroll">
+      <table>
+        <caption>Table 5 &mdash; 31 functions, each re-stamped to the journey step that needs it and the one unit that owns it.</caption>
+        <thead><tr><th>Function</th><th>Step</th><th>Plane</th><th>PRIMARY home</th></tr></thead>
+        <tbody>
+          <tr><td>ssot-versioned-tree</td><td>2, 3</td><td>Backbone</td><td>lib scope_ssot (store + fold)</td></tr>
+          <tr><td>ssot-graduated-gate</td><td>2, 3, 6</td><td>Backbone / Trust</td><td>research-op scope-op gate rows (Project/Direction/Task), called by research-scope</td></tr>
+          <tr><td>ssot-propagation-pass</td><td>6</td><td>Backbone</td><td>lib scope_ssot (propagation + dial_revert)</td></tr>
+          <tr><td>ssot-yardstick-only</td><td>4</td><td>Backbone / Trust</td><td>lib scope_ssot yardstick-vs-reading guard</td></tr>
+          <tr><td>ssot-transition-record</td><td>6</td><td>Backbone</td><td>lib scope_ssot append-only transitions.jsonl</td></tr>
+          <tr><td>r1-scope-role</td><td>2, 3</td><td>Execution</td><td>research-scope</td></tr>
+          <tr><td>r2-search-read</td><td>4</td><td>Execution</td><td>research-lit + lib cite_check</td></tr>
+          <tr><td>r3-ideate</td><td>4</td><td>Execution</td><td>research-ideate (+ scope_ssot banlist)</td></tr>
+          <tr><td>r4-experiment</td><td>4</td><td>Execution</td><td>WORKFLOW.md 7-step loop <span class="pill have">reused</span></td></tr>
+          <tr><td>r5-verify</td><td>4</td><td>Trust</td><td>PRIMARY lib verifier (L2); + research-op (L1) + T1 acks (L3)</td></tr>
+          <tr><td>r6-write-paper</td><td>4</td><td>Execution</td><td>research-write + lib cite_check</td></tr>
+          <tr><td>r7-remember</td><td>4, 7</td><td>Memory</td><td>learnings + methodsTried <span class="pill have">reused</span>; scope_ssot version-stamp</td></tr>
+          <tr><td>trust-mutation-surface</td><td>2, 4, 6</td><td>Trust</td><td>research-op (category,status,op,target) matrix</td></tr>
+          <tr><td>trust-state-machine</td><td>all</td><td>Trust</td><td>transitions.py STATES + schema.js <span class="pill have">reused</span></td></tr>
+          <tr><td>trust-cross-model-jury</td><td>4</td><td>Trust</td><td>lib verifier</td></tr>
+          <tr><td>trust-citation-gate</td><td>4</td><td>Trust</td><td>lib cite_check</td></tr>
+          <tr><td>trust-audit-log</td><td>all writes</td><td>Trust</td><td>var/research/&lt;pkg&gt;/_actions.jsonl <span class="pill have">reused</span></td></tr>
+          <tr><td>trust-preregistration</td><td>4</td><td>Trust</td><td>scope_ssot pre-registration gate row (results-insert illegal until yardstick filed)</td></tr>
+          <tr><td>hci-live-dashboard</td><td>4, 5</td><td>Control</td><td>research-dashboard + SSOT projection</td></tr>
+          <tr><td>hci-task-objective-surface</td><td>3</td><td>Control</td><td>research-scope Task node + dashboard projection</td></tr>
+          <tr><td>hci-autonomy-dial</td><td>3</td><td>Control</td><td>autonomy_level on Task node; independence tier owned by verifier lib</td></tr>
+          <tr><td>hci-dial-revert-on-scope</td><td>6</td><td>Control / Backbone</td><td>lib scope_ssot dial_revert; research-auto re-ground gate</td></tr>
+          <tr><td>hci-triage-gate</td><td>6</td><td>Control</td><td>research-scope Triage admission</td></tr>
+          <tr><td>hci-pack-unpack</td><td>5</td><td>Control</td><td>research-auto PACK push to dashboard</td></tr>
+          <tr><td>hci-pm-state-machine</td><td>all</td><td>Control</td><td>base schema.js (category,status) <span class="pill have">reused</span> (framing)</td></tr>
+          <tr><td>hci-retrospective</td><td>6, 7</td><td>Control / Memory</td><td>PRIMARY research-scope (scope-revalidation); research-reflect (rule-extraction)</td></tr>
+          <tr><td>selflearn-observe</td><td>7</td><td>Memory</td><td>research-reflect reads audit + transcripts + transitions</td></tr>
+          <tr><td>selflearn-reflect</td><td>7</td><td>Memory</td><td>research-reflect (read-only proposer)</td></tr>
+          <tr><td>selflearn-propose</td><td>7</td><td>Memory</td><td>research-reflect &rarr; pending/</td></tr>
+          <tr><td>selflearn-human-gate</td><td>7</td><td>Memory</td><td>research-apply (privileged lander, jury-at-landing)</td></tr>
+          <tr><td>selflearn-scope-stamped-memory</td><td>7</td><td>Memory</td><td>lib scope_ssot version stamp on every memory entry</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>(b) Invariant &rarr; enforcement point</h3>
+    <div class="table-wrap scroll">
+      <table>
+        <caption>Table 6 &mdash; 16 invariants, each with exactly one concrete enforcement point &mdash; a gate row, a lib check, or a privilege split &mdash; never a prompt.</caption>
+        <thead class="blue-head"><tr><th>Invariant</th><th>Enforcement point</th><th>Plane</th></tr></thead>
+        <tbody>
+          <tr><td>SSOT #1 yardstick-never-reading</td><td>scope_ssot guard rejects a measured value written into a yardstick field</td><td>Backbone</td></tr>
+          <tr><td>SSOT #2 versioned-not-mutable</td><td>scope_ssot has no in-place edit API; a scope op appends a new version record</td><td>Backbone</td></tr>
+          <tr><td>SSOT #3 surfaces-are-projections</td><td>scope_ssot.assert_consistent: dashboard intent == fold(transitions); Check + Stop hook</td><td>Backbone + Control</td></tr>
+          <tr><td>SSOT #4 passive-reference</td><td>scope_ssot is pure fold(transitions); no scheduler, no Skill-tool calls</td><td>Backbone</td></tr>
+          <tr><td>SSOT #5 priority-enforced-in-gates</td><td>gates PULL yardstick/version from scope_ssot at judgment time; never passed as an arg</td><td>Trust</td></tr>
+          <tr><td>SSOT #6 graduated-gating-by-level</td><td>research-op scope-op rows: Project=ratify, Direction=user+xmodel, Task=agent+notify</td><td>Trust</td></tr>
+          <tr><td>producer &ne; judge</td><td>verifier judge-identity &ne; producer-identity; acquit row needs a distinct judge id</td><td>Trust</td></tr>
+          <tr><td>single-mutation-surface</td><td>all writes (package + scope) route through research-op; scope is one more op category</td><td>Trust</td></tr>
+          <tr><td>dial-coupled-to-verification</td><td>verifier OWNS the single autonomy&rarr;independence table; rejects same-family at Autonomous</td><td>Trust / Control</td></tr>
+          <tr><td>pre-registration-before-results</td><td>results-block insert illegal until scope_ssot yardstick is non-empty (reject-before-write)</td><td>Trust</td></tr>
+          <tr><td>scope-changes-via-admission-gate</td><td>research-scope Triage: agent files an item; human disposes; no agent path edits the objective</td><td>Control</td></tr>
+          <tr><td>dial-auto-reverts-on-scope-change</td><td>scope_ssot dial_revert in propagation; research-auto locks to Supervised until re-ground</td><td>Control / Backbone</td></tr>
+          <tr><td>PACK-for-absent-reader</td><td>research-auto pushes a typed PACK bundle via research-op at Async/Autonomous</td><td>Control</td></tr>
+          <tr><td>self-learning-human-apply-gate</td><td>privilege split: research-reflect has no apply tool; research-apply needs a human act + jury</td><td>Memory</td></tr>
+          <tr><td>banlist-scope-conditional</td><td>banlist entries carry SSOT version stamp; reopen pass revives ideas under a new scope</td><td>Memory + Backbone</td></tr>
+          <tr><td>minimize-complexity</td><td>11 thin units + 3 libs + one mutation surface; no god-module; this traceability is the audit</td><td>design-level</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>(c) Open forks &mdash; Stage 0 must resolve before code</h3>
+    <div class="table-wrap scroll">
+      <table>
+        <caption>Table 7 &mdash; what remains open. The Seam A/B fork and the dependency-law test are removed (resolved into one mutation surface).</caption>
+        <thead class="blue-head"><tr><th>Fork</th><th>Owner</th></tr></thead>
+        <tbody>
+          <tr><td>SSOT typed schema (version-record + transition-record field names)</td><td>Stage 0</td></tr>
+          <tr><td>The scope-op category rows in the research-op matrix (exact (category,status,op,target) tuples)</td><td>Stage 0</td></tr>
+          <tr><td>L2 verifier model-family pairing + invocation protocol + verdict schema</td><td>Stage 2a</td></tr>
+          <tr><td>Multi-homing edge structure + last-owner reference-counted invalidation algorithm</td><td>Stage 0 / 2</td></tr>
+          <tr><td>Re-grounding protocol: exact artifact + ack sequence to restore the dial</td><td>Stage 2c</td></tr>
+          <tr><td>Reflection quantitative thresholds (failures-per-doom-loop, scope-thrash signature)</td><td>Stage 3</td></tr>
+          <tr><td>PACK / UNPACK concrete HTML layout + required-vs-optional fields per dial level</td><td>Stage 2c</td></tr>
+          <tr><td>Retrospective trigger / cadence + structured output schema</td><td>Stage 2c / 3</td></tr>
+          <tr><td>Walking-skeleton Stage-1 choices (start autonomy level, first paper format)</td><td>Stage 1</td></tr>
+          <tr><td>&sect;9 ARIS reconcile-vs-full-drive fork (sequencing decision before P1)</td><td>pre-P1</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout-blue">
+      <b>What this hands to the build-order plan.</b> A closed traceability set where every function has one home, every
+      invariant one enforcement point, and every unit one journey step &mdash; so Stage 0 is &ldquo;type the
+      <code>scope_ssot</code> schema + add the scope-op rows to the research-op matrix, TDD-gated&rdquo; with no ambiguity
+      about <em>where</em> code goes and no border to police. The acceptance test for every stage is simply: the existing base
+      suite still passes, and every new unit is reachable from a journey step.
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="fin">
+    <h3>Provenance</h3>
+    <p>
+      This is the usage-first rewrite of the detailed-design layer. It supersedes the earlier two-tree draft (kept at
+      <span class="path">plan/framework-design-twotree.html</span>), which split the system into a base pipeline and an
+      <code>auto/</code> sibling joined by a Seam-A/B registration hook and a dependency-law test. That split is withdrawn:
+      the journey is the spine, every component is its extension, scope writes fold into the one mutation surface, and the
+      whole machine is one catalog &mdash; honouring the spec&rsquo;s mandate to minimize workflow/pipeline complexity. The
+      four-plane machine, the Scope SSOT backbone and its six invariants, the layered verifier, and the per-task autonomy dial
+      all trace to <span class="path">plan/target-architecture.html</span>; every subsystem traces to a problem in
+      <span class="path">&#26680;&#24515;&#38382;&#39064;.md</span>.
+    </p>
+    <div class="roots">
+      <span class="path">&#26680;&#24515;&#38382;&#39064;.md (the spec)</span>
+      <span class="path">plan/target-architecture.html (north-star)</span>
+      <span class="path">plan/current-harness-and-gaps.html</span>
+      <span class="path">plan/build-order-plan.html</span>
+      <span class="path">Trustworthy-Research-Pipeline/WORKFLOW.md</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

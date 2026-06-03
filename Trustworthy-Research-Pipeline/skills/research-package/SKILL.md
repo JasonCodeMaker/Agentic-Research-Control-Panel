@@ -1,6 +1,6 @@
 ---
 name: research-package
-description: "Create a hierarchical research package under research_html/packages/<YYYY-MM-DD-slug>/ as a multi-page HTML surface (overview, plan, implementation, results, next-action, tracker, brainstorm) plus docs/ and _agent/. Use this skill whenever the user types /research-package, asks to create / initialize / draft / scaffold a research package, sets up a new research direction or experiment plan, or wants a new package on the dashboard for in-progress / brainstorm / success / fail work. Also use this skill whenever the user asks to edit, update, extend, or restructure an existing results.html — including updating the headline result, adding or removing Track tables (in-distribution / zero-shot / scalability / ablation), restructuring <details> collapse blocks for multi-seed / ablation / superseded / diagnostic-only data (all closed by default — never <details open>), or applying the recommended results-page pattern. Project-agnostic. Hard requirement: the dashboard at <cwd>/research_html/ must already exist — if it does not, run /research-dashboard first. Each page owns one decision; the binding single-home rule prevents overlap and context pollution. Tracker is the single home for execution state — launch readiness, resource allocation, per-run live cards, and the 10-minute live check all live on tracker.html (the prior launch.html / live.html pages are folded in)."
+description: "Create a hierarchical research package under research_html/packages/<YYYY-MM-DD-slug>/ as a multi-page HTML surface (overview, plan, implementation, results, tracker, brainstorm) plus docs/ and _agent/ (the chosen-route / next-action decision is folded into tracker.html#chosen-route). Use this skill whenever the user types /research-package, asks to create / initialize / draft / scaffold a research package, sets up a new research direction or experiment plan, or wants a new package on the dashboard for in-progress / brainstorm / success / fail work. Also use this skill whenever the user asks to edit, update, extend, or restructure an existing results.html — including updating the headline result, adding or removing Track tables (in-distribution / zero-shot / scalability / ablation), restructuring <details> collapse blocks for multi-seed / ablation / superseded / diagnostic-only data (all closed by default — never <details open>), or applying the recommended results-page pattern. Use /research-op (not this skill) for individual typed row/field mutations that must pass the (category, status, op, target) state gate — this skill owns scaffolding and large structural results.html edits; /research-op owns atomic row/card writes. Project-agnostic. Hard requirement: the dashboard at <cwd>/research_html/ must already exist — if it does not, run /research-dashboard first. Each page owns one decision; the binding single-home rule prevents overlap and context pollution. Tracker is the single home for execution state — launch readiness, resource allocation, per-run live cards, and the 10-minute live check all live on tracker.html (the prior launch.html / live.html pages are folded in)."
 argument-hint: "<one-sentence description of the package goal, optionally followed by — category=<lane>, scope=<pages>>"
 allowed-tools: Bash(*), Read, Edit, Write, Glob, Grep
 ---
@@ -18,7 +18,7 @@ This skill is project-agnostic. The contract is identical for every project; pro
 Authority order, highest first:
 1. The user's invocation prompt and any explicit `--<flag>` overrides.
 2. Trust rules `T1–T24` in `<root>/rules/trustworthy-research-rules.html` (per-stage page contracts `T18–T24`, plus T2/T8/T16/T17 cross-cutting).
-3. Form rules `R1–R17` in `<root>/rules/html-rules.html`.
+3. Form rules `R1–R18` in `<root>/rules/html-rules.html`.
 4. The seven-step controller in the user's `WORKFLOW.md` if one exists at the repo root.
 5. [references/package-contract.md](references/package-contract.md) — the 12-concept table and per-page card contract.
 
@@ -81,7 +81,7 @@ Every package object on the dashboard surfaces these fields. If a field is unkno
 | `openRuns` | `--open-runs` | tmux/session/job ids or `none` (Resume Block field). Required when status is `EXPERIMENT_RUNNING` or `LIVE_ANALYSIS`. |
 | `lastUpdated` | `--last-updated` | ISO date; toggles `data-stale` on pages that predate it. |
 | `experiments` | (post-scaffold edit) | Array `[{id, label?, purpose, after, output, gate, status, runLink?, docsAnchor?}]` painted onto both `index.html#plan-status` (status chips by `renderPlanStatus()`) and `plan.html#experiments` (pipeline timeline by `renderPipelineTimeline()`). See [Pipeline timeline](#pipeline-timeline-binding) for the binding per-field rules and caps. Update the matching entry's `status` whenever a phase opens/closes (same turn as the tracker row update). Allowed `status`: `pending`/`queued`/`running`/`completed`/`failed`/`skipped`/`blocked`. |
-| `methodsTried` | (post-scaffold edit) | Array of `{method, hypothesis, gate, measured, verdict, evidencePath}` rows (verdict ∈ `{pass, fail, inconclusive}`). Appended over the life of the package per the Learnings Update Protocol below. Required for success / fail / brainstorm-`ABANDONED`. |
+| `methodsTried` | (post-scaffold edit) | Array of `{method, hypothesis, gate, measured, verdict, evidencePath}` rows (verdict ∈ `{pass, fail, inconclusive}`). Appended over the life of the package per the Learnings Update Protocol below. Required for success / fail (forbidden for the brainstorm category, including `ABANDONED`). |
 | `terminationMessage` | (post-scaffold edit) | One sentence: why this package ended. Required for success / fail / brainstorm-`ABANDONED`. |
 | `adoptionPath` | (post-scaffold edit) | Where the win was adopted (e.g., `CLAUDE.md#current-best`, model code path, downstream package id). Required for success. |
 | `supersededBy` / `promotedTo` / `reopenTrigger` | (post-scaffold edit) | Per-status cross-reference fields. See `data/schema.js`. |
@@ -119,7 +119,7 @@ Every field has exactly one home page; other pages link. This prevents overlap a
 
 ## Pipeline timeline (binding)
 
-The per-experiment specification has exactly one home: the pipeline timeline painted on `plan.html#experiments` from the inventory's `experiments[]` array. The same array also paints the status chips on `index.html#plan-status` &mdash; both surfaces are derived from inventory, so updating inventory is the only write path and both surfaces refresh together. This is the third arm of the single-home rule: phase-level *spec* lives in inventory; phase-level *execution state* still lives in tracker rows; phase-level *deep contract* (full input/output schemas, sentinel format, code anchors, commands) still lives in `docs/pipeline.html`. Hand-coded `<table data-table="experiments">` on `plan.html` is forbidden &mdash; `learnings_lint.py lint-status` errors on it (rule `plan-static-experiments-table`).
+The per-experiment specification has exactly one home: the pipeline timeline painted on `plan.html#experiments` from the inventory's `experiments[]` array. The same array also paints the status chips on `index.html#plan-status` &mdash; both surfaces are derived from inventory, so updating inventory is the only write path and both surfaces refresh together. This is the third arm of the single-home rule: phase-level *spec* lives in inventory; phase-level *execution state* still lives in tracker rows; phase-level *deep contract* (full input/output schemas, sentinel format, code anchors, commands) still lives in `docs/pipeline.html`. Hand-coded `<table data-table="experiments">` on `plan.html` is forbidden (single-home rule; not yet machine-checked by `learnings_lint.py`).
 
 For brainstorm or single-phase packages where the timeline is over-engineered, leave `experiments[]` empty (or with one entry) and the timeline renders an empty-state. Never replace the painted slot with a static table.
 
@@ -138,7 +138,7 @@ Each entry in `experiments[]` carries the following fields when the timeline is 
 | 7 | `runLink?` | inventory | **dashboard-root-relative path starting with `packages/<pkg-id>/`** (e.g. `packages/2026-05-15-foo/tracker.html#resource-allocation`); the renderer prepends `RESEARCH_ROOT_PREFIX` so the link resolves both from the dashboard and from inside the package | execution surface |
 | 8 | `docsAnchor?` | inventory; defaults to `docs/pipeline.html#<id_lowercase>` | **plan.html-relative** path (e.g. `docs/baseline-xpool.html`, `docs/baseline-xpool.html#feature-extraction`); must resolve to a file on disk under `packages/<pkg-id>/`. If the package uses per-phase doc pages instead of a single `docs/pipeline.html`, set `docsAnchor` explicitly per phase (lint rule `experiment-docs-anchor-missing` errors when the explicit path does not resolve; `experiment-docs-anchor-default-missing` warns when the default fires but `docs/pipeline.html` does not exist). | deep-dive link |
 
-The hard caps are discipline levers: a phase whose `purpose` needs more than 12 words or whose `gate` is compound is almost always two phases hiding inside one. Split it. `learnings_lint.py lint-status` enforces the caps and the `after` resolution.
+The hard caps are discipline levers: a phase whose `purpose` needs more than 12 words or whose `gate` is compound is almost always two phases hiding inside one. Split it. These caps and the `after` resolution are authoring discipline — `learnings_lint.py lint-status` does not yet enforce them in code.
 
 ### Consequences for the deep contract
 
@@ -146,9 +146,9 @@ When the timeline is in use, `docs/pipeline.html` &sect;6 (per-phase spec) stops
 
 ### Renderer + lint
 
-- `renderPipelineTimeline()` in `assets/research.js` paints the timeline from `experiments[]` into the `[data-section="pipeline-timeline"] [data-field="pipeline-timeline-list"]` slot on `plan.html`.
-- CSS lives under `.pipeline-timeline` in `assets/research.css`.
-- `learnings_lint.py lint-status` enforces:
+- `renderPipelineTimeline()` in `assets/research.js` paints the timeline from `experiments[]` into the `[data-card="pipeline-timeline"] [data-field="pipeline-timeline-list"]` slot on `plan.html`.
+- CSS for the pipeline card lives under `.pipeline-card` in `assets/research.css`.
+- `learnings_lint.py lint-status` is **designed** to enforce the following (these experiment-level checks are not yet implemented in code — treat them as authoring discipline until they ship):
   - `experiments[].purpose` word count &le; 12 (error if exceeded);
   - `experiments[].gate` has no top-level `AND` / `OR` (error if compound);
   - `experiments[].after` is a list and every id resolves to another `experiments[].id` (error otherwise);
@@ -157,7 +157,7 @@ When the timeline is in use, `docs/pipeline.html` &sect;6 (per-phase spec) stops
   - `experiments[].docsAnchor`, when present, resolves to a file under `packages/<pkg-id>/` (error otherwise &mdash; rule `experiment-docs-anchor-missing`); when absent, the default `docs/pipeline.html#<id_lowercase>` must resolve (warning otherwise &mdash; rule `experiment-docs-anchor-default-missing`);
   - `plan.html` contains the painted `<section data-section="pipeline-timeline">` slot and does **not** contain a hand-coded `<table data-table="experiments">` (error otherwise &mdash; rule `plan-static-experiments-table` / `plan-missing-pipeline-timeline`).
 
-  The purpose/gate/output/after rules fire only when the field is present, so legacy entries with just `{id, label, status, runLink}` are lint-clean for the timeline content but still subject to the runLink and static-table rules above.
+  When implemented, the purpose/gate/output/after rules will fire only when the field is present, so legacy entries with just `{id, label, status, runLink}` stay timeline-clean; the `runLink` and static-table conventions above are likewise authoring discipline today, not machine-checked.
 
 ## ETA discipline (binding)
 
@@ -169,11 +169,11 @@ When scaffolding or editing `results.html`, follow the recommended structure in 
 
 ## Docs/* page style (project-local override)
 
-When the host project ships its own doc-template and doc-style-guide under `research_html/templates/`, prefer those over this skill's bundled minimal `templates/docs/source.html` for any new doc under `research_html/packages/<pkg-id>/docs/`. The GRDR project (`/home/uqzzha35/Project/SemanticID/GRDR/`) is the canonical example:
+When the host project ships its own doc-template and doc-style-guide under `research_html/templates/`, prefer those over this skill's bundled minimal `templates/docs/source.html` for any new doc under `research_html/packages/<pkg-id>/docs/`. A host project that ships `research_html/templates/doc-template.html` + `doc-style-guide.html` is the canonical example:
 
 - **Skeleton:** `research_html/templates/doc-template.html` — content-agnostic shell (masthead with eyebrow + h1 + lead + toolbar + `data-status-strip` + `data-package-nav`, footer `<time data-field="last-updated">`, three trailing `<script>` tags) plus one labelled demo of every block primitive (`pre.diagram`, `pre.code`, `.callout` + `.warn` + `.ok`, `table.data-table`, `span.pill-mono` + `.frozen`/`.trained`/`.kmeans`, `h2.stage-title` + `span.step-num`, `p.card-text.kv-mini`).
 - **Style guide:** `research_html/templates/doc-style-guide.html` — when to reach for each primitive (rules + rendered examples + copy snippets). Re-read before authoring a new doc.
-- **Exemplar:** the GRDR-local `research_html/packages/2026-05-16-panda-pseudo-queries-multiview/docs/training_pipeline.html` shows a fully-fleshed-out doc under this style (7 numbered stages, 2 appendices, footer time).
+- **Exemplar:** a host-project-local doc such as `research_html/packages/<pkg-id>/docs/<pipeline>.html` shows a fully-fleshed-out doc under this style (numbered stages, appendices, footer time).
 
 Hard rules: keep the shell verbatim (`data-status-strip`, `data-package-nav`, footer `<time>`, the three trailing `<script>` tags); do not invent new block classes; do not add page-local CSS beyond the primitive overrides at the top of the template; bump the footer date with a short scope phrase on every meaningful edit.
 
@@ -183,7 +183,7 @@ When the host project ships no such templates, fall back to this skill's `templa
 
 ## Creation Workflow
 
-The bundled script reads the 12 stage templates from this skill's `templates/` directory and substitutes per-package fields. Invoke it as:
+The bundled script reads the stage templates from this skill's `templates/` directory (one per entry in its `STAGE_PAGES` map) and substitutes per-package fields. Invoke it as:
 
 ```bash
 python ~/.claude/skills/research-package/scripts/create_research_package.py \
@@ -279,6 +279,17 @@ State:
 - validation run
 - unresolved placeholders or questions
 
+Example:
+
+```
+Created package 2026-06-03-contrastive-recall (in-progress) on the in-progress lane.
+Tag: baseline-sweep — "comparing 3 contrastive losses".
+Pages: index, plan, tracker, docs, _agent (--scope index,plan,tracker,docs,_agent).
+Files: 5 written under research_html/packages/2026-06-03-contrastive-recall/.
+Validation: learnings_lint.py lint-status → exit 0.
+Open question: baseline checkpoint path still unmeasured.
+```
+
 Apply the [Output classification](#output-classification) rule on the report — agent-only continuity notes go in a `>` blockquote so the user is not asked to read them.
 
 ## Fact Propagation Contract (binding when a run is live)
@@ -295,7 +306,7 @@ Per-package `scripts/propagate_facts.py` byte-copies are no longer shipped by th
 | --- | --- | --- | --- |
 | **E1. Per-experiment verdict finalized** | `results.html` result-gate row gains pass/fail/inconclusive AND artifacts verified | none | Append one `methodsTried[]` row |
 | **E2. In-progress live update** | tracker live-check, plan revision, blocker change | none | `status`, `activeGate`, `primaryMetricVsGate`, `currentBlocker`, `openRuns`, `lastAction`, `lastUpdated` |
-| **E3. Terminal status transition** | `next-action.html` chosen-route → terminal lane move | **T1** | `category` (lane move), `status`, `terminationMessage`; freeze `methodsTried[]` |
+| **E3. Terminal status transition** | `tracker.html#chosen-route` → terminal lane move | **T1** | `category` (lane move), `status`, `terminationMessage`; freeze `methodsTried[]` |
 | **E4. Adoption** | CLAUDE.md "Current Best" edit, code merge into `models/` / `trainer/`, or downstream pkg cites the win | **T1** | `adoptionPath` |
 | **E5. Supersession** | Newer success pkg replaces an older one | **T1** | On the *old* pkg: `status = SUPERSEDED`, `supersededBy` |
 | **E6. Reopen marked** | User states a fail pkg should be revisitable | **T1** | `status = ARCHIVED_REOPENABLE`, `reopenTrigger` |
@@ -317,7 +328,7 @@ python <root>/scripts/learnings_lint.py draft-terminal <pkg-id>
 python <root>/scripts/learnings_lint.py all
 ```
 
-Per-turn closure when any event above fires: update the upstream witness (results.html / next-action.html), then the inventory entry in `data/research-packages.js`, then the tracker Resume Block `lastAction`, then run `learnings_lint.py all`. A non-empty report is a Stop-Gate violation.
+Per-turn closure when any event above fires: update the upstream witness (results.html / tracker.html#chosen-route), then the inventory entry in `data/research-packages.js`, then the tracker Resume Block `lastAction`, then run `learnings_lint.py all`. A non-empty report is a Stop-Gate violation.
 
 `learnings.html` re-derives on load — do not edit it directly.
 
@@ -332,6 +343,6 @@ When wired to a Claude Code `Stop` hook (recipe at `research-dashboard/reference
 ## Bundled resources
 
 - `scripts/create_research_package.py` — generates a hierarchical package from this skill's templates and appends one inventory entry to the user's `data/research-packages.js`.
-- `templates/` — the 11 `string.Template` HTML files (`index`, `plan`, `implementation`, `results`, `analysis`, `next-action`, `tracker`, `brainstorm`, `docs/index`, `docs/source`, `_agent/context`). Tracker owns launch readiness + per-run live cards; there is no longer a separate `launch.html` or `live.html` template. The `analysis` template is the empty two-block scaffold (Rules + Insight) — its content discipline lives in the [`research-analysis`](../research-analysis/SKILL.md) skill.
+- `templates/` — the 10 `string.Template` HTML files. Nine are scaffolded stage pages (the `STAGE_PAGES` keys: `index`, `plan`, `implementation`, `results`, `analysis`, `tracker`, `brainstorm`, `docs/index`, `_agent/context`); `docs/source.html` is a standalone fallback template for new per-source doc pages, not a `--scope` key. Tracker owns launch readiness + per-run live cards **and** the chosen-route panel; there is no longer a separate `launch.html`, `live.html`, or `next-action.html` template — the next-action decision is folded into `tracker.html#chosen-route`. The `analysis` template is the empty two-block scaffold (Rules + Insight) — its content discipline lives in the [`research-analysis`](../research-analysis/SKILL.md) skill.
 - `references/package-contract.md` — the 12-concept table, single-home rule, append-row recipe, and the four `data-ack` transition slots.
 - `references/results-page-pattern.md` — recommended structure for `results.html` derived from the panda-scaleup canonical example: section ordering (hypothesis → eval-banner → headline → result-gate → tracks → validity → footer), Track module pattern with `<details>` collapse hierarchy (**all `<details>` blocks closed by default — never `<details open>`**; order top-to-bottom: current-best, multi-seed, ablation, superseded, diagnostic-only), 2–4-card headline metric-strip pattern, and the rule that result-gate rows are per-planned-experiment (not per-measurement).

@@ -5,7 +5,7 @@ contains only highly relevant content for one decision; pages link to each
 other so an agent opens exactly what the next decision needs (context-pollution
 control). Trust rules `T1-T24` in `rules/trustworthy-research-rules.html` and
 the seven-step controller in `WORKFLOW.md` are binding for every package page.
-HTML form rules `R1-R17` in `rules/html-rules.html` apply to every file.
+HTML form rules `R1-R18` in `rules/html-rules.html` apply to every file.
 
 ## Per-page audience model (canon)
 

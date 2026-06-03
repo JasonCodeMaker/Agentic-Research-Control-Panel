@@ -7,9 +7,13 @@ rejection, or None if all pass.
 
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
+import verifier  # noqa: E402
 
 
 @dataclass
@@ -326,6 +330,46 @@ def rule_lane_required_fields(pkg, op, target, payload, state) -> Reject | None:
     return None
 
 
+def rule_acquit_needs_verdict(pkg, op, target, payload, state) -> Reject | None:
+    """Acquit — crossing into the success lane — must carry a verdict record (the verifier seam)."""
+    if target != "status" or op != "update":
+        return None
+    if payload.get("to_category") != "success":
+        return None
+    if not payload.get("verdict"):
+        return Reject(
+            rule="acquit-needs-verdict",
+            file=None, anchor=None, field="verdict",
+            expected="a verdict record attached to any acquit into the success lane",
+            actual="no verdict in payload",
+            suggested_fix="Attach a verdict record (judge, verdict, evidence) before acquitting to success.",
+        )
+    return None
+
+
+def rule_acquit_judge_independent(pkg, op, target, payload, state) -> Reject | None:
+    """L2 (Stage 2a): the acquit verdict must be independent enough for the Task's autonomy level."""
+    if target != "status" or op != "update":
+        return None
+    if payload.get("to_category") != "success":
+        return None
+    verdict = payload.get("verdict")
+    if not verdict:
+        return None  # presence is handled by rule_acquit_needs_verdict
+    level = payload.get("autonomy_level", "supervised")
+    reason = verifier.assess_acquit(verdict, level)
+    if reason:
+        return Reject(
+            rule="acquit-judge-independent",
+            file=None, anchor=None, field="verdict",
+            expected=f"a verdict whose independence satisfies autonomy={level!r} and that acquits",
+            actual=reason,
+            suggested_fix="Use a fresh judge distinct from the producer (cross-family at Autonomous) "
+                          "and acquit only on a 'sound' verdict.",
+        )
+    return None
+
+
 # ---- Doc-file / doc-card rules ----
 
 _DOC_PATH_RE = re.compile(r"^research_html/packages/[^/]+/docs/[^/]+\.html$")
@@ -549,6 +593,8 @@ _RULES: list[tuple[Callable, bool]] = [
     (rule_live_check_time_local,             False),
     (rule_lane_t1_ack_present,               True),
     (rule_lane_required_fields,              True),
+    (rule_acquit_needs_verdict,              True),
+    (rule_acquit_judge_independent,          True),
     (rule_doc_file_path_under_package,       False),
     (rule_doc_card_six_parts,                False),
     (rule_doc_group_rationale_present,       False),

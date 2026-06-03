@@ -46,7 +46,7 @@ def _read_inventory(pkg: str) -> dict:
 def main() -> int:
     p = argparse.ArgumentParser(prog="research-op")
     p.add_argument("--pkg", help="package id under research_html/packages/ (required unless --nl)")
-    p.add_argument("--op", choices=["check", "insert", "update", "delete", "scan-events"],
+    p.add_argument("--op", choices=["check", "insert", "update", "delete", "scan-events", "scope-transition"],
                    help="primitive op (one of --op or --event required)")
     p.add_argument("--event", help="composite event (chain-done, checkpoint-saved, ...) "
                    "(one of --op or --event required)")
@@ -77,6 +77,41 @@ def main() -> int:
         for ev in found:
             print(json.dumps(ev))
         # Caller is expected to invoke --event for each; bump only after the agent confirms.
+        return 0
+
+    # Scope-transition path — the one gated writer for the Scope SSOT. Gated by node level
+    # (not the package (category, status) state machine), so it bypasses the state-gate.
+    if args.op == "scope-transition":
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
+        import scope_ssot  # noqa: E402
+        payload = json.loads(args.payload)
+        node = {k: payload[k] for k in ("id", "level", "parents", "version", "status",
+                                        "yardstick", "provenance") if k in payload}
+        log_path = audit.runtime_root("_scope") / "transitions.jsonl"
+        try:
+            record = scope_ssot.propose_transition(
+                node, op=payload.get("op"), gate=payload.get("gate"), log_path=log_path,
+                trigger=payload.get("trigger"), cause=payload.get("cause"),
+                invalidates=payload.get("invalidates"), reopens=payload.get("reopens"),
+                dial_revert=payload.get("dial_revert"))
+        except scope_ssot.RuleViolation as e:
+            audit.append(args.pkg, op="scope-transition", target=node.get("id"), event=None,
+                         state_before=state, state_after=state,
+                         validation="rejected", rule="scope-gate",
+                         files_touched=[], payload=payload,
+                         user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
+            print(json.dumps({
+                "rejected": True, "phase": "scope-gate", "rule": "scope-gate",
+                "pkg": args.pkg, "op": "scope-transition", "node_id": node.get("id"),
+                "detail": str(e),
+            }, indent=2))
+            return 2
+        audit.append(args.pkg, op="scope-transition", target=node.get("id"), event=None,
+                     state_before=state, state_after=state,
+                     validation="passed", rule=None,
+                     files_touched=[str(log_path)], payload=payload,
+                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
+        print(f"scope-transition OK node={node.get('id')} txn={record['txn_id']}")
         return 0
 
     if not args.op and not args.event:

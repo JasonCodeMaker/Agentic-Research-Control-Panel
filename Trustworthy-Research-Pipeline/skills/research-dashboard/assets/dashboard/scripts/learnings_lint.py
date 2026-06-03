@@ -10,10 +10,10 @@ the bundled node helper (dump_packages.js) and runs four kinds of checks:
                   resolves (file/dir exists, optional HTML anchor present)
   scan-events     three draft writers for the Learnings Update Protocol:
                     E1 result_gate_verdict_finalized (results.html)
-                    E3 status_transition_pending     (next-action.html)
+                    E3 status_transition_pending     (tracker.html#chosen-route)
                     E4 adoption_pending              (CLAUDE.md / models/ / trainer/)
   draft-method    print one JSON methodsTried row drafted from a result-gate row
-  draft-terminal  print the terminal field block drafted from next-action.html
+  draft-terminal  print the terminal field block drafted from tracker.html#chosen-route
   all             lint-status + lint-evidence + scan-events for every package
 """
 
@@ -444,18 +444,30 @@ def detect_e1(pkg: dict) -> list[dict]:
 
 
 def detect_e3(pkg: dict) -> dict | None:
-    """E3 status_transition_pending: if next-action declares a terminal route and status is not terminal."""
+    """E3 status_transition_pending: a terminal route is declared but status is not yet terminal.
+
+    The chosen-route panel was folded from the retired next-action.html into
+    tracker.html#chosen-route (page-7 canon); read that surface first and fall back to a
+    legacy next-action.html for packages scaffolded before the fold.
+    """
     pid = pkg["id"]
     pdir = pkg_dir(pid)
-    na = pdir / "next-action.html"
-    if not na.exists():
+    tracker = pdir / "tracker.html"
+    legacy = pdir / "next-action.html"
+    if tracker.exists():
+        fields = {k: strip_html(v) for k, v in DATA_FIELD_BLOCK.findall(tracker.read_text(encoding="utf-8", errors="ignore"))}
+        route = (fields.get("chosen-route") or "").lower()
+        reason = (fields.get("chosen-route-reason") or "")
+        target_state = ""
+        verdict = ""
+    elif legacy.exists():
+        fields = {k: strip_html(v) for k, v in DATA_FIELD_BLOCK.findall(legacy.read_text(encoding="utf-8", errors="ignore"))}
+        route = (fields.get("route") or "").lower()
+        target_state = (fields.get("target-state") or "")
+        reason = (fields.get("reason") or "")
+        verdict = (fields.get("verdict") or "")
+    else:
         return None
-    html = na.read_text(encoding="utf-8", errors="ignore")
-    fields = {k: strip_html(v) for k, v in DATA_FIELD_BLOCK.findall(html)}
-    route = (fields.get("route") or "").lower()
-    target_state = (fields.get("target-state") or "")
-    reason = (fields.get("reason") or "")
-    verdict = (fields.get("verdict") or "")
     # Terminal signals: route mentions archive_or_stop, or target_state mentions STOPPED/ADOPTED/SUPERSEDED.
     terminal_route = ("archive_or_stop" in route) or ("adopt" in route) or ("promote" in route)
     cat = (pkg.get("category") or "").lower()
@@ -484,7 +496,7 @@ def detect_e3(pkg: dict) -> dict | None:
         "draft": {
             "category": suggested_cat or "(decide)",
             "status": suggested_status or "(decide)",
-            "terminationMessage": (reason[:180] + "…") if len(reason) > 180 else reason or "(distill from next-action.html#chosen-route reason)",
+            "terminationMessage": (reason[:180] + "…") if len(reason) > 180 else reason or "(distill from tracker.html#chosen-route reason)",
             "adoptionPath": "(fill if adopting — CLAUDE.md#current-best or downstream pkg id)" if suggested_cat == "success" else None,
         },
         "user_ack_required": True,
@@ -588,7 +600,7 @@ def cmd_draft_terminal(data: dict, pkg_id: str) -> int:
         return 2
     e3 = detect_e3(pkg)
     if not e3:
-        print(f"no E3 draft for {pkg_id} (no terminal route in next-action.html, or status already terminal).",
+        print(f"no E3 draft for {pkg_id} (no terminal route in tracker.html#chosen-route, or status already terminal).",
               file=sys.stderr)
         return 1
     print(json.dumps(e3, indent=2))
