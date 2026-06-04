@@ -81,6 +81,8 @@ _RECORD_REQUIRED = ("producer", "judge", "scope_version", "candidate_set_id",
 
 
 def _missing_fields(record):
+    """Required fields that are absent or empty. Int fields (scope_version) are valid at 0 — only None
+    and empty str/list/dict count as missing; do not simplify to `not value`."""
     out = []
     for field in _RECORD_REQUIRED:
         value = record.get(field)
