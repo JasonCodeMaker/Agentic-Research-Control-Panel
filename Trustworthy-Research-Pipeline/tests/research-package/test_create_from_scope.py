@@ -197,6 +197,41 @@ def test_non_direction_node_rejected(tmp_path, monkeypatch):
         ])
 
 
+def test_experiment_rows_set_readiness_flags():
+    def ms(suffix):
+        return {"node": {"id": f"task/d/{suffix}", "yardstick": {"gate_predicate": "g"}}}
+    rows = create_from_scope._experiment_rows(
+        "pkg", [ms("M0-baseline-validity"), ms("M1-main-hypothesis")])
+    # baseline validity runs an existing baseline: no code, not complex
+    assert rows[0]["requiresCode"] is False
+    assert rows[0]["complex"] is False
+    # the main hypothesis typically needs a code change and a pipeline doc
+    assert rows[1]["requiresCode"] is True
+    assert rows[1]["complex"] is True
+    # a complex phase points at a real (not-yet-written) pipeline doc so the
+    # readiness gate bites until it is authored; a simple phase links the docs index
+    assert rows[0]["docsAnchor"] == "docs/index.html"
+    assert rows[1]["docsAnchor"] == "docs/pipeline.html#p1"
+
+
+def test_default_scope_includes_implementation_and_results(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _dashboard(tmp_path)
+    log, _ = _write_direction_log(tmp_path)
+    _write_milestones(log)
+
+    rc = create_from_scope.main([
+        "--direction-id", "dir/retrieval-v2",
+        "--id", "2026-06-03-retrieval-v2",
+        "--transitions", str(log),
+    ])
+
+    assert rc == 0
+    pkgdir = tmp_path / "research_html" / "packages" / "2026-06-03-retrieval-v2"
+    assert (pkgdir / "implementation.html").exists()  # C2 home
+    assert (pkgdir / "results.html").exists()          # C4 home
+
+
 def test_duplicate_package_rejected_before_write(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _dashboard(tmp_path)

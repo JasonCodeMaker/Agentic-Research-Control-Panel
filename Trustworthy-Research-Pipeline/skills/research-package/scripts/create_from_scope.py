@@ -116,11 +116,21 @@ def _experiment_rows(package_id: str, milestones: list[dict]) -> list[dict]:
         "robustness-validation": "Run robustness checks",
         "failure-boundary": "Register failure boundary",
     }
+    # Readiness flags per milestone kind (requiresCode, complex): does the phase need a
+    # code change / a pipeline doc? Conservative defaults the PM refines at plan time.
+    flags_by_suffix = {
+        "baseline-validity": (False, False),
+        "main-hypothesis": (True, True),
+        "mechanism-validation": (True, True),
+        "robustness-validation": (True, False),
+        "failure-boundary": (False, False),
+    }
     rows = []
     for idx, item in enumerate(milestones):
         node = item["node"]
         suffix = node["id"].rsplit("/", 1)[-1]
         suffix_key = suffix.split("-", 1)[-1] if "-" in suffix else suffix
+        requires_code, complex_phase = flags_by_suffix.get(suffix_key, (False, False))
         exp_id = f"P{idx}"
         rows.append({
             "id": exp_id,
@@ -129,7 +139,9 @@ def _experiment_rows(package_id: str, milestones: list[dict]) -> list[dict]:
             "output": f"outputs/{package_id}/{exp_id}/result.json",
             "gate": node["yardstick"]["gate_predicate"],
             "status": "pending",
-            "docsAnchor": "docs/index.html",
+            "requiresCode": requires_code,
+            "complex": complex_phase,
+            "docsAnchor": f"docs/pipeline.html#p{idx}" if complex_phase else "docs/index.html",
             "parentTask": node["id"],
         })
     return rows
@@ -167,7 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--artifact-root", default="", dest="artifact_root")
     p.add_argument("--next-action", default="Plan validation tasks from the accepted direction yardstick",
                    dest="next_action")
-    p.add_argument("--scope", default="index,plan,tracker,docs,_agent")
+    p.add_argument("--scope", default="index,plan,implementation,results,tracker,docs,_agent")
     p.add_argument("--status", default="CONTEXT_LOADED")
     p.add_argument("--contribution-spine-flag", default="", dest="contribution_spine_flag")
     p.add_argument("--source-brainstorms", default="[]", dest="source_brainstorms",

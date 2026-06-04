@@ -15,6 +15,8 @@ the bundled node helper (dump_packages.js) and runs four kinds of checks:
   draft-method    print one JSON methodsTried row drafted from a result-gate row
   draft-terminal  print the terminal field block drafted from tracker.html#chosen-route
   all             lint-status + lint-evidence + scan-events for every package
+  readiness       auto-research admission gate: per the autonomy dial's unattended
+                  horizon, every experiment is fanned out to plan/impl/doc/result/tracker
 """
 
 from __future__ import annotations
@@ -736,6 +738,178 @@ def cmd_draft_terminal(data: dict, pkg_id: str) -> int:
 # CLI
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# readiness — auto-research admission gate (horizon-by-dial over 5 criteria)
+# ─────────────────────────────────────────────────────────────────────────────
+
+PLACEHOLDERS = {"", "unmeasured", "file:function", "tbd", "n/a", "none"}
+
+
+def _filled(text) -> bool:
+    """A surface cell counts as authored when it is not a scaffold placeholder."""
+    return (text or "").strip().lower() not in PLACEHOLDERS
+
+
+def horizon(dial: str | None, experiments: list[dict]) -> list[dict]:
+    """The experiments the agent reaches before its next forced human pause.
+
+    supervised pauses at every gate -> only the runnable frontier. Every other level
+    (checkpoints pauses only at the terminal end-of-direction gate; async / autonomous
+    never pause) -> the whole remaining DAG. Unknown dial -> whole DAG (fail-safe:
+    require everything when we cannot prove a human will be present).
+    """
+    active = [e for e in experiments if (e.get("status") or "").lower() != "completed"]
+    if (dial or "").lower() == "supervised":
+        done = {e.get("id") for e in experiments if (e.get("status") or "").lower() == "completed"}
+        return [e for e in active if all(a in done for a in (e.get("after") or []))]
+    return active
+
+
+def check_plan_row(pid: str, e: dict, all_ids: set) -> list[Violation]:
+    """C1: the experiment's plan row is complete and well-formed."""
+    vs: list[Violation] = []
+    eid = e.get("id", "(no-id)")
+    for fname in ("purpose", "gate", "output"):
+        if not _filled(e.get(fname)):
+            vs.append(Violation(pid, "readiness-plan-incomplete",
+                                f"{eid}: experiments[].{fname} is blank", "error"))
+    purpose = (e.get("purpose") or "").strip()
+    if _filled(purpose) and len(purpose.split()) > 12:
+        vs.append(Violation(pid, "readiness-purpose-too-long",
+                            f"{eid}: purpose is {len(purpose.split())} words (cap 12)", "error"))
+    if _filled(e.get("gate")) and re.search(r"\b(AND|OR)\b", e.get("gate") or ""):
+        vs.append(Violation(pid, "readiness-gate-compound",
+                            f"{eid}: gate has a top-level AND/OR; split the phase", "error"))
+    for a in (e.get("after") or []):
+        if a not in all_ids:
+            vs.append(Violation(pid, "readiness-after-unresolved",
+                                f"{eid}: after={a!r} resolves to no experiment", "error"))
+    return vs
+
+
+CHANGE_LIST = re.compile(r'data-list\s*=\s*"changes-agent-detail"[^>]*>(.*?)</ul>', re.DOTALL)
+LI_SPLIT = re.compile(r"<li[^>]*>(.*?)</li>", re.DOTALL)
+FIELD_VAL = re.compile(r'data-field\s*=\s*"([^"]+)"[^>]*>(.*?)<', re.DOTALL)
+
+
+def parse_change_items(html: str) -> list[dict]:
+    """Each <li> under data-list='changes-agent-detail' -> its data-field map."""
+    m = CHANGE_LIST.search(html)
+    if not m:
+        return []
+    return [{k: strip_html(v) for k, v in FIELD_VAL.findall(li)}
+            for li in LI_SPLIT.findall(m.group(1))]
+
+
+def check_impl(pid: str, e: dict, items: list[dict]) -> list[Violation]:
+    """C2: an experiment that requires code has a filled change card bound to it."""
+    if not e.get("requiresCode"):
+        return []
+    eid = e.get("id", "(no-id)")
+    for it in items:
+        bound = eid in re.split(r"[,\s]+", it.get("validating-exp", ""))
+        if bound and _filled(it.get("code-anchor")) and _filled(it.get("expected-sign")):
+            return []
+    return [Violation(pid, "readiness-impl-missing",
+                      f"{eid}: requiresCode but no change card binds it "
+                      f"(validating-exp={eid} with code-anchor + expected-sign filled)", "error")]
+
+
+def check_doc(pid: str, e: dict, base_dir: Path) -> list[Violation]:
+    """C3: a complex experiment's docsAnchor resolves to a real file (and anchor)."""
+    if not e.get("complex"):
+        return []
+    eid = e.get("id", "(no-id)")
+    anchor = e.get("docsAnchor") or f"docs/pipeline.html#{eid.lower()}"
+    file_part, _, frag = anchor.partition("#")
+    target = base_dir / file_part.strip()
+    if not target.exists():
+        return [Violation(pid, "readiness-doc-missing",
+                          f"{eid}: complex but doc {anchor!r} does not resolve", "error")]
+    if frag and not anchor_exists(target, frag.strip()):
+        return [Violation(pid, "readiness-doc-missing",
+                          f"{eid}: complex but anchor #{frag} not found in {file_part}", "error")]
+    return []
+
+
+def check_result_row(pid: str, e: dict, rows: list[dict]) -> list[Violation]:
+    """C4: a result-gate row exists with the gate pre-filled (blank value = READY)."""
+    eid = e.get("id", "(no-id)")
+    row = next((r for r in rows if r.get("exp_id") == eid), None)
+    if row is None:
+        return [Violation(pid, "readiness-result-row-missing",
+                          f"{eid}: no result-gate row scaffolded in results.html", "error")]
+    if not _filled(row.get("gate")):
+        return [Violation(pid, "readiness-result-gate-blank",
+                          f"{eid}: result-gate row present but PLAN gate is blank", "error")]
+    return []
+
+
+TODO_LIST = re.compile(r'data-field\s*=\s*"todo-list"[^>]*>(.*?)</ul>', re.DOTALL)
+# The ledger tables the tracker template actually ships. WORKFLOW.md also names an
+# implementation-review table as required, but the scaffold does not yet ship it, so
+# it is not gated here (tracked as a template-compliance follow-up).
+LEDGERS = ("resource-allocation", "live-check")
+
+
+def check_tracker(pid: str, html: str) -> list[Violation]:
+    """C5: tracker has a non-empty checkbox todo list and the three ledger tables."""
+    vs: list[Violation] = []
+    m = TODO_LIST.search(html)
+    items = LI_SPLIT.findall(m.group(1)) if m else []
+    if not any(_filled(strip_html(li)) for li in items):
+        vs.append(Violation(pid, "readiness-todo-empty",
+                            "tracker todo-list has no authored checkbox item", "error"))
+    for name in LEDGERS:
+        if f'data-table="{name}"' not in html:
+            vs.append(Violation(pid, "readiness-ledger-missing",
+                                f"tracker is missing the {name} ledger table", "error"))
+    return vs
+
+
+def assess_readiness(pkg: dict, dial: str | None, base_dir: Path) -> Report:
+    """Run the full admission gate for one package at a given autonomy dial."""
+    pid = pkg.get("id", "(no-id)")
+    rep = Report(f"readiness — {pid} @ {dial or 'autonomous'}")
+    experiments = pkg.get("experiments") or []
+    if not experiments:
+        rep.add(Violation(pid, "readiness-no-experiments",
+                          "package has no experiments[] plan to run", "error"))
+        return rep
+
+    def read(name: str) -> str:
+        p = base_dir / name
+        return p.read_text(encoding="utf-8", errors="ignore") if p.exists() else ""
+
+    impl_items = parse_change_items(read("implementation.html"))
+    gate_rows = parse_result_gate(read("results.html"))
+    for v in check_tracker(pid, read("tracker.html")):
+        rep.add(v)
+
+    all_ids = {e.get("id") for e in experiments}
+    for e in horizon(dial, experiments):
+        for v in check_plan_row(pid, e, all_ids):
+            rep.add(v)
+        for v in check_impl(pid, e, impl_items):
+            rep.add(v)
+        for v in check_doc(pid, e, base_dir):
+            rep.add(v)
+        for v in check_result_row(pid, e, gate_rows):
+            rep.add(v)
+    return rep
+
+
+def lint_readiness(data: dict, dial: str | None, pkg_filter: str | None = None) -> Report:
+    """CLI wrapper: assess every (filtered) package against PACKAGES_DIR."""
+    rep = Report(f"readiness — auto-research admission gate @ {dial or 'autonomous'}")
+    for pkg in data["packages"]:
+        if pkg_filter and pkg.get("id") != pkg_filter:
+            continue
+        for v in assess_readiness(pkg, dial, pkg_dir(pkg["id"])).violations:
+            rep.add(v)
+    return rep
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--strict", action="store_true",
@@ -747,6 +921,9 @@ def main() -> int:
     p = sub.add_parser("draft-method"); p.add_argument("pkg_id"); p.add_argument("anchor")
     p = sub.add_parser("draft-terminal"); p.add_argument("pkg_id")
     p = sub.add_parser("all"); p.add_argument("--pkg")
+    p = sub.add_parser("readiness"); p.add_argument("--pkg")
+    p.add_argument("--dial", default="autonomous",
+                   help="autonomy dial; sets the unattended horizon (default: autonomous = whole DAG)")
     args = parser.parse_args()
 
     data = load_data()
@@ -770,6 +947,10 @@ def main() -> int:
         return cmd_draft_method(data, args.pkg_id, args.anchor)
     if args.cmd == "draft-terminal":
         return cmd_draft_terminal(data, args.pkg_id)
+    if args.cmd == "readiness":
+        rep = lint_readiness(data, args.dial, pkg_filter=args.pkg)
+        print(rep.render(strict=args.strict))
+        return 1 if fail(rep) else 0
     if args.cmd == "all":
         r1 = lint_status(data); print(r1.render(strict=args.strict)); print()
         r2 = lint_evidence(data); print(r2.render(strict=args.strict)); print()
