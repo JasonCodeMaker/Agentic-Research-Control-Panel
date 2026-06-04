@@ -65,3 +65,20 @@ def test_supervised_does_not_relax():
     payload["autonomy_level"] = "supervised"
     rej = validate.validate("test-pkg", "update", "status", payload, _IN_REVIEW)
     assert rej is not None and rej.rule == "launch-acquits"
+
+
+def test_launch_with_missing_judge_rejected():
+    # The missing-identity branch (judge absent) is still a launch-acquits rejection.
+    verdict = {"producer": "impl:coder", "result": "sound",
+               "scope_version": 1, "artifact_id": "diff-1"}
+    rej = validate.validate("test-pkg", "update", "status", _launch_payload(verdict), _IN_REVIEW)
+    assert rej is not None and rej.rule == "launch-acquits"
+
+
+def test_launch_autonomous_not_tightened():
+    # Autonomy-independent both ways: at autonomous, a distinct same-family sound verdict still passes
+    # (this gate adds no cross-family requirement).
+    payload = _launch_payload(_v())
+    payload["autonomy_level"] = "autonomous"
+    rej = validate.validate("test-pkg", "update", "status", payload, _IN_REVIEW)
+    assert rej is None

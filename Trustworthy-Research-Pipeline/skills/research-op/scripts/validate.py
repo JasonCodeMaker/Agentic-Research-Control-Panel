@@ -359,7 +359,7 @@ def rule_acquit_judge_independent(pkg, op, target, payload, state) -> Reject | N
 
 
 def _entering_launch(op, target, payload, state) -> bool:
-    """True iff this op moves status INTO READY_TO_LAUNCH from any other source status."""
+    """True iff this op moves status INTO READY_TO_LAUNCH (within-lane; keyed on to_status, not to_category)."""
     return (
         target == "status" and op == "update"
         and payload.get("to_status") == "READY_TO_LAUNCH"
@@ -393,7 +393,15 @@ def rule_launch_acquits(pkg, op, target, payload, state) -> Reject | None:
     if not verdict:
         return None  # presence is handled by rule_launch_needs_verdict
     producer, judge = verdict.get("producer"), verdict.get("judge")
-    if not producer or not judge or producer == judge:
+    if not producer or not judge:
+        return Reject(
+            rule="launch-acquits",
+            file=None, anchor=None, field="reviewer_verdict",
+            expected="both producer and judge identities set on the reviewer verdict",
+            actual=f"producer={producer!r} judge={judge!r}",
+            suggested_fix="Record both the implementer (producer) and the reviewer (judge) identities.",
+        )
+    if producer == judge:
         return Reject(
             rule="launch-acquits",
             file=None, anchor=None, field="reviewer_verdict",
