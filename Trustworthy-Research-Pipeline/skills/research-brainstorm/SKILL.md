@@ -2,7 +2,7 @@
 name: research-brainstorm
 description: "The Step-3 direction-formation on-ramp. Use when the user has only a vague or partial research idea and cannot yet state a clear Direction, or types /research-brainstorm, or asks to brainstorm / shape / explore a research direction before committing. Follows the brainstorming method (one question at a time, 2-3 approaches), grounds factual uncertainties with /research-lit, and uses /research-ideate to sharpen hypotheses. Captures cheap pre-package, pre-SSOT ideas onto the dashboard brainstorm lane (research_html/data/brainstorms.js), then converts one or more ideas into a single Direction proposal submitted through the Triage gate. The agent only PROPOSES the Direction — the PM ratifies. Project-agnostic. Requires a committed Project node (run /research-onboard or /research-scope first)."
 argument-hint: "[<dashboard root, defaults to ./research_html>]"
-allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
+allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob, Agent
 context: fork
 disable-model-invocation: false
 ---
@@ -94,6 +94,35 @@ python3 skills/research-brainstorm/scripts/brainstorm.py direction-ready --yards
 
 `ready=false` means a field is missing or empty — keep shaping. A baseline must be concrete (ideally
 grounded by step 2), not a placeholder.
+
+**4b. Rank candidate ideas with a separate sub-agent before forming the Direction.**
+
+When more than one pre-package idea is in contention for a single Direction, do not pick by the
+generating context's own taste. A **separate** sub-agent ranks them (`generate ≠ judge`), then the
+user ratifies the winner (proposer ≠ disposer preserved — the sub-agent *ranks*, the human *ratifies*).
+
+```python
+import sys
+sys.path.insert(0, "<pipeline-root>/lib")
+import ranking
+```
+
+1. Write the candidate ideas to `outputs/_brainstorm/<slug>/candidates.json`.
+2. `req = ranking.rank_request(idea_ids, ["outputs/_brainstorm/<slug>/candidates.json"],
+   "Rank these directions best-first for a publishable research program; the answer should matter
+   either way.", top_k=1)`. Dispatch a fresh ranking sub-agent (Agent tool) with `req` (paths only).
+3. `parsed = ranking.parse_ranking(reply, idea_ids)`;
+   `reason = ranking.assess_ranking(parsed["ranking"], idea_ids,
+   producer="brainstorm-ideas", judge="brainstorm-ranker")`. If `reason`, stop and surface it.
+4. `winner = ranking.select_top_k(parsed["ranking"], 1)[0]`. Persist
+   `ranking.write_ranking_verdict("outputs/_brainstorm/<slug>/verdicts/",
+   {"producer": "brainstorm-ideas", "judge": "brainstorm-ranker", "scope_version": <v>,
+   "candidate_set_id": "_brainstorm/<slug>/candidates.json", "candidate_set": idea_ids,
+   "ranking": parsed["ranking"], "selected": [winner], "rationale": parsed["rationale"]})`.
+5. Present `winner` + `parsed["rationale"][winner]` to the user for ratification. Record the rationale
+   + `ranking_id` as conversion provenance in the new package's `brainstorm.html`.
+
+If only one idea is in contention, this step is skipped — proceed directly to step 5.
 
 **5. Build the Direction proposal and submit it through Triage.**
 
