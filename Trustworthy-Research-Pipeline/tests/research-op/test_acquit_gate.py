@@ -5,10 +5,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "research-op" / "scripts"))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "skills" / "research-op" / "scripts"))
 import validate  # noqa: E402
 
-CLI = Path("skills/research-op/scripts/research_op.py").resolve()
+CLI = ROOT / "skills" / "research-op" / "scripts" / "research_op.py"
 _IN_PROGRESS = {"category": "in-progress", "status": "CONTEXT_LOADED"}
 
 

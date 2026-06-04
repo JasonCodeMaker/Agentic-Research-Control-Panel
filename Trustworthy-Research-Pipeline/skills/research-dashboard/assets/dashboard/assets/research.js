@@ -66,6 +66,10 @@
     return window.RESEARCH_PROJECT_PROFILE || {};
   }
 
+  function scopeProjection() {
+    return window.RESEARCH_SCOPE_PROJECTION || {};
+  }
+
   function categoryById(categoryId) {
     return categories().find(function (category) {
       return category.id === categoryId;
@@ -182,6 +186,93 @@
     var target = byId("project-profile-root");
     if (!target) return;
     target.innerHTML = projectProfileHtml();
+  }
+
+  function renderScopeProjection() {
+    var target = byId("scope-projection-root");
+    if (!target) return;
+    var projection = scopeProjection();
+    var ids = Object.keys(projection);
+    if (!ids.length) {
+      target.innerHTML = '<div class="empty-state">No Scope SSOT projection has been rendered yet.</div>';
+      return;
+    }
+    var nodes = ids.map(function (id) { return projection[id]; }).filter(Boolean);
+    var projects = nodes.filter(function (node) { return node.level === "project"; });
+    var directions = nodes.filter(function (node) { return node.level === "direction" && node.status === "active"; });
+    var tasks = nodes.filter(function (node) { return node.level === "task" && node.status === "active"; });
+    var projectHtml = projects.length
+      ? projects.map(scopeProjectHtml).join("")
+      : '<article class="scope-node scope-node-project"><h3>Project</h3><p class="card-text">No Project node found.</p></article>';
+    var directionHtml = directions.length
+      ? directions.map(function (direction) {
+        var children = tasks.filter(function (task) {
+          return (task.parents || []).indexOf(direction.id) >= 0;
+        });
+        return scopeDirectionHtml(direction, children);
+      }).join("")
+      : '<article class="scope-node"><h3>Directions</h3><p class="card-text">No active Direction nodes found.</p></article>';
+    target.innerHTML = [
+      '<div class="scope-grid">',
+      projectHtml,
+      '<div class="scope-direction-list">',
+      directionHtml,
+      "</div>",
+      "</div>",
+    ].join("");
+  }
+
+  function scopeYardstick(node) {
+    return (node && node.yardstick) || {};
+  }
+
+  function scopeProjectHtml(node) {
+    var yard = scopeYardstick(node);
+    return [
+      '<article class="scope-node scope-node-project" data-scope-node="' + htmlEscape(node.id) + '">',
+      '<div class="k">Project</div>',
+      "<h3>" + htmlEscape(node.id) + "</h3>",
+      '<div class="kv-grid">',
+      '<div class="k">North star</div><div>' + htmlEscape(yard.north_star || "unmeasured") + "</div>",
+      '<div class="k">Contribution spine</div><div>' + htmlEscape(yard.contribution_spine || "unmeasured") + "</div>",
+      '<div class="k">Version</div><div>' + htmlEscape(node.version || "unmeasured") + "</div>",
+      "</div>",
+      "</article>",
+    ].join("");
+  }
+
+  function scopeDirectionHtml(node, children) {
+    var yard = scopeYardstick(node);
+    var metric = typeof yard.metric === "object" ? (yard.metric.name || JSON.stringify(yard.metric)) : yard.metric;
+    var childHtml = children.length
+      ? children.map(scopeTaskHtml).join("")
+      : '<li class="scope-task-empty">No accepted validation Milestones under this Direction.</li>';
+    return [
+      '<article class="scope-node scope-node-direction" data-scope-node="' + htmlEscape(node.id) + '">',
+      '<div class="scope-node-head">',
+      '<div><div class="k">Direction</div><h3>' + htmlEscape(node.id) + "</h3></div>",
+      '<span class="chip" data-status="' + htmlEscape(node.status || "unmeasured") + '">' + htmlEscape(node.status || "unmeasured") + "</span>",
+      "</div>",
+      '<p class="card-text"><b>Hypothesis:</b> ' + htmlEscape(yard.hypothesis || "unmeasured") + "</p>",
+      '<div class="kv-grid">',
+      '<div class="k">Metric</div><div>' + htmlEscape(metric || "unmeasured") + "</div>",
+      '<div class="k">Gate</div><div>' + htmlEscape(yard.success_predicate || "unmeasured") + "</div>",
+      '<div class="k">Version</div><div>' + htmlEscape(node.version || "unmeasured") + "</div>",
+      "</div>",
+      '<ol class="scope-task-list">' + childHtml + "</ol>",
+      "</article>",
+    ].join("");
+  }
+
+  function scopeTaskHtml(node) {
+    var yard = scopeYardstick(node);
+    return [
+      '<li class="scope-task" data-scope-node="' + htmlEscape(node.id) + '">',
+      '<code>' + htmlEscape(node.id) + "</code>",
+      '<p class="card-text">' + htmlEscape(yard.objective || yard.hypothesis || "unmeasured") + "</p>",
+      '<p class="card-text"><b>Gate:</b> ' + htmlEscape(yard.gate_predicate || yard.success_predicate || "unmeasured") + "</p>",
+      "</li>",
+    ].join("");
   }
 
   function protocolHeroHtml(context) {
@@ -1821,6 +1912,7 @@
     renderDashboardSummary();
     renderGlobalContext();
     renderProjectProfile();
+    renderScopeProjection();
     renderCategoryPage();
     renderPackageDetail();
     renderModulePage();

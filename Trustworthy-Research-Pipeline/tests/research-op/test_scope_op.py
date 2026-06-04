@@ -5,7 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-CLI = Path("skills/research-op/scripts/research_op.py").resolve()
+ROOT = Path(__file__).resolve().parents[2]
+CLI = ROOT / "skills" / "research-op" / "scripts" / "research_op.py"
 
 
 def _run(args, cwd):

@@ -430,8 +430,8 @@
       <p>
         <code>research-dashboard</code> <span class="pill have">reused</span> scaffolds <code>research_html/</code> (the four
         lanes), the binding HTML rules R1&ndash;R17 and Trust rules T1&ndash;T24, and the project-local <code>Stop</code>
-        hook. The single widening for the auto layer: the Stop hook gains
-        <code>scope_ssot.assert_consistent</code> <span class="pill part">extend</span> next to the existing
+        hook. The single widening for the auto layer: the Stop hook renders and checks
+        <code>scope-projection.json/js</code> <span class="pill have">extended</span> next to the existing
         <code>propagate_apply</code> + <code>learnings_lint</code>, so the dashboard&rsquo;s rendered intent can never
         silently drift from the SSOT (invariant&nbsp;3). The model&rarr;user half of HCI alignment is this dashboard.
       </p>
@@ -483,10 +483,13 @@
       <div class="slabel"><span class="steptag">Step 3 &middot; Create Direction + Task</span> <span class="steptag">Control</span> <span class="steptag">SSOT: Direction / Task</span></div>
       <h3>Create Direction + Task &mdash; and pick the autonomy dial</h3>
       <p>
-        <code>research-scope</code> scaffolds the Direction <em>as</em> a research-package (the reused
-        <code>research-package</code> <span class="pill have">reused</span> skill &mdash; a Direction &asymp; a package). You
-        set the Task objective and pick the autonomy level. The Task/Objective surface <em>is</em> the Task level of the SSOT:
-        the user&rarr;model half of HCI alignment.
+        <code>research-scope</code> first lands the Direction as a pending Triage proposal, then asks whether an accepted
+        Direction should get high-level validation Milestones. After PM acceptance and the gated
+        <code>scope-transition</code>, those Milestones are proposed and committed as SSOT Task nodes. Only then does
+        <code>research-package</code> <span class="pill have">reused</span> create the package from the committed Direction
+        plus its Milestones, stamping scope provenance and projecting the Milestones into concrete package
+        <code>experiments[]</code> rows with <code>parentTask</code> links. You set the Task objective and pick the autonomy
+        level. The Task/Objective surface <em>is</em> the Task level of the SSOT: the user&rarr;model half of HCI alignment.
       </p>
       <div class="panel">
         <p class="ptitle">The 4-stop autonomy dial &mdash; set per Task, never globally</p>
@@ -712,7 +715,7 @@
           <tr><th>Unit</th><th>Kind</th><th>Journey step</th><th>Plane</th><th>Single responsibility</th><th>Enforcement point</th><th>Source idiom</th></tr>
         </thead>
         <tbody>
-          <tr><td>research-dashboard</td><td><span class="pill have">reused</span></td><td>1, 4&ndash;5</td><td>Control</td><td>Scaffold research_html/ + rules + Stop hook; SSOT projection</td><td>R1&ndash;R17 / T1&ndash;T24 lints; assert_consistent in Stop hook</td><td>superpowers SessionStart/Stop</td></tr>
+          <tr><td>research-dashboard</td><td><span class="pill have">reused</span></td><td>1, 4&ndash;5</td><td>Control</td><td>Scaffold research_html/ + rules + Stop hook; SSOT projection</td><td>R1&ndash;R17 / T1&ndash;T24 lints; render_scope_projection check + Scope provenance lint</td><td>superpowers SessionStart/Stop</td></tr>
           <tr><td>research-package</td><td><span class="pill have">reused</span></td><td>3</td><td>Execution</td><td>Scaffold a Direction as a fixed multi-page surface</td><td>single-home page rules</td><td>&mdash;</td></tr>
           <tr><td>research-analysis</td><td><span class="pill have">reused</span></td><td>7</td><td>Memory</td><td>Rules + Insights distillation (manual)</td><td>analysis lint</td><td>&mdash;</td></tr>
           <tr><td>research-op</td><td><span class="pill part">extend</span></td><td>2, 4, 6</td><td>Trust</td><td>The one mutation surface &mdash; package <em>and</em> scope ops</td><td>(category,status,op,target) matrix + invariants + audit; scope op category added</td><td>academic-research-skills single-writer</td></tr>
@@ -806,7 +809,7 @@
         <tbody>
           <tr><td>SSOT #1 yardstick-never-reading</td><td>scope_ssot guard rejects a measured value written into a yardstick field</td><td>Backbone</td></tr>
           <tr><td>SSOT #2 versioned-not-mutable</td><td>scope_ssot has no in-place edit API; a scope op appends a new version record</td><td>Backbone</td></tr>
-          <tr><td>SSOT #3 surfaces-are-projections</td><td>scope_ssot.assert_consistent: dashboard intent == fold(transitions); Check + Stop hook</td><td>Backbone + Control</td></tr>
+          <tr><td>SSOT #3 surfaces-are-projections</td><td>render_scope_projection check: dashboard intent == fold(transitions); Stop hook refreshes JSON/JS projection and lint checks package provenance links</td><td>Backbone + Control</td></tr>
           <tr><td>SSOT #4 passive-reference</td><td>scope_ssot is pure fold(transitions); no scheduler, no Skill-tool calls</td><td>Backbone</td></tr>
           <tr><td>SSOT #5 priority-enforced-in-gates</td><td>gates PULL yardstick/version from scope_ssot at judgment time; never passed as an arg</td><td>Trust</td></tr>
           <tr><td>SSOT #6 graduated-gating-by-level</td><td>research-op scope-op rows: Project=ratify, Direction=user+xmodel, Task=agent+notify</td><td>Trust</td></tr>

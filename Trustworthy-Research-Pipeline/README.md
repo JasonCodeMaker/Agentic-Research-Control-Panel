@@ -1,163 +1,254 @@
-# Trustworthy Research Pipeline
+# Trustworthy Auto-Research Pipeline
 
-A research workflow scaffold for Claude Code / Codex. It ships **four skills** that build a per-project HTML dashboard, scaffold per-direction research packages, maintain the per-package analysis page (Rules + Insight), and route every package mutation through a single state-gated chokepoint. Plus a `WORKFLOW.md` that the agent follows when implementing each package, and a `CLAUDE.md` that distills the protocols the agent obeys across every project.
+A research workflow you **manage like a project manager**. You set the goals; an AI agent does the
+research; and every claim it makes is gated by machinery — not by trust — so it cannot quietly fabricate
+a result, drift off your objective, or rewrite the rules it is judged by.
 
-## What's in this repo
+It exists to solve three failure modes of autonomous research agents:
 
-| File / dir | What it is |
-| --- | --- |
-| `skills/research-dashboard/` | Skill that scaffolds the project-level `research_html/` dashboard (lanes, schema, learnings page, lint tool). |
-| `skills/research-package/` | Skill that scaffolds one research package under `research_html/packages/<YYYY-MM-DD-slug>/` with overview / plan / implementation / results / analysis / next-action / tracker / brainstorm pages. |
-| `skills/research-analysis/` | Skill that initializes and validates the per-package `analysis.html` page (Rules + Insight). Manual-only content discipline; visualization templates for inline-styled HTML/CSS bar charts, heatmaps, and admission matrices. Delegates file writes to `research-op`. |
-| `skills/research-op/` | **NEW.** The single mutation surface for any existing research package. Routes every Insert / Update / Delete / Check op through a `(category, status, op, target)` state-gate + per-target invariant validators (Pattern B reject-before-write). Composite-event fan-out (`chain-done`, `checkpoint-saved`, `sentinel-write`, `phase-marker`, `candidate-json`) replaces the old `propagate_facts.py` script. Every op invocation (success or reject) appends one JSONL line to `var/research/<pkg>/_actions.jsonl`. Never invokes git. |
-| `WORKFLOW.md` | Seven-step controller the agent follows inside any package. Now includes the binding **Mutation Rule** — every package-surface mutation must go through `/research-op`. |
-| `CLAUDE.md` | Project-agnostic agent operating context: the protocols (Workflow, Output Contract, Fact Propagation via `/research-op`, Learnings Update, Refinement Guardrails) and the `(category, status)` state model. Consuming projects prepend their own specifics. |
+| Problem | What goes wrong | How this pipeline counters it |
+| --- | --- | --- |
+| **1. Hallucination → deception** | The agent claims results it never produced. | Typed interfaces + deterministic gates: a citation must resolve to a fetched source, a paper claim must map to a verified artifact, a "success" must clear a metric oracle. Reject-before-write. |
+| **2. No model ↔ user alignment** | You can't see what the agent is doing or steer it. | A live HTML dashboard + a user-led objective system (you propose-or-ratify; the agent can only propose). |
+| **3. No project self-learning** | The agent repeats the same mistakes. | A reflection loop that proposes new rules from the audit log, landed only with your approval. |
 
-## Skill layering
+> **Mental model.** *You* are the project manager. *The agent* is a managed worker whose tasks, state,
+> evidence, and next actions are made visible and governable. Everything below serves one of seven steps
+> you actually perform.
 
-The four skills compose into four layers, each with its own frequency and scope:
+---
+
+## The seven-step journey
+
+This is the whole system. Each step has a skill (or a gate) behind it; nothing else exists.
 
 ```
-LAYER             SKILL                    FREQUENCY     SCOPE
-─────────────────────────────────────────────────────────────────────────
-Project-init  →   research-dashboard       once/project  Scaffold research_html/, schema.js, learnings.html
-Package-init  →   research-package         once/pkg      Scaffold the fixed file set + first inventory entry
-Editorial     →   research-analysis        mid-freq      Rules + Insights on analysis.html (delegates writes to research-op)
-Mutation      →   research-op              per-turn      All other ops: Insert / Update / Delete / Check / scan-events / event
+1  Setup          /research-dashboard      → stand up the 4-lane dashboard            (once)
+2  Define Project /research-scope          → ratify the north-star objective          (once)
+3  Create Dir+Task/research-scope          → a Direction (hypothesis + metric) + dial (per direction)
+4  Run            /research-auto           → agent drives the 7 research roles         (the loop)
+5  Away modes     (autonomy dial)          → leave it running; review on return
+6  Scope change   /research-scope (Triage) → move the goalposts, auditably
+7  Self-learning  /research-reflect→apply  → the project gets better at itself
 ```
 
-After scaffolding, **every** edit to a package surface — HTML row, inventory field, doc card, status transition — flows through `/research-op`. Direct `Edit` / `Write` on package files is a workflow violation; the Pattern B validators refuse out-of-contract writes before any byte hits disk.
+> **Worked example used throughout:** *"Beat the ResNet-18 baseline on CIFAR-10 top-1 accuracy."*
+> Yardstick → **hypothesis:** mixup augmentation improves top-1 accuracy; **metric:** top-1 accuracy;
+> **baseline:** ResNet-18; **success predicate:** `top-1 > baseline + 1.0`.
 
-## Installation
+---
 
-### 1. Install the skills
+## Setup (once)
 
-Copy (or symlink) the four skills into your agent's skills directory.
+### 1. Install the skills — **symlink, do not copy**
 
-**Claude Code:**
+The skills' scripts find their shared libraries (`lib/`) relative to their own location in *this repo*.
+Symlinks preserve that link; a plain `cp` breaks it for the seven library-backed skills.
 
 ```bash
-cp -r skills/research-dashboard ~/.claude/skills/
-cp -r skills/research-package   ~/.claude/skills/
-cp -r skills/research-analysis  ~/.claude/skills/
-cp -r skills/research-op        ~/.claude/skills/
+# from this repo's root
+for skill in skills/*/; do
+  ln -sfn "$(pwd)/$skill" ~/.claude/skills/"$(basename "$skill")"   # ~/.codex/skills/ for Codex
+done
 ```
 
-**Codex:**
+Restart the agent so it picks up the skills. Verify the install by running the test suite (Python 3.13):
 
 ```bash
-cp -r skills/research-dashboard ~/.codex/skills/
-cp -r skills/research-package   ~/.codex/skills/
-cp -r skills/research-analysis  ~/.codex/skills/
-cp -r skills/research-op        ~/.codex/skills/
+python3.13 -m pytest -q          # expect: 153 passed
 ```
 
-Restart the agent so the new skills are picked up.
+### 2. Point a research project at the pipeline
 
-### 2. Install the agent operating context
-
-Copy `CLAUDE.md` to your research project's repo root, then prepend project-specific sections (project name, motivation, optimization objective, contribution spine, current best) above the protocols. The protocols themselves are universal — do not edit them per project.
+The repo is the **toolbox**; you run the skills from inside whatever **research project** you are
+managing. State (`research_html/`, `var/research/`) lands in that project's directory; the skill code
+resolves back to this repo automatically.
 
 ```bash
-cp CLAUDE.md /path/to/your-research-project/CLAUDE.md
+cd /path/to/your-research-project
+cp /path/to/this-repo/CLAUDE.md ./CLAUDE.md   # then PREPEND your project specifics above the protocols
+cp /path/to/this-repo/WORKFLOW.md ./WORKFLOW.md   # if the project doesn't already have one
 ```
 
-Also copy `WORKFLOW.md` if the consuming project doesn't already have its own.
+`CLAUDE.md` ships project-agnostic protocols; do not edit them — prepend your project name, objective, and
+contribution spine above them. See [CLAUDE.md](CLAUDE.md) → *Per-project customization*.
 
-### 3. Initialize the dashboard in your research project
+---
 
-From the root of the research project you want to manage:
+## Step 1 · Setup the dashboard
 
 ```
 /research-dashboard
 ```
 
-This creates the `research_html/` scaffold:
+Scaffolds `research_html/`: an `index.html` + four lane pages (**brainstorm / in-progress / success /
+fail**), `learnings.html`, the `(category, status)` state machine in `data/schema.js`, the read-only
+Scope-SSOT projection, the binding rule files, and the lint tooling. This is your single pane of glass —
+overview-only; claims and evidence live on package pages, never on the dashboard.
 
-- `index.html` + 4 lane pages (brainstorm / in-progress / success / fail)
-- `learnings.html` — cross-package derived view, grouped by contribution spine
-- `data/schema.js` — the `(category, status)` state machine and required-field rules
-- `data/research-packages.js` — project-agnostic protocol cards and an empty package list
-- `scripts/learnings_lint.py` + `scripts/dump_packages.js` — dashboard-wide consistency tool
-- `rules/html-rules.html` + `rules/trustworthy-research-rules.html` — the binding rule files
-
-### 4. Create a research package for a specific direction
+## Step 2 · Define the Project (ratify the north-star)
 
 ```
-/research-package
+/research-scope
 ```
 
-Or invoke the script directly with the new CLI flags:
+The agent **proposes** a Project node — north-star objective, contribution spine, non-goals. The Project
+gate is **mandatory user ratification**: nothing proceeds under an objective you didn't sign off on. The
+objective cascade is PM-write-only — the agent can never edit it on its own.
+
+## Step 3 · Create a Direction + Task
+
+`/research-scope` proposes a **Direction** carrying a typed *yardstick* (`hypothesis / metric / baselines /
+success_predicate`) and you pick its **autonomy level** (the dial — see Step 5). A scope change is never a
+direct write; it flows through **Triage** (agent proposes → you dispose):
 
 ```bash
-python ~/.claude/skills/research-package/scripts/create_research_package.py \
-  --root research_html \
-  --id 2026-05-12-my-direction \
-  --name "My Direction" \
-  --category brainstorm \
-  --tag "..." --tag-meaning "..." --problem "..." --objective "..." --motivation "..." \
-  --next-action "..." \
-  --status EXPLORING \
-  --contribution-spine-flag <id-from-schema.js> \
-  --direction "one-sentence direction" \
-  --scope index,docs,_agent
+# agent proposes; you inspect
+python3 skills/research-scope/scripts/triage.py propose --log var/research/_scope/triage.jsonl --item '<json>'
+python3 skills/research-scope/scripts/triage.py pending --log var/research/_scope/triage.jsonl
+
+# you accept, then commit the versioned SSOT transition (this is the only thing that writes intent)
+python3 skills/research-scope/scripts/triage.py dispose --log var/research/_scope/triage.jsonl --id <id> --decision accept
+python3 skills/research-op/scripts/research_op.py --pkg <pkg> --op scope-transition --payload '{
+  "id":"dir-cifar10-mixup","level":"direction","parents":[],"version":1,"status":"active",
+  "yardstick":{"hypothesis":"mixup augmentation improves top-1 accuracy","metric":"top-1 accuracy",
+               "baselines":["ResNet-18"],"success_predicate":"top-1 > baseline + 1.0"},
+  "provenance":"...","op":"create","gate":"user+xmodel-audit"}'
 ```
 
-### 5. Implement the package using `WORKFLOW.md` + `/research-op`
-
-Point the agent at [WORKFLOW.md](WORKFLOW.md) when working inside a package. It defines the decision-owner protocol, subagent dispatch rules, the read / authority order the agent must follow, and the **Mutation Rule** that routes every per-turn package edit through `/research-op`.
-
-The `/research-op` invocation interface (used by both the agent and ad-hoc user calls):
+Then materialize the Direction into a research package (it reads only the committed SSOT, never pending
+proposals):
 
 ```bash
-# Primitive ops — agent autonomous + scriptable
-python ~/.claude/skills/research-op/scripts/research_op.py --pkg <id> --op insert --target methodsTried --payload '{...}'
-python ~/.claude/skills/research-op/scripts/research_op.py --pkg <id> --op update --target status   --payload '{"to":"BLOCKED"}'
-python ~/.claude/skills/research-op/scripts/research_op.py --pkg <id> --op delete --target doc-file --payload '{"slug":"obsolete-doc"}'
-python ~/.claude/skills/research-op/scripts/research_op.py --pkg <id> --op check  --scope all
-
-# Artifact-event detection + atomic fan-out (replaces propagate_facts.py)
-python ~/.claude/skills/research-op/scripts/research_op.py --pkg <id> --op scan-events
-python ~/.claude/skills/research-op/scripts/research_op.py --pkg <id> --event chain-done --payload '{"artifact":"..."}'
+python3 skills/research-scope/scripts/plan_milestones.py   --direction-id dir-cifar10-mixup   # propose milestones
+python3 skills/research-package/scripts/create_from_scope.py --direction-id dir-cifar10-mixup --id 2026-06-04-cifar10-mixup
 ```
 
-Every invocation — success or reject — appends one JSONL line to `var/research/<pkg>/_actions.jsonl`. To watch the agent live:
+The package gets `overview / plan / implementation / results / analysis / next-action / tracker /
+brainstorm` pages with provenance links back to the Direction and its milestones.
+
+## Step 4 · Run the loop
+
+```
+/research-auto
+```
+
+The orchestrator drives one direction's `idea → paper` loop through **seven roles**, pulling every
+yardstick from the Scope SSOT and routing every write through the trust gates:
+
+| Role | Skill / home | Trust guarantee |
+| --- | --- | --- |
+| **R1** scope | `research-scope` | acts only under a ratified SSOT node |
+| **R2** search/read | `research-lit` | **fetch-don't-fabricate** — a citation must resolve to a fetched source (`lib/cite_check`) |
+| **R3** ideate | `research-ideate` | won't re-try an idea the current scope already failed (scope-conditional banlist) |
+| **R4** experiment | `WORKFLOW.md` | the 7-step experiment controller; long runs in `tmux` |
+| **R5** verify | `lib/verifier` | a cross-model jury; **producer ≠ judge**; 6-state verdict |
+| **R6** write | `research-write` | **grounded-only** — a paper claim must map to a verified artifact (`lib/cite_check`) |
+| **R7** remember | memory + acquit gate | a direction is "acquitted" only if the metric oracle clears the SSOT success predicate |
+
+Watch it live by tailing the audit log; find where it got stuck by grepping for rejections:
 
 ```bash
 tail -f var/research/<pkg>/_actions.jsonl
+grep '"validation": "rejected"' var/research/<pkg>/_actions.jsonl | tail
 ```
 
-To find recent rejections (the "agent got stuck" signal):
+## Step 5 · Away modes (the autonomy dial)
 
-```bash
-grep '"validation": "rejected"' var/research/<pkg>/_actions.jsonl | tail -20
+You choose, per task, how much the agent may do unattended. Higher levels still obey every trust gate —
+the dial controls *acknowledgement*, never *correctness*.
+
+| Level | Agent pauses for you at… | On your return |
+| --- | --- | --- |
+| `supervised` | every gate | — |
+| `checkpoints` | terminal gates only | — |
+| `async` | nothing | a **PACK**'d dashboard narrative |
+| `autonomous` | nothing | PACK narrative; acquit additionally requires a **different model family** in the verifier |
+
+The agent never self-acquits and never edits the objective while away. On return you **UNPACK** the
+narrative, dispose any Triage items, and T1-ack terminal transitions.
+
+## Step 6 · Scope change (move the goalposts, auditably)
+
+When evidence says the goal should change, the agent files a Triage proposal showing the lineage
+(`from → to / trigger / cause / delta / invalidates / reopens`). You ratify or reject. On ratify: a
+**versioned** SSOT transition; propagation carries/invalidates/reopens downstream nodes; affected tasks'
+dials **auto-revert to supervised**; and a failed idea whose failure condition no longer holds is
+**reopened** in the banlist — failure is never permanent across a goalpost move.
+
+## Step 7 · Self-learning (human-gated)
+
+```
+/research-reflect      # read-only proposer
+/research-apply        # privileged, human-gated lander
 ```
 
-## State model and learnings tooling
+`research-reflect` reads the audit logs and surfaces recurring failure — **doom-loops** (N identical
+failures) and **scope-thrash** (a node revised over and over) — and stages a rule proposal. It can never
+write to the live corpus. `research-apply` lands a staged proposal **only** when given both a distinct
+human approval token *and* a clearing jury verdict. **Proposer ≠ applier, structurally** — this is what
+stops the loop from rewriting away its own constraints. Learning is scoped to *project rules*, never the
+universal protocols, skills, or validators.
 
-Every package carries a `status` field whose legal values depend on its lane:
+---
 
-| category | legal `status` values |
+## Why you can trust the record
+
+Every guarantee is mechanical (a passing test, a resolved path) rather than a promise:
+
+- **Reject-before-write.** `research-op` is the single mutation surface; an out-of-contract write is
+  refused before any byte hits disk, and every op (success or reject) appends one line to
+  `var/research/<pkg>/_actions.jsonl`.
+- **No fabricated citations / claims.** `lib/cite_check` blocks a cite whose source wasn't fetched (R2)
+  and a claim with no verified artifact (R6).
+- **No self-graded success.** The metric oracle reads the success predicate back from the SSOT; the
+  cross-model verifier keeps producer ≠ judge.
+- **No silent goalpost moves.** Intent lives only in the versioned Scope SSOT; the agent can propose, only
+  you commit.
+
+## Project maturity
+
+- **Solid (153 tests):** the trust substrate (`lib/scope_ssot`, `lib/verifier`, `lib/cite_check`), the
+  dashboard/package/analysis surfaces, and `research-op`'s gates.
+- **Walking skeleton:** the `/research-auto` Run loop composes end-to-end at the `supervised` level, but
+  several roles are still thin/stub (`skills/research-auto/scripts/skeleton.py`). The dial, cross-model
+  verifier, and PACK ship as tested utilities being wired into the main loop.
+
+---
+
+## Reference
+
+### Skills & libraries
+
+| Component | Role |
 | --- | --- |
-| brainstorm | `EXPLORING`, `PILOT_READY`, `PROMOTED`, `ABANDONED` |
-| in-progress | `CONTEXT_LOADED`, `IMPLEMENTING`, `IMPLEMENTATION_REVIEW`, `READY_TO_LAUNCH`, `EXPERIMENT_RUNNING`, `LIVE_ANALYSIS`, `RESULT_ANALYSIS`, `NEXT_ACTION_READY`, `BLOCKED` |
-| success | `ADOPTED_PENDING_ACK`, `ADOPTED`, `SUPERSEDED` |
-| fail | `ARCHIVED`, `ARCHIVED_REOPENABLE` |
+| `skills/research-dashboard/` | Project-level HTML dashboard scaffold (Step 1). |
+| `skills/research-scope/` | Objective/Task SSOT + Triage admission gate (Steps 2, 3, 6). |
+| `skills/research-package/` | Per-direction multi-page package scaffold (Step 3). |
+| `skills/research-auto/` | Orchestrator: drives R1→R7 (Step 4). |
+| `skills/research-lit/` · `research-ideate/` · `research-write/` | Roles R2 · R3 · R6 (Step 4). |
+| `skills/research-analysis/` | Per-package Rules + Insight page. |
+| `skills/research-op/` | The single mutation surface; reject-before-write + audit log + scope-transition commit. |
+| `skills/research-reflect/` · `research-apply/` | Self-learning proposer → human-gated applier (Step 7). |
+| `lib/scope_ssot/` | Versioned home for intent (Project→Direction→Task). Passive. |
+| `lib/verifier/` | Cross-model jury: independence table, 6-state verdict. Passive. |
+| `lib/cite_check/` | Fetch-don't-fabricate + grounded-only gates (R2/R6). Passive. |
 
-Required field sets per `(category, status)` and the structured `methodsTried` row shape are declared in `research_html/data/schema.js`. The 33-row `(category, status, op, target)` legality matrix that `/research-op` enforces is declared in `~/.claude/skills/research-op/references/matrix.md` and encoded as Python data in `~/.claude/skills/research-op/scripts/transitions.py`.
+### State model
 
-The Stop Gate of every learnings-relevant turn requires:
+Each package's legal `status` values depend on its lane (`brainstorm / in-progress / success / fail`),
+declared with the required-field rules in `research_html/data/schema.js`. The
+`(category, status, op, target)` legality matrix that `research-op` enforces lives in
+[skills/research-op/references/matrix.md](skills/research-op/references/matrix.md). Full state contract:
+[CLAUDE.md](CLAUDE.md).
 
-```bash
-python research_html/scripts/learnings_lint.py all
-python ~/.claude/skills/research-op/scripts/research_op.py --pkg <id> --op scan-events    # should print zero events
-```
+### The per-package controller
 
-to exit clean. See the **Learnings Update Protocol** section of [CLAUDE.md](CLAUDE.md) for the full event-trigger × lint-gate × atomic-turn contract.
+When the agent works *inside* a package (role R4), it follows the seven-step controller in
+[WORKFLOW.md](WORKFLOW.md) and the binding **Mutation Rule** — every package-surface edit routes through
+`research-op`; direct `Edit`/`Write` is a workflow violation.
 
-## Design documents
+### Design docs
 
-The architecture and decision audit trail for the `/research-op` skill is captured in:
-
-- [`docs/superpowers/specs/2026-05-24-research-op-skill-control-design.md`](docs/superpowers/specs/2026-05-24-research-op-skill-control-design.md) — the design spec (problem framing, peer-framework survey, ops × states × file matrix, validate rules, audit log, trigger model)
-- [`docs/superpowers/plans/2026-05-24-research-op-skill.md`](docs/superpowers/plans/2026-05-24-research-op-skill.md) — the 7-phase implementation plan
+The architecture, decision audit, and build order live under `plan/` (in the parent design repo) and
+[docs/superpowers/](docs/superpowers/).

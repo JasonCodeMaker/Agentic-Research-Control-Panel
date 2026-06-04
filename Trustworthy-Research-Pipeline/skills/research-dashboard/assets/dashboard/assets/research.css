@@ -347,6 +347,63 @@ h1 em {
   margin-top: 14px;
 }
 
+.scope-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.35fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.scope-direction-list {
+  display: grid;
+  gap: 14px;
+}
+
+.scope-node {
+  border: 1.5px solid var(--g300);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 16px 18px;
+}
+
+.scope-node h3 {
+  margin: 4px 0 10px;
+  overflow-wrap: anywhere;
+  font-family: var(--sans);
+  font-size: 16px;
+}
+
+.scope-node-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.scope-task-list {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scope-task,
+.scope-task-empty {
+  border-top: 1px solid var(--g100);
+  padding-top: 10px;
+}
+
+.scope-task code {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+@media (max-width: 860px) {
+  .scope-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .route-list {
   display: grid;
   gap: 10px;

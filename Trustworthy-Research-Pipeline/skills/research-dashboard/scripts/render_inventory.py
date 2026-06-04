@@ -1,8 +1,9 @@
-"""Option-B inventory bridge: project the SSOT scope tree into the dashboard inventory.
+"""Render/check a compact Scope summary projection.
 
-The Project node becomes the profile; each Direction/Task becomes a card whose status tracks the
-SSOT. The inventory is a read-only projection of fold(transitions) — `assert_inventory_consistent`
-rejects any hand-edited inventory that diverges from the canonical scope.
+This is not `research_html/data/research-packages.js`. The package registry remains the
+dashboard's execution inventory; this helper produces a read-only `{profile, cards}` summary of
+fold(transitions) for tests or external tooling. `assert_inventory_consistent` rejects any
+hand-edited summary that diverges from the canonical Scope SSOT.
 """
 
 import argparse

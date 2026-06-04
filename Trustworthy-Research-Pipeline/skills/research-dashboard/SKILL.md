@@ -9,9 +9,9 @@ allowed-tools: Bash(*), Read, Edit, Write, Glob, Grep
 
 ## Purpose
 
-Create or repair the shared `research_html/` dashboard at the working-directory root before any package work begins. The dashboard is the global research-system contract: package lanes, universal rules, optional project profile, tag-role mapping, and package inventory. It is overview-only — claims and evidence live on package surfaces.
+Create or repair the shared `research_html/` dashboard at the working-directory root before any package work begins. The dashboard is the global research-system contract: package lanes, universal rules, optional project profile, Scope SSOT projection, tag-role mapping, and package inventory. It is overview-only — claims and evidence live on package surfaces.
 
-This skill is project-agnostic. The dashboard contract is identical for every project; project specifics belong in `data/research-packages.js` (`window.RESEARCH_PROJECT_PROFILE` plus the package inventory).
+This skill is project-agnostic. The dashboard contract is identical for every project; project specifics belong in `data/research-packages.js` (`window.RESEARCH_PROJECT_PROFILE` plus the package inventory) and the read-only `data/scope-projection.json/js` projection generated from `var/research/_scope/transitions.jsonl`.
 
 ## Authority
 
@@ -56,16 +56,23 @@ Both-audience content is written once, inline, without the blockquote or `<detai
    node --check <root>/data/research-packages.js
    ```
 
-   Then grep for the six required content `data-section` anchors (the index also carries `masthead` and `nav` chrome anchors, which the check ignores) and the two rule-file links in `<root>/index.html`:
+   Then grep for the seven required content `data-section` anchors (the index also carries `masthead` and `nav` chrome anchors, which the check ignores) and the two rule-file links in `<root>/index.html`:
 
    ```bash
-   grep -E 'data-section="(snapshot|lanes|packages|protocol|profile|rules)"' <root>/index.html
+   grep -E 'data-section="(snapshot|lanes|scope|packages|protocol|profile|rules)"' <root>/index.html
    grep -E 'rules/html-rules.html|rules/trustworthy-research-rules.html' <root>/index.html
+   ```
+
+   If the project has a committed Scope SSOT transition log, render and check the dashboard projection:
+
+   ```bash
+   python <root>/scripts/render_scope_projection.py render --transitions var/research/_scope/transitions.jsonl --projection <root>/data/scope-projection.json
+   python <root>/scripts/render_scope_projection.py check --transitions var/research/_scope/transitions.jsonl --projection <root>/data/scope-projection.json
    ```
 
    If `ensure_dashboard.py` raised, confirm the skill is installed at `~/.claude/skills/research-dashboard/`. If `node --check` exits non-zero, the copied JS is malformed — inspect the matching file in this skill's `assets/dashboard/`. If the anchor grep returns nothing, `index.html` was not written — re-run step 3 with `--force`.
 
-5. **Keep the dashboard project-agnostic.** Project objective, success rule, and cautions belong in `window.RESEARCH_PROJECT_PROFILE` inside `<root>/data/research-packages.js`. Do not edit the universal protocol cards in the same file; those are shared chrome.
+5. **Keep the dashboard project-agnostic.** Project objective, success rule, and cautions belong in `window.RESEARCH_PROJECT_PROFILE` inside `<root>/data/research-packages.js`. Project / Direction / Milestone intent belongs in the Scope SSOT and is rendered into `<root>/data/scope-projection.json/js`; do not hand-edit those projection files. Do not edit the universal protocol cards in the same file; those are shared chrome.
 
 6. **Report back.** State the resolved root, files written (or "preserved, no changes"), and the next suggested step (typically `/research-package` to create the first package). Apply the [Output classification](#output-classification) rule on the report itself.
 
@@ -99,7 +106,7 @@ python <root>/scripts/learnings_lint.py scan-events     # 3 draft writers (E1/E3
 python <root>/scripts/learnings_lint.py all             # all three at once
 ```
 
-The Stop Gate of any learnings-relevant turn requires `learnings_lint.py all` to exit 0.
+The Stop Gate of any learnings-relevant turn requires `learnings_lint.py all` to exit 0. For Scope-materialized packages, `lint-status` also checks that `sourceScopeNode`, `sourceScopeMilestones`, and `experiments[].parentTask` still point to active Scope SSOT nodes.
 
 ## Event-manifest applier (auto-propagation)
 
@@ -137,16 +144,17 @@ Each manifest is idempotent: a sibling `.applied` sidecar (`<manifest>.applied`)
 
 A companion helper `<root>/scripts/emit_verdict_manifest.py` parses a trainer chain log (`Candidate-expanded retrieval: {...}` dict line) and writes a `verdict_finalized` JSON shaped for `propagate_apply.py`. Call it from a launcher's chain-done block.
 
-For zero-prompt auto-apply at every Stop, wire the Claude Code Stop hook documented in [`references/stop-fact-propagation-hook.md`](references/stop-fact-propagation-hook.md).
+For zero-prompt auto-apply at every Stop, wire the Claude Code Stop hook documented in [`references/stop-fact-propagation-hook.md`](references/stop-fact-propagation-hook.md). That hook also renders/checks `scope-projection.json/js` when `var/research/_scope/` changes.
 
 ## Bundled resources
 
-- `scripts/ensure_dashboard.py` — idempotent scaffold. Mirrors this skill's entire `assets/dashboard/` tree into `<root>/` — `index.html`, `learnings.html`, `module.html`, `package-template.html`, the four `categories/<lane>/index.html` lane pages, `assets/research.css` + `assets/research.js`, `data/schema.js`, `scripts/*`, and `templates/module-library.html` — and copies the rule files. The agent does not manage these chrome files individually; they are installed and refreshed automatically.
+- `scripts/ensure_dashboard.py` — idempotent scaffold. Mirrors this skill's entire `assets/dashboard/` tree into `<root>/` — `index.html`, `learnings.html`, `module.html`, `package-template.html`, the four `categories/<lane>/index.html` lane pages, `assets/research.css` + `assets/research.js`, `data/schema.js`, `scripts/*`, and `templates/module-library.html` — writes empty `data/scope-projection.json/js`, installs `scripts/render_scope_projection.py`, and copies the rule files. The agent does not manage these chrome files individually; they are installed and refreshed automatically.
 - `references/dashboard-contract.md` — required dashboard sections, anchors, and rule citations.
 - `references/stop-fact-propagation-hook.md` — Claude Code `Stop` hook recipe that wires `propagate_apply.py --auto-derive --write` + `learnings_lint.py all` at every turn end.
 - `assets/html-rules.html`, `assets/trustworthy-research-rules.html` — the binding rule files copied into every project's `<root>/rules/` so package surfaces can link them with no further setup.
 - `assets/dashboard/data/schema.js` — the `(category, status)` state machine and required-field rules; copied to `<root>/data/schema.js`.
 - `assets/dashboard/learnings.html` — cross-package learnings view (derived; do not edit directly).
-- `assets/dashboard/scripts/learnings_lint.py` + `dump_packages.js` — the dashboard-wide lint and draft tool.
+- `assets/dashboard/scripts/learnings_lint.py` + `dump_packages.js` — the dashboard-wide lint and draft tool, including Scope/package provenance drift checks.
+- `scripts/render_scope_projection.py` — renders/checks `research_html/data/scope-projection.json` and the JS companion consumed by the dashboard homepage.
 - `assets/dashboard/scripts/propagate_apply.py` — event-manifest executor (`verdict_finalized`, `status_changed`, `adoption`, `supersession`, `reopen`, `state_derived`) with `--auto-derive` drift scanner.
 - `assets/dashboard/scripts/emit_verdict_manifest.py` — launcher-side helper that parses a trainer log into a `verdict_finalized` manifest.

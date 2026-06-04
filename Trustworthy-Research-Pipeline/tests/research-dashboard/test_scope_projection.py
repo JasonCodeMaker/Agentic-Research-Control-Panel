@@ -49,6 +49,9 @@ def test_render_writes_projection_equal_to_fold(tmp_path):
     written = json.loads(proj_path.read_text(encoding="utf-8"))
     assert written == scope_ssot.fold(scope_ssot.read_log(log))
     assert written["dir/contrastive-v2"]["version"] == 2
+    companion = (tmp_path / "data" / "scope-projection.js").read_text(encoding="utf-8")
+    assert companion.startswith("window.RESEARCH_SCOPE_PROJECTION = {")
+    assert "dir/contrastive-v2" in companion
 
 
 def test_check_passes_on_freshly_rendered_projection(tmp_path):

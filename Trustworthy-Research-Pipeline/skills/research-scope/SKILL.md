@@ -23,6 +23,8 @@ the Scope SSOT is never mutated by agent action alone — every write is either 
 | Transition log (SSOT commits) | `var/research/_scope/transitions.jsonl` |
 | Triage queue (pending/disposed) | `var/research/_scope/triage.jsonl` |
 | research-op entrypoint | `<pipeline-root>/skills/research-op/scripts/research_op.py` |
+| Milestone planner | `<pipeline-root>/skills/research-scope/scripts/plan_milestones.py` |
+| Direction→package materializer | `<pipeline-root>/skills/research-package/scripts/create_from_scope.py` |
 
 Import pattern for the lib:
 ```python
@@ -122,9 +124,22 @@ The item dict passed to `triage.py propose` must include:
   "level": "project|direction|task",
   "change": "<one-sentence description of what changes>",
   "rationale": "<why this change is needed>",
-  "proposed_yardstick": { ... }
+  "proposed_yardstick": { ... },
+  "post_accept_actions": []
 }
 ```
+
+For a `level == "direction"` proposal, ask this QA before calling `triage.py propose`:
+
+> This Direction is still a pending proposal. If you accept it into the Scope SSOT, should I then propose high-level validation milestones before any package is generated?
+
+If the user answers yes, set:
+
+```json
+"post_accept_actions": ["plan_validation_milestones"]
+```
+
+If the user answers no or later, leave `post_accept_actions` empty. Never create the package from a pending Triage item, and never let package surfaces invent high-level validation goals.
 
 **4. Submit the proposal.**
 
@@ -148,6 +163,25 @@ Display the pending list. Do not proceed further. The agent's work ends here —
 1. PM runs `triage.py dispose --decision accept`.
 2. PM commits via `research-op --op scope-transition` with gate matching the node's level.
 3. The transition is appended to `var/research/_scope/transitions.jsonl`.
+4. If the accepted item has `post_accept_actions` containing `plan_validation_milestones`, ask one short confirmation: "Direction is now committed. Propose high-level validation milestones for it?" On yes, invoke `plan_milestones.py` with the committed direction node id. On no, stop and report that `plan_milestones.py --direction-id <direction-id>` can be run later.
+
+Milestone proposal command:
+
+```bash
+python3 skills/research-scope/scripts/plan_milestones.py \
+    --direction-id <direction-node-id> \
+    --transitions var/research/_scope/transitions.jsonl \
+    --triage var/research/_scope/triage.jsonl
+```
+
+After the PM accepts/revises those milestone proposals and commits each Task/Milestone node with `research-op --op scope-transition`, ask: "Milestones are now committed. Generate the research package from the Direction plus accepted milestones?" On yes, invoke the materializer:
+
+```bash
+python3 skills/research-package/scripts/create_from_scope.py \
+    --direction-id <direction-node-id> \
+    --root research_html \
+    --transitions var/research/_scope/transitions.jsonl
+```
 
 **Human reject path:** PM runs `triage.py dispose --decision reject`. The item is archived in `triage.jsonl`; the SSOT is untouched.
 
@@ -166,7 +200,8 @@ python3 skills/research-scope/scripts/triage.py propose \
         "metric": "R@1 on MSRVTT zero-shot split",
         "baselines": ["CLIP-zero-shot=42.3"],
         "success_predicate": "R@1 >= 48 on held-out seed"
-      }
+      },
+      "post_accept_actions": ["plan_validation_milestones"]
     }'
 ```
 
@@ -174,7 +209,7 @@ python3 skills/research-scope/scripts/triage.py propose \
 
 | Path | Written by | Contents |
 |---|---|---|
-| `var/research/_scope/triage.jsonl` | Agent (propose) + PM (dispose) | Pending and disposed Triage items, one JSON object per line |
+| `var/research/_scope/triage.jsonl` | Agent (propose) + PM (dispose) | Pending and disposed Triage items, including optional post-accept milestone-planning intent, one JSON object per line |
 | `var/research/_scope/transitions.jsonl` | PM only (via research-op scope-transition) | Committed scope transitions, one JSON object per line |
 | `var/research/<pkg>/_actions.jsonl` | research-op | Audit line for every scope-transition op |
 
@@ -182,7 +217,7 @@ The agent appends to `triage.jsonl` only. It never writes to `transitions.jsonl`
 
 ## Done condition
 
-The skill is done when the pending Triage item is visible in `triage.jsonl` and has been shown to the user. The scope change is not yet in effect — it takes effect only after PM acceptance and the `research-op --op scope-transition` commit.
+The skill is done when the pending Triage item is visible in `triage.jsonl`, has been shown to the user, and any direction-level milestone-planning QA has been answered and recorded in `post_accept_actions`. The scope change is not yet in effect — it takes effect only after PM acceptance and the `research-op --op scope-transition` commit. Package files are created only after the Direction and its accepted high-level validation milestones are committed.
 
 ## Error path
 

@@ -11,6 +11,7 @@ from pathlib import Path
 SKILL_ROOT = Path(__file__).resolve().parent.parent
 DASHBOARD_BUNDLE = SKILL_ROOT / "assets" / "dashboard"
 RULE_FILES = ("html-rules.html", "trustworthy-research-rules.html")
+HELPER_SCRIPTS = ("render_scope_projection.py",)
 
 # data/research-packages.js stays inline so every new project gets a clean
 # minimal inventory — bundling the live file would leak the source project's
@@ -92,6 +93,9 @@ window.RESEARCH_TAG_ROLES = {
 window.RESEARCH_PACKAGES = [];
 """
 
+SCOPE_PROJECTION_JSON = "{}\n"
+SCOPE_PROJECTION_JS = "window.RESEARCH_SCOPE_PROJECTION = {};\n"
+
 
 def write_if_missing(path: Path, source: Path | None, text: str | None, force: bool) -> bool:
     """Copy/write a file when it does not already exist (or when force is set)."""
@@ -143,10 +147,38 @@ def write_data_js(root: Path, force: bool) -> list[Path]:
     return written
 
 
+def write_scope_projection_defaults(root: Path, force: bool) -> list[Path]:
+    """Write empty read-only Scope projection files when missing."""
+    written: list[Path] = []
+    for rel, text in (
+        ("data/scope-projection.json", SCOPE_PROJECTION_JSON),
+        ("data/scope-projection.js", SCOPE_PROJECTION_JS),
+    ):
+        dst = root / rel
+        if write_if_missing(dst, None, text, force):
+            written.append(dst)
+    return written
+
+
+def copy_helper_scripts(root: Path, force: bool) -> list[Path]:
+    """Install project-local helpers that operate on dashboard data."""
+    written: list[Path] = []
+    for name in HELPER_SCRIPTS:
+        src = SKILL_ROOT / "scripts" / name
+        if not src.exists():
+            continue
+        dst = root / "scripts" / name
+        if write_if_missing(dst, src, None, force):
+            written.append(dst)
+    return written
+
+
 def ensure_dashboard(root: Path, force: bool) -> list[Path]:
     written: list[Path] = []
     written.extend(copy_bundled_chrome(root, force))
     written.extend(write_data_js(root, force))
+    written.extend(write_scope_projection_defaults(root, force))
+    written.extend(copy_helper_scripts(root, force))
     written.extend(copy_rule_files(root, force))
     return written
 

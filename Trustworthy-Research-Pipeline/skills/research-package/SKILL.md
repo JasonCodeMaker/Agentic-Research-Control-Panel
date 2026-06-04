@@ -1,6 +1,6 @@
 ---
 name: research-package
-description: "Create a hierarchical research package under research_html/packages/<YYYY-MM-DD-slug>/ as a multi-page HTML surface (overview, plan, implementation, results, tracker, brainstorm) plus docs/ and _agent/ (the chosen-route / next-action decision is folded into tracker.html#chosen-route). Use this skill whenever the user types /research-package, asks to create / initialize / draft / scaffold a research package, sets up a new research direction or experiment plan, or wants a new package on the dashboard for in-progress / brainstorm / success / fail work. Also use this skill whenever the user asks to edit, update, extend, or restructure an existing results.html — including updating the headline result, adding or removing Track tables (in-distribution / zero-shot / scalability / ablation), restructuring <details> collapse blocks for multi-seed / ablation / superseded / diagnostic-only data (all closed by default — never <details open>), or applying the recommended results-page pattern. Use /research-op (not this skill) for individual typed row/field mutations that must pass the (category, status, op, target) state gate — this skill owns scaffolding and large structural results.html edits; /research-op owns atomic row/card writes. Project-agnostic. Hard requirement: the dashboard at <cwd>/research_html/ must already exist — if it does not, run /research-dashboard first. Each page owns one decision; the binding single-home rule prevents overlap and context pollution. Tracker is the single home for execution state — launch readiness, resource allocation, per-run live cards, and the 10-minute live check all live on tracker.html (the prior launch.html / live.html pages are folded in)."
+description: "Create a hierarchical research package under research_html/packages/<YYYY-MM-DD-slug>/ as a multi-page HTML surface (overview, plan, implementation, results, tracker, brainstorm) plus docs/ and _agent/ (the chosen-route / next-action decision is folded into tracker.html#chosen-route). Use this skill whenever the user types /research-package, asks to create / initialize / draft / scaffold a research package, sets up a new research direction or experiment plan, wants to materialize an accepted Scope SSOT Direction into a package, or wants a new package on the dashboard for in-progress / brainstorm / success / fail work. Also use this skill whenever the user asks to edit, update, extend, or restructure an existing results.html — including updating the headline result, adding or removing Track tables (in-distribution / zero-shot / scalability / ablation), restructuring <details> collapse blocks for multi-seed / ablation / superseded / diagnostic-only data (all closed by default — never <details open>), or applying the recommended results-page pattern. Use /research-op (not this skill) for individual typed row/field mutations that must pass the (category, status, op, target) state gate — this skill owns scaffolding and large structural results.html edits; /research-op owns atomic row/card writes. Project-agnostic. Hard requirement: the dashboard at <cwd>/research_html/ must already exist — if it does not, run /research-dashboard first. Each page owns one decision; the binding single-home rule prevents overlap and context pollution. Tracker is the single home for execution state — launch readiness, resource allocation, per-run live cards, and the 10-minute live check all live on tracker.html (the prior launch.html / live.html pages are folded in)."
 argument-hint: "<one-sentence description of the package goal, optionally followed by — category=<lane>, scope=<pages>>"
 allowed-tools: Bash(*), Read, Edit, Write, Glob, Grep
 ---
@@ -43,6 +43,36 @@ test -f <cwd>/research_html/index.html && test -f <cwd>/research_html/data/resea
 ```
 
 If the check fails, stop and tell the user: "The research dashboard is not set up at `<cwd>/research_html/`. Run `/research-dashboard` first, then re-run `/research-package`." Do not silently scaffold a missing dashboard from this skill — `/research-dashboard` is the right tool.
+
+## From accepted Scope Direction
+
+When the user asks to generate a package from a Scope SSOT Direction, use the materializer only after both the Direction and its high-level validation Milestones are committed in the Scope SSOT:
+
+```bash
+python3 skills/research-package/scripts/create_from_scope.py \
+  --direction-id <direction-node-id> \
+  --root research_html \
+  --transitions var/research/_scope/transitions.jsonl
+```
+
+Hard rules:
+
+- The materializer reads only committed `var/research/_scope/transitions.jsonl`; it never reads pending Triage proposals as package authority.
+- The Direction node must exist, be `level == "direction"`, and be `status == "active"`.
+- At least one active child `level == "task"` milestone node must exist with the Direction as parent. Milestones are high-level validation objectives, not concrete package experiments.
+- Duplicate package ids or existing package directories are rejected before write.
+- The generated inventory entry carries `sourceScopeNode`, `sourceScopeVersion`, `sourceScopeTxn`, and `sourceScopeMilestones` provenance.
+
+Default field mapping:
+
+| Direction yardstick | Package field |
+| --- | --- |
+| `hypothesis` | `hypothesis`, `problem`, `objective`, `direction` |
+| `metric` | `primaryMetric` |
+| `success_predicate` | `activeGate`, `primaryMetricVsGate` |
+| `baselines` | `baseline` |
+
+During materialization, the accepted Milestones are projected into initial package `experiments[]` rows. Each row is a concrete package-level execution task and carries `parentTask` pointing back to the high-level SSOT Milestone. The package may later refine or split concrete experiments through `/research-op insert --target experiments-row`, but it must not invent new high-level validation goals without a Scope Milestone proposal.
 
 ## Required Details
 
@@ -209,6 +239,14 @@ python ~/.claude/skills/research-package/scripts/create_research_package.py \
   --last-action "scaffolded package" \
   --open-runs "none" \
   --scope index,plan,tracker,docs,_agent
+```
+
+From an accepted Scope Direction, prefer the materializer instead of manually copying yardstick fields:
+
+```bash
+python3 skills/research-package/scripts/create_from_scope.py \
+  --direction-id dir/retrieval-v2 \
+  --id 2026-06-03-retrieval-v2
 ```
 
 For a brainstorm package, also pass `--direction "<one-sentence direction>"` so the package is lint-clean at scaffold time. After scaffolding, run:

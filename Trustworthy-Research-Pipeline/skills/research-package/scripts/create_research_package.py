@@ -154,6 +154,14 @@ def append_inventory(root: Path, package_id: str, args: argparse.Namespace, page
         "lastUpdated": args.last_updated,
         "pages": page_slugs,
     }
+    if args.experiments_json:
+        item["experiments"] = json.loads(args.experiments_json)
+    if args.source_scope_node:
+        item["sourceScopeNode"] = args.source_scope_node
+        item["sourceScopeVersion"] = args.source_scope_version
+        item["sourceScopeTxn"] = args.source_scope_txn
+        if args.source_scope_milestones:
+            item["sourceScopeMilestones"] = json.loads(args.source_scope_milestones)
     rendered = js_object(item)
 
     compact_empty = "window.RESEARCH_PACKAGES = [];"
@@ -216,13 +224,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--last-action", default="", dest="last_action")
     parser.add_argument("--open-runs", default="", dest="open_runs")
     parser.add_argument("--last-updated", default=dt.date.today().isoformat(), dest="last_updated")
+    parser.add_argument("--experiments-json", default="", dest="experiments_json",
+                        help="JSON list of initial experiments[] rows to add to inventory")
+    parser.add_argument("--source-scope-node", default="", dest="source_scope_node",
+                        help="SSOT direction node id that produced this package")
+    parser.add_argument("--source-scope-version", default="", dest="source_scope_version",
+                        help="SSOT scope version that produced this package")
+    parser.add_argument("--source-scope-txn", default="", dest="source_scope_txn",
+                        help="SSOT transition txn id that produced this package")
+    parser.add_argument("--source-scope-milestones", default="", dest="source_scope_milestones",
+                        help="JSON list of accepted SSOT milestone task node ids")
     parser.add_argument("--force", action="store_true", help="overwrite existing package html files")
     return parser
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     # Resolve the legacy --workflow-state alias.
     if not args.status and getattr(args, "status_legacy", ""):
         args.status = args.status_legacy

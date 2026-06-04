@@ -1,6 +1,6 @@
 # Stop-hook: auto-apply event manifests at turn end
 
-A Claude Code `Stop` hook that runs `propagate_apply.py --auto-derive --write` on every Stop, so the dashboard surfaces (`research-packages.js`, `results.html`, `tracker.html`) stay in sync with the manifests landed during the turn — **without prompting the model**.
+A Claude Code `Stop` hook that renders/checks the Scope SSOT projection and runs `propagate_apply.py --auto-derive --write` on every Stop, so the dashboard surfaces (`scope-projection.json/js`, `research-packages.js`, `results.html`, `tracker.html`) stay in sync with the manifests landed during the turn — **without prompting the model**.
 
 This is the recommended wiring for any project that uses the `research-dashboard` scaffold and writes event manifests (from launchers, eval drivers, or hand-edited JSON). It is not installed by `ensure_dashboard.py` because it belongs to the project's `.claude/` settings, not the dashboard itself.
 
@@ -8,6 +8,7 @@ This is the recommended wiring for any project that uses the `research-dashboard
 
 - `<root>/scripts/propagate_apply.py` exists (installed by `ensure_dashboard.py`).
 - `<root>/scripts/learnings_lint.py` exists.
+- `<root>/scripts/render_scope_projection.py` exists (installed by `ensure_dashboard.py`).
 - `.claude/settings.json` declares the hook (see "Settings entry" below).
 - `jq` is on PATH (used to build the hook's JSON output).
 
@@ -62,9 +63,10 @@ exit 0
 ```bash
 #!/usr/bin/env bash
 # Stop hook: at every Stop,
-#   1) for each touched research package, run its propagate_facts.py (reporter)
-#   2) run propagate_apply.py --auto-derive --write (executor) globally
-#   3) run learnings_lint.py all (validator)
+#   1) render/check Scope SSOT projection when var/research/_scope changed
+#   2) for each touched research package, run its propagate_facts.py (reporter)
+#   3) run propagate_apply.py --auto-derive --write (executor) globally
+#   4) run learnings_lint.py all (validator)
 # Blocks the Stop iff a touched package has un-propagated artifacts. Lint and
 # apply errors surface as informational/blocking context per their severity.
 
@@ -92,7 +94,24 @@ PACKAGES=$(printf "%s\n%s\n" "$PKGS_FROM_HTML" "$PKGS_FROM_VAR" | sort -u | grep
 PROP_REPORT=""
 LINT_REPORT=""
 APPLY_REPORT=""
+SCOPE_REPORT=""
 NL=$'\n'
+
+# Scope projection: render the folded SSOT into dashboard data, then check the
+# rendered file against the transition log. The render step also writes the
+# companion JS file consumed by index.html.
+if grep -qE 'var/research/_scope/|research_html/data/scope-projection\.json|research_html/data/scope-projection\.js' "$TOUCH_LOG"; then
+    SCOPE_SCRIPT="$REPO_ROOT/research_html/scripts/render_scope_projection.py"
+    SCOPE_LOG="$REPO_ROOT/var/research/_scope/transitions.jsonl"
+    SCOPE_JSON="$REPO_ROOT/research_html/data/scope-projection.json"
+    if [ -f "$SCOPE_SCRIPT" ] && [ -f "$SCOPE_LOG" ]; then
+        SCOPE_OUT=$(cd "$REPO_ROOT" && python research_html/scripts/render_scope_projection.py render --transitions var/research/_scope/transitions.jsonl --projection research_html/data/scope-projection.json 2>&1 && python research_html/scripts/render_scope_projection.py check --transitions var/research/_scope/transitions.jsonl --projection research_html/data/scope-projection.json 2>&1)
+        SCOPE_STATUS=$?
+        if [ $SCOPE_STATUS -ne 0 ]; then
+            SCOPE_REPORT="[render_scope_projection: exit ${SCOPE_STATUS}]${NL}$(echo "$SCOPE_OUT" | tail -25)${NL}"
+        fi
+    fi
+fi
 
 # Per-package reporter (optional legacy path)
 for pkg in $PACKAGES; do
@@ -128,15 +147,18 @@ fi
 
 rm -f "$TOUCH_LOG"
 
-if [ -z "$PROP_REPORT" ] && [ -z "$LINT_REPORT" ] && [ -z "$APPLY_REPORT" ]; then
+if [ -z "$PROP_REPORT" ] && [ -z "$LINT_REPORT" ] && [ -z "$APPLY_REPORT" ] && [ -z "$SCOPE_REPORT" ]; then
     exit 0
 fi
 
 # Block the Stop when there are actionable unpropagated artifacts OR an apply
 # failure. Lint state may be pre-existing, so it's informational only when
 # alone.
-if [ -n "$PROP_REPORT" ] || [ -n "$APPLY_REPORT" ]; then
+if [ -n "$PROP_REPORT" ] || [ -n "$APPLY_REPORT" ] || [ -n "$SCOPE_REPORT" ]; then
     REASON="Fact Propagation Stop hook: address unpropagated artifacts before ending the turn.${NL}${NL}${PROP_REPORT}"
+    if [ -n "$SCOPE_REPORT" ]; then
+        REASON="${REASON}${NL}--- scope projection errors ---${NL}${SCOPE_REPORT}"
+    fi
     if [ -n "$APPLY_REPORT" ]; then
         REASON="${REASON}${NL}--- propagate_apply errors ---${NL}${APPLY_REPORT}"
     fi
@@ -174,5 +196,6 @@ The recipe above uses only the allowed top-level keys.
 ## What this gives you
 
 - Every event manifest emitted by a launcher (or hand-written by the user) is auto-applied to the three dashboard surfaces at turn end. No prompt, no model tokens.
+- Scope transition commits automatically refresh `research_html/data/scope-projection.json` and its JS companion used by the dashboard homepage.
 - `--auto-derive` scans every package and fills **blank** `currentBlocker` / `nextRoute` fields based on `experiments[].status`. Non-blank fields are treated as human-curated and never overwritten passively.
 - Lint runs after the apply, so any schema violation introduced by an event manifest is caught in the same turn it lands.

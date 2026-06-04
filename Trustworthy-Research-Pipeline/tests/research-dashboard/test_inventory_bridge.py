@@ -1,8 +1,8 @@
-"""Item 3 TDD gate: the dashboard inventory (profile + cards) is a projection of the SSOT.
+"""Item 3 TDD gate: the compact Scope summary (profile + cards) is a projection of the SSOT.
 
 Ledger 1 hci-live-dashboard / §8 "Profile = projection of a versioned Project node". The profile is
 derived from the Project node; each Direction/Task becomes a card whose status tracks the SSOT; a
-hand-edited inventory that diverges from the projection is flagged.
+hand-edited summary that diverges from the projection is flagged.
 """
 
 import sys
