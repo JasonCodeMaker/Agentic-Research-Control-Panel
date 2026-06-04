@@ -101,6 +101,10 @@ SCOPE_PROJECTION_JS = "window.RESEARCH_SCOPE_PROJECTION = {};\n"
 # research-packages.js) so a fresh scaffold never inherits another project's ideas.
 BRAINSTORMS_JS = "window.BRAINSTORMS = [];\n"
 
+# Durable Context Pack core for the Agent Context surface (context.html). Written
+# inline-empty; regenerated with real cross-package knowledge by lib/context_pack/build.py.
+CONTEXT_CORE_JS = 'window.RESEARCH_CONTEXT_CORE = {"stamp": {}, "sections": []};\n'
+
 
 def write_if_missing(path: Path, source: Path | None, text: str | None, force: bool) -> bool:
     """Copy/write a file when it does not already exist (or when force is set)."""
@@ -161,6 +165,15 @@ def write_brainstorms_store(root: Path, force: bool) -> list[Path]:
     return written
 
 
+def write_context_core_store(root: Path, force: bool) -> list[Path]:
+    """Write the empty durable Context Pack core if missing (Agent Context surface)."""
+    written: list[Path] = []
+    dst = root / "data" / "context-core.js"
+    if write_if_missing(dst, None, CONTEXT_CORE_JS, force):
+        written.append(dst)
+    return written
+
+
 def write_scope_projection_defaults(root: Path, force: bool) -> list[Path]:
     """Write empty read-only Scope projection files when missing."""
     written: list[Path] = []
@@ -192,6 +205,7 @@ def ensure_dashboard(root: Path, force: bool) -> list[Path]:
     written.extend(copy_bundled_chrome(root, force))
     written.extend(write_data_js(root, force))
     written.extend(write_brainstorms_store(root, force))
+    written.extend(write_context_core_store(root, force))
     written.extend(write_scope_projection_defaults(root, force))
     written.extend(copy_helper_scripts(root, force))
     written.extend(copy_rule_files(root, force))

@@ -24,6 +24,13 @@ python skills/research-op/scripts/research_op.py --pkg <id> --op check --scope a
 python skills/research-op/scripts/research_op.py --pkg <id> --op scan-events
 python skills/research-op/scripts/research_op.py --pkg <id> --op scope-transition \
   --payload '{"id":"dir/<id>","level":"direction","parents":["project/main"],"version":1,"status":"active","yardstick":{...},"provenance":"txn-0","op":"create","gate":"user+xmodel-audit"}'
+# Project-level knowledge registries (papers / edges / gaps) — durable cross-package stores
+python skills/research-op/scripts/research_op.py --pkg <id> --op registry-add --target paper \
+  --payload '{"id":"dpr2020","title":"Dense Passage Retrieval","url":"https://arxiv.org/abs/2004.04906"}'
+python skills/research-op/scripts/research_op.py --pkg <id> --op registry-add --target edge \
+  --payload '{"from":"paper:dpr2020","to":"paper:ours","type":"extends","evidence":"we adapt its dual-encoder"}'
+python skills/research-op/scripts/research_op.py --pkg <id> --op registry-add --target gap \
+  --payload '{"id":"G1","summary":"no zero-shot benchmark for this domain"}'
 
 # Natural-language (user manual fixes)
 python skills/research-op/scripts/research_op.py --nl 'update: set status of 2026-05-15-panda-baselines to BLOCKED, reason: GPU contention'
@@ -51,10 +58,11 @@ python skills/research-op/scripts/research_op.py --nl 'update: set status of 202
 
 Primitives: `insert · update · delete · check`. Composite events: `chain-done · checkpoint-saved · sentinel-write · phase-marker · candidate-json`. Full legality matrix in [references/matrix.md](references/matrix.md). Per-event surface map in [references/composite-events.md](references/composite-events.md).
 
-Two ops live outside the `(category, status)` matrix:
+Three ops live outside the `(category, status)` matrix (they are project-level, not package surfaces):
 
 - `scan-events` — read-only artifact scan (no state-gate, no validation) that lists newly-locked facts for the per-turn propagation cycle.
 - `scope-transition` — the one gated writer for the Scope SSOT, used by `research-scope` / `research-auto`. It is gated by the node **level** (project / direction / task), *not* the package state machine, and appends one transition to `outputs/_scope/transitions.jsonl`. The payload carries the node fields (`id, level, parents, version, status, yardstick, provenance`) plus the transition meta (`op, gate, trigger, cause, invalidates, reopens, dial_revert`).
+- `registry-add` — the gated writer for the project-level **knowledge registries** (`--target paper | edge | gap`), the durable cross-package stores the Context Pack reads and `context.html` surfaces. Gated by per-target reject-before-write validators (`registry.py`), not the package state machine; dedups and appends one line to `research_html/data/{papers,edges,gaps}.jsonl`. Payloads: **paper** = `{id|arxiv|source_id (≥1 required), title (required), url, pkg}`; **edge** = `{from (required), to (required), type ∈ extends|contradicts|addresses_gap|invalidates (required), evidence}`; **gap** = `{id (required), summary (required), status}`. A duplicate is a silent idempotent skip (still audited). `--pkg` is the adding context (must exist) and is recorded on the audit line.
 
 ## Validate-before-write contract
 

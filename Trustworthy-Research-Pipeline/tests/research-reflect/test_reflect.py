@@ -18,6 +18,23 @@ def test_doom_loop_detected():
     assert findings and findings[0]["kind"] == "doom-loop"
 
 
+def test_cross_package_dead_end_detected_above_threshold():
+    cross = [
+        {"method": "mining", "hypothesis": "h", "packages": ["a", "b", "c"], "count": 3},
+        {"method": "rerank", "hypothesis": "h", "packages": ["a"], "count": 1},
+    ]
+    out = reflect.detect_cross_package_dead_end(cross, threshold=2)
+    assert len(out) == 1
+    assert out[0]["kind"] == "cross-package-dead-end"
+    assert out[0]["method"] == "mining"
+    assert out[0]["count"] == 3
+
+
+def test_cross_package_dead_end_silent_below_threshold():
+    cross = [{"method": "mining", "hypothesis": "h", "packages": ["a"], "count": 1}]
+    assert reflect.detect_cross_package_dead_end(cross, threshold=2) == []
+
+
 def test_no_doom_loop_below_threshold():
     actions = [_fail("acquit-needs-verdict")] * 2
     assert reflect.detect_doom_loop(actions, threshold=3) == []

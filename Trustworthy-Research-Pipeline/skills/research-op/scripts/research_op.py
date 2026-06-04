@@ -46,7 +46,8 @@ def _read_inventory(pkg: str) -> dict:
 def main() -> int:
     p = argparse.ArgumentParser(prog="research-op")
     p.add_argument("--pkg", help="package id under research_html/packages/ (required unless --nl)")
-    p.add_argument("--op", choices=["check", "insert", "update", "delete", "scan-events", "scope-transition"],
+    p.add_argument("--op", choices=["check", "insert", "update", "delete", "scan-events",
+                                    "scope-transition", "registry-add"],
                    help="primitive op (one of --op or --event required)")
     p.add_argument("--event", help="composite event (chain-done, checkpoint-saved, ...) "
                    "(one of --op or --event required)")
@@ -112,6 +113,36 @@ def main() -> int:
                      files_touched=[str(log_path)], payload=payload,
                      user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
         print(f"scope-transition OK node={node.get('id')} txn={record['txn_id']}")
+        return 0
+
+    # Registry-add path — project-level knowledge stores (papers / edges / gaps). Like
+    # scope-transition these are cross-package, so they bypass the package (category, status)
+    # state-gate; reject-before-write validators live in registry.py.
+    if args.op == "registry-add":
+        import registry  # noqa: E402
+        try:
+            payload = json.loads(args.payload)
+        except json.JSONDecodeError as e:
+            print(json.dumps({"rejected": True, "phase": "registry-validate", "rule": "payload-json-valid",
+                              "pkg": args.pkg, "op": "registry-add", "target": args.target,
+                              "detail": str(e)}, indent=2))
+            return 2
+        try:
+            status_, record, path = registry.add(args.target, payload)
+        except registry.RegistryReject as e:
+            audit.append(args.pkg, op="registry-add", target=args.target, event=None,
+                         state_before=state, state_after=state, validation="rejected", rule=e.rule,
+                         files_touched=[], payload=payload, user_intent=None,
+                         duration_ms=int((time.monotonic() - t0) * 1000))
+            print(json.dumps({"rejected": True, "phase": "registry-validate", "rule": e.rule,
+                              "pkg": args.pkg, "op": "registry-add", "target": args.target,
+                              "detail": e.detail}, indent=2))
+            return 2
+        audit.append(args.pkg, op="registry-add", target=args.target, event=None,
+                     state_before=state, state_after=state, validation="passed", rule=None,
+                     files_touched=[str(path)] if status_ == "added" else [], payload=payload,
+                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
+        print(f"registry-add {status_} target={args.target} store={path}")
         return 0
 
     if not args.op and not args.event:

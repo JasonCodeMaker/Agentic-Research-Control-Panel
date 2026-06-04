@@ -23,3 +23,23 @@ def test_reflect_cli_stages_doom_loop_proposal(tmp_path):
     out = json.loads(r.stdout)
     assert len(out["staged"]) == 1
     assert (pending / out["staged"][0] / "proposal.json").exists()
+
+
+def test_reflect_cli_stages_cross_package_dead_end(tmp_path):
+    pack = tmp_path / "context_pack.json"
+    pack.write_text(json.dumps({
+        "stamp": {}, "sections": [],
+        "facts": {"cross_package_failures": [
+            {"method": "hard-negative mining", "hypothesis": "h",
+             "packages": ["2026-05-01-old", "2026-04-20-older"], "count": 2}]},
+    }), encoding="utf-8")
+    pending = tmp_path / "pending"
+
+    r = _run(["--context-pack", str(pack), "--pending-dir", str(pending), "--threshold", "2"])
+    assert r.returncode == 0, r.stderr
+    out = json.loads(r.stdout)
+    assert len(out["staged"]) == 1
+    assert out["findings"][0]["kind"] == "cross-package-dead-end"
+    proposal = json.loads((pending / out["staged"][0] / "proposal.json").read_text())
+    assert proposal["status"] == "staged"
+    assert "hard-negative mining" in proposal["suggested_diff"]

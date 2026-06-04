@@ -22,16 +22,20 @@ Bundled script:
 python3 skills/research-reflect/scripts/reflect.py \
   [--actions outputs/<pkg>/_actions.jsonl] \
   [--transitions outputs/_scope/transitions.jsonl] \
+  [--context-pack outputs/<pkg>/context_pack.json] \
   --pending-dir outputs/<pkg>/pending \
   [--threshold 3]
 ```
 
 Only `--pending-dir` is required. Omitting `--actions` skips doom-loop detection; omitting
-`--transitions` skips scope-thrash detection.
+`--transitions` skips scope-thrash detection; omitting `--context-pack` skips cross-package dead-end
+detection.
 
 Inputs consumed (read-only):
 - `outputs/<pkg>/_actions.jsonl` — per-package audit log written by every `research-op` call.
 - `outputs/_scope/transitions.jsonl` — scope transition log written by `research-op --op scope-transition`.
+- `outputs/<pkg>/context_pack.json` — the compiled Context Pack (`lib/context_pack/build.py`); its
+  `facts.cross_package_failures` block carries the cross-package view a single audit log cannot see.
 
 ## Procedure
 
@@ -57,9 +61,13 @@ python3 skills/research-reflect/scripts/reflect.py \
   --threshold 3
 ```
 
-The script runs two detectors internally:
+The script runs three detectors internally:
 - `detect_doom_loop(actions, threshold)` — flags N consecutive identical failures in the audit log.
 - `detect_scope_thrash(transitions, threshold)` — flags a node revised >= threshold times.
+- `detect_cross_package_dead_end(cross_failures, threshold)` — flags a method whose verdict is `fail`
+  across >= threshold distinct packages (read from the Context Pack's `facts.cross_package_failures`).
+  This widens self-learning from intra-package to cross-package: a method that is a dead-end
+  project-wide should not be re-proposed without a materially different approach.
 
 For each finding it calls `propose(pending_dir, finding, suggested_diff)`, which writes one proposal
 file and returns a proposal id (`pid`).
@@ -102,6 +110,7 @@ with shape (`finding` is the detector's dict, not a string):
 }
 ```
 A scope-thrash finding instead looks like `{"kind": "scope-thrash", "node_id": "<id>", "count": 4}`.
+A cross-package dead-end finding looks like `{"kind": "cross-package-dead-end", "method": "<name>", "packages": ["<id>", ...], "count": 3}`.
 
 The learnable corpus is **project-level rules only** — never the universal protocols, skills, or
 validators. A proposal's `suggested_diff` must target project-level config (e.g. a rule in the

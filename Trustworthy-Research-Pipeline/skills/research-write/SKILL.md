@@ -50,6 +50,12 @@ The result claims in the paper must anchor on `yardstick["metric"]` and `yardsti
 
 ### 2. Draft the IMRAD sections
 
+If `outputs/<pkg>/context_pack.md` exists, you may read its **Adopted wins** and **Learned Rules**
+sections for framing consistency — so the write-up describes prior wins and respects project constraints
+the same way the rest of the record does. The pack is **framing context only**: it is never a source of
+claims or citations. Every factual claim still has to pass `cite_check.ungrounded_claims` against the
+verified artifact set in step 4, exactly as before — the pack cannot back a claim.
+
 Produce a draft covering all seven sections. Use the yardstick fields to constrain scope:
 
 | Section | Grounding anchor |

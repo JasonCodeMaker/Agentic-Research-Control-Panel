@@ -34,6 +34,19 @@ def detect_scope_thrash(transitions, threshold=3):
             for node, n in counts.items() if n >= threshold]
 
 
+def detect_cross_package_dead_end(cross_failures, threshold=2):
+    """Surface a finding for any method that failed across >= threshold distinct packages.
+
+    `cross_failures` is the structured `facts.cross_package_failures` list emitted by the Context
+    Pack (lib/context_pack) — each entry is {method, hypothesis, packages, count}. This widens
+    self-learning from intra-package (doom-loop) to cross-package: a method that is a dead-end
+    project-wide should not be re-proposed without a materially different approach.
+    """
+    return [{"kind": "cross-package-dead-end", "method": e["method"],
+             "packages": e["packages"], "count": e["count"]}
+            for e in cross_failures if e["count"] >= threshold]
+
+
 def propose(pending_dir, finding, suggested_diff):
     """Stage a rule proposal under pending/<id>/ — staging only, never the live corpus."""
     pending_dir = Path(pending_dir)
@@ -60,6 +73,8 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="research-reflect: detect recurring failure, stage rule proposals.")
     p.add_argument("--actions", default="", help="path to outputs/<pkg>/_actions.jsonl")
     p.add_argument("--transitions", default="", help="path to outputs/_scope/transitions.jsonl")
+    p.add_argument("--context-pack", default="", dest="context_pack",
+                   help="path to outputs/<pkg>/context_pack.json (cross-package dead-end detection)")
     p.add_argument("--pending-dir", required=True, help="staging dir for proposals")
     p.add_argument("--threshold", type=int, default=3)
     args = p.parse_args(argv)
@@ -68,10 +83,18 @@ def main(argv=None):
         findings += detect_doom_loop(_read_jsonl(args.actions), args.threshold)
     if args.transitions:
         findings += detect_scope_thrash(_read_jsonl(args.transitions), args.threshold)
+    if args.context_pack:
+        pack = json.loads(Path(args.context_pack).read_text(encoding="utf-8"))
+        cross = pack.get("facts", {}).get("cross_package_failures", [])
+        findings += detect_cross_package_dead_end(cross, args.threshold)
     staged = []
     for f in findings:
         if f["kind"] == "doom-loop":
             diff = f"After {f['count']} identical failures of {f['signature']}, require an approach or scope change before retrying."
+        elif f["kind"] == "cross-package-dead-end":
+            diff = (f"Method '{f['method']}' has failed across {f['count']} packages "
+                    f"({', '.join(f['packages'])}); do not re-propose it without a materially "
+                    f"different approach or a scope change.")
         else:
             diff = f"Node {f['node_id']} was revised {f['count']} times; require human review before further scope revisions."
         staged.append(propose(args.pending_dir, f, diff))

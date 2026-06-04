@@ -55,7 +55,7 @@ done
 Restart the agent so it picks up the skills. Verify the install by running the test suite (Python 3.13):
 
 ```bash
-python3.13 -m pytest -q          # expect: 186 passed
+python3.13 -m pytest -q          # expect: 260 passed
 ```
 
 ### 2. Point a research project at the pipeline
@@ -83,9 +83,10 @@ contribution spine above them. See [CLAUDE.md](CLAUDE.md) → *Per-project custo
 
 Scaffolds `research_html/`: an `index.html` + four lane pages — the **brainstorm** lane holds pre-package
 ideas (`data/brainstorms.js`), while **in-progress / success / fail** are the package lanes of the
-`(category, status)` state machine in `data/schema.js` — plus `learnings.html`, the read-only Scope-SSOT
-projection, the binding rule files, and the lint tooling. This is your single pane of glass —
-overview-only; claims and evidence live on package pages, never on the dashboard.
+`(category, status)` state machine in `data/schema.js` — plus `learnings.html` and **`context.html`**
+(the *Agent Context* surface — see [The Context Pack](#the-context-pack--your-projects-compounding-memory)),
+the read-only Scope-SSOT projection, the binding rule files, and the lint tooling. This is your single
+pane of glass — overview-only; claims and evidence live on package pages, never on the dashboard.
 
 When it finishes, the dashboard checks the SSOT for a committed Project node. On a fresh project there is
 none, so it hands off to **`/research-onboard`** — the on-ramp that bridges a raw workspace into a Project
@@ -202,11 +203,76 @@ dials **auto-revert to supervised**; and a failed idea whose failure condition n
 ```
 
 `research-reflect` reads the audit logs and surfaces recurring failure — **doom-loops** (N identical
-failures) and **scope-thrash** (a node revised over and over) — and stages a rule proposal. It can never
+failures), **scope-thrash** (a node revised over and over), and **cross-package dead-ends** (a method that
+failed across several packages, read from the Context Pack) — and stages a rule proposal. It can never
 write to the live corpus. `research-apply` lands a staged proposal **only** when given both a distinct
 human approval token *and* a clearing jury verdict. **Proposer ≠ applier, structurally** — this is what
 stops the loop from rewriting away its own constraints. Learning is scoped to *project rules*, never the
 universal protocols, skills, or validators.
+
+---
+
+## The Context Pack — your project's compounding memory
+
+Adapted from the *research-wiki* pattern (compile knowledge once, keep it current, **don't re-derive it
+every run**), the **Context Pack** is the project's compounding memory. It is a deterministic, read-only
+*projection* of what the project already knows — learned rules, every cross-package method that has failed,
+adopted wins, the active yardstick, the banlist, fetched papers — compiled into one budgeted digest.
+
+It exists so the agent stops re-deriving prior knowledge from raw history every loop (Problem 1) and so the
+project gets smarter over time (Problem 3). One data source, two faces:
+
+- **Agent face** — `outputs/<pkg>/context_pack.md` is loaded at the start of every `/research-auto` loop;
+  roles R2/R3/R6 read it instead of re-reading the whole history.
+- **Human face** — `research_html/context.html` (*Agent Context*, linked from the dashboard + learnings)
+  renders the **same** compiled knowledge, so you see exactly what the agent sees (Problem 2).
+
+It is **read-only and advisory**: it never mutates a store and never lands a rule on its own — anything it
+would turn into a durable rule still flows through `/research-reflect → /research-apply`.
+
+### How to use it
+
+Most of the time you don't touch it — `/research-auto` compiles it for you at context-load. To drive it
+by hand:
+
+```bash
+# (re)compile the pack for a package — rebuilds only if the scope advanced, so it is cheap to repeat
+python3 lib/context_pack/build.py --pkg <pkg-id> --if-stale
+
+cat outputs/<pkg-id>/context_pack.md     # what the agent will load
+# open research_html/context.html        # the same thing, for you
+```
+
+### Durable knowledge registries (papers · edges · gaps)
+
+Three project-level stores compound **across** packages (unlike the per-direction `lit/` overlay, which is
+ephemeral). They are written **only** through `research-op` — reject-before-write, deduped, audited — and
+flow into both faces of the pack:
+
+```bash
+# a paper worth remembering project-wide
+python3 skills/research-op/scripts/research_op.py --pkg <pkg> --op registry-add --target paper \
+  --payload '{"id":"he2016","title":"Deep Residual Learning","url":"https://arxiv.org/abs/1512.03385"}'
+
+# a typed relationship  (type ∈ extends | contradicts | addresses_gap | invalidates)
+python3 skills/research-op/scripts/research_op.py --pkg <pkg> --op registry-add --target edge \
+  --payload '{"from":"paper:he2016","to":"paper:ours","type":"extends","evidence":"we adapt its residual block"}'
+
+# a known field gap (an ideation seed)
+python3 skills/research-op/scripts/research_op.py --pkg <pkg> --op registry-add --target gap \
+  --payload '{"id":"G1","summary":"no zero-shot benchmark for this domain"}'
+```
+
+You rarely run these by hand: **`/research-lit`** promotes the sources it fetches into the paper registry,
+and **`/research-analysis`** registers a field gap when an insight reveals one. The stores live at
+`research_html/data/{papers,edges,gaps}.jsonl`.
+
+### Why you can trust what it shows
+
+Deterministic (no LLM in assembly, so it cannot hallucinate at compile time) · every line carries its
+witnessing evidence anchor · a `scope_version` freshness stamp means a stale pack is rebuilt before use ·
+web-sourced excerpts are injection-scanned and the pack is banner-flagged if one trips the screen · learned
+rules and cross-package failures are a **protected floor** never dropped to fit the budget.
 
 ---
 
@@ -226,8 +292,9 @@ Every guarantee is mechanical (a passing test, a resolved path) rather than a pr
 
 ## Project maturity
 
-- **Solid (186 tests):** the trust substrate (`lib/scope_ssot`, `lib/verifier`, `lib/cite_check`), the
-  dashboard/package/analysis surfaces, `research-op`'s gates, and the brainstorm idea layer + conversion.
+- **Solid (260 tests):** the trust substrate (`lib/scope_ssot`, `lib/verifier`, `lib/cite_check`), the
+  dashboard/package/analysis surfaces, `research-op`'s gates, the brainstorm idea layer + conversion, and
+  the Context Pack (`lib/context_pack` + the knowledge registries + the `context.html` surface).
 - **Walking skeleton:** the `/research-auto` Run loop composes end-to-end at the `supervised` level, but
   several roles are still thin/stub (`skills/research-auto/scripts/skeleton.py`). The dial, cross-model
   verifier, and PACK ship as tested utilities being wired into the main loop.
@@ -248,11 +315,12 @@ Every guarantee is mechanical (a passing test, a resolved path) rather than a pr
 | `skills/research-auto/` | Orchestrator: drives R1→R7 (Step 4). |
 | `skills/research-lit/` · `research-ideate/` · `research-write/` | Roles R2 · R3 · R6 (Step 4). |
 | `skills/research-analysis/` | Per-package Rules + Insight page. |
-| `skills/research-op/` | The single mutation surface; reject-before-write + audit log + scope-transition commit. |
+| `skills/research-op/` | The single mutation surface; reject-before-write + audit log + scope-transition + knowledge-registry (papers/edges/gaps) commit. |
 | `skills/research-reflect/` · `research-apply/` | Self-learning proposer → human-gated applier (Step 7). |
 | `lib/scope_ssot/` | Versioned home for intent (Project→Direction→Task). Passive. |
 | `lib/verifier/` | Cross-model jury: independence table, 6-state verdict. Passive. |
 | `lib/cite_check/` | Fetch-don't-fabricate + grounded-only gates (R2/R6). Passive. |
+| `lib/context_pack/` | The Context Pack: deterministic projection of cross-package memory → agent `context_pack.md` + durable `data/context-core.js` (rendered by `context.html`). Passive. |
 
 ### State model
 
