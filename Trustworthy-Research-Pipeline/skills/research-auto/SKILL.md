@@ -237,6 +237,29 @@ before the acquit is recorded.
 | Citations rejected by R2 | A citation's `source` file does not resolve on disk | `skeleton.search_read` partitions by disk-existence of `c["source"]`; rejected ids are in `result["rejected_citations"]` and excluded from the paper — report them. (The Stage-2b `cite_check.unresolved_citations` tool is a different schema keyed on `source_id`.) |
 | Direction archived | `scope_ssot.history` returns a record with `op == "archive"` | Stop. The direction is closed. Surface the archive message. |
 
+## IMPLEMENTATION_REVIEW → READY_TO_LAUNCH gate
+
+Before leaving **IMPLEMENTATION_REVIEW**, the implementation is reviewed in two layers (the reviewer
+sub-agent is always a different instance than the coding agent):
+
+1. **Correctness (same-family, reuse).** Dispatch the `superpowers:requesting-code-review` code-reviewer
+   subagent on the local diff (`BASE_SHA..HEAD_SHA`). Treat any Critical/Important finding as blocking —
+   fix and re-review.
+2. **Faithfulness (cross-family preferred).** Ask "does this code faithfully implement the hypothesis,
+   with no fabricated metric, hard-coded result, or skipped condition?" Route this to a **cross-family**
+   judge (`mcp__codex__codex`, fresh thread, paths only) when reachable. If no external model is
+   reachable, take the same-family answer and set `degraded: true` on the verdict (the T1 human ack is
+   the backstop for the deception dimension — 核心问题 #1).
+
+Build `reviewer_verdict = {producer: "impl:<coder-role>", judge: "<reviewer-role-or-codex>",
+result: <sound|needs-revision|unsound|...>, scope_version, artifact_id, degraded: <bool>}` and route the
+`READY_TO_LAUNCH` status update through `research-op` carrying it. `research-op` rejects **any** entry
+into `READY_TO_LAUNCH` (`launch-needs-verdict` / `launch-acquits`) unless the verdict is present, has a
+judge distinct from the implementer, and acquits (`sound`). The gate is autonomy-independent — at
+`supervised` the human attests the verdict (`judge: "human"`) rather than the gate relaxing. Cross-family
+is preferred-and-recorded, not hard-blocked. (No-code-change re-runs that re-enter `READY_TO_LAUNCH`
+re-attach the prior verdict.)
+
 ## Later stages (not yet wired into the main loop)
 
 Stage 2a adds the L2 cross-model verifier (`lib/verifier`) into R5, replacing the toy metric oracle
