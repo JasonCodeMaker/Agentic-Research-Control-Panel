@@ -64,7 +64,7 @@ python skills/research-op/scripts/research_op.py --pkg <id> --op scan-events
 python skills/research-op/scripts/research_op.py --pkg <id> --event <event-name> --payload '{...}'
 ```
 
-Audit trail: every op invocation (success or reject) appends one line to `var/research/<pkg>/_actions.jsonl`.
+Audit trail: every op invocation (success or reject) appends one line to `outputs/<pkg>/_actions.jsonl`.
 
 ## Shared Agent Return Contract
 

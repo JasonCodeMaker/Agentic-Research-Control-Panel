@@ -20,9 +20,9 @@ Pipeline root: `/home/uqzzha35/Project/Trustworthy-Research-Pipeline/Trustworthy
 Bundled script:
 ```
 python3 skills/research-reflect/scripts/reflect.py \
-  [--actions var/research/<pkg>/_actions.jsonl] \
-  [--transitions var/research/_scope/transitions.jsonl] \
-  --pending-dir var/research/<pkg>/pending \
+  [--actions outputs/<pkg>/_actions.jsonl] \
+  [--transitions outputs/_scope/transitions.jsonl] \
+  --pending-dir outputs/<pkg>/pending \
   [--threshold 3]
 ```
 
@@ -30,8 +30,8 @@ Only `--pending-dir` is required. Omitting `--actions` skips doom-loop detection
 `--transitions` skips scope-thrash detection.
 
 Inputs consumed (read-only):
-- `var/research/<pkg>/_actions.jsonl` — per-package audit log written by every `research-op` call.
-- `var/research/_scope/transitions.jsonl` — scope transition log written by `research-op --op scope-transition`.
+- `outputs/<pkg>/_actions.jsonl` — per-package audit log written by every `research-op` call.
+- `outputs/_scope/transitions.jsonl` — scope transition log written by `research-op --op scope-transition`.
 
 ## Procedure
 
@@ -42,18 +42,18 @@ optional (scope-thrash detection is skipped if absent).
 
 ```bash
 # confirm audit log exists
-ls var/research/<pkg>/_actions.jsonl
+ls outputs/<pkg>/_actions.jsonl
 # confirm transitions log if you expect scope-thrash checks
-ls var/research/_scope/transitions.jsonl
+ls outputs/_scope/transitions.jsonl
 ```
 
 **2. Run reflect.py.**
 
 ```bash
 python3 skills/research-reflect/scripts/reflect.py \
-  --actions var/research/<pkg>/_actions.jsonl \
-  --transitions var/research/_scope/transitions.jsonl \
-  --pending-dir var/research/<pkg>/pending \
+  --actions outputs/<pkg>/_actions.jsonl \
+  --transitions outputs/_scope/transitions.jsonl \
+  --pending-dir outputs/<pkg>/pending \
   --threshold 3
 ```
 
@@ -72,14 +72,14 @@ Output is JSON on stdout (each `pid` is `p-` + the first 10 hex of a sha256 of `
 **3. Report staged proposals.**
 
 For each `pid` in `staged`, report to the user:
-- The pid and its path: `var/research/<pkg>/pending/<pid>/proposal.json`
+- The pid and its path: `outputs/<pkg>/pending/<pid>/proposal.json`
 - A one-line summary of the finding (doom-loop vs scope-thrash, which node/op, count).
 
 Example:
 > Staged 2 proposals:
-> - `p-a9cd94330b` at `var/research/2026-06-03-grdr/pending/p-a9cd94330b/proposal.json` — doom-loop,
+> - `p-a9cd94330b` at `outputs/2026-06-03-grdr/pending/p-a9cd94330b/proposal.json` — doom-loop,
 >   signature `op="update" target="result-gate" rule=None` (threshold 3 reached)
-> - `p-c3e81f7d22` at `var/research/2026-06-03-grdr/pending/p-c3e81f7d22/proposal.json` — scope-thrash on
+> - `p-c3e81f7d22` at `outputs/2026-06-03-grdr/pending/p-c3e81f7d22/proposal.json` — scope-thrash on
 >   node `direction/grdr-v2` (4 revisions, threshold 3)
 
 **4. Handle the no-findings case.**
@@ -91,7 +91,7 @@ Do not silently succeed — an empty result is information the user needs to see
 
 Each staged proposal is written to:
 ```
-var/research/<pkg>/pending/<pid>/proposal.json
+outputs/<pkg>/pending/<pid>/proposal.json
 ```
 with shape (`finding` is the detector's dict, not a string):
 ```json

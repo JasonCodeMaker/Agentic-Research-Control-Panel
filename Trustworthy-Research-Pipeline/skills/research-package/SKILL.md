@@ -1,6 +1,6 @@
 ---
 name: research-package
-description: "Create a hierarchical research package under research_html/packages/<YYYY-MM-DD-slug>/ as a multi-page HTML surface (overview, plan, implementation, results, tracker, brainstorm) plus docs/ and _agent/ (the chosen-route / next-action decision is folded into tracker.html#chosen-route). Use this skill whenever the user types /research-package, asks to create / initialize / draft / scaffold a research package, sets up a new research direction or experiment plan, wants to materialize an accepted Scope SSOT Direction into a package, or wants a new package on the dashboard for in-progress / brainstorm / success / fail work. Also use this skill whenever the user asks to edit, update, extend, or restructure an existing results.html — including updating the headline result, adding or removing Track tables (in-distribution / zero-shot / scalability / ablation), restructuring <details> collapse blocks for multi-seed / ablation / superseded / diagnostic-only data (all closed by default — never <details open>), or applying the recommended results-page pattern. Use /research-op (not this skill) for individual typed row/field mutations that must pass the (category, status, op, target) state gate — this skill owns scaffolding and large structural results.html edits; /research-op owns atomic row/card writes. Project-agnostic. Hard requirement: the dashboard at <cwd>/research_html/ must already exist — if it does not, run /research-dashboard first. Each page owns one decision; the binding single-home rule prevents overlap and context pollution. Tracker is the single home for execution state — launch readiness, resource allocation, per-run live cards, and the 10-minute live check all live on tracker.html (the prior launch.html / live.html pages are folded in)."
+description: "Create a hierarchical research package under research_html/packages/<YYYY-MM-DD-slug>/ as a multi-page HTML surface (overview, plan, implementation, results, tracker, brainstorm) plus docs/ and _agent/ (the chosen-route / next-action decision is folded into tracker.html#chosen-route). Use this skill whenever the user types /research-package, asks to create / initialize / draft / scaffold a research package, sets up a new research direction or experiment plan, wants to materialize an accepted Scope SSOT Direction into a package, or wants a new package on the dashboard for in-progress / success / fail work. Also use this skill whenever the user asks to edit, update, extend, or restructure an existing results.html — including updating the headline result, adding or removing Track tables (in-distribution / zero-shot / scalability / ablation), restructuring <details> collapse blocks for multi-seed / ablation / superseded / diagnostic-only data (all closed by default — never <details open>), or applying the recommended results-page pattern. Use /research-op (not this skill) for individual typed row/field mutations that must pass the (category, status, op, target) state gate — this skill owns scaffolding and large structural results.html edits; /research-op owns atomic row/card writes. Project-agnostic. Hard requirement: the dashboard at <cwd>/research_html/ must already exist — if it does not, run /research-dashboard first. Each page owns one decision; the binding single-home rule prevents overlap and context pollution. Tracker is the single home for execution state — launch readiness, resource allocation, per-run live cards, and the 10-minute live check all live on tracker.html (the prior launch.html / live.html pages are folded in)."
 argument-hint: "<one-sentence description of the package goal, optionally followed by — category=<lane>, scope=<pages>>"
 allowed-tools: Bash(*), Read, Edit, Write, Glob, Grep
 ---
@@ -52,12 +52,12 @@ When the user asks to generate a package from a Scope SSOT Direction, use the ma
 python3 skills/research-package/scripts/create_from_scope.py \
   --direction-id <direction-node-id> \
   --root research_html \
-  --transitions var/research/_scope/transitions.jsonl
+  --transitions outputs/_scope/transitions.jsonl
 ```
 
 Hard rules:
 
-- The materializer reads only committed `var/research/_scope/transitions.jsonl`; it never reads pending Triage proposals as package authority.
+- The materializer reads only committed `outputs/_scope/transitions.jsonl`; it never reads pending Triage proposals as package authority.
 - The Direction node must exist, be `level == "direction"`, and be `status == "active"`.
 - At least one active child `level == "task"` milestone node must exist with the Direction as parent. Milestones are high-level validation objectives, not concrete package experiments.
 - Duplicate package ids or existing package directories are rejected before write.
@@ -79,11 +79,11 @@ During materialization, the accepted Milestones are projected into initial packa
 Ask for any detail that cannot be inferred safely:
 
 - package name and id (defaults to `YYYY-MM-DD-<slug>`)
-- category: `brainstorm`, `in-progress`, `success`, or `fail`
+- category: `in-progress`, `success`, or `fail` (brainstorm is not a package category — pre-package ideas live on the dashboard brainstorm lane via `/research-brainstorm`)
 - category-scoped tag and `tagMeaning`
 - problem, objective, motivation
-- hypothesis (required for non-brainstorm; optional for brainstorm)
-- primary metric and budget gate (required for non-brainstorm)
+- hypothesis (required)
+- primary metric and budget gate (required)
 - baseline (when a claim will be made)
 - no-change boundary
 - source path and artifact root
@@ -98,9 +98,9 @@ Every package object on the dashboard surfaces these fields. If a field is unkno
 
 | Inventory field | CLI flag | What it answers |
 | --- | --- | --- |
-| `status` | `--status` | The `(category, status)` cell. Legal values per category come from `data/schema.js`. brainstorm: `EXPLORING`/`PILOT_READY`/`PROMOTED`/`ABANDONED`. in-progress: `CONTEXT_LOADED`/`IMPLEMENTING`/`IMPLEMENTATION_REVIEW`/`READY_TO_LAUNCH`/`EXPERIMENT_RUNNING`/`LIVE_ANALYSIS`/`RESULT_ANALYSIS`/`NEXT_ACTION_READY`/`BLOCKED`. success: `ADOPTED_PENDING_ACK`/`ADOPTED`/`SUPERSEDED`. fail: `ARCHIVED`/`ARCHIVED_REOPENABLE`. `--workflow-state` is kept as a deprecated alias. |
+| `status` | `--status` | The `(category, status)` cell. Legal values per category come from `data/schema.js`. in-progress: `CONTEXT_LOADED`/`IMPLEMENTING`/`IMPLEMENTATION_REVIEW`/`READY_TO_LAUNCH`/`EXPERIMENT_RUNNING`/`LIVE_ANALYSIS`/`RESULT_ANALYSIS`/`NEXT_ACTION_READY`/`BLOCKED`. success: `ADOPTED_PENDING_ACK`/`ADOPTED`/`SUPERSEDED`. fail: `ARCHIVED`/`ARCHIVED_REOPENABLE`. `--workflow-state` is kept as a deprecated alias. |
 | `contributionSpineFlag` | `--contribution-spine-flag` | Which project-spine contribution this package touches (id from `RESEARCH_CONTRIBUTION_SPINE` in schema.js). |
-| `direction` | `--direction` | One-sentence research direction. Required for brainstorm. |
+| `direction` | `--direction` | One-sentence research direction (optional; create_from_scope sets it from the Direction hypothesis). |
 | `activeGate` | `--active-gate` | The plan/spec gate that owns the next decision. Required for in-progress. |
 | `primaryMetricVsGate` | `--primary-metric-vs-gate` | One-line "metric=value vs gate" string for the dashboard card. Required for in-progress. |
 | `lastDecision` | `--last-decision` | One sentence per WORKFLOW.md "Decision" line. |
@@ -111,8 +111,8 @@ Every package object on the dashboard surfaces these fields. If a field is unkno
 | `openRuns` | `--open-runs` | tmux/session/job ids or `none` (Resume Block field). Required when status is `EXPERIMENT_RUNNING` or `LIVE_ANALYSIS`. |
 | `lastUpdated` | `--last-updated` | ISO date; toggles `data-stale` on pages that predate it. |
 | `experiments` | (post-scaffold edit) | Array `[{id, label?, purpose, after, output, gate, status, runLink?, docsAnchor?}]` painted onto both `index.html#plan-status` (status chips by `renderPlanStatus()`) and `plan.html#experiments` (pipeline timeline by `renderPipelineTimeline()`). See [Pipeline timeline](#pipeline-timeline-binding) for the binding per-field rules and caps. Update the matching entry's `status` whenever a phase opens/closes (same turn as the tracker row update). Allowed `status`: `pending`/`queued`/`running`/`completed`/`failed`/`skipped`/`blocked`. |
-| `methodsTried` | (post-scaffold edit) | Array of `{method, hypothesis, gate, measured, verdict, evidencePath}` rows (verdict ∈ `{pass, fail, inconclusive}`). Appended over the life of the package per the Learnings Update Protocol below. Required for success / fail (forbidden for the brainstorm category, including `ABANDONED`). |
-| `terminationMessage` | (post-scaffold edit) | One sentence: why this package ended. Required for success / fail / brainstorm-`ABANDONED`. |
+| `methodsTried` | (post-scaffold edit) | Array of `{method, hypothesis, gate, measured, verdict, evidencePath}` rows (verdict ∈ `{pass, fail, inconclusive}`). Appended over the life of the package per the Learnings Update Protocol below. Required for success / fail. |
+| `terminationMessage` | (post-scaffold edit) | One sentence: why this package ended. Required for success / fail. |
 | `adoptionPath` | (post-scaffold edit) | Where the win was adopted (e.g., `CLAUDE.md#current-best`, model code path, downstream package id). Required for success. |
 | `supersededBy` / `promotedTo` / `reopenTrigger` | (post-scaffold edit) | Per-status cross-reference fields. See `data/schema.js`. |
 
@@ -122,7 +122,6 @@ Pick `--scope` from the prompt's stage:
 
 | Prompt intent | Recommended scope |
 | --- | --- |
-| "Brainstorm a direction ..." (category=brainstorm) | `index,docs,_agent` (brainstorm.html is auto-included) |
 | "Create a plan about ..." | `index,plan,tracker,docs,_agent` |
 | "Track the implementation of ..." | `index,plan,implementation,tracker,docs,_agent` |
 | "Run / launch / record live ..." | `index,plan,implementation,tracker,docs,_agent` (tracker owns launch readiness + per-run live cards) |
@@ -249,7 +248,7 @@ python3 skills/research-package/scripts/create_from_scope.py \
   --id 2026-06-03-retrieval-v2
 ```
 
-For a brainstorm package, also pass `--direction "<one-sentence direction>"` so the package is lint-clean at scaffold time. After scaffolding, run:
+After scaffolding, run:
 
 ```bash
 python <root>/scripts/learnings_lint.py lint-status
@@ -372,7 +371,7 @@ Per-turn closure when any event above fires: update the upstream witness (result
 
 ### Auto-applier (event manifests)
 
-`<root>/scripts/propagate_apply.py` (shipped by the `research-dashboard` skill) is the deterministic executor for events E1, E3, E4, E5, and E6. A launcher (or the agent) writes a small JSON manifest under `var/research/<pkg-id>/manifests/` with one of these event keys: `verdict_finalized` (E1) · `status_changed` (E2-style top-level status) · `adoption` (E4) · `supersession` (E5) · `reopen` (E6). The applier reads every unapplied manifest, writes the deterministic surface edits, marks the manifest `.applied`, and is idempotent on re-run. See `research-dashboard/SKILL.md` § *Event-manifest applier* for the full schema.
+`<root>/scripts/propagate_apply.py` (shipped by the `research-dashboard` skill) is the deterministic executor for events E1, E3, E4, E5, and E6. A launcher (or the agent) writes a small JSON manifest under `outputs/<pkg-id>/manifests/` with one of these event keys: `verdict_finalized` (E1) · `status_changed` (E2-style top-level status) · `adoption` (E4) · `supersession` (E5) · `reopen` (E6). The applier reads every unapplied manifest, writes the deterministic surface edits, marks the manifest `.applied`, and is idempotent on re-run. See `research-dashboard/SKILL.md` § *Event-manifest applier* for the full schema.
 
 For E2 (in-progress live update), `propagate_apply.py --auto-derive` scans every package on demand and fills **blank** `currentBlocker` / `nextRoute` fields based on `experiments[].status`. Non-blank fields stay untouched — they are treated as human-curated and require an explicit `state_derived` manifest to overwrite.
 

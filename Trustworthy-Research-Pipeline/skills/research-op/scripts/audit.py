@@ -12,7 +12,7 @@ def runtime_root(pkg: str) -> Path:
     env = os.environ.get("RESEARCH_RUNTIME_ROOT")
     if env:
         return Path(env) / pkg
-    return Path("var/research") / pkg
+    return Path("outputs") / pkg
 
 
 def log_path(pkg: str) -> Path:

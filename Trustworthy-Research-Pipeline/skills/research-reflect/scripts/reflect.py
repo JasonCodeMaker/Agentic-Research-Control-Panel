@@ -58,8 +58,8 @@ def main(argv=None):
     """CLI: scan the audit log + scope transitions and stage one proposal per finding."""
     import argparse
     p = argparse.ArgumentParser(description="research-reflect: detect recurring failure, stage rule proposals.")
-    p.add_argument("--actions", default="", help="path to var/research/<pkg>/_actions.jsonl")
-    p.add_argument("--transitions", default="", help="path to var/research/_scope/transitions.jsonl")
+    p.add_argument("--actions", default="", help="path to outputs/<pkg>/_actions.jsonl")
+    p.add_argument("--transitions", default="", help="path to outputs/_scope/transitions.jsonl")
     p.add_argument("--pending-dir", required=True, help="staging dir for proposals")
     p.add_argument("--threshold", type=int, default=3)
     args = p.parse_args(argv)

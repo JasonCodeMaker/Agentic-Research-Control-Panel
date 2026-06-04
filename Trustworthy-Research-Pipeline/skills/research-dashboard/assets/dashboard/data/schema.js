@@ -3,18 +3,10 @@
 // renderer and the linter both read from this file. Add a new state by
 // editing the `states` array and, if applicable, the `required` map.
 
+// Brainstorm is no longer a package category. Pre-package ideas live on the
+// dashboard brainstorm lane (data/brainstorms.js, window.BRAINSTORMS) and are not
+// in the (category, status) state machine; they become a package only at conversion.
 window.RESEARCH_STATUS_SCHEMA = {
-  brainstorm: {
-    states: ["EXPLORING", "PILOT_READY", "PROMOTED", "ABANDONED"],
-    description: "Idea or audit packages. Holds direction and which contribution spine the idea touches; no metric/gate fields.",
-    required: {
-      _all: ["direction", "contributionSpineFlag"],
-      PILOT_READY: ["hypothesis", "noChangeBoundary"],
-      PROMOTED: ["promotedTo"],
-      ABANDONED: ["terminationMessage"],
-    },
-    forbidden: ["activeGate", "primaryMetricVsGate", "methodsTried", "openRuns"],
-  },
   "in-progress": {
     states: [
       "CONTEXT_LOADED",
@@ -82,10 +74,6 @@ window.RESEARCH_METHODS_TRIED_FIELDS = [
 
 // Compact mapping used by the renderer to color the status pill by family.
 window.RESEARCH_STATUS_FAMILY = {
-  EXPLORING: "idea",
-  PILOT_READY: "idea-ready",
-  PROMOTED: "idea-done",
-  ABANDONED: "idea-stop",
   CONTEXT_LOADED: "work",
   IMPLEMENTING: "work",
   IMPLEMENTATION_REVIEW: "work",

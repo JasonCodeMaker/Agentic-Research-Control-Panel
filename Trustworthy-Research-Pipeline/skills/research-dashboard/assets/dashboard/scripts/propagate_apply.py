@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Apply event manifests to research-packages.js / results.html / tracker.html.
 
-Reads var/research/<pkg-id>/manifests/*.json that declare an "event" type and
+Reads outputs/<pkg-id>/manifests/*.json that declare an "event" type and
 lack a sibling .applied sidecar; dispatches each to its event handler; emits
 the deterministic surface edits; marks the manifest applied. Dry-run by
 default; --write commits the diff. --auto-derive scans every package and
@@ -396,7 +396,7 @@ def auto_derive(repo_root: Path) -> list[Path]:
     text = registry_path.read_text()
 
     written: list[Path] = []
-    var_root = repo_root / "var" / "research"
+    var_root = repo_root / "outputs"
     if not var_root.exists():
         return written
 
@@ -477,7 +477,7 @@ def _is_event_manifest(path: Path) -> bool:
 
 
 def discover_manifests(repo_root: Path, pkg_filter: str | None) -> list[Path]:
-    root = repo_root / "var" / "research"
+    root = repo_root / "outputs"
     if not root.exists():
         return []
     pkgs = (

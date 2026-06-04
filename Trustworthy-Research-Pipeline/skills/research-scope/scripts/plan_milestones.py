@@ -143,8 +143,8 @@ def proposal_for(node: dict, direction_id: str) -> dict:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--direction-id", required=True)
-    p.add_argument("--transitions", default="var/research/_scope/transitions.jsonl")
-    p.add_argument("--triage", default="var/research/_scope/triage.jsonl")
+    p.add_argument("--transitions", default="outputs/_scope/transitions.jsonl")
+    p.add_argument("--triage", default="outputs/_scope/triage.jsonl")
     p.add_argument("--autonomy-level", default="checkpoints")
     p.add_argument("--dry-run", action="store_true", help="print proposals without writing triage")
     return p

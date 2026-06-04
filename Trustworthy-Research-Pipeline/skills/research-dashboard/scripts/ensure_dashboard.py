@@ -33,7 +33,7 @@ window.RESEARCH_GLOBAL_PROTOCOL = {
   agentRules: [
     { title: "Build Context First", body: "Read the invocation, project profile, package state, active plan, results, and docs before work." },
     { title: "Runtime Truth Wins", body: "Validate live runs, logs, outputs, summaries, and artifact roots before changing state." },
-    { title: "Consult Learnings Before New Directions", body: "Open research_html/learnings.html before proposing a new direction, refinement, or experiment idea, and before promoting a brainstorm package to in-progress. It is the cross-package index of structured methodsTried rows for every adopted win, archived failure, and abandoned brainstorm; reading it first prevents re-deriving a method that already has a recorded verdict." },
+    { title: "Consult Learnings Before New Directions", body: "Open research_html/learnings.html before proposing a new direction, refinement, or experiment idea, and before converting a brainstorm idea into a package. It is the cross-package index of structured methodsTried rows for every adopted win and archived failure; reading it first prevents re-deriving a method that already has a recorded verdict." },
   ],
   evidenceGates: [
     { title: "Before Implementation", body: "Ground work in active plan clauses, verified anchors, boundaries, and checks." },
@@ -58,7 +58,7 @@ window.RESEARCH_GLOBAL_PROTOCOL = {
 window.RESEARCH_PROJECT_PROFILE = {};
 
 window.RESEARCH_CATEGORIES = [
-  { id: "brainstorm", title: "Brain Storm", summary: "Ideas, audits, reviews, and reference packages.", href: "categories/brainstorm/" },
+  { id: "brainstorm", title: "Brain Storm", summary: "Pre-package ideas (not packages, not in the SSOT). Convert one or more into a Direction + package.", href: "categories/brainstorm/" },
   { id: "in-progress", title: "In Progress", summary: "Active packages with ongoing implementation, execution, or analysis.", href: "categories/in-progress/" },
   { id: "success", title: "Success", summary: "Packages adopted into the active project system.", href: "categories/success/" },
   { id: "fail", title: "Fail", summary: "Directions judged failed, stopped, or not promotable.", href: "categories/fail/" },
@@ -81,13 +81,14 @@ window.RESEARCH_TAG_ROLES = {
 //   lastDecision, lastDecisionEvidencePath, nextRoute, currentBlocker,
 //   lastAction, openRuns, lastUpdated (ISO date), pages, experiments,
 //   contributionSpineFlag (id from RESEARCH_CONTRIBUTION_SPINE in schema.js).
-// Terminal-state fields (success / fail / brainstorm-ABANDONED):
+// Terminal-state fields (success / fail):
 //   terminationMessage (≤200 char one-sentence why-this-ended),
 //   methodsTried (array of {method, hypothesis, gate, measured, verdict,
 //     evidencePath} rows; verdict ∈ {pass, fail, inconclusive}),
 //   adoptionPath (success only — where the win was adopted),
 //   supersededBy / promotedTo / reopenTrigger (per (category, status)).
-// Brainstorm fields: direction, contributionSpineFlag (both required).
+// Brainstorm is not a package category — pre-package ideas live in
+// data/brainstorms.js (window.BRAINSTORMS), rendered on the brainstorm lane.
 // Run `python research_html/scripts/learnings_lint.py all` to verify
 // schema compliance and evidencePath resolution across all packages.
 window.RESEARCH_PACKAGES = [];
@@ -95,6 +96,10 @@ window.RESEARCH_PACKAGES = [];
 
 SCOPE_PROJECTION_JSON = "{}\n"
 SCOPE_PROJECTION_JS = "window.RESEARCH_SCOPE_PROJECTION = {};\n"
+
+# Pre-package idea store for the brainstorm lane. Written inline-empty (like
+# research-packages.js) so a fresh scaffold never inherits another project's ideas.
+BRAINSTORMS_JS = "window.BRAINSTORMS = [];\n"
 
 
 def write_if_missing(path: Path, source: Path | None, text: str | None, force: bool) -> bool:
@@ -147,6 +152,15 @@ def write_data_js(root: Path, force: bool) -> list[Path]:
     return written
 
 
+def write_brainstorms_store(root: Path, force: bool) -> list[Path]:
+    """Write the empty pre-package idea store if missing."""
+    written: list[Path] = []
+    dst = root / "data" / "brainstorms.js"
+    if write_if_missing(dst, None, BRAINSTORMS_JS, force):
+        written.append(dst)
+    return written
+
+
 def write_scope_projection_defaults(root: Path, force: bool) -> list[Path]:
     """Write empty read-only Scope projection files when missing."""
     written: list[Path] = []
@@ -177,6 +191,7 @@ def ensure_dashboard(root: Path, force: bool) -> list[Path]:
     written: list[Path] = []
     written.extend(copy_bundled_chrome(root, force))
     written.extend(write_data_js(root, force))
+    written.extend(write_brainstorms_store(root, force))
     written.extend(write_scope_projection_defaults(root, force))
     written.extend(copy_helper_scripts(root, force))
     written.extend(copy_rule_files(root, force))

@@ -620,6 +620,8 @@
   function renderCategoryPage() {
     var root = byId("category-package-root");
     if (!root || !window.RESEARCH_CATEGORY_ID) return;
+    // Brainstorm lane is ideas-only (renderBrainstorms); it holds no packages.
+    if (window.RESEARCH_CATEGORY_ID === "brainstorm") return;
 
     var category = categoryById(window.RESEARCH_CATEGORY_ID);
     var items = packages().filter(function (pkg) {
@@ -636,6 +638,33 @@
     root.innerHTML = items.length
       ? items.map(packageCardHtml).join("")
       : '<div class="empty-state">No package is explicitly classified here yet.</div>';
+  }
+
+  function brainstormCardHtml(idea) {
+    return [
+      '<article class="package-card brainstorm-idea">',
+      '<div class="eyebrow">Pre-package idea</div>',
+      "<h3>" + htmlEscape(idea.title || idea.id) + "</h3>",
+      idea.idea ? "<p>" + htmlEscape(idea.idea) + "</p>" : "",
+      idea.rough_metric
+        ? '<div class="k">Rough metric</div><div>' + htmlEscape(idea.rough_metric) + "</div>"
+        : "",
+      '<div class="toolbar"><span class="tag">' + htmlEscape(idea.id) + "</span></div>",
+      "</article>",
+    ].join("");
+  }
+
+  // Brainstorm lane = pre-package ideas (not packages, not in the SSOT), read
+  // from window.BRAINSTORMS (data/brainstorms.js). Managed by /research-brainstorm.
+  function renderBrainstorms() {
+    var root = byId("brainstorm-ideas-root");
+    if (!root || window.RESEARCH_CATEGORY_ID !== "brainstorm") return;
+    var ideas = window.BRAINSTORMS || [];
+    var count = byId("brainstorm-ideas-count");
+    if (count) count.textContent = String(ideas.length) + " idea" + (ideas.length === 1 ? "" : "s");
+    root.innerHTML = ideas.length
+      ? ideas.map(brainstormCardHtml).join("")
+      : '<div class="empty-state">No pre-package ideas yet. Use /research-brainstorm to add one.</div>';
   }
 
   function packageModuleHref(pkg, moduleId) {
@@ -1914,6 +1943,7 @@
     renderProjectProfile();
     renderScopeProjection();
     renderCategoryPage();
+    renderBrainstorms();
     renderPackageDetail();
     renderModulePage();
     renderStatusStrip();

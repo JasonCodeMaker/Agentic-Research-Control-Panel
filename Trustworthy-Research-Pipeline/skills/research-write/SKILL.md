@@ -24,8 +24,8 @@ python3 -c "import sys; sys.path.insert(0, '<pipeline-root>/lib'); import cite_c
 # add 'import scope_ssot' only when inspecting the transition timeline (detect a revise / scope_version)
 ```
 
-Paper output path: `var/research/<pkg>/paper/paper.md`
-Per-package audit log: `var/research/<pkg>/_actions.jsonl`
+Paper output path: `outputs/<pkg>/paper/paper.md`
+Per-package audit log: `outputs/<pkg>/_actions.jsonl`
 
 ## Procedure
 
@@ -33,7 +33,7 @@ Per-package audit log: `var/research/<pkg>/_actions.jsonl`
 
 The active direction **node** (with its `yardstick`) is supplied by the orchestrator (`research-auto`)
 or, standalone, recovered from the accepted Triage item's `proposed_yardstick` in
-`var/research/_scope/triage.jsonl` (the Triage queue written by `research-scope` — verify the field
+`outputs/_scope/triage.jsonl` (the Triage queue written by `research-scope` — verify the field
 name against the active record). Read it from that node:
 
 ```python
@@ -97,14 +97,14 @@ unresolved   = cite_check.unresolved_citations(citations, fetched_source_ids)
 ### 5. Write the paper
 
 Once both checks return empty, write the paper directly to the runtime path. The paper is a
-`var/research` artifact, not a package HTML surface, so it is a direct write (`Write` is in
+`outputs` artifact, not a package HTML surface, so it is a direct write (`Write` is in
 allowed-tools) — there is no research-op "paper" target:
 
 ```python
 import json, pathlib
-pathlib.Path("var/research/<pkg>/paper").mkdir(parents=True, exist_ok=True)
-pathlib.Path("var/research/<pkg>/paper/paper.md").write_text(paper_markdown)
-pathlib.Path("var/research/<pkg>/paper/claim_map.json").write_text(json.dumps(
+pathlib.Path("outputs/<pkg>/paper").mkdir(parents=True, exist_ok=True)
+pathlib.Path("outputs/<pkg>/paper/paper.md").write_text(paper_markdown)
+pathlib.Path("outputs/<pkg>/paper/claim_map.json").write_text(json.dumps(
     [{"claim_id": c["id"], "artifact_id": c["artifact_id"], "section": "Results"} for c in claims],
     indent=2))
 ```
@@ -117,17 +117,17 @@ by the results/verify step — not part of writing `paper.md` here.
 
 | Artifact | Path |
 |---|---|
-| Paper draft | `var/research/<pkg>/paper/paper.md` |
-| Claim-to-artifact map | `var/research/<pkg>/paper/claim_map.json` |
-| Results surfacing (optional) | via research-op `--target results-block` / `results-verdict`, which appends the audit line to `var/research/<pkg>/_actions.jsonl` |
+| Paper draft | `outputs/<pkg>/paper/paper.md` |
+| Claim-to-artifact map | `outputs/<pkg>/paper/claim_map.json` |
+| Results surfacing (optional) | via research-op `--target results-block` / `results-verdict`, which appends the audit line to `outputs/<pkg>/_actions.jsonl` |
 
 ## Done condition
 
 The skill is done when:
 1. `cite_check.ungrounded_claims(claims, verified_artifact_ids)` returns `[]`
 2. `cite_check.unresolved_citations(citations, fetched_source_ids)` returns `[]`
-3. `var/research/<pkg>/paper/paper.md` exists and contains all seven IMRAD sections
-4. `var/research/<pkg>/paper/claim_map.json` exists with one entry per Results/Discussion claim
+3. `outputs/<pkg>/paper/paper.md` exists and contains all seven IMRAD sections
+4. `outputs/<pkg>/paper/claim_map.json` exists with one entry per Results/Discussion claim
 
 ## Error path
 

@@ -63,7 +63,7 @@ exit 0
 ```bash
 #!/usr/bin/env bash
 # Stop hook: at every Stop,
-#   1) render/check Scope SSOT projection when var/research/_scope changed
+#   1) render/check Scope SSOT projection when outputs/_scope changed
 #   2) for each touched research package, run its propagate_facts.py (reporter)
 #   3) run propagate_apply.py --auto-derive --write (executor) globally
 #   4) run learnings_lint.py all (validator)
@@ -79,7 +79,7 @@ if [ ! -f "$TOUCH_LOG" ]; then
     exit 0
 fi
 
-if ! grep -qE 'research_html/packages/|research_html/data/research-packages\.js|var/research/' "$TOUCH_LOG"; then
+if ! grep -qE 'research_html/packages/|research_html/data/research-packages\.js|outputs/' "$TOUCH_LOG"; then
     rm -f "$TOUCH_LOG"
     exit 0
 fi
@@ -87,8 +87,8 @@ fi
 PKG_RE='[0-9]{4}-[0-9]{2}-[0-9]{2}-[A-Za-z0-9_-]+'
 PKGS_FROM_HTML=$(grep -oE "research_html/packages/${PKG_RE}" "$TOUCH_LOG" 2>/dev/null \
     | sed 's#research_html/packages/##' | sort -u)
-PKGS_FROM_VAR=$(grep -oE "var/research/${PKG_RE}" "$TOUCH_LOG" 2>/dev/null \
-    | sed 's#var/research/##' | sort -u)
+PKGS_FROM_VAR=$(grep -oE "outputs/${PKG_RE}" "$TOUCH_LOG" 2>/dev/null \
+    | sed 's#outputs/##' | sort -u)
 PACKAGES=$(printf "%s\n%s\n" "$PKGS_FROM_HTML" "$PKGS_FROM_VAR" | sort -u | grep -v '^$')
 
 PROP_REPORT=""
@@ -100,12 +100,12 @@ NL=$'\n'
 # Scope projection: render the folded SSOT into dashboard data, then check the
 # rendered file against the transition log. The render step also writes the
 # companion JS file consumed by index.html.
-if grep -qE 'var/research/_scope/|research_html/data/scope-projection\.json|research_html/data/scope-projection\.js' "$TOUCH_LOG"; then
+if grep -qE 'outputs/_scope/|research_html/data/scope-projection\.json|research_html/data/scope-projection\.js' "$TOUCH_LOG"; then
     SCOPE_SCRIPT="$REPO_ROOT/research_html/scripts/render_scope_projection.py"
-    SCOPE_LOG="$REPO_ROOT/var/research/_scope/transitions.jsonl"
+    SCOPE_LOG="$REPO_ROOT/outputs/_scope/transitions.jsonl"
     SCOPE_JSON="$REPO_ROOT/research_html/data/scope-projection.json"
     if [ -f "$SCOPE_SCRIPT" ] && [ -f "$SCOPE_LOG" ]; then
-        SCOPE_OUT=$(cd "$REPO_ROOT" && python research_html/scripts/render_scope_projection.py render --transitions var/research/_scope/transitions.jsonl --projection research_html/data/scope-projection.json 2>&1 && python research_html/scripts/render_scope_projection.py check --transitions var/research/_scope/transitions.jsonl --projection research_html/data/scope-projection.json 2>&1)
+        SCOPE_OUT=$(cd "$REPO_ROOT" && python research_html/scripts/render_scope_projection.py render --transitions outputs/_scope/transitions.jsonl --projection research_html/data/scope-projection.json 2>&1 && python research_html/scripts/render_scope_projection.py check --transitions outputs/_scope/transitions.jsonl --projection research_html/data/scope-projection.json 2>&1)
         SCOPE_STATUS=$?
         if [ $SCOPE_STATUS -ne 0 ]; then
             SCOPE_REPORT="[render_scope_projection: exit ${SCOPE_STATUS}]${NL}$(echo "$SCOPE_OUT" | tail -25)${NL}"

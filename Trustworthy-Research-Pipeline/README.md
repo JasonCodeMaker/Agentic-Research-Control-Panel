@@ -25,7 +25,7 @@ This is the whole system. Each step has a skill (or a gate) behind it; nothing e
 ```
 1  Setup          /research-dashboard      → stand up the 4-lane dashboard            (once)
 2  Define Project /research-scope          → ratify the north-star objective          (once)
-3  Create Dir+Task/research-scope          → a Direction (hypothesis + metric) + dial (per direction)
+3  Create Dir+Task/research-brainstorm      → shape a vague idea into a Direction (or /research-scope if clear) + dial
 4  Run            /research-auto           → agent drives the 7 research roles         (the loop)
 5  Away modes     (autonomy dial)          → leave it running; review on return
 6  Scope change   /research-scope (Triage) → move the goalposts, auditably
@@ -55,13 +55,13 @@ done
 Restart the agent so it picks up the skills. Verify the install by running the test suite (Python 3.13):
 
 ```bash
-python3.13 -m pytest -q          # expect: 153 passed
+python3.13 -m pytest -q          # expect: 186 passed
 ```
 
 ### 2. Point a research project at the pipeline
 
 The repo is the **toolbox**; you run the skills from inside whatever **research project** you are
-managing. State (`research_html/`, `var/research/`) lands in that project's directory; the skill code
+managing. State (`research_html/`, `outputs/`) lands in that project's directory; the skill code
 resolves back to this repo automatically.
 
 ```bash
@@ -81,10 +81,18 @@ contribution spine above them. See [CLAUDE.md](CLAUDE.md) → *Per-project custo
 /research-dashboard
 ```
 
-Scaffolds `research_html/`: an `index.html` + four lane pages (**brainstorm / in-progress / success /
-fail**), `learnings.html`, the `(category, status)` state machine in `data/schema.js`, the read-only
-Scope-SSOT projection, the binding rule files, and the lint tooling. This is your single pane of glass —
+Scaffolds `research_html/`: an `index.html` + four lane pages — the **brainstorm** lane holds pre-package
+ideas (`data/brainstorms.js`), while **in-progress / success / fail** are the package lanes of the
+`(category, status)` state machine in `data/schema.js` — plus `learnings.html`, the read-only Scope-SSOT
+projection, the binding rule files, and the lint tooling. This is your single pane of glass —
 overview-only; claims and evidence live on package pages, never on the dashboard.
+
+When it finishes, the dashboard checks the SSOT for a committed Project node. On a fresh project there is
+none, so it hands off to **`/research-onboard`** — the on-ramp that bridges a raw workspace into a Project
+objective. For an **empty** workspace it scaffolds an in-place deep-learning skeleton and elicits the
+north-star; for an **existing** one it analyzes the repo (README / configs / `src/` / baselines) into a
+`outputs/_scope/prior_knowledge.md` digest and a drafted objective. Either way it ends by *proposing*
+a Project node through Triage — the agent never commits the SSOT — and then Step 2 ratifies it.
 
 ## Step 2 · Define the Project (ratify the north-star)
 
@@ -98,17 +106,25 @@ objective cascade is PM-write-only — the agent can never edit it on its own.
 
 ## Step 3 · Create a Direction + Task
 
-`/research-scope` proposes a **Direction** carrying a typed *yardstick* (`hypothesis / metric / baselines /
-success_predicate`) and you pick its **autonomy level** (the dial — see Step 5). A scope change is never a
-direct write; it flows through **Triage** (agent proposes → you dispose):
+If you only have a vague idea, start with **`/research-brainstorm`** — it shapes the idea (following the
+brainstorming method), grounds factual unknowns with `/research-lit`, sharpens hypotheses with
+`/research-ideate`, and captures cheap **pre-package ideas** on the dashboard brainstorm lane
+(`data/brainstorms.js`). Ideas are not in the SSOT; you can hold several and then **convert** one or more
+into a single Direction. Conversion freezes the source idea(s) into the new package's `brainstorm.html`
+provenance sub-page and removes them from the lane.
+
+`/research-scope` (invoked directly, or reached via the conversion above) proposes a **Direction** carrying
+a typed *yardstick* (`hypothesis / metric / baselines / success_predicate`) and you pick its **autonomy
+level** (the dial — see Step 5). A scope change is never a direct write; it flows through **Triage** (agent
+proposes → you dispose):
 
 ```bash
 # agent proposes; you inspect
-python3 skills/research-scope/scripts/triage.py propose --log var/research/_scope/triage.jsonl --item '<json>'
-python3 skills/research-scope/scripts/triage.py pending --log var/research/_scope/triage.jsonl
+python3 skills/research-scope/scripts/triage.py propose --log outputs/_scope/triage.jsonl --item '<json>'
+python3 skills/research-scope/scripts/triage.py pending --log outputs/_scope/triage.jsonl
 
 # you accept, then commit the versioned SSOT transition (this is the only thing that writes intent)
-python3 skills/research-scope/scripts/triage.py dispose --log var/research/_scope/triage.jsonl --id <id> --decision accept
+python3 skills/research-scope/scripts/triage.py dispose --log outputs/_scope/triage.jsonl --id <id> --decision accept
 python3 skills/research-op/scripts/research_op.py --pkg <pkg> --op scope-transition --payload '{
   "id":"dir-cifar10-mixup","level":"direction","parents":[],"version":1,"status":"active",
   "yardstick":{"hypothesis":"mixup augmentation improves top-1 accuracy","metric":"top-1 accuracy",
@@ -124,8 +140,10 @@ python3 skills/research-scope/scripts/plan_milestones.py   --direction-id dir-ci
 python3 skills/research-package/scripts/create_from_scope.py --direction-id dir-cifar10-mixup --id 2026-06-04-cifar10-mixup
 ```
 
-The package gets `overview / plan / implementation / results / analysis / next-action / tracker /
-brainstorm` pages with provenance links back to the Direction and its milestones.
+The package gets `overview / plan / implementation / results / analysis / tracker` pages (chosen by
+`--scope`) with provenance links back to the Direction and its milestones. If you converted from
+brainstorm ideas, pass `--source-brainstorms '<idea ids>'` — it adds a read-only `brainstorm.html`
+provenance sub-page recording the idea(s) the package came from, and removes them from the lane.
 
 ## Step 4 · Run the loop
 
@@ -149,8 +167,8 @@ yardstick from the Scope SSOT and routing every write through the trust gates:
 Watch it live by tailing the audit log; find where it got stuck by grepping for rejections:
 
 ```bash
-tail -f var/research/<pkg>/_actions.jsonl
-grep '"validation": "rejected"' var/research/<pkg>/_actions.jsonl | tail
+tail -f outputs/<pkg>/_actions.jsonl
+grep '"validation": "rejected"' outputs/<pkg>/_actions.jsonl | tail
 ```
 
 ## Step 5 · Away modes (the autonomy dial)
@@ -198,7 +216,7 @@ Every guarantee is mechanical (a passing test, a resolved path) rather than a pr
 
 - **Reject-before-write.** `research-op` is the single mutation surface; an out-of-contract write is
   refused before any byte hits disk, and every op (success or reject) appends one line to
-  `var/research/<pkg>/_actions.jsonl`.
+  `outputs/<pkg>/_actions.jsonl`.
 - **No fabricated citations / claims.** `lib/cite_check` blocks a cite whose source wasn't fetched (R2)
   and a claim with no verified artifact (R6).
 - **No self-graded success.** The metric oracle reads the success predicate back from the SSOT; the
@@ -208,8 +226,8 @@ Every guarantee is mechanical (a passing test, a resolved path) rather than a pr
 
 ## Project maturity
 
-- **Solid (153 tests):** the trust substrate (`lib/scope_ssot`, `lib/verifier`, `lib/cite_check`), the
-  dashboard/package/analysis surfaces, and `research-op`'s gates.
+- **Solid (186 tests):** the trust substrate (`lib/scope_ssot`, `lib/verifier`, `lib/cite_check`), the
+  dashboard/package/analysis surfaces, `research-op`'s gates, and the brainstorm idea layer + conversion.
 - **Walking skeleton:** the `/research-auto` Run loop composes end-to-end at the `supervised` level, but
   several roles are still thin/stub (`skills/research-auto/scripts/skeleton.py`). The dial, cross-model
   verifier, and PACK ship as tested utilities being wired into the main loop.
@@ -223,6 +241,8 @@ Every guarantee is mechanical (a passing test, a resolved path) rather than a pr
 | Component | Role |
 | --- | --- |
 | `skills/research-dashboard/` | Project-level HTML dashboard scaffold (Step 1). |
+| `skills/research-onboard/` | The steps 1→3 on-ramp: empty-workspace skeleton or existing-workspace analysis → a proposed Project objective (Step 1→2 bridge). |
+| `skills/research-brainstorm/` | Step-3 direction formation: shape a vague idea (brainstorming method + lit + ideate) into pre-package ideas, then convert one or more into a Direction proposal. |
 | `skills/research-scope/` | Objective/Task SSOT + Triage admission gate (Steps 2, 3, 6). |
 | `skills/research-package/` | Per-direction multi-page package scaffold (Step 3). |
 | `skills/research-auto/` | Orchestrator: drives R1→R7 (Step 4). |
@@ -236,8 +256,9 @@ Every guarantee is mechanical (a passing test, a resolved path) rather than a pr
 
 ### State model
 
-Each package's legal `status` values depend on its lane (`brainstorm / in-progress / success / fail`),
-declared with the required-field rules in `research_html/data/schema.js`. The
+Each package's legal `status` values depend on its lane (`in-progress / success / fail`),
+declared with the required-field rules in `research_html/data/schema.js`. (Brainstorm is not a package
+lane — the brainstorm lane holds pre-package ideas from `data/brainstorms.js`.) The
 `(category, status, op, target)` legality matrix that `research-op` enforces lives in
 [skills/research-op/references/matrix.md](skills/research-op/references/matrix.md). Full state contract:
 [CLAUDE.md](CLAUDE.md).

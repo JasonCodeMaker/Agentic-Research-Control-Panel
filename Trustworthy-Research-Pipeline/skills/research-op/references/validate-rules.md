@@ -9,7 +9,7 @@ byte hits disk. Rule ids are the values that appear in the rejection envelope's
 ### Insert: methodsTried row (I2)
 - `methodstried-six-fields`: payload must have exactly `{method, hypothesis, gate, measured, verdict, evidencePath}`. Extra or missing keys reject.
 - `methodstried-verdict-enum`: `verdict ∈ {pass, fail, inconclusive}`.
-- `methodstried-evidence-resolves`: `evidencePath` is either a real file under `var/research/<pkg>/` or `output/`, or an HTML anchor `results.html#<exp-anchor>` that exists on disk.
+- `methodstried-evidence-resolves`: `evidencePath` is either a real file under `outputs/<pkg>/` or `output/`, or an HTML anchor `results.html#<exp-anchor>` that exists on disk.
 <!-- planned, not yet implemented: methodstried-source-row-exists — the upstream results.html row at evidencePath exists with a verdict already finalized -->
 
 ### Insert: results.html result-gate row (I6)
@@ -48,9 +48,6 @@ These fire in addition to the lane-crossing rules above whenever the destination
 
 ### Delete: experiments-row (D1)
 - `experiments-pre-launch-only`: refuse if any `experiments[].status` for the package is one of `running`, `completed`, `failed`.
-
-### Insert: brainstorm-section (I10)
-- `brainstorm-category-only`: refuse if `category != "brainstorm"`.
 
 ## Universal rules (every op)
 

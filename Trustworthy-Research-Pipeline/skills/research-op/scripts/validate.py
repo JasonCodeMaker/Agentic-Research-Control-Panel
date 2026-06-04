@@ -133,18 +133,6 @@ def rule_methodstried_evidence_resolves(pkg, op, target, payload) -> Reject | No
     return None
 
 
-def rule_brainstorm_category_only(pkg, op, target, payload, state) -> Reject | None:
-    if target != "brainstorm-section" or op != "insert":
-        return None
-    if state["category"] != "brainstorm":
-        return Reject(
-            rule="brainstorm-category-only",
-            file=None, anchor=None, field="category",
-            expected="brainstorm",
-            actual=state["category"],
-            suggested_fix="brainstorm sections only exist on brainstorm-category packages.",
-        )
-    return None
 
 
 # ---- Result-gate row rules ----
@@ -584,7 +572,6 @@ _RULES: list[tuple[Callable, bool]] = [
     (rule_methodstried_six_fields,           False),
     (rule_methodstried_verdict_enum,         False),
     (rule_methodstried_evidence_resolves,    False),
-    (rule_brainstorm_category_only,          True),
     (rule_result_gate_ten_cols,              False),
     (rule_result_gate_validity_enum,         False),
     (rule_result_block_six_parts,            False),

@@ -11,7 +11,7 @@ allowed-tools: Bash(*), Read, Edit, Write, Glob, Grep
 
 Create or repair the shared `research_html/` dashboard at the working-directory root before any package work begins. The dashboard is the global research-system contract: package lanes, universal rules, optional project profile, Scope SSOT projection, tag-role mapping, and package inventory. It is overview-only — claims and evidence live on package surfaces.
 
-This skill is project-agnostic. The dashboard contract is identical for every project; project specifics belong in `data/research-packages.js` (`window.RESEARCH_PROJECT_PROFILE` plus the package inventory) and the read-only `data/scope-projection.json/js` projection generated from `var/research/_scope/transitions.jsonl`.
+This skill is project-agnostic. The dashboard contract is identical for every project; project specifics belong in `data/research-packages.js` (`window.RESEARCH_PROJECT_PROFILE` plus the package inventory) and the read-only `data/scope-projection.json/js` projection generated from `outputs/_scope/transitions.jsonl`.
 
 ## Authority
 
@@ -66,15 +66,24 @@ Both-audience content is written once, inline, without the blockquote or `<detai
    If the project has a committed Scope SSOT transition log, render and check the dashboard projection:
 
    ```bash
-   python <root>/scripts/render_scope_projection.py render --transitions var/research/_scope/transitions.jsonl --projection <root>/data/scope-projection.json
-   python <root>/scripts/render_scope_projection.py check --transitions var/research/_scope/transitions.jsonl --projection <root>/data/scope-projection.json
+   python <root>/scripts/render_scope_projection.py render --transitions outputs/_scope/transitions.jsonl --projection <root>/data/scope-projection.json
+   python <root>/scripts/render_scope_projection.py check --transitions outputs/_scope/transitions.jsonl --projection <root>/data/scope-projection.json
    ```
 
    If `ensure_dashboard.py` raised, confirm the skill is installed at `~/.claude/skills/research-dashboard/`. If `node --check` exits non-zero, the copied JS is malformed — inspect the matching file in this skill's `assets/dashboard/`. If the anchor grep returns nothing, `index.html` was not written — re-run step 3 with `--force`.
 
 5. **Keep the dashboard project-agnostic.** Project objective, success rule, and cautions belong in `window.RESEARCH_PROJECT_PROFILE` inside `<root>/data/research-packages.js`. Project / Direction / Milestone intent belongs in the Scope SSOT and is rendered into `<root>/data/scope-projection.json/js`; do not hand-edit those projection files. Do not edit the universal protocol cards in the same file; those are shared chrome.
 
-6. **Report back.** State the resolved root, files written (or "preserved, no changes"), and the next suggested step (typically `/research-package` to create the first package). Apply the [Output classification](#output-classification) rule on the report itself.
+6. **Check for a committed objective, then recommend the next step.** The dashboard is chrome; a project still needs a ratified objective in the Scope SSOT before any package work. Check whether a Project node is already committed:
+
+   ```bash
+   python ~/.claude/skills/research-onboard/scripts/onboard.py has-project-scope --transitions outputs/_scope/transitions.jsonl
+   ```
+
+   - If it prints `{"has_project_scope": false}` (the common first-run case), the next step is **`/research-onboard`**, not `/research-package` — onboarding bridges the raw workspace into a pending Project proposal (it scaffolds an empty workspace or analyzes an existing one). Recommend it, and continue into it in the same session unless the user redirects.
+   - If it prints `true`, the objective exists; the next step is `/research-scope` (add a Direction) or `/research-package`.
+
+7. **Report back.** State the resolved root, files written (or "preserved, no changes"), and the next suggested step chosen in step 6. Apply the [Output classification](#output-classification) rule on the report itself.
 
 ## Scope (what this skill does NOT do)
 
@@ -84,18 +93,17 @@ Both-audience content is written once, inline, without the blockquote or `<detai
 
 ## State model and learnings tooling
 
-The dashboard ships a `(category, status)` state machine. Every package carries a `status` field whose legal values depend on its lane:
+The dashboard ships a `(category, status)` state machine. Every package carries a `status` field whose legal values depend on its lane (brainstorm is **not** a package category — the brainstorm lane holds pre-package ideas from `data/brainstorms.js`):
 
 | category | legal `status` values |
 |---|---|
-| brainstorm | `EXPLORING`, `PILOT_READY`, `PROMOTED`, `ABANDONED` |
 | in-progress | `CONTEXT_LOADED`, `IMPLEMENTING`, `IMPLEMENTATION_REVIEW`, `READY_TO_LAUNCH`, `EXPERIMENT_RUNNING`, `LIVE_ANALYSIS`, `RESULT_ANALYSIS`, `NEXT_ACTION_READY`, `BLOCKED` |
 | success | `ADOPTED_PENDING_ACK`, `ADOPTED`, `SUPERSEDED` |
 | fail | `ARCHIVED`, `ARCHIVED_REOPENABLE` |
 
 Required field sets per `(category, status)` and the structured `methodsTried` row shape are declared in `<root>/data/schema.js` — that file is the single source of truth and is bundled by this skill. The card renderer and the lint tool both import from it.
 
-Terminal-state `success` packages must carry a `terminationMessage`, a `methodsTried[]` array of structured rows (`{method, hypothesis, gate, measured, verdict, evidencePath}`, verdict in `{pass, fail, inconclusive}`), and an `adoptionPath`; `fail` packages require the `terminationMessage` and `methodsTried[]`; brainstorm-`ABANDONED` requires `terminationMessage` only (`methodsTried` is forbidden for the brainstorm category). The learnings page (`<root>/learnings.html`, also bundled) is a derived view over `data/research-packages.js` that re-organizes those rows by contribution spine.
+Terminal-state `success` packages must carry a `terminationMessage`, a `methodsTried[]` array of structured rows (`{method, hypothesis, gate, measured, verdict, evidencePath}`, verdict in `{pass, fail, inconclusive}`), and an `adoptionPath`; `fail` packages require the `terminationMessage` and `methodsTried[]`. The learnings page (`<root>/learnings.html`, also bundled) is a derived view over `data/research-packages.js` that re-organizes those rows by contribution spine.
 
 The dashboard-wide consistency tool is `<root>/scripts/learnings_lint.py` (Python; reads the JS data files via the bundled `dump_packages.js` node helper):
 
@@ -110,7 +118,7 @@ The Stop Gate of any learnings-relevant turn requires `learnings_lint.py all` to
 
 ## Event-manifest applier (auto-propagation)
 
-`<root>/scripts/propagate_apply.py` is the dashboard-wide executor for inventory events. Read event manifests from `var/research/<pkg-id>/manifests/*.json`, apply the deterministic surface edits to `data/research-packages.js`, the package's `results.html`, and the package's `tracker.html`, then mark each manifest `.applied`. Dry-run by default; `--write` commits.
+`<root>/scripts/propagate_apply.py` is the dashboard-wide executor for inventory events. Read event manifests from `outputs/<pkg-id>/manifests/*.json`, apply the deterministic surface edits to `data/research-packages.js`, the package's `results.html`, and the package's `tracker.html`, then mark each manifest `.applied`. Dry-run by default; `--write` commits.
 
 Supported events (filenames are conventional, not enforced — the `event` key inside the JSON drives dispatch):
 
@@ -144,7 +152,7 @@ Each manifest is idempotent: a sibling `.applied` sidecar (`<manifest>.applied`)
 
 A companion helper `<root>/scripts/emit_verdict_manifest.py` parses a trainer chain log (`Candidate-expanded retrieval: {...}` dict line) and writes a `verdict_finalized` JSON shaped for `propagate_apply.py`. Call it from a launcher's chain-done block.
 
-For zero-prompt auto-apply at every Stop, wire the Claude Code Stop hook documented in [`references/stop-fact-propagation-hook.md`](references/stop-fact-propagation-hook.md). That hook also renders/checks `scope-projection.json/js` when `var/research/_scope/` changes.
+For zero-prompt auto-apply at every Stop, wire the Claude Code Stop hook documented in [`references/stop-fact-propagation-hook.md`](references/stop-fact-propagation-hook.md). That hook also renders/checks `scope-projection.json/js` when `outputs/_scope/` changes.
 
 ## Bundled resources
 

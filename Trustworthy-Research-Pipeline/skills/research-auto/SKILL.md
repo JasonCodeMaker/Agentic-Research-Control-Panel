@@ -29,9 +29,9 @@ and the direction is never marked acquitted unless the metric oracle clears the 
 | Scope SSOT lib | `lib/scope_ssot/__init__.py` |
 | Cite-check lib | `lib/cite_check/__init__.py` |
 | Verifier lib | `lib/verifier/__init__.py` |
-| Scope transition log | `var/research/_scope/transitions.jsonl` |
-| Triage queue | `var/research/_scope/triage.jsonl` |
-| Per-package audit log | `var/research/<pkg>/_actions.jsonl` |
+| Scope transition log | `outputs/_scope/transitions.jsonl` |
+| Triage queue | `outputs/_scope/triage.jsonl` |
+| Per-package audit log | `outputs/<pkg>/_actions.jsonl` |
 
 Import pattern: `sys.path.insert(0, "<pipeline-root>/lib"); import scope_ssot`.
 
@@ -72,7 +72,7 @@ skeleton.run(
     intent,            # str — the research question or direction hypothesis
     *,
     pkg_id,            # str — package id, e.g. "2026-06-03-demo"
-    runtime_root,      # str — path under var/research/<pkg>
+    runtime_root,      # str — path under outputs/<pkg>
     citations,         # list of {"id": str, "source": <file path on disk>}
     measured,          # float — the experiment metric value to check against the yardstick
 )
@@ -86,7 +86,7 @@ Writes on exit:
 - `<runtime_root>/paper.md` — the grounded IMRAD skeleton
 - `<runtime_root>/_scope/transitions.jsonl` — the skeleton's own transition log (Stage-1, per-run). The
   *shared* project scope log used by `research-op --op scope-transition` (and read by `research-scope` /
-  `research-reflect`) is `var/research/_scope/transitions.jsonl`; pass `runtime_root=var/research` if you
+  `research-reflect`) is `outputs/_scope/transitions.jsonl`; pass `runtime_root=outputs` if you
   want the skeleton to append to that shared log instead.
 
 Runnable example:
@@ -98,7 +98,7 @@ import skeleton
 result = skeleton.run(
     'contrastive pretraining improves recall',
     pkg_id='2026-06-03-demo',
-    runtime_root='var/research/2026-06-03-demo',
+    runtime_root='outputs/2026-06-03-demo',
     citations=[{'id': 'smith2024', 'source': 'docs/smith2024.txt'}],
     measured=0.86,
 )
@@ -140,7 +140,7 @@ reader is never left with a silent gap.
 
 1. **Load scope.** The direction node (with its yardstick) is the input you iterate — built by R1 /
    `research-scope`, or, for the skeleton, constructed by `skeleton.scope(intent, pkg_id)` and validated
-   by the gated writer. `scope_ssot.read_log("var/research/_scope/transitions.jsonl")` +
+   by the gated writer. `scope_ssot.read_log("outputs/_scope/transitions.jsonl")` +
    `scope_ssot.history(node_id, records)` give the transition *timeline* (versions/ops), not the
    yardstick — read `node["yardstick"]` from the node itself. A `RuleViolation` from the gated writer
    means the yardstick is malformed; stop and surface it.
@@ -177,12 +177,12 @@ reader is never left with a silent gap.
 
 | Output | Location |
 | --- | --- |
-| Run record | `<runtime_root>/run.json` (e.g. `var/research/<pkg>/run.json`) |
+| Run record | `<runtime_root>/run.json` (e.g. `outputs/<pkg>/run.json`) |
 | Grounded paper skeleton | `<runtime_root>/paper.md` |
 | Skeleton transition log | `<runtime_root>/_scope/transitions.jsonl` (Stage-1, per-run) |
-| Shared scope log | `var/research/_scope/transitions.jsonl` (written by research-op `--op scope-transition`) |
-| Per-package audit line | `var/research/<pkg>/_actions.jsonl` (written by research-op) |
-| PACK bundle (Async/Autonomous) | `var/research/<pkg>/_pack.jsonl` (or caller-supplied path) |
+| Shared scope log | `outputs/_scope/transitions.jsonl` (written by research-op `--op scope-transition`) |
+| Per-package audit line | `outputs/<pkg>/_actions.jsonl` (written by research-op) |
+| PACK bundle (Async/Autonomous) | `outputs/<pkg>/_pack.jsonl` (or caller-supplied path) |
 
 The orchestrator writes nothing directly to package HTML surfaces — those go through research-op.
 

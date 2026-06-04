@@ -53,7 +53,7 @@ def _project_node():
 
 
 def _write_direction_log(tmp_path, node=None):
-    log = tmp_path / "var" / "research" / "_scope" / "transitions.jsonl"
+    log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
     rec = scope_ssot.propose_transition(
         node or _direction_node(),
         op="create",
@@ -126,10 +126,36 @@ def test_materializes_committed_direction_as_package(tmp_path, monkeypatch):
     assert 'primaryMetricVsGate: "Recall@1 vs Recall@1 >= 48"' in inventory
 
 
+def test_conversion_consumes_brainstorms_and_writes_provenance(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    root = _dashboard(tmp_path)
+    (root / "data" / "brainstorms.js").write_text(
+        'window.BRAINSTORMS = [{"id":"bs-1","title":"Idea one","idea":"first"},'
+        '{"id":"bs-2","title":"Idea two","idea":"second"},'
+        '{"id":"bs-3","title":"Keep me","idea":"third"}];\n', encoding="utf-8")
+    log, _ = _write_direction_log(tmp_path)
+    _write_milestones(log)
+
+    rc = create_from_scope.main([
+        "--direction-id", "dir/retrieval-v2",
+        "--id", "2026-06-03-retrieval-v2",
+        "--transitions", str(log),
+        "--source-brainstorms", '["bs-1","bs-2"]',
+    ])
+
+    assert rc == 0
+    prov = (root / "packages" / "2026-06-03-retrieval-v2" / "brainstorm.html").read_text(encoding="utf-8")
+    assert "Idea one" in prov and "Idea two" in prov
+    # consumed ideas are gone from the lane store; the unrelated one remains
+    remaining = (root / "data" / "brainstorms.js").read_text(encoding="utf-8")
+    assert "bs-1" not in remaining and "bs-2" not in remaining
+    assert "bs-3" in remaining
+
+
 def test_pending_triage_without_committed_transition_cannot_materialize(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _dashboard(tmp_path)
-    triage = tmp_path / "var" / "research" / "_scope" / "triage.jsonl"
+    triage = tmp_path / "outputs" / "_scope" / "triage.jsonl"
     triage.parent.mkdir(parents=True)
     triage.write_text('{"id":"t1","level":"direction","status":"pending"}\n', encoding="utf-8")
 
@@ -160,7 +186,7 @@ def test_committed_direction_without_milestones_cannot_materialize(tmp_path, mon
 def test_non_direction_node_rejected(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _dashboard(tmp_path)
-    log = tmp_path / "var" / "research" / "_scope" / "transitions.jsonl"
+    log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
     scope_ssot.propose_transition(_project_node(), op="create", gate="user", log_path=log)
 
     with pytest.raises(SystemExit, match="level='project'"):

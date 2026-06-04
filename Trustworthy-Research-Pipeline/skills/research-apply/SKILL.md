@@ -1,6 +1,6 @@
 ---
 name: research-apply
-description: "S4 self-learning APPLIER — human-gated. Use only when a human chooses to land a staged research-reflect proposal. Landing requires BOTH a distinct human action (a non-empty human token) AND a clearing jury verdict (sound); an ungated/auto invocation is refused. The proposer (research-reflect) is never the applier — this is the privilege split that stops the loop from rewriting away its own constraints. Edits the project rules only, never the universal protocols/skills/validators. Never invokes git. Trigger phrases: 'land the proposal', 'apply the staged rule', 'approve and apply' — any human-approval phrase paired with a pending proposal under var/research/.../pending/."
+description: "S4 self-learning APPLIER — human-gated. Use only when a human chooses to land a staged research-reflect proposal. Landing requires BOTH a distinct human action (a non-empty human token) AND a clearing jury verdict (sound); an ungated/auto invocation is refused. The proposer (research-reflect) is never the applier — this is the privilege split that stops the loop from rewriting away its own constraints. Edits the project rules only, never the universal protocols/skills/validators. Never invokes git. Trigger phrases: 'land the proposal', 'apply the staged rule', 'approve and apply' — any human-approval phrase paired with a pending proposal under outputs/.../pending/."
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
 context: fork
 disable-model-invocation: false
@@ -20,8 +20,8 @@ Pipeline root: `/home/uqzzha35/Project/Trustworthy-Research-Pipeline/Trustworthy
 |---|---|
 | Bundled CLI | `<pipeline-root>/skills/research-apply/scripts/apply.py` |
 | Verifier lib | `<pipeline-root>/lib/verifier/__init__.py` |
-| Pending proposals | `var/research/<pkg>/pending/<pid>/` |
-| Learned rules file | `var/research/_learned/rules.md` (or user-designated path) |
+| Pending proposals | `outputs/<pkg>/pending/<pid>/` |
+| Learned rules file | `outputs/_learned/rules.md` (or user-designated path) |
 
 Import pattern for the verifier:
 ```python
@@ -35,10 +35,10 @@ import verifier
 Full CLI invocation:
 ```bash
 python3 skills/research-apply/scripts/apply.py \
-  --proposal-dir var/research/<pkg>/pending/<pid>/ \
+  --proposal-dir outputs/<pkg>/pending/<pid>/ \
   --human-token "<verbatim approval text>" \
   --jury-verdict sound \
-  --rules-path var/research/_learned/rules.md
+  --rules-path outputs/_learned/rules.md
 ```
 
 ## Procedure
@@ -49,7 +49,7 @@ The human token is the literal text of the user's approval message in this conve
 
 **2. Locate the pending proposal.**
 
-Find the proposal directory at `var/research/<pkg>/pending/<pid>/`. If none exists, report "no pending proposal found" and stop.
+Find the proposal directory at `outputs/<pkg>/pending/<pid>/`. If none exists, report "no pending proposal found" and stop.
 
 **3. Obtain and validate the jury verdict.**
 
@@ -69,10 +69,10 @@ itself and raises `ValueError` on a non-clearing verdict, so nothing can land on
 
 ```bash
 python3 skills/research-apply/scripts/apply.py \
-  --proposal-dir var/research/<pkg>/pending/<pid>/ \
+  --proposal-dir outputs/<pkg>/pending/<pid>/ \
   --human-token "<verbatim approval text>" \
   --jury-verdict sound \
-  --rules-path var/research/_learned/rules.md
+  --rules-path outputs/_learned/rules.md
 ```
 
 `apply.py` appends the proposal's `suggested_diff` as a bullet to `rules-path`, then marks the proposal `status=landed` and records `landed_by=<human token>` **inside `proposal.json`** (it does not write a separate status file or audit log).
@@ -80,10 +80,10 @@ python3 skills/research-apply/scripts/apply.py \
 Example for package `2026-06-03-self-learning`, proposal `p001`:
 ```bash
 python3 skills/research-apply/scripts/apply.py \
-  --proposal-dir var/research/2026-06-03-self-learning/pending/p001/ \
+  --proposal-dir outputs/2026-06-03-self-learning/pending/p001/ \
   --human-token "Approved — land it" \
   --jury-verdict sound \
-  --rules-path var/research/_learned/rules.md
+  --rules-path outputs/_learned/rules.md
 ```
 
 **5. Report the result.**
@@ -97,8 +97,8 @@ After a successful run, report:
 
 | What | Where |
 |---|---|
-| Updated project rules | `var/research/_learned/rules.md` (or user-designated `--rules-path`) — one appended bullet |
-| Proposal status + approver | `status=landed` and `landed_by=<human token>`, both written inside `var/research/<pkg>/pending/<pid>/proposal.json` |
+| Updated project rules | `outputs/_learned/rules.md` (or user-designated `--rules-path`) — one appended bullet |
+| Proposal status + approver | `status=landed` and `landed_by=<human token>`, both written inside `outputs/<pkg>/pending/<pid>/proposal.json` |
 
 No package surface HTML is written by this skill. If the landed rule should be reflected in a package surface, route that separately through research-op.
 

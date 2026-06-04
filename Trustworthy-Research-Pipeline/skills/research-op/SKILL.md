@@ -1,6 +1,6 @@
 ---
 name: research-op
-description: "The single mutation surface for any existing research package. Use whenever the user types /research-op, asks to insert/update/delete a row/card/section in a package (methodsTried, result-gate, result block, tracker row, doc card, doc file, brainstorm section), asks to update an inventory field (status, activeGate, primaryMetricVsGate, lastAction, terminationMessage, adoptionPath), asks to check/lint a package, asks to fan out an artifact event (chain-done, checkpoint-saved, sentinel-write, phase-marker, candidate-json). Also use for ad-hoc natural-language fixes like 'set status of <pkg> to BLOCKED'. Project-agnostic. Hard requirement: target package must exist (run /research-package first). Init is owned by /research-package and /research-dashboard, not this skill. Every write goes through a (category, status, op, target) state gate plus per-target invariant validators; on reject no bytes hit disk and the agent receives a structured rule violation. Every successful or rejected op appends one JSONL line to var/research/<pkg>/_actions.jsonl. Never invokes git."
+description: "The single mutation surface for any existing research package. Use whenever the user types /research-op, asks to insert/update/delete a row/card/section in a package (methodsTried, result-gate, result block, tracker row, doc card, doc file), asks to update an inventory field (status, activeGate, primaryMetricVsGate, lastAction, terminationMessage, adoptionPath), asks to check/lint a package, asks to fan out an artifact event (chain-done, checkpoint-saved, sentinel-write, phase-marker, candidate-json). Also use for ad-hoc natural-language fixes like 'set status of <pkg> to BLOCKED'. Project-agnostic. Hard requirement: target package must exist (run /research-package first). Init is owned by /research-package and /research-dashboard, not this skill. Every write goes through a (category, status, op, target) state gate plus per-target invariant validators; on reject no bytes hit disk and the agent receives a structured rule violation. Every successful or rejected op appends one JSONL line to outputs/<pkg>/_actions.jsonl. Never invokes git."
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
 context: fork
 disable-model-invocation: false
@@ -45,7 +45,7 @@ python skills/research-op/scripts/research_op.py --nl 'update: set status of 202
 | --- | --- |
 | Package exists | `test -f research_html/packages/<id>/index.html` |
 | Inventory entry exists | `grep -q "id: '<id>'" research_html/data/research-packages.js` |
-| Runtime root resolved | `RESEARCH_RUNTIME_ROOT` env or default `var/research/<id>/` exists |
+| Runtime root resolved | `RESEARCH_RUNTIME_ROOT` env or default `outputs/<id>/` exists |
 
 ## Op surface
 
@@ -54,7 +54,7 @@ Primitives: `insert · update · delete · check`. Composite events: `chain-done
 Two ops live outside the `(category, status)` matrix:
 
 - `scan-events` — read-only artifact scan (no state-gate, no validation) that lists newly-locked facts for the per-turn propagation cycle.
-- `scope-transition` — the one gated writer for the Scope SSOT, used by `research-scope` / `research-auto`. It is gated by the node **level** (project / direction / task), *not* the package state machine, and appends one transition to `var/research/_scope/transitions.jsonl`. The payload carries the node fields (`id, level, parents, version, status, yardstick, provenance`) plus the transition meta (`op, gate, trigger, cause, invalidates, reopens, dial_revert`).
+- `scope-transition` — the one gated writer for the Scope SSOT, used by `research-scope` / `research-auto`. It is gated by the node **level** (project / direction / task), *not* the package state machine, and appends one transition to `outputs/_scope/transitions.jsonl`. The payload carries the node fields (`id, level, parents, version, status, yardstick, provenance`) plus the transition meta (`op, gate, trigger, cause, invalidates, reopens, dial_revert`).
 
 ## Validate-before-write contract
 
@@ -66,7 +66,7 @@ Read the structured envelope. The `suggested_fix` field tells you how to adjust 
 
 ## Audit log
 
-Path: `var/research/<pkg>/_actions.jsonl`. One JSONL line per op invocation (success or reject). Verbatim payload included. Never tracked in git. `tail -f` is the live-observability surface; `grep '"validation": "rejected"'` is the agent-stuck debug surface.
+Path: `outputs/<pkg>/_actions.jsonl`. One JSONL line per op invocation (success or reject). Verbatim payload included. Never tracked in git. `tail -f` is the live-observability surface; `grep '"validation": "rejected"'` is the agent-stuck debug surface.
 
 ## Single-home invariants this skill protects
 

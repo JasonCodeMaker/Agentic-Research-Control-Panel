@@ -286,28 +286,6 @@ def insert_doc_file(pkg: str, payload: dict) -> list[str]:
     return [str(doc_path)] + card_files
 
 
-def insert_brainstorm_section(pkg: str, payload: dict) -> list[str]:
-    """Append a <section> to brainstorm.html before </main> or </body>."""
-    path = Path(f"research_html/packages/{pkg}/brainstorm.html")
-    text = path.read_text()
-    slug = payload.get("slug", "")
-    title = payload.get("title", "")
-    body = payload.get("body", "")
-    section_html = (
-        f'\n    <section id="{slug}">\n'
-        f'      <h3>{title}</h3>\n'
-        f'      {body}\n'
-        f'    </section>'
-    )
-    if "</main>" in text:
-        new = text.replace("</main>", section_html + "\n  </main>", 1)
-    else:
-        new = text.replace("</body>", section_html + "\n</body>", 1)
-    path.write_text(new)
-    _bump_last_updated(path)
-    return [str(path)]
-
-
 def insert_tracker_chosen_route(pkg: str, payload: dict) -> list[str]:
     """Replace inner HTML of <section data-section="chosen-route"> in tracker.html."""
     path = Path(f"research_html/packages/{pkg}/tracker.html")
@@ -344,7 +322,6 @@ _DISPATCH = {
     "analysis-insight":                insert_analysis_insight,
     "doc-file":                        insert_doc_file,
     "doc-card":                        insert_doc_card,
-    "brainstorm-section":              insert_brainstorm_section,
     "tracker-chosen-route":            insert_tracker_chosen_route,
 }
 

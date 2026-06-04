@@ -38,7 +38,7 @@ Three patterns dominate and compose:
 |---|---|---|
 | **A — Conditional-edge transition table** | LangGraph (`add_conditional_edges` + state schema) | Encode legal `(category, status, op, target)` 4-tuples as a static Python dict; illegal combinations are unreachable by construction. The 18-cell `(category, status)` machine becomes a literal table in `scripts/transitions.py`. |
 | **B — Reject-before-write with structured observation** | SWE-agent ACI (the paper's central reliability claim) | Move `learnings_lint.py` checks from Stop-Gate (post-turn) to write-time (pre-write). On reject, return `{rule, field, expected, actual, suggested-fix}`. No bytes hit disk. Agent retries with rule visible. Stop-Gate stays as defense-in-depth. |
-| **C — Per-op git commit audit log** | Aider | **REJECTED.** The user opted out of git-tracking for per-package files. Replaced by a local append-only `var/research/<pkg>/_actions.jsonl`. |
+| **C — Per-op git commit audit log** | Aider | **REJECTED.** The user opted out of git-tracking for per-package files. Replaced by a local append-only `outputs/<pkg>/_actions.jsonl`. |
 
 Strong anti-pattern from the survey: do not store agent state in pickle blobs (Agent Laboratory's failure mode). Plain JSON / JS / HTML on disk is already correct in this project; this spec keeps it that way.
 
@@ -158,7 +158,7 @@ skills/research-op/
     ├── events.py                     # 5 composite events as {event: [(op, target), ...]} dicts. <150 lines.
     ├── validate.py                   # Pattern B reject-before-write checks. Wraps learnings_lint subset. <400 lines.
     ├── router.py                     # Looks up (category, status, op, target) in transitions; dispatches. <150 lines.
-    ├── audit.py                      # Appends to var/research/<pkg>/_actions.jsonl. <80 lines.
+    ├── audit.py                      # Appends to outputs/<pkg>/_actions.jsonl. <80 lines.
     ├── scan_events.py                # Replaces propagate_facts.py role 1: artifact mtime scanner. <200 lines.
     └── ops/
         ├── insert.py                 # Per-op handlers; each <250 lines.
@@ -235,7 +235,7 @@ Body section budget (target: ≤ 150 lines):
 5. Run pre-write validators from `validate.py` against the payload → legal or `RejectInvariantViolation` with `{rule, field, suggested-fix}`.
 6. Apply the write (inventory edit for inventory targets; in-place anchor edit for non-painted sections; new-file write for `docs/<slug>.html`).
 7. Bump `<time data-field="last-updated">` on every touched HTML file.
-8. Append one line to `var/research/<pkg>/_actions.jsonl`.
+8. Append one line to `outputs/<pkg>/_actions.jsonl`.
 9. Return a one-line success summary to the main agent (forked context discards the rest).
 
 On any reject (steps 4 or 5), **no bytes hit disk.** The reject envelope is the structured observation `{phase, rule, file, anchor, field, expected, actual, suggested_fix}` from SWE-agent's Pattern B.
@@ -306,9 +306,9 @@ The peer-framework survey recommended per-op git commits (Aider's pattern) as th
 
 ### 7.2 Location and format
 
-**Location:** `var/research/<pkg>/_actions.jsonl`
+**Location:** `outputs/<pkg>/_actions.jsonl`
 
-- Under `var/research/...` so it is **not git-tracked** (matches CLAUDE.md's existing rule).
+- Under `outputs/...` so it is **not git-tracked** (matches CLAUDE.md's existing rule).
 - Per-package so `tail -f` works without grep gymnastics.
 - Append-only JSONL — easy to parse, easy to grep, no schema migration needed if a field changes.
 - Goes with the runtime root when the package archives.
@@ -343,7 +343,7 @@ The peer-framework survey recommended per-op git commits (Aider's pattern) as th
 
 ### 7.3 What the audit log makes possible
 
-1. `tail -f var/research/<pkg>/_actions.jsonl` — live observability of every op the agent attempts.
+1. `tail -f outputs/<pkg>/_actions.jsonl` — live observability of every op the agent attempts.
 2. `grep '"validation": "rejected"' _actions.jsonl | tail -20` — see the agent's recent reject pattern; diagnose stuck loops in seconds.
 3. Per-event `files_touched` list — verify Fact Propagation Contract atomicity post-hoc.
 4. The 10-min `§5 status line` (one line per open exp) becomes auto-derivable from the most-recent `EXPERIMENT_RUNNING` event entry.
@@ -435,8 +435,8 @@ Most attributes already exist (`data-ack`, `data-ack-value`, `data-section`, `da
 | `skills/research-op/SKILL.md` | NEW — ~150-line thin contract |
 | `skills/research-op/references/*` | NEW — 4 reference docs (matrix, composite-events, validate-rules, state-machine) |
 | `skills/research-op/scripts/*` | NEW — 9 Python modules (CLI + dispatcher + matrix + events + validate + router + audit + scan_events + 4 op handlers) |
-| `var/research/<pkg>/_actions.jsonl` | NEW per-package — local audit log, append-only |
-| `var/research/<pkg>/manifests/.propagation_cursor` | EXISTING — kept; ownership transfers to `scan_events.py` |
+| `outputs/<pkg>/_actions.jsonl` | NEW per-package — local audit log, append-only |
+| `outputs/<pkg>/manifests/.propagation_cursor` | EXISTING — kept; ownership transfers to `scan_events.py` |
 | `WORKFLOW.md` — new Mutation rule paragraph | EDIT — 1 paragraph added |
 | `CLAUDE.md` — Protocol 3 (Fact Propagation Contract) updates | EDIT — replace `propagate_facts.py` references with `/research-op scan-events` and `/research-op event` |
 | Per-package `scripts/propagate_facts.py` byte-copy | REMOVE — superseded by `research-op` |
@@ -478,7 +478,7 @@ Deferred items captured for the writing-plans / implementation phase:
 | M5 | Update `research-package` SKILL.md: replace "Fact Propagation Contract" mechanical-check section with "delegates to `/research-op scan-events`" | rollout | 1 file |
 | M6 | Update `research-analysis` SKILL.md to delegate writes to `research-op` | rollout | 1 file |
 | M7 | Update `package-template.html` / `next-action` migration from companion spec | follow-on | shared with companion spec migration |
-| M8 | Add per-package `var/research/<pkg>/_actions.jsonl` log files for already-existing packages (initial empty) | rollout | ~7 packages |
+| M8 | Add per-package `outputs/<pkg>/_actions.jsonl` log files for already-existing packages (initial empty) | rollout | ~7 packages |
 | M9 | Add `_actions.jsonl` to `.gitignore` if not already covered by `var/` | rollout | 1 file |
 
 ---

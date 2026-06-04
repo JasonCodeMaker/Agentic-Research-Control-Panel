@@ -118,20 +118,6 @@ def delete_doc_file(pkg: str, payload: dict) -> list[str]:
     return [str(doc_path)] + card_files
 
 
-def delete_brainstorm_section(pkg: str, payload: dict) -> list[str]:
-    """Remove <section id="<slug>">...</section> from brainstorm.html."""
-    slug = re.escape(payload["slug"])
-    path = Path(f"research_html/packages/{pkg}/brainstorm.html")
-    text = path.read_text()
-    section_pat = re.compile(
-        r'<section[^>]*id="' + slug + r'"[^>]*>.*?</section>', re.DOTALL,
-    )
-    new = section_pat.sub("", text, count=1)
-    path.write_text(new)
-    _bump_last_updated(path)
-    return [str(path)]
-
-
 _DISPATCH = {
     "experiments-row":        delete_experiments_row,
     "tracker-live-check-row": delete_tracker_live_check_row,
@@ -139,7 +125,6 @@ _DISPATCH = {
     "methodsTried":           delete_methodstried,
     "doc-file":               delete_doc_file,
     "doc-card":               delete_doc_card,
-    "brainstorm-section":     delete_brainstorm_section,
 }
 
 

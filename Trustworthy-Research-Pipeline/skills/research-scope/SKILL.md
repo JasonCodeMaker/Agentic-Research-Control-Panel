@@ -12,6 +12,11 @@ The agent proposes; the PM disposes. This separation is how "user-monitored" and
 the Scope SSOT is never mutated by agent action alone — every write is either a user-committed
 `scope-transition` (accepted Triage item) or rejected with the SSOT left untouched.
 
+> If the user has only a vague idea and cannot yet state a clear Direction yardstick
+> (`hypothesis / metric / baselines / success_predicate`), use **`/research-brainstorm`** first — it shapes
+> the idea into pre-package brainstorms and converges them into a Direction proposal. Use this skill
+> directly when the Direction is already clear.
+
 ## Resources
 
 **Pipeline root:** `/home/uqzzha35/Project/Trustworthy-Research-Pipeline/Trustworthy-Research-Pipeline`
@@ -20,8 +25,8 @@ the Scope SSOT is never mutated by agent action alone — every write is either 
 |---|---|
 | Scope SSOT lib | `<pipeline-root>/lib/scope_ssot/__init__.py` |
 | Triage CLI | `<pipeline-root>/skills/research-scope/scripts/triage.py` |
-| Transition log (SSOT commits) | `var/research/_scope/transitions.jsonl` |
-| Triage queue (pending/disposed) | `var/research/_scope/triage.jsonl` |
+| Transition log (SSOT commits) | `outputs/_scope/transitions.jsonl` |
+| Triage queue (pending/disposed) | `outputs/_scope/triage.jsonl` |
 | research-op entrypoint | `<pipeline-root>/skills/research-op/scripts/research_op.py` |
 | Milestone planner | `<pipeline-root>/skills/research-scope/scripts/plan_milestones.py` |
 | Direction→package materializer | `<pipeline-root>/skills/research-package/scripts/create_from_scope.py` |
@@ -37,16 +42,16 @@ Triage CLI commands:
 ```bash
 # Propose a scope change (agent path)
 python3 skills/research-scope/scripts/triage.py propose \
-    --log var/research/_scope/triage.jsonl \
+    --log outputs/_scope/triage.jsonl \
     --item '<json>'
 
 # List pending items (agent or human inspection)
 python3 skills/research-scope/scripts/triage.py pending \
-    --log var/research/_scope/triage.jsonl
+    --log outputs/_scope/triage.jsonl
 
 # Dispose an item — accept or reject (human PM path)
 python3 skills/research-scope/scripts/triage.py dispose \
-    --log var/research/_scope/triage.jsonl \
+    --log outputs/_scope/triage.jsonl \
     --id <item-id> \
     --decision accept|reject
 ```
@@ -98,7 +103,7 @@ Required gate per level — the `gate` field passed to `scope_ssot.propose_trans
 
 ```python
 import sys; sys.path.insert(0, "<pipeline-root>/lib"); import scope_ssot
-records = scope_ssot.read_log("var/research/_scope/transitions.jsonl")
+records = scope_ssot.read_log("outputs/_scope/transitions.jsonl")
 history = scope_ssot.history("<node-id>", records)  # [] if new node
 ```
 
@@ -145,7 +150,7 @@ If the user answers no or later, leave `post_accept_actions` empty. Never create
 
 ```bash
 python3 skills/research-scope/scripts/triage.py propose \
-    --log var/research/_scope/triage.jsonl \
+    --log outputs/_scope/triage.jsonl \
     --item '{"id":"scope-001","level":"direction","change":"...","rationale":"...","proposed_yardstick":{...}}'
 ```
 
@@ -153,7 +158,7 @@ python3 skills/research-scope/scripts/triage.py propose \
 
 ```bash
 python3 skills/research-scope/scripts/triage.py pending \
-    --log var/research/_scope/triage.jsonl
+    --log outputs/_scope/triage.jsonl
 ```
 
 Display the pending list. Do not proceed further. The agent's work ends here — scope commitment is the human PM's decision.
@@ -162,7 +167,7 @@ Display the pending list. Do not proceed further. The agent's work ends here —
 
 1. PM runs `triage.py dispose --decision accept`.
 2. PM commits via `research-op --op scope-transition` with gate matching the node's level.
-3. The transition is appended to `var/research/_scope/transitions.jsonl`.
+3. The transition is appended to `outputs/_scope/transitions.jsonl`.
 4. If the accepted item has `post_accept_actions` containing `plan_validation_milestones`, ask one short confirmation: "Direction is now committed. Propose high-level validation milestones for it?" On yes, invoke `plan_milestones.py` with the committed direction node id. On no, stop and report that `plan_milestones.py --direction-id <direction-id>` can be run later.
 
 Milestone proposal command:
@@ -170,8 +175,8 @@ Milestone proposal command:
 ```bash
 python3 skills/research-scope/scripts/plan_milestones.py \
     --direction-id <direction-node-id> \
-    --transitions var/research/_scope/transitions.jsonl \
-    --triage var/research/_scope/triage.jsonl
+    --transitions outputs/_scope/transitions.jsonl \
+    --triage outputs/_scope/triage.jsonl
 ```
 
 After the PM accepts/revises those milestone proposals and commits each Task/Milestone node with `research-op --op scope-transition`, ask: "Milestones are now committed. Generate the research package from the Direction plus accepted milestones?" On yes, invoke the materializer:
@@ -180,7 +185,7 @@ After the PM accepts/revises those milestone proposals and commits each Task/Mil
 python3 skills/research-package/scripts/create_from_scope.py \
     --direction-id <direction-node-id> \
     --root research_html \
-    --transitions var/research/_scope/transitions.jsonl
+    --transitions outputs/_scope/transitions.jsonl
 ```
 
 **Human reject path:** PM runs `triage.py dispose --decision reject`. The item is archived in `triage.jsonl`; the SSOT is untouched.
@@ -189,7 +194,7 @@ Example — proposing a direction node:
 
 ```bash
 python3 skills/research-scope/scripts/triage.py propose \
-    --log var/research/_scope/triage.jsonl \
+    --log outputs/_scope/triage.jsonl \
     --item '{
       "id": "dir-retrieval-v2",
       "level": "direction",
@@ -209,9 +214,9 @@ python3 skills/research-scope/scripts/triage.py propose \
 
 | Path | Written by | Contents |
 |---|---|---|
-| `var/research/_scope/triage.jsonl` | Agent (propose) + PM (dispose) | Pending and disposed Triage items, including optional post-accept milestone-planning intent, one JSON object per line |
-| `var/research/_scope/transitions.jsonl` | PM only (via research-op scope-transition) | Committed scope transitions, one JSON object per line |
-| `var/research/<pkg>/_actions.jsonl` | research-op | Audit line for every scope-transition op |
+| `outputs/_scope/triage.jsonl` | Agent (propose) + PM (dispose) | Pending and disposed Triage items, including optional post-accept milestone-planning intent, one JSON object per line |
+| `outputs/_scope/transitions.jsonl` | PM only (via research-op scope-transition) | Committed scope transitions, one JSON object per line |
+| `outputs/<pkg>/_actions.jsonl` | research-op | Audit line for every scope-transition op |
 
 The agent appends to `triage.jsonl` only. It never writes to `transitions.jsonl` directly.
 

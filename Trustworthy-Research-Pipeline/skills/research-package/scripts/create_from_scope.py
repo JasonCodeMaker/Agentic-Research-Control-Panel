@@ -17,9 +17,44 @@ from pathlib import Path
 PIPELINE_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PIPELINE_ROOT / "lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(PIPELINE_ROOT / "skills" / "research-brainstorm" / "scripts"))
 
+import brainstorm  # noqa: E402
 import create_research_package  # noqa: E402
 import scope_ssot  # noqa: E402
+
+
+def _esc(value) -> str:
+    return (str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+
+
+def _write_brainstorm_provenance(root: Path, package_id: str, name: str, ideas: list[dict]) -> Path:
+    """Freeze the source brainstorm idea(s) a package was converted from as its brainstorm.html."""
+    cards = "\n".join(
+        '<article class="module-card"><h2>{title}</h2><p>{idea}</p>'
+        '<div class="kv-grid"><div class="k">Idea id</div><div>{bid}</div>{metric}</div></article>'.format(
+            title=_esc(i.get("title", i["id"])), idea=_esc(i.get("idea", "")), bid=_esc(i["id"]),
+            metric=('<div class="k">Rough metric</div><div>%s</div>' % _esc(i["rough_metric"]))
+            if i.get("rough_metric") else "")
+        for i in ideas)
+    html = (
+        '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="utf-8">\n'
+        '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f'  <title>{_esc(name)} - Brainstorm provenance</title>\n'
+        '  <link rel="stylesheet" href="../../assets/research.css">\n</head>\n'
+        f'<body data-page="brainstorm" data-package-id="{_esc(package_id)}">\n  <div class="shell">\n'
+        '    <header class="masthead" data-section="masthead">\n      <div class="eyebrow">brainstorm provenance</div>\n'
+        f'      <h1>Brainstorm &mdash; {_esc(name)}</h1>\n'
+        '      <p class="lead">Frozen record of the pre-package idea(s) this package was converted from. '
+        'These ideas left the brainstorm lane on conversion.</p>\n'
+        '      <div class="toolbar"><a class="pill" href="index.html">Overview</a></div>\n    </header>\n'
+        f'    <section data-section="source-ideas" id="source-ideas" aria-label="Source ideas">\n{cards}\n    </section>\n'
+        '  </div>\n</body>\n</html>\n'
+    )
+    path = root / "packages" / package_id / "brainstorm.html"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(html, encoding="utf-8")
+    return path
 
 
 def _slug_from_direction_id(direction_id: str) -> str:
@@ -91,7 +126,7 @@ def _experiment_rows(package_id: str, milestones: list[dict]) -> list[dict]:
             "id": exp_id,
             "purpose": purpose_by_suffix.get(suffix_key, "Validate milestone"),
             "after": [] if idx == 0 else [f"P{idx - 1}"],
-            "output": f"var/research/{package_id}/{exp_id}/result.json",
+            "output": f"outputs/{package_id}/{exp_id}/result.json",
             "gate": node["yardstick"]["gate_predicate"],
             "status": "pending",
             "docsAnchor": "docs/index.html",
@@ -113,7 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--direction-id", required=True,
                    help="committed SSOT direction node id, e.g. dir/retrieval-v2")
     p.add_argument("--root", default="research_html", help="research_html root")
-    p.add_argument("--transitions", default="var/research/_scope/transitions.jsonl",
+    p.add_argument("--transitions", default="outputs/_scope/transitions.jsonl",
                    help="committed Scope SSOT transition log")
     p.add_argument("--id", default="", help="package id; default YYYY-MM-DD-<direction-slug>")
     p.add_argument("--name", default="", help="package name; default derived from direction id")
@@ -135,6 +170,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--scope", default="index,plan,tracker,docs,_agent")
     p.add_argument("--status", default="CONTEXT_LOADED")
     p.add_argument("--contribution-spine-flag", default="", dest="contribution_spine_flag")
+    p.add_argument("--source-brainstorms", default="[]", dest="source_brainstorms",
+                   help="JSON list of brainstorm idea ids this package converts from; "
+                        "consumed (removed from the lane) and frozen into brainstorm.html provenance")
     p.add_argument("--force", action="store_true")
     return p
 
@@ -168,6 +206,11 @@ def main(argv: list[str] | None = None) -> int:
             "Run research-scope/scripts/plan_milestones.py and commit the accepted task nodes first."
         )
 
+    source_brainstorms = json.loads(args.source_brainstorms)
+    scope = args.scope
+    if source_brainstorms and "brainstorm" not in scope.split(","):
+        scope = scope + ",brainstorm"  # register the provenance sub-page in nav
+
     hypothesis = str(yardstick["hypothesis"])
     metric = _metric_label(yardstick["metric"])
     success_predicate = str(yardstick["success_predicate"])
@@ -195,7 +238,7 @@ def main(argv: list[str] | None = None) -> int:
         "--budget", args.budget,
         "--no-change-boundary", args.no_change_boundary,
         "--next-action", args.next_action,
-        "--scope", args.scope,
+        "--scope", scope,
         "--status", args.status,
         "--contribution-spine-flag", args.contribution_spine_flag,
         "--direction", hypothesis,
@@ -216,7 +259,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.force:
         create_args.append("--force")
 
-    return create_research_package.main(create_args)
+    pkg_name = args.name or direction_slug.replace("-", " ").title()
+    rc = create_research_package.main(create_args)
+    if rc == 0 and source_brainstorms:
+        ideas = brainstorm.consume_brainstorms(root, source_brainstorms)
+        _write_brainstorm_provenance(root, package_id, pkg_name, ideas)
+    return rc
 
 
 if __name__ == "__main__":

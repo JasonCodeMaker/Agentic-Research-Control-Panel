@@ -11,7 +11,10 @@ import string
 from pathlib import Path
 
 
-CATEGORIES = {"brainstorm", "in-progress", "success", "fail"}
+# Brainstorm is no longer a package category (pre-package ideas live on the
+# dashboard brainstorm lane). brainstorm.html survives only as a per-package
+# provenance sub-page, written at conversion by create_from_scope.
+CATEGORIES = {"in-progress", "success", "fail"}
 
 # Stage pages and their template paths (relative to research-package/templates/)
 # and emitted output paths (relative to packages/<id>/).
@@ -73,11 +76,6 @@ def parse_scope(raw: str, category: str) -> list[str]:
     for k in ALWAYS_PRESENT:
         if k not in keys:
             keys.append(k)
-    # Brainstorm only matters for brainstorm-category packages.
-    if category == "brainstorm" and "brainstorm" not in keys:
-        keys.append("brainstorm")
-    if category != "brainstorm" and "brainstorm" in keys:
-        keys.remove("brainstorm")
     # Validate.
     for k in keys:
         if k not in STAGE_PAGES:
@@ -252,15 +250,10 @@ def main(argv: list[str] | None = None) -> int:
         args.source_path = f"research/active/{package_id}/"
     if not args.artifact_root:
         args.artifact_root = f"artifacts/research/{package_id}/"
-    if args.category != "brainstorm":
-        if not args.hypothesis:
-            raise SystemExit("--hypothesis is required when --category is not brainstorm.")
-        if not args.primary_metric:
-            raise SystemExit("--primary-metric is required when --category is not brainstorm.")
     if not args.hypothesis:
-        args.hypothesis = "unmeasured"
+        raise SystemExit("--hypothesis is required.")
     if not args.primary_metric:
-        args.primary_metric = "unmeasured"
+        raise SystemExit("--primary-metric is required.")
 
     pages = parse_scope(args.scope, args.category)
     package_root = root / "packages" / package_id

@@ -4,7 +4,7 @@
 
 **Goal:** Build the `research-op` skill — a single agent-invokable mutation surface that enforces format invariance across all research packages via a (category, status, op, target) transition table and write-time validation, then migrate existing skills and packages to use it.
 
-**Architecture:** One Claude Code Skill at `skills/research-op/` with thin SKILL.md (≤ 150 lines, `context: fork`) backed by Python scripts. The scripts encode the 33-row legality matrix as data (`transitions.py`), enforce per-target invariants before any write (`validate.py`, the SWE-agent reject-before-write pattern), fan out composite artifact events to all owning surfaces atomically (`events.py`), and append a verbatim audit line per op to `var/research/<pkg>/_actions.jsonl`. No git operations. The four existing skills (`research-dashboard`, `research-package`, `research-analysis`, and the new `research-op`) compose layered: scaffold → editorial → mutation.
+**Architecture:** One Claude Code Skill at `skills/research-op/` with thin SKILL.md (≤ 150 lines, `context: fork`) backed by Python scripts. The scripts encode the 33-row legality matrix as data (`transitions.py`), enforce per-target invariants before any write (`validate.py`, the SWE-agent reject-before-write pattern), fan out composite artifact events to all owning surfaces atomically (`events.py`), and append a verbatim audit line per op to `outputs/<pkg>/_actions.jsonl`. No git operations. The four existing skills (`research-dashboard`, `research-package`, `research-analysis`, and the new `research-op`) compose layered: scaffold → editorial → mutation.
 
 **Tech Stack:** Python 3.10+ (stdlib only — argparse, json, pathlib, datetime, hashlib, re, sys), pytest for validator tests, Claude Code Skill format (YAML frontmatter + markdown body + `scripts/` + `references/`).
 
@@ -60,7 +60,7 @@ tests/research-op/
 ```
 WORKFLOW.md                                        # +1 Mutation rule paragraph; replace ~3 propagate_facts.py mentions
 CLAUDE.md (Trustworthy-Research-Pipeline/)         # replace ~5 propagate_facts.py mentions in Protocol 3
-.gitignore                                         # ensure var/research/ is excluded
+.gitignore                                         # ensure outputs/ is excluded
 skills/research-analysis/SKILL.md                  # +1 Boundary note; rewire 3 subcommands to delegate to research-op
 skills/research-package/SKILL.md                   # +1 Boundary note; remove propagate_facts.py byte-copy reference
 skills/research-package/scripts/create_research_package.py   # remove the propagate_facts.py copy step
@@ -100,7 +100,7 @@ Create `skills/research-op/SKILL.md`:
 ```markdown
 ---
 name: research-op
-description: "The single mutation surface for any existing research package. Use whenever the user types /research-op, asks to insert/update/delete a row/card/section in a package (methodsTried, result-gate, result block, tracker row, doc card, doc file, brainstorm section), asks to update an inventory field (status, activeGate, primaryMetricVsGate, lastAction, terminationMessage, adoptionPath), asks to check/lint a package, asks to fan out an artifact event (chain-done, checkpoint-saved, sentinel-write, phase-marker, candidate-json). Also use for ad-hoc natural-language fixes like 'set status of <pkg> to BLOCKED'. Project-agnostic. Hard requirement: target package must exist (run /research-package first). Init is owned by /research-package and /research-dashboard, not this skill. Every write goes through a (category, status, op, target) state gate plus per-target invariant validators; on reject no bytes hit disk and the agent receives a structured rule violation. Every successful or rejected op appends one JSONL line to var/research/<pkg>/_actions.jsonl. Never invokes git."
+description: "The single mutation surface for any existing research package. Use whenever the user types /research-op, asks to insert/update/delete a row/card/section in a package (methodsTried, result-gate, result block, tracker row, doc card, doc file, brainstorm section), asks to update an inventory field (status, activeGate, primaryMetricVsGate, lastAction, terminationMessage, adoptionPath), asks to check/lint a package, asks to fan out an artifact event (chain-done, checkpoint-saved, sentinel-write, phase-marker, candidate-json). Also use for ad-hoc natural-language fixes like 'set status of <pkg> to BLOCKED'. Project-agnostic. Hard requirement: target package must exist (run /research-package first). Init is owned by /research-package and /research-dashboard, not this skill. Every write goes through a (category, status, op, target) state gate plus per-target invariant validators; on reject no bytes hit disk and the agent receives a structured rule violation. Every successful or rejected op appends one JSONL line to outputs/<pkg>/_actions.jsonl. Never invokes git."
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
 context: fork
 disable-model-invocation: false
@@ -135,7 +135,7 @@ The skill body parses natural-language prose into the structured form, prints th
 | --- | --- |
 | Package exists | `test -f research_html/packages/<id>/index.html` |
 | Inventory entry exists | `grep -q "id: '<id>'" research_html/data/research-packages.js` |
-| Runtime root resolved | `RESEARCH_RUNTIME_ROOT` env or default `var/research/<id>/` exists |
+| Runtime root resolved | `RESEARCH_RUNTIME_ROOT` env or default `outputs/<id>/` exists |
 
 ## Op surface
 
@@ -151,7 +151,7 @@ Read the structured envelope. The `suggested_fix` field tells you how to adjust 
 
 ## Audit log
 
-Path: `var/research/<pkg>/_actions.jsonl`. One JSONL line per op invocation (success or reject). Verbatim payload included. Never tracked in git. `tail -f` is the live-observability surface; `grep '"validation": "rejected"'` is the agent-stuck debug surface.
+Path: `outputs/<pkg>/_actions.jsonl`. One JSONL line per op invocation (success or reject). Verbatim payload included. Never tracked in git. `tail -f` is the live-observability surface; `grep '"validation": "rejected"'` is the agent-stuck debug surface.
 
 ## Single-home invariants this skill protects
 
@@ -427,7 +427,7 @@ def runtime_root(pkg: str) -> Path:
     env = os.environ.get("RESEARCH_RUNTIME_ROOT")
     if env:
         return Path(env) / pkg
-    return Path("var/research") / pkg
+    return Path("outputs") / pkg
 
 
 def log_path(pkg: str) -> Path:
@@ -644,12 +644,12 @@ if __name__ == "__main__":
 python3 skills/research-op/scripts/research_op.py --pkg 2026-05-15-panda-baselines --op check
 ```
 
-Expected: prints `check OK pkg=2026-05-15-panda-baselines state=in-progress/<some-status>` and appends one line to `var/research/2026-05-15-panda-baselines/_actions.jsonl`.
+Expected: prints `check OK pkg=2026-05-15-panda-baselines state=in-progress/<some-status>` and appends one line to `outputs/2026-05-15-panda-baselines/_actions.jsonl`.
 
 - [ ] **Step 3: Verify audit log line**
 
 ```bash
-tail -1 var/research/2026-05-15-panda-baselines/_actions.jsonl | python3 -c 'import sys, json; e = json.loads(sys.stdin.read()); print(e["op"], e["validation"], e["state_before"])'
+tail -1 outputs/2026-05-15-panda-baselines/_actions.jsonl | python3 -c 'import sys, json; e = json.loads(sys.stdin.read()); print(e["op"], e["validation"], e["state_before"])'
 ```
 
 Expected: `check passed {'category': 'in-progress', 'status': '<...>'}`.
@@ -692,7 +692,7 @@ import pytest
 
 @pytest.fixture
 def tmp_package(tmp_path, monkeypatch):
-    """Build a minimal research_html/ + var/research/ tree in tmp_path."""
+    """Build a minimal research_html/ + outputs/ tree in tmp_path."""
     root = tmp_path / "research_html"
     (root / "packages" / "test-pkg").mkdir(parents=True)
     (root / "packages" / "test-pkg" / "index.html").write_text("<html></html>")
@@ -703,7 +703,7 @@ def tmp_package(tmp_path, monkeypatch):
         "];\n"
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("RESEARCH_RUNTIME_ROOT", str(tmp_path / "var" / "research"))
+    monkeypatch.setenv("RESEARCH_RUNTIME_ROOT", str(tmp_path / "outputs"))
     return tmp_path
 ```
 
@@ -730,7 +730,7 @@ def _run(args, cwd):
 def test_check_passes_on_legal_state(tmp_package):
     r = _run(["--pkg", "test-pkg", "--op", "check"], cwd=tmp_package)
     assert r.returncode == 0, r.stderr
-    log = tmp_package / "var" / "research" / "test-pkg" / "_actions.jsonl"
+    log = tmp_package / "outputs" / "test-pkg" / "_actions.jsonl"
     entry = json.loads(log.read_text().strip())
     assert entry["op"] == "check"
     assert entry["validation"] == "passed"
@@ -788,7 +788,7 @@ byte hits disk. Rule ids are the values that appear in the rejection envelope's
 ### Insert: methodsTried row (I2)
 - `methodstried-six-fields`: payload must have exactly `{method, hypothesis, gate, measured, verdict, evidencePath}`. Extra or missing keys reject.
 - `methodstried-verdict-enum`: `verdict ∈ {pass, fail, inconclusive}`.
-- `methodstried-evidence-resolves`: `evidencePath` is either a real file under `var/research/<pkg>/` or `output/`, or an HTML anchor `results.html#<exp-anchor>` that exists on disk.
+- `methodstried-evidence-resolves`: `evidencePath` is either a real file under `outputs/<pkg>/` or `output/`, or an HTML anchor `results.html#<exp-anchor>` that exists on disk.
 - `methodstried-source-row-exists`: the upstream `results.html` row at `evidencePath` exists with a verdict already finalized.
 
 ### Insert: results.html result-gate row (I6)
@@ -1933,7 +1933,7 @@ from time import time
 
 def runtime_root(pkg: str) -> Path:
     env = os.environ.get("RESEARCH_RUNTIME_ROOT")
-    return Path(env if env else "var/research") / pkg
+    return Path(env if env else "outputs") / pkg
 
 
 def cursor_path(pkg: str) -> Path:
@@ -2234,7 +2234,7 @@ git commit -m "research-package: stop shipping propagate_facts.py (absorbed by r
 
 ---
 
-### Task 4.6: Ensure `var/research/` is in .gitignore
+### Task 4.6: Ensure `outputs/` is in .gitignore
 
 **Files:**
 - Modify: `.gitignore`
@@ -2471,8 +2471,8 @@ Save the output. If `learnings_lint.py` reports errors, those are pre-existing i
 - [ ] **Step 2: Snapshot the audit log**
 
 ```bash
-wc -l var/research/2026-05-15-panda-baselines/_actions.jsonl
-cp var/research/2026-05-15-panda-baselines/_actions.jsonl /tmp/baseline-audit.jsonl
+wc -l outputs/2026-05-15-panda-baselines/_actions.jsonl
+cp outputs/2026-05-15-panda-baselines/_actions.jsonl /tmp/baseline-audit.jsonl
 ```
 
 ---
@@ -2496,7 +2496,7 @@ python3 skills/research-op/scripts/research_op.py \
 - [ ] **Step 3: Verify it landed in inventory + audit log**
 
 ```bash
-tail -1 var/research/2026-05-15-panda-baselines/_actions.jsonl | python3 -m json.tool
+tail -1 outputs/2026-05-15-panda-baselines/_actions.jsonl | python3 -m json.tool
 grep -c '"method"' research_html/data/research-packages.js
 ```
 
@@ -2543,7 +2543,7 @@ Expected: 0.
 - [ ] **Step 4: Verify both rejects are in the audit log**
 
 ```bash
-grep '"validation": "rejected"' var/research/2026-05-15-panda-baselines/_actions.jsonl | tail -2
+grep '"validation": "rejected"' outputs/2026-05-15-panda-baselines/_actions.jsonl | tail -2
 ```
 
 Expected: 2 lines (one per reject).
@@ -2555,8 +2555,8 @@ Expected: 2 lines (one per reject).
 - [ ] **Step 1: Create a dummy artifact under the runtime root**
 
 ```bash
-mkdir -p var/research/2026-05-15-panda-baselines/manifests
-echo "smoke" > var/research/2026-05-15-panda-baselines/manifests/smoke.txt
+mkdir -p outputs/2026-05-15-panda-baselines/manifests
+echo "smoke" > outputs/2026-05-15-panda-baselines/manifests/smoke.txt
 ```
 
 - [ ] **Step 2: Run scan-events**
@@ -2570,7 +2570,7 @@ Expected: prints one JSON line with `"event": "sentinel-write"` and the smoke.tx
 - [ ] **Step 3: Roll back**
 
 ```bash
-rm var/research/2026-05-15-panda-baselines/manifests/smoke.txt
+rm outputs/2026-05-15-panda-baselines/manifests/smoke.txt
 ```
 
 ---
@@ -2659,7 +2659,7 @@ Expected: exit 0.
 
 ```bash
 for pkg in $(ls research_html/packages/); do
-  if [ -f "var/research/$pkg/_actions.jsonl" ]; then
+  if [ -f "outputs/$pkg/_actions.jsonl" ]; then
     echo "OK $pkg"
   else
     echo "MISSING $pkg (run /research-op check --pkg $pkg once to seed)"

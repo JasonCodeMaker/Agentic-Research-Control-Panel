@@ -4,9 +4,10 @@ Generated from references/matrix.md (spec section 4). When you change a row in
 the matrix, change it here. The CLI looks up legality via is_legal().
 """
 
-# 18-cell (category, status) state machine — must match schema.js.
+# 14-cell (category, status) state machine — must match schema.js. Brainstorm is
+# no longer a package category: pre-package ideas live on the dashboard brainstorm
+# lane (data/brainstorms.js) and are not research-op surfaces.
 STATES = {
-    "brainstorm":  ["EXPLORING", "PILOT_READY", "PROMOTED", "ABANDONED"],
     "in-progress": ["CONTEXT_LOADED", "IMPLEMENTING", "IMPLEMENTATION_REVIEW",
                     "READY_TO_LAUNCH", "EXPERIMENT_RUNNING", "LIVE_ANALYSIS",
                     "RESULT_ANALYSIS", "NEXT_ACTION_READY", "BLOCKED"],
@@ -27,7 +28,6 @@ TARGETS = {
     "results-gate-row", "results-block", "results-verdict",
     "analysis-rule", "analysis-insight",
     "doc-file", "doc-card",
-    "brainstorm-section",
     "ack-slot",
     "last-updated-time",
 }
@@ -59,17 +59,8 @@ INSERT_LEGAL = {
     },
     "analysis-rule": {("in-progress", s) for s in STATES["in-progress"]},
     "analysis-insight": {("in-progress", s) for s in STATES["in-progress"]},
-    "doc-file": (
-        {("brainstorm", s)  for s in STATES["brainstorm"]}
-        | {("in-progress", s) for s in STATES["in-progress"]}
-    ),
-    "doc-card": (
-        {("brainstorm", s)  for s in STATES["brainstorm"]}
-        | {("in-progress", s) for s in STATES["in-progress"]}
-    ),
-    "brainstorm-section": {
-        ("brainstorm", s) for s in ("EXPLORING", "PILOT_READY")
-    },
+    "doc-file": {("in-progress", s) for s in STATES["in-progress"]},
+    "doc-card": {("in-progress", s) for s in STATES["in-progress"]},
     "tracker-chosen-route": {("in-progress", "NEXT_ACTION_READY")},
 }
 
@@ -104,9 +95,8 @@ DELETE_LEGAL = {
     "tracker-live-check-row":    {("in-progress", s) for s in STATES["in-progress"]},
     "tracker-impl-review-row":   {("in-progress", "IMPLEMENTING")},
     "methodsTried":              {("in-progress", s) for s in STATES["in-progress"]},
-    "doc-file":                  {("brainstorm", s) for s in STATES["brainstorm"]} | {("in-progress", s) for s in STATES["in-progress"]},
-    "doc-card":                  {("brainstorm", s) for s in STATES["brainstorm"]} | {("in-progress", s) for s in STATES["in-progress"]},
-    "brainstorm-section":        {("brainstorm", s) for s in ("EXPLORING", "PILOT_READY")},
+    "doc-file":                  {("in-progress", s) for s in STATES["in-progress"]},
+    "doc-card":                  {("in-progress", s) for s in STATES["in-progress"]},
     # results-block and inventory-entry are intentionally never legal — see spec D7, D8.
 }
 

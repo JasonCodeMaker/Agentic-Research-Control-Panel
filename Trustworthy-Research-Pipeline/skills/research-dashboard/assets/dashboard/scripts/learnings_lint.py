@@ -33,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DASHBOARD_ROOT = REPO_ROOT / "research_html"
 PACKAGES_DIR = DASHBOARD_ROOT / "packages"
 DUMP_SCRIPT = DASHBOARD_ROOT / "scripts" / "dump_packages.js"
-SCOPE_LOG = REPO_ROOT / "var" / "research" / "_scope" / "transitions.jsonl"
+SCOPE_LOG = REPO_ROOT / "outputs" / "_scope" / "transitions.jsonl"
 
 VERDICTS = {"pass", "fail", "inconclusive"}
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")

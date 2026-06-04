@@ -40,23 +40,6 @@ def test_verdict_enum_rejects_others():
         assert rej.rule == "methodstried-verdict-enum"
 
 
-def test_brainstorm_section_rejects_non_brainstorm_category():
-    rej = validate.rule_brainstorm_category_only(
-        "pkg", "insert", "brainstorm-section", {},
-        state={"category": "in-progress", "status": "CONTEXT_LOADED"},
-    )
-    assert rej is not None
-    assert rej.rule == "brainstorm-category-only"
-
-
-def test_brainstorm_section_accepts_brainstorm_category():
-    rej = validate.rule_brainstorm_category_only(
-        "pkg", "insert", "brainstorm-section", {},
-        state={"category": "brainstorm", "status": "EXPLORING"},
-    )
-    assert rej is None
-
-
 def test_payload_json_valid_accepts_valid_json():
     assert validate.rule_payload_json_valid("pkg", "insert", "methodsTried", '{"a":1}') is None
 

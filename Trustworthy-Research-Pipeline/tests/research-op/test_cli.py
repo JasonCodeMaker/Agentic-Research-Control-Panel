@@ -16,7 +16,7 @@ def _run(args, cwd):
 def test_check_passes_on_legal_state(tmp_package):
     r = _run(["--pkg", "test-pkg", "--op", "check"], cwd=tmp_package)
     assert r.returncode == 0, r.stderr
-    log = tmp_package / "var" / "research" / "test-pkg" / "_actions.jsonl"
+    log = tmp_package / "outputs" / "test-pkg" / "_actions.jsonl"
     entry = json.loads(log.read_text().strip())
     assert entry["op"] == "check"
     assert entry["validation"] == "passed"

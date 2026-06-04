@@ -28,7 +28,7 @@ Every research package must contain:
 
 Use `bash scripts/dev/new_research.sh <slug>` (or `/research-package`) to create research packages. Do not create ad-hoc top-level research folders outside `research/`.
 
-Runtime state, supervisor JSON, local logs, and temporary CSVs go under `var/research/<YYYY-MM-DD>-<slug>/`, not in tracked repo roots.
+Runtime state, supervisor JSON, local logs, and temporary CSVs go under `outputs/<YYYY-MM-DD>-<slug>/`, not in tracked repo roots.
 
 When a research theme is complete or paused, move the whole package to `research/archive/<YYYY-MM-DD>-<slug>/`.
 
@@ -79,7 +79,7 @@ Every row is exactly six fields, drawn verbatim from the witnessing `results.htm
 ```
 
 - `verdict` ∈ `{pass, fail, inconclusive}`. Diagnostic-only rows are `inconclusive`, not `pass`.
-- `evidencePath` must resolve. Either a file under `var/research/...` / `output/...`, or an HTML anchor like `packages/<id>/results.html#<exp-anchor>`. If the anchor doesn't exist yet, write the row only after creating it.
+- `evidencePath` must resolve. Either a file under `outputs/...` / `output/...`, or an HTML anchor like `packages/<id>/results.html#<exp-anchor>`. If the anchor doesn't exist yet, write the row only after creating it.
 - N upstream result-gate rows may collapse to 1 `methodsTried` row when they share a method (e.g., a 9-cell sweep summarized as one entry that links to the cell-level data). Prefer aggregation.
 - Single-seed `pass` is `inconclusive` until the gate's seed requirement is met.
 
@@ -122,7 +122,6 @@ When a refinement direction is explicitly judged failed, remove all worktrees cr
 `research_html/data/schema.js` declares the `(category, status)` state machine and the required-field rules each cell must satisfy. The card renderer and `learnings_lint.py` both import from it.
 
 ```
-category=brainstorm  → status ∈ { EXPLORING, PILOT_READY, PROMOTED, ABANDONED }
 category=in-progress → status ∈ { CONTEXT_LOADED, IMPLEMENTING, IMPLEMENTATION_REVIEW,
                                   READY_TO_LAUNCH, EXPERIMENT_RUNNING, LIVE_ANALYSIS,
                                   RESULT_ANALYSIS, NEXT_ACTION_READY, BLOCKED }
@@ -130,12 +129,16 @@ category=success     → status ∈ { ADOPTED_PENDING_ACK, ADOPTED, SUPERSEDED }
 category=fail        → status ∈ { ARCHIVED, ARCHIVED_REOPENABLE }
 ```
 
+Brainstorm is **not** a package category. Pre-package, pre-SSOT ideas live on the dashboard brainstorm
+lane (`research_html/data/brainstorms.js`); they become a package only at conversion (`/research-brainstorm`
+→ a ratified Direction → `create_from_scope`), which freezes the source idea(s) into the package's
+`brainstorm.html` provenance sub-page.
+
 Field requirements key off `(category, status)`:
 
 - `category=in-progress`: requires `activeGate`, `primaryMetricVsGate`, `nextRoute`.
 - `category=success`: requires `terminationMessage`, `methodsTried`, `adoptionPath`.
 - `category=fail`: requires `terminationMessage`, `methodsTried`; `reopenable` iff `status=ARCHIVED_REOPENABLE`.
-- `category=brainstorm`: requires `direction`, `contributionSpineFlag`; no metric/gate fields.
 
 Terminal transitions (any status change that crosses a lane boundary) require user ack per Trust rule T1.
 
@@ -143,7 +146,7 @@ Terminal transitions (any status change that crosses a lane boundary) require us
 
 - **Build context first.** Read the invocation, project profile, package state, active plan, results, and docs before work.
 - **Runtime truth wins.** Validate live runs, logs, outputs, summaries, and artifact roots before changing state. Recalled content is unverified (T3).
-- **Consult Learnings before new directions.** Open `research_html/learnings.html` before proposing a new direction, refinement, or experiment idea, and before promoting a brainstorm package to in-progress.
+- **Consult Learnings before new directions.** Open `research_html/learnings.html` before proposing a new direction, refinement, or experiment idea, and before converting a brainstorm idea into a package.
 - **Surgical changes.** Touch only what the task requires. Match existing style. Do not refactor adjacent code.
 - **No A0 reproduction by default.** Trust the recorded checkpoint and `AGENTS.md` / `CLAUDE.md` unless the user explicitly asks to revalidate the anchor.
 - **All long-running work goes in `tmux`.** Named sessions/windows so the run can be monitored live; report the attach command.

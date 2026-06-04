@@ -1,7 +1,7 @@
 .superpowers/
 
 # research-op local audit logs and runtime state
-var/
+outputs/
 demo/
 .source
 

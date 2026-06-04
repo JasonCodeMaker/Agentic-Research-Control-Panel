@@ -1,6 +1,6 @@
 """Render and check the read-only dashboard scope projection.
 
-The canonical store is var/research/_scope/transitions.jsonl; the projection at
+The canonical store is outputs/_scope/transitions.jsonl; the projection at
 research_html/data/scope-projection.json is fold(transitions) — derived, never a second source of
 truth. `render` is the only writer; `check` rejects any projection that drifts from the fold.
 """

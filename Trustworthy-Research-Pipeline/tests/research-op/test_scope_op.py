@@ -32,12 +32,12 @@ def test_scope_transition_legal_writes_log_and_audit(tmp_package):
               "--payload", json.dumps(_direction_payload("user+xmodel-audit"))],
              cwd=tmp_package)
     assert r.returncode == 0, r.stdout + r.stderr
-    log = tmp_package / "var" / "research" / "_scope" / "transitions.jsonl"
+    log = tmp_package / "outputs" / "_scope" / "transitions.jsonl"
     recs = [json.loads(line) for line in log.read_text().splitlines() if line.strip()]
     assert len(recs) == 1
     assert recs[0]["node_id"] == "dir/test-pkg"
     assert recs[0]["op"] == "revise"
-    audit = (tmp_package / "var" / "research" / "test-pkg" / "_actions.jsonl").read_text()
+    audit = (tmp_package / "outputs" / "test-pkg" / "_actions.jsonl").read_text()
     assert '"validation": "passed"' in audit
 
 
@@ -49,7 +49,7 @@ def test_scope_transition_illegal_gate_rejected(tmp_package):
     env = json.loads(r.stdout)
     assert env["rejected"] is True
     assert env["phase"] == "scope-gate"
-    log = tmp_package / "var" / "research" / "_scope" / "transitions.jsonl"
+    log = tmp_package / "outputs" / "_scope" / "transitions.jsonl"
     assert (not log.exists()) or log.read_text().strip() == ""  # reject-before-write
-    audit = (tmp_package / "var" / "research" / "test-pkg" / "_actions.jsonl").read_text()
+    audit = (tmp_package / "outputs" / "test-pkg" / "_actions.jsonl").read_text()
     assert '"validation": "rejected"' in audit

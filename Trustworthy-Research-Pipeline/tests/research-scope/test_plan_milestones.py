@@ -42,8 +42,8 @@ def _write_direction(log):
 
 
 def test_plan_milestones_writes_pending_task_proposals_only(tmp_path):
-    transitions = tmp_path / "var" / "research" / "_scope" / "transitions.jsonl"
-    triage_log = tmp_path / "var" / "research" / "_scope" / "triage.jsonl"
+    transitions = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
+    triage_log = tmp_path / "outputs" / "_scope" / "triage.jsonl"
     _write_direction(transitions)
 
     rc = plan_milestones.main([
@@ -66,8 +66,8 @@ def test_plan_milestones_writes_pending_task_proposals_only(tmp_path):
 
 
 def test_plan_milestones_dry_run_does_not_write_triage(tmp_path, capsys):
-    transitions = tmp_path / "var" / "research" / "_scope" / "transitions.jsonl"
-    triage_log = tmp_path / "var" / "research" / "_scope" / "triage.jsonl"
+    transitions = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
+    triage_log = tmp_path / "outputs" / "_scope" / "triage.jsonl"
     _write_direction(transitions)
 
     rc = plan_milestones.main([
@@ -84,13 +84,13 @@ def test_plan_milestones_dry_run_does_not_write_triage(tmp_path, capsys):
 
 
 def test_plan_milestones_rejects_pending_only_direction(tmp_path):
-    triage_log = tmp_path / "var" / "research" / "_scope" / "triage.jsonl"
+    triage_log = tmp_path / "outputs" / "_scope" / "triage.jsonl"
     triage_log.parent.mkdir(parents=True)
     triage_log.write_text('{"id":"t1","level":"direction","status":"pending"}\n', encoding="utf-8")
 
     with pytest.raises(SystemExit, match="Committed direction not found"):
         plan_milestones.main([
             "--direction-id", "dir/retrieval-v2",
-            "--transitions", str(tmp_path / "var" / "research" / "_scope" / "transitions.jsonl"),
+            "--transitions", str(tmp_path / "outputs" / "_scope" / "transitions.jsonl"),
             "--triage", str(triage_log),
         ])

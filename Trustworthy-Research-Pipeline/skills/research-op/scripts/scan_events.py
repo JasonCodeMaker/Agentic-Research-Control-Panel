@@ -7,7 +7,7 @@ from time import time
 
 def runtime_root(pkg: str) -> Path:
     env = os.environ.get("RESEARCH_RUNTIME_ROOT")
-    return Path(env if env else "var/research") / pkg
+    return Path(env if env else "outputs") / pkg
 
 
 def cursor_path(pkg: str) -> Path:

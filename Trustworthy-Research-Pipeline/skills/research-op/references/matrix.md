@@ -17,7 +17,6 @@ update `transitions.py` in the same commit.
 | I7 | results.html result block (6-part canon) | `(in-progress, RESULT_ANALYSIS)` | One per result group; obeys canonical 6-part shape |
 | I8 | analysis.html rule / insight subblock | any `(in-progress, *)` after ≥ 1 finalized result-gate row | Owner skill: `research-analysis` (delegates writes to `research-op`) |
 | I9 | `docs/<slug>.html` (new file) + paired doc card | any non-terminal cell | Group-design rule applies; card + file written atomically |
-| I10 | brainstorm.html section | `(brainstorm, EXPLORING / PILOT_READY)` only | Forbidden in other categories |
 | I11 | tracker chosen-route panel + considered-routes row | `(in-progress, NEXT_ACTION_READY)` | Per the companion spec (next-action folded into tracker) |
 
 ### 4.2 Update — mutate field (default path: inventory; HTML re-paints)
@@ -46,7 +45,6 @@ update `transitions.py` in the same commit.
 | D3 | tracker impl-review row | `(in-progress, IMPLEMENTING)` only | After review started |
 | D4 | `methodsTried[]` row | `(in-progress, *)` only, before E3 | **All of `(success, *)` and `(fail, *)`** (terminal freeze) |
 | D5 | `docs/<slug>.html` file + paired doc card | any non-terminal cell | All of `(success, *)` and `(fail, *)` (preserve evidence) |
-| D6 | brainstorm.html section | `(brainstorm, EXPLORING / PILOT_READY)` only | All other categories |
 | D7 | results.html result block | **forbidden everywhere** — archive via lane move, not delete | All cells |
 | D8 | inventory entry (whole package) | **forbidden via `research-op`** | All cells — archival is a lane move, not delete |
 

@@ -21,8 +21,8 @@ package surface, so a fabricated citation cannot propagate into the record.
 | cite_check lib | `<pipeline-root>/lib/cite_check/__init__.py` |
 | scope_ssot lib | `<pipeline-root>/lib/scope_ssot/__init__.py` |
 | research-op script | `<pipeline-root>/skills/research-op/scripts/research_op.py` |
-| Fetched sources (output) | `var/research/<pkg>/lit/sources.json` |
-| Citations (output) | `var/research/<pkg>/lit/citations.json` |
+| Fetched sources (output) | `outputs/<pkg>/lit/sources.json` |
+| Citations (output) | `outputs/<pkg>/lit/citations.json` |
 
 Import pattern:
 ```python
@@ -37,7 +37,7 @@ import scope_ssot, cite_check
 
 The active direction **node** (with its `yardstick`) is supplied by the orchestrator (`research-auto`)
 or, standalone, recovered from the accepted Triage item's `proposed_yardstick` in
-`var/research/_scope/triage.jsonl`. Read the yardstick from that node:
+`outputs/_scope/triage.jsonl`. Read the yardstick from that node:
 
 ```python
 yardstick = node["yardstick"]   # {hypothesis, metric, baselines, success_predicate}
@@ -51,7 +51,7 @@ orchestrator-supplied active node over hand-parsing the log; use the log only to
 `scope_version` or detect a revise (a record with `op == "revise"`).
 
 ```python
-records = scope_ssot.read_log("var/research/_scope/transitions.jsonl")
+records = scope_ssot.read_log("outputs/_scope/transitions.jsonl")
 revised = any(r["op"] == "revise" for r in scope_ssot.history(node_id, records))
 ```
 
@@ -113,15 +113,15 @@ the gate. Do not paper over the error by inventing a source.
 
 Only after `unresolved_citations` returns an empty list, write the two JSON artifacts. These are the
 lit role's deliverable and the input to `research-write` (R6) — the role that actually surfaces
-citations into the paper. They are `var/research` runtime artifacts, written directly (`Write` is in
+citations into the paper. They are `outputs` runtime artifacts, written directly (`Write` is in
 allowed-tools):
 
 ```python
 import json, pathlib
-pathlib.Path("var/research/<pkg>/lit").mkdir(parents=True, exist_ok=True)
-pathlib.Path("var/research/<pkg>/lit/sources.json").write_text(
+pathlib.Path("outputs/<pkg>/lit").mkdir(parents=True, exist_ok=True)
+pathlib.Path("outputs/<pkg>/lit/sources.json").write_text(
     json.dumps({s["source_id"]: s for s in fetched}, indent=2))
-pathlib.Path("var/research/<pkg>/lit/citations.json").write_text(
+pathlib.Path("outputs/<pkg>/lit/citations.json").write_text(
     json.dumps(citations, indent=2))
 ```
 
@@ -135,14 +135,14 @@ a package page here.
 
 | File | Content |
 | --- | --- |
-| `var/research/<pkg>/lit/sources.json` | Dict keyed by `source_id`; each value: `{source_id, title, url, fetched_at, excerpt}` |
-| `var/research/<pkg>/lit/citations.json` | List of `{id, source_id}` — only entries that passed the gate |
+| `outputs/<pkg>/lit/sources.json` | Dict keyed by `source_id`; each value: `{source_id, title, url, fetched_at, excerpt}` |
+| `outputs/<pkg>/lit/citations.json` | List of `{id, source_id}` — only entries that passed the gate |
 | Package docs page (optional) | Only via `research-op --op insert --target doc-file` (paired card created atomically — no separate doc-card op) |
 
 ## Done condition
 
 `cite_check.unresolved_citations(citations, fetched_ids)` returns `[]` and `citations.json` is
-written to `var/research/<pkg>/lit/citations.json`.
+written to `outputs/<pkg>/lit/citations.json`.
 
 ## Error path
 

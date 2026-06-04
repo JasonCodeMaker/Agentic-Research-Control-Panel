@@ -44,7 +44,7 @@ def _task_node(suffix="M0-baseline-validity", version=1):
 
 
 def _scope_log(tmp_path, extra_task=False):
-    log = tmp_path / "var" / "research" / "_scope" / "transitions.jsonl"
+    log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
     direction = scope_ssot.propose_transition(
         _direction_node(), op="create", gate="user+xmodel-audit", log_path=log)
     task = scope_ssot.propose_transition(
@@ -89,7 +89,7 @@ def _pkg(direction_rec, task_rec, parent_task=None):
             "id": "P0",
             "purpose": "Verify baseline",
             "after": [],
-            "output": "var/research/2026-06-03-retrieval-v2/P0/result.json",
+            "output": "outputs/2026-06-03-retrieval-v2/P0/result.json",
             "gate": "Recall@10 >= baseline",
             "status": "pending",
             "parentTask": parent,
@@ -100,7 +100,7 @@ def _pkg(direction_rec, task_rec, parent_task=None):
 def test_lint_status_accepts_scope_materialized_package(tmp_path, monkeypatch):
     direction, task = _scope_log(tmp_path)
     monkeypatch.setattr(learnings_lint, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(learnings_lint, "SCOPE_LOG", tmp_path / "var" / "research" / "_scope" / "transitions.jsonl")
+    monkeypatch.setattr(learnings_lint, "SCOPE_LOG", tmp_path / "outputs" / "_scope" / "transitions.jsonl")
     monkeypatch.setattr(learnings_lint, "PACKAGES_DIR", tmp_path / "research_html" / "packages")
 
     rep = learnings_lint.lint_status(_data(_pkg(direction, task)))
@@ -111,7 +111,7 @@ def test_lint_status_accepts_scope_materialized_package(tmp_path, monkeypatch):
 def test_lint_status_rejects_missing_active_scope_milestone(tmp_path, monkeypatch):
     direction, task = _scope_log(tmp_path, extra_task=True)
     monkeypatch.setattr(learnings_lint, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(learnings_lint, "SCOPE_LOG", tmp_path / "var" / "research" / "_scope" / "transitions.jsonl")
+    monkeypatch.setattr(learnings_lint, "SCOPE_LOG", tmp_path / "outputs" / "_scope" / "transitions.jsonl")
     monkeypatch.setattr(learnings_lint, "PACKAGES_DIR", tmp_path / "research_html" / "packages")
 
     rep = learnings_lint.lint_status(_data(_pkg(direction, task)))
@@ -122,7 +122,7 @@ def test_lint_status_rejects_missing_active_scope_milestone(tmp_path, monkeypatc
 def test_lint_status_rejects_stale_parent_task(tmp_path, monkeypatch):
     direction, task = _scope_log(tmp_path)
     monkeypatch.setattr(learnings_lint, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(learnings_lint, "SCOPE_LOG", tmp_path / "var" / "research" / "_scope" / "transitions.jsonl")
+    monkeypatch.setattr(learnings_lint, "SCOPE_LOG", tmp_path / "outputs" / "_scope" / "transitions.jsonl")
     monkeypatch.setattr(learnings_lint, "PACKAGES_DIR", tmp_path / "research_html" / "packages")
 
     rep = learnings_lint.lint_status(_data(_pkg(direction, task, parent_task="task/retrieval-v2/M9-stale")))
