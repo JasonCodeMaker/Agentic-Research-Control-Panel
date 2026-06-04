@@ -358,6 +358,61 @@ def rule_acquit_judge_independent(pkg, op, target, payload, state) -> Reject | N
     return None
 
 
+def _entering_launch(op, target, payload, state) -> bool:
+    """True iff this op moves status INTO READY_TO_LAUNCH from any other source status."""
+    return (
+        target == "status" and op == "update"
+        and payload.get("to_status") == "READY_TO_LAUNCH"
+        and state.get("status") != "READY_TO_LAUNCH"  # ignore no-op self-transition
+    )
+
+
+def rule_launch_needs_verdict(pkg, op, target, payload, state) -> Reject | None:
+    """Entering READY_TO_LAUNCH must carry a reviewer verdict on the implementation (any source status)."""
+    if not _entering_launch(op, target, payload, state):
+        return None
+    if not payload.get("reviewer_verdict"):
+        return Reject(
+            rule="launch-needs-verdict",
+            file=None, anchor=None, field="reviewer_verdict",
+            expected="a reviewer verdict on the implementation before entering READY_TO_LAUNCH",
+            actual="no reviewer_verdict in payload",
+            suggested_fix="Have a separate reviewer sub-agent review the implementation diff and attach "
+                          "reviewer_verdict (producer, judge, result, scope_version, artifact_id) "
+                          "before moving to READY_TO_LAUNCH. At supervised the human may attest it "
+                          "(judge='human').",
+        )
+    return None
+
+
+def rule_launch_acquits(pkg, op, target, payload, state) -> Reject | None:
+    """The reviewer must be a distinct judge and the verdict must acquit (sound) — autonomy-independent."""
+    if not _entering_launch(op, target, payload, state):
+        return None
+    verdict = payload.get("reviewer_verdict")
+    if not verdict:
+        return None  # presence is handled by rule_launch_needs_verdict
+    producer, judge = verdict.get("producer"), verdict.get("judge")
+    if not producer or not judge or producer == judge:
+        return Reject(
+            rule="launch-acquits",
+            file=None, anchor=None, field="reviewer_verdict",
+            expected="a verdict whose judge is distinct from the implementer (producer != judge)",
+            actual=f"producer={producer!r} judge={judge!r}",
+            suggested_fix="Use a separate reviewer (cross-family preferred for the faithfulness check) "
+                          "distinct from the coding agent.",
+        )
+    if verdict.get("result") not in verifier.ACQUIT_STATES:
+        return Reject(
+            rule="launch-acquits",
+            file=None, anchor=None, field="reviewer_verdict",
+            expected=f"an acquitting result in {sorted(verifier.ACQUIT_STATES)}",
+            actual=f"result={verdict.get('result')!r}",
+            suggested_fix="Proceed to launch only on a 'sound' verdict; fix the implementation otherwise.",
+        )
+    return None
+
+
 # ---- Doc-file / doc-card rules ----
 
 _DOC_PATH_RE = re.compile(r"^research_html/packages/[^/]+/docs/[^/]+\.html$")
@@ -582,6 +637,8 @@ _RULES: list[tuple[Callable, bool]] = [
     (rule_lane_required_fields,              True),
     (rule_acquit_needs_verdict,              True),
     (rule_acquit_judge_independent,          True),
+    (rule_launch_needs_verdict,              True),
+    (rule_launch_acquits,                    True),
     (rule_doc_file_path_under_package,       False),
     (rule_doc_card_six_parts,                False),
     (rule_doc_group_rationale_present,       False),
