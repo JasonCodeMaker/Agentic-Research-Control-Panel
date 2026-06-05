@@ -5,8 +5,8 @@
 > objective, and let `/research-auto` advance the work from project setup to scoped tasks, experiments,
 > verified results, and project memory — with every claim gated by evidence instead of trust.
 
-This repo is the **toolbox**, not the research project itself. Your agent runs its skills from inside the
-ML project you want to manage. The agent can propose and execute work; **you own the objective and the
+This repo is the **toolbox**, not the research project itself. Its skills run from inside the ML project
+you want to manage. The agent can propose and execute work; **you own the objective and the
 ratification gates**.
 
 **Current maturity, in one sentence.** The dashboard, Scope/Triage system, trust gates, Context Pack,
@@ -40,87 +40,136 @@ prose.
 
 ## Quick Start
 
-This is an **LLM-operated** framework. As the user, you should not run Python helpers, edit Scope logs,
-copy dashboard files, or operate internal scripts by hand. You talk to the agent; the agent runs the
-needed shell/Python commands, validates the result, and reports what changed.
+Setup installs **two things at two scopes**:
 
-### 1 · Install the toolbox
+1. **The skills** — the 12 `/research-*` commands. Install them once at the **global** scope (visible in
+   every project) *or* per-repo at the **project** scope.
+2. **The protocols + dashboard** — attached **per research project** you want to manage.
 
-Open this toolbox repo in your LLM agent and say:
+Natural-language paragraphs explain the intent and guardrails. `bash` blocks are exact setup commands.
+`text` blocks are slash commands or natural-language instructions.
 
-```text
-Install this toolbox into my agent skills by symlink, verify it, and do not modify any research
-project yet.
+### Prerequisites
+
+- **Python 3.13** on `PATH`. The skills' helper scripts target it and use only the standard library —
+  there is nothing to `pip install`. `pytest` is needed only to run the verification suite in step 2.
+- **Node.js** for dashboard JavaScript syntax checks.
+- An agent that loads skills from a directory: **Claude Code** (`~/.claude/skills/`) or
+  **Codex** (`~/.codex/skills/`).
+
+### 1 · Install the skills (symlink — never copy)
+
+Each skill's helper scripts resolve the shared `lib/` *relative to this repo*, so the skills must be
+**symlinked** into the skills directory. A plain copy placed outside the repo cannot find `lib/` and will
+fail at runtime. Pick a scope by setting `DEST`:
+
+| Scope | `DEST` value | Skills become visible in |
+| --- | --- | --- |
+| **Global** (recommended) | `$HOME/.claude/skills` | every project on this machine |
+| **Project** | `/path/to/your-project/.claude/skills` | that one repo only |
+| Codex (global) | `$HOME/.codex/skills` | every project on this machine |
+
+Run from the toolbox repo root, after setting `DEST` to your chosen scope:
+
+```bash
+cd /path/to/Trustworthy-Research-Pipeline      # the toolbox repo (the dir holding skills/ and lib/)
+REPO="$(pwd)"
+DEST="$HOME/.claude/skills"                     # ← set to your chosen scope from the table above
+mkdir -p "$DEST"
+for src in "$REPO"/skills/*/; do
+  name="$(basename "$src")"
+  if [ -e "$DEST/$name" ] && [ ! -L "$DEST/$name" ]; then
+    mv "$DEST/$name" "$DEST/$name.bak.$(date +%Y%m%d%H%M%S)"
+  fi
+  ln -sfn "${src%/}" "$DEST/$name"
+done
+ls -l "$DEST" | grep research                   # expect 12 symlinks: 'l…' lines with '-> …/skills/<name>'
 ```
 
-The agent should install `skills/*` into its skill directory (`~/.claude/skills/` for Claude Code,
-`~/.codex/skills/` for Codex), reload if needed, run the repository verification suite, and report the
-result. The skills should be symlinked rather than copied, because they resolve shared libraries relative
-to this repo.
+Then reload the agent (restart Claude Code, or open a new session) so it discovers the skills, type
+`/research-` and confirm the 12 commands autocomplete.
 
-### 2 · Attach it to a research project
+### 2 · Verify the toolbox
 
-Open the ML/research repo you want to manage and say:
-
-```text
-Attach Trustworthy Auto-Research Pipeline to this project. Preserve any existing CLAUDE.md or
-WORKFLOW.md, merge instead of overwriting, and ask before changing project-specific instructions.
+```bash
+python3.13 -m pytest tests/                     # expect: 440 passed
 ```
 
-Then give the agent the project context in prose:
+If `python3.13` is not on `PATH`, use any Python 3.13 interpreter — e.g.
+`conda run -n <env> python -m pytest tests/`.
+
+### 3 · Attach the pipeline to a research project
+
+The skills are now callable, but each managed project also needs the operating **protocols**
+(`CLAUDE.md` + `WORKFLOW.md`) at its repo root, with your project context prepended above the universal
+sections.
+
+```bash
+cd /path/to/your-research-project
+PIPELINE=/path/to/Trustworthy-Research-Pipeline   # the toolbox repo (the dir holding CLAUDE.md)
+mkdir -p outputs/_scope outputs/_selfevolve
+
+test -f CLAUDE.md  || cp "$PIPELINE/CLAUDE.md"  CLAUDE.md
+test -f WORKFLOW.md || cp "$PIPELINE/WORKFLOW.md" WORKFLOW.md
+```
+
+If either file already exists, keep it and merge the framework protocols instead of overwriting. Add the
+project-specific section above the framework protocols:
 
 - project name and objective;
 - datasets, baselines, metrics, and success criteria;
 - compute constraints and available machines;
-- any non-goals, safety constraints, or reviewer concerns.
+- non-goals, safety constraints, or reviewer concerns.
 
-The agent should add this context above the framework protocols and report the exact files it touched.
+### 4 · Initialize the shared dashboard
 
-### 3 · Initialize the shared dashboard
-
-```text
-Run /research-dashboard for this project. Scaffold or refresh research_html, validate it, and tell me
-the next legal step.
-```
-
-The dashboard is the shared state surface: you and the agent both read project lanes, Scope projection,
-package links, Context Pack summaries, and rule surfaces from it.
-
-### 4 · Start from the front door
-
-After dashboard initialization, use `/research-auto` as the normal entry point:
+Run:
 
 ```text
-/research-auto
+/research-dashboard
 ```
 
-If the project is not ready to run experiments, `/research-auto` proposes the missing Project,
-Direction, or Task through Triage and stops. You respond in natural language:
+For transparent setup, this command scaffolds and validates the dashboard with:
+
+```bash
+cd /path/to/your-research-project
+PIPELINE=/path/to/Trustworthy-Research-Pipeline
+python3.13 "$PIPELINE/skills/research-dashboard/scripts/ensure_dashboard.py" --root research_html
+node --check research_html/assets/research.js
+node --check research_html/data/research-packages.js
+test -f research_html/index.html
+```
+
+Run once per project. This creates `research_html/` — the shared surface where you and the agent read the
+same compiled state (lanes, Scope projection, package links, Context Pack).
+
+### 5 · Define the project objective, then run the loop
+
+The project's **global objective** is the first thing that must be locked in: `/research-auto` refuses to
+run experiments until a Project node is ratified, so on a fresh project its very first action is to
+propose that objective and stop for you. Set it one of two ways:
+
+```text
+/research-scope     # author the objective yourself — natural for first use, when you already know it.
+/research-auto      # the front door drafts the objective from your attach-time context, then advances.
+```
+
+Both drive the same scope role and the same admission gate. Unlike the scaffolding in steps 3–4, this is
+**interactive, not a one-shot command**: the framework only *proposes* (the proposal lands as a pending
+Triage item), and you ratify in chat — you never hand-write Scope entries:
 
 ```text
 Accept this proposal.
-Reject this proposal because ...
-Revise the Direction to focus on ...
-Use the supervised/checkpoints/async/autonomous autonomy level for this Task.
+Reject this proposal because …
+Revise the objective / Direction to focus on …
+Use the supervised / checkpoints / async / autonomous autonomy level for this Task.
 ```
 
-The agent handles the underlying Triage and Scope commands only after your explicit decision. It must
-not ratify a Project, Direction, or Task silently, and it must not create a package from a pending
-proposal. After an accepted proposal is committed, run `/research-auto` again; that repetition is
-intentional because the same command advances the project to the next legal state.
-
-### 5 · Optional manual steering
-
-`/research-auto` is the default front door. You can also ask for a more explicit path:
-
-```text
-Run /research-onboard first.
-Run /research-scope so I can manage Project/Direction/Task proposals directly.
-Run /research-package only after the Scope nodes are committed.
-```
-
-Both paths are valid. The difference is control style: `/research-auto` drives the next legal step for
-you, while the narrower skills expose one formation stage at a time.
+Only a ratified objective is committed to the Scope SSOT (`outputs/_scope/transitions.jsonl`); the
+framework never ratifies silently or materializes a package from a pending proposal. After each accepted
+proposal, run `/research-auto` again — the same command intentionally advances one legal step at a time
+(**objective → Direction → Task → run**). `/research-onboard` (on-ramp) and `/research-package`
+(materialize from committed Scope) can also be driven directly, but the front door calls them in order.
 
 ---
 
@@ -129,16 +178,16 @@ you, while the narrower skills expose one formation stage at a time.
 The pipeline is easiest to understand as a research project lifecycle. Each phase has a clear input, user
 decision, agent action, and durable output.
 
-| Phase | User action | Agent action | Durable output |
+| Phase | Operator action | Framework action | Durable output |
 | --- | --- | --- | --- |
-| **0 · Attach toolbox** | Ask the agent to install the toolbox and attach protocols to the target repo. | Symlinks skills, preserves/merges protocol files, and verifies the toolbox. | The target repo now has the operating rules. |
-| **1 · Initialize workspace** | Ask the agent to run `/research-dashboard`. | Scaffolds the live dashboard and, if needed, analyzes/scaffolds the project. | `research_html/`, prior-knowledge digest, dashboard lanes. |
-| **2 · Ratify project objective** | Ask for `/research-auto`; inspect and approve/reject the proposed Project objective. | Proposes a Project node through Triage. | Accepted Project in Scope SSOT, or a rejected proposal record. |
+| **0 · Attach toolbox** | Install skills and attach protocols to the target repo. | Symlinks skills, preserves/merges protocol files, and verifies the toolbox. | The target repo now has the operating rules. |
+| **1 · Initialize workspace** | Run `/research-dashboard` or the dashboard scaffold command. | Scaffolds the live dashboard and, if needed, analyzes/scaffolds the project. | `research_html/`, prior-knowledge digest, dashboard lanes. |
+| **2 · Ratify project objective** | Run `/research-auto`; inspect and approve/reject the proposed Project objective. | Proposes a Project node through Triage. | Accepted Project in Scope SSOT, or a rejected proposal record. |
 | **3 · Form a research direction** | Approve/reject the Direction proposal in chat. | Uses literature/ideation/ranking capability to shape a Direction with a typed yardstick. | Direction node with hypothesis, metric, baselines, success predicate. |
 | **4 · Create an executable task** | Approve/reject the Task proposal; optionally lower the autonomy dial. | Proposes a Task with experiment/config/gate predicate. Default dial is `autonomous`. | Task node and, once committed, a materialized package. |
-| **5 · Execute the research loop** | Ask for `/research-auto`; supervise according to the dial. | Loads context, reads papers, proposes ideas, runs experiments, verifies evidence, records memory. | Runtime artifacts, audit log, verdicts, package state updates. |
+| **5 · Execute the research loop** | Run `/research-auto`; supervise according to the dial. | Loads context, reads papers, proposes ideas, runs experiments, verifies evidence, records memory. | Runtime artifacts, audit log, verdicts, package state updates. |
 | **6 · Decide the outcome** | Review dashboard/PACK/verdict in chat; approve terminal decisions or scope changes. | Files Triage proposals when goals should change; never edits the objective silently. | Success/fail/archive state, or a versioned Scope revision. |
-| **7 · Learn for the next cycle** | Ask for `/research-reflect`, then approve `/research-apply` for accepted lessons. | Mines audit logs for recurring failures and proposes rules. | Active project rules exported into the Context Pack. |
+| **7 · Learn for the next cycle** | Run `/research-reflect`, then approve `/research-apply` for accepted lessons. | Mines audit logs for recurring failures and proposes rules. | Active project rules exported into the Context Pack. |
 
 **Completion means:** one research package reaches a terminal, evidence-backed state: success, fail, or
 archive. A success is not a self-declared win; it is a package whose metric/verifier gates clear against
@@ -307,7 +356,7 @@ Trustworthy-Research-Pipeline/
 | --- | --- |
 | `research-dashboard` | Project-level dashboard scaffold. |
 | `research-onboard` | Empty-workspace skeleton or existing-repo analysis into a Project proposal. |
-| `research-brainstorm` | Manual escape hatch for pre-package idea exploration. |
+| `research-brainstorm` | Explicit escape hatch for pre-package idea exploration. |
 | `research-scope` | Scope SSOT and Triage admission gate. |
 | `research-package` | Package scaffold materialized from committed Scope. |
 | `research-auto` | Post-init front door plus orchestrator. |
