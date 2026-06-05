@@ -6,7 +6,7 @@
   <title>Research System Dashboard</title>
   <link rel="stylesheet" href="assets/research.css">
 </head>
-<body>
+<body data-page="dashboard">
   <div class="shell">
 
     <header class="masthead" data-section="masthead">
@@ -30,8 +30,8 @@
     <nav class="dashboard-nav" data-section="nav" aria-label="Dashboard sections">
       <a href="#snapshot">Snapshot</a>
       <a href="#lanes">Lanes</a>
-      <a href="#scope">Scope</a>
       <a href="#packages">Packages</a>
+      <a href="#scope">Scope</a>
       <a href="learnings.html">Learnings</a>
       <a href="context.html">Agent Context</a>
       <a href="#protocol">Protocol</a>
@@ -75,15 +75,6 @@
 
     <section id="lanes" data-section="lanes" class="dashboard-summary" aria-label="Category counts"></section>
 
-    <section id="scope" data-section="scope" aria-label="Scope projection">
-      <h2>Scope projection</h2>
-      <p class="lead">
-        Read-only projection of <code>outputs/_scope/transitions.jsonl</code>. Project intent,
-        active Directions, and high-level validation Milestones are rendered here from the folded SSOT.
-      </p>
-      <div id="scope-projection-root" class="scope-projection"></div>
-    </section>
-
     <section id="packages" data-section="packages" aria-label="Research packages">
       <h2>Research packages</h2>
       <p class="lead">
@@ -92,6 +83,15 @@
       </p>
       <form class="package-filters" data-card="package-filters" aria-label="Package filters"></form>
       <main id="dashboard-package-root" class="package-grid"></main>
+    </section>
+
+    <section id="scope" data-section="scope" aria-label="Scope projection">
+      <h2>Scope projection</h2>
+      <p class="lead">
+        Read-only projection of <code>outputs/_scope/transitions.jsonl</code>. Project intent,
+        active Directions, and high-level validation Milestones are rendered here from the folded SSOT.
+      </p>
+      <div id="scope-projection-root" class="scope-projection"></div>
     </section>
 
     <section id="protocol" data-section="protocol" aria-label="Global protocol">

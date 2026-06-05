@@ -50,6 +50,23 @@ pre {
   padding: 64px 32px 120px;
 }
 
+/* Uniform top-level block rhythm on the dashboard index: equal gap between
+   every section, and equal heading -> lead -> content-block spacing.
+   Scoped to the index (data-page="dashboard") so package/learnings/context
+   pages, which also use .shell > section, keep their own spacing. */
+body[data-page="dashboard"] .shell > section {
+  margin: 44px 0 0;
+  scroll-margin-top: 24px;
+}
+
+body[data-page="dashboard"] .shell > section > h2 {
+  margin: 0;
+}
+
+body[data-page="dashboard"] .shell > section > .lead {
+  margin: 14px 0 20px;
+}
+
 .page-grid {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -347,10 +364,37 @@ h1 em {
   margin-top: 14px;
 }
 
-.scope-grid {
+.scope-projection-layout {
   display: grid;
-  grid-template-columns: minmax(260px, 0.35fr) minmax(0, 1fr);
   gap: 16px;
+}
+
+.scope-field {
+  margin-top: 14px;
+}
+
+.scope-field .k {
+  margin-bottom: 5px;
+}
+
+.scope-value {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.scope-list {
+  margin: 5px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.scope-list li {
+  overflow-wrap: anywhere;
 }
 
 .scope-direction-list {
@@ -396,12 +440,6 @@ h1 em {
 .scope-task code {
   overflow-wrap: anywhere;
   white-space: normal;
-}
-
-@media (max-width: 860px) {
-  .scope-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 .route-list {
@@ -534,6 +572,13 @@ h1 em {
   gap: 18px;
   margin-left: 48px;
   margin-bottom: 44px;
+}
+
+/* Index dashboard: align the package grid to the section's left edge (no
+   category-page indent) and let section rhythm own the bottom gap. */
+#dashboard-package-root {
+  margin-left: 0;
+  margin-bottom: 0;
 }
 
 .subcard-grid {
@@ -1065,7 +1110,7 @@ button.copy-button:hover {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 18px;
-  margin: 28px 0;
+  margin: 44px 0 0;
 }
 
 @media (max-width: 760px) {

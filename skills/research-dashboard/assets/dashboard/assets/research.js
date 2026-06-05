@@ -213,7 +213,7 @@
       }).join("")
       : '<article class="scope-node"><h3>Directions</h3><p class="card-text">No active Direction nodes found.</p></article>';
     target.innerHTML = [
-      '<div class="scope-grid">',
+      '<div class="scope-projection-layout">',
       projectHtml,
       '<div class="scope-direction-list">',
       directionHtml,
@@ -226,17 +226,30 @@
     return (node && node.yardstick) || {};
   }
 
+  function scopeList(value) {
+    if (Array.isArray(value)) {
+      return '<ul class="scope-list">' + value.map(function (item) {
+        return "<li>" + htmlEscape(item) + "</li>";
+      }).join("") + "</ul>";
+    }
+    return '<p class="scope-value">' + htmlEscape(value || "unmeasured") + "</p>";
+  }
+
   function scopeProjectHtml(node) {
     var yard = scopeYardstick(node);
+    var fields = [
+      '<div class="scope-field"><div class="k">North star</div><p class="scope-value">' + htmlEscape(yard.north_star || "unmeasured") + "</p></div>",
+      '<div class="scope-field"><div class="k">Contribution spine</div>' + scopeList(yard.contribution_spine) + "</div>",
+    ];
+    if (yard.non_goals) {
+      fields.push('<div class="scope-field"><div class="k">Non-goals</div>' + scopeList(yard.non_goals) + "</div>");
+    }
+    fields.push('<div class="scope-field"><div class="k">Version</div><p class="scope-value">' + htmlEscape(node.version || "unmeasured") + "</p></div>");
     return [
       '<article class="scope-node scope-node-project" data-scope-node="' + htmlEscape(node.id) + '">',
       '<div class="k">Project</div>',
       "<h3>" + htmlEscape(node.id) + "</h3>",
-      '<div class="kv-grid">',
-      '<div class="k">North star</div><div>' + htmlEscape(yard.north_star || "unmeasured") + "</div>",
-      '<div class="k">Contribution spine</div><div>' + htmlEscape(yard.contribution_spine || "unmeasured") + "</div>",
-      '<div class="k">Version</div><div>' + htmlEscape(node.version || "unmeasured") + "</div>",
-      "</div>",
+      fields.join(""),
       "</article>",
     ].join("");
   }
