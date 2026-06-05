@@ -143,20 +143,33 @@ test -f research_html/index.html
 Run once per project. This creates `research_html/` — the shared surface where you and the agent read the
 same compiled state (lanes, Scope projection, package links, Context Pack).
 
-### 5 · Define the project objective, then run the loop
+### 5 · Onboard or define the project objective, then run the loop
 
 The project's **global objective** is the first thing that must be locked in: `/research-auto` refuses to
 run experiments until a Project node is ratified, so on a fresh project its very first action is to
-propose that objective and stop for you. Set it one of two ways:
+propose that objective and stop for you. After the dashboard exists, pick the entry point that matches
+how much project context already exists:
+
+| Entry point | Use when | What it does |
+| --- | --- | --- |
+| `/research-onboard` | **Recommended for an existing research repo.** The project already has README / configs / source / data notes / baselines, but no committed Project node. | Analyzes the workspace, writes `outputs/_scope/prior_knowledge.md`, drafts a Project objective, submits it as a pending Triage proposal, then stops for your ratification. |
+| `/research-scope` | You already know the exact Project objective and want to author it directly. | Builds a typed Project proposal for the Scope SSOT admission gate. |
+| `/research-auto` | You want the front door to choose the next legal setup/run action. | Detects dashboard / Project / Direction / Task / package readiness and returns the next proposal or run action. |
+
+For an **existing project**, the normal setup path is:
 
 ```text
-/research-scope     # author the objective yourself — natural for first use, when you already know it.
-/research-auto      # the front door drafts the objective from your attach-time context, then advances.
+/research-onboard
 ```
 
-Both drive the same scope role and the same admission gate. Unlike the scaffolding in steps 3–4, this is
-**interactive, not a one-shot command**: the framework only *proposes* (the proposal lands as a pending
-Triage item), and you ratify in chat — you never hand-write Scope entries:
+The onboarder reads the project content it finds (typically `README.md`, `CLAUDE.md`, configs, source
+tree, dataset notes, baselines, or reported metrics), writes a compact prior-knowledge digest for later
+roles, and proposes a Project node through Triage. It does **not** commit the Scope SSOT and does not
+create a package. Inspect the proposal in chat, then accept/reject/revise it:
+
+Unlike the scaffolding in steps 3–4, this is **interactive, not a one-shot command**: the framework only
+*proposes* (the proposal lands as a pending Triage item), and you ratify in chat — you never hand-write
+Scope entries:
 
 ```text
 Accept this proposal.
@@ -168,8 +181,8 @@ Use the supervised / checkpoints / async / autonomous autonomy level for this Ta
 Only a ratified objective is committed to the Scope SSOT (`outputs/_scope/transitions.jsonl`); the
 framework never ratifies silently or materializes a package from a pending proposal. After each accepted
 proposal, run `/research-auto` again — the same command intentionally advances one legal step at a time
-(**objective → Direction → Task → run**). `/research-onboard` (on-ramp) and `/research-package`
-(materialize from committed Scope) can also be driven directly, but the front door calls them in order.
+(**objective → Direction → Task → run**). `/research-package` can also be driven directly to materialize
+a package, but only from committed Scope state.
 
 ---
 
@@ -181,8 +194,8 @@ decision, agent action, and durable output.
 | Phase | Operator action | Framework action | Durable output |
 | --- | --- | --- | --- |
 | **0 · Attach toolbox** | Install skills and attach protocols to the target repo. | Symlinks skills, preserves/merges protocol files, and verifies the toolbox. | The target repo now has the operating rules. |
-| **1 · Initialize workspace** | Run `/research-dashboard` or the dashboard scaffold command. | Scaffolds the live dashboard and, if needed, analyzes/scaffolds the project. | `research_html/`, prior-knowledge digest, dashboard lanes. |
-| **2 · Ratify project objective** | Run `/research-auto`; inspect and approve/reject the proposed Project objective. | Proposes a Project node through Triage. | Accepted Project in Scope SSOT, or a rejected proposal record. |
+| **1 · Initialize workspace** | Run `/research-dashboard`, then `/research-onboard` if no Project node exists. | Scaffolds the live dashboard; for existing repos, analyzes project context into a prior-knowledge digest and Project proposal. | `research_html/`, optional `outputs/_scope/prior_knowledge.md`, dashboard lanes. |
+| **2 · Ratify project objective** | Inspect and approve/reject the `/research-onboard`, `/research-scope`, or `/research-auto` Project proposal. | Proposes a Project node through Triage; commits only after human ratification. | Accepted Project in Scope SSOT, or a rejected proposal record. |
 | **3 · Form a research direction** | Approve/reject the Direction proposal in chat. | Uses literature/ideation/ranking capability to shape a Direction with a typed yardstick. | Direction node with hypothesis, metric, baselines, success predicate. |
 | **4 · Create an executable task** | Approve/reject the Task proposal; optionally lower the autonomy dial. | Proposes a Task with experiment/config/gate predicate. Default dial is `autonomous`. | Task node and, once committed, a materialized package. |
 | **5 · Execute the research loop** | Run `/research-auto`; supervise according to the dial. | Loads context, reads papers, proposes ideas, runs experiments, verifies evidence, records memory. | Runtime artifacts, audit log, verdicts, package state updates. |
@@ -197,8 +210,8 @@ the committed Scope yardstick.
 
 ## What `/research-auto` Does
 
-After dashboard init, `/research-auto` is the command to try first. It runs a front-door admission check
-before attempting experiments:
+After dashboard init and Project onboarding, `/research-auto` is the command to try for continuing the
+loop. It runs a front-door admission check before attempting experiments:
 
 | State | Condition | What happens |
 | --- | --- | --- |
