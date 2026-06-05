@@ -269,8 +269,10 @@
     return [
       '<li class="scope-task" data-scope-node="' + htmlEscape(node.id) + '">',
       '<code>' + htmlEscape(node.id) + "</code>",
-      '<p class="card-text">' + htmlEscape(yard.objective || yard.hypothesis || "unmeasured") + "</p>",
-      '<p class="card-text"><b>Gate:</b> ' + htmlEscape(yard.gate_predicate || yard.success_predicate || "unmeasured") + "</p>",
+      '<p class="card-text"><b>Experiment:</b> ' + htmlEscape(yard.experiment || "not declared") + "</p>",
+      '<p class="card-text"><b>Config:</b> ' + htmlEscape(yard.config_ref || "not declared") + "</p>",
+      '<p class="card-text"><b>Autonomy:</b> ' + htmlEscape(yard.autonomy_level || "not declared") + "</p>",
+      '<p class="card-text"><b>Gate:</b> ' + htmlEscape(yard.gate_predicate || "not declared") + "</p>",
       "</li>",
     ].join("");
   }
