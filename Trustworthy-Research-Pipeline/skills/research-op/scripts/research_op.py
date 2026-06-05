@@ -47,7 +47,12 @@ def main() -> int:
     p = argparse.ArgumentParser(prog="research-op")
     p.add_argument("--pkg", help="package id under research_html/packages/ (required unless --nl)")
     p.add_argument("--op", choices=["check", "insert", "update", "delete", "scan-events",
-                                    "scope-transition", "registry-add"],
+                                    "scope-transition", "registry-add",
+                                    "evolution-observe", "evolution-create",
+                                    "evolution-evidence-add", "evolution-transition",
+                                    "evolution-project", "evolution-check",
+                                    "evolution-approve", "evolution-install-skill",
+                                    "evolution-suspend-skill", "evolution-rollback-skill"],
                    help="primitive op (one of --op or --event required)")
     p.add_argument("--event", help="composite event (chain-done, checkpoint-saved, ...) "
                    "(one of --op or --event required)")
@@ -69,6 +74,39 @@ def main() -> int:
         return 1
 
     t0 = time.monotonic()
+
+    # Self-evolve path — project-level Rule Store ops. Like scope-transition/registry-add
+    # these are cross-package, so they bypass the package (category, status) state machine.
+    # `--pkg _selfevolve` is a synthetic project-level context with no inventory entry, so
+    # this branch runs BEFORE _read_inventory (which would raise on a non-package pkg).
+    if args.op and args.op.startswith("evolution-"):
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
+        from ops import evolution  # noqa: E402
+        try:
+            payload = json.loads(args.payload)
+        except json.JSONDecodeError as e:
+            print(json.dumps({"rejected": True, "phase": "evolution-validate",
+                              "rule": "payload-json-valid", "pkg": args.pkg, "op": args.op,
+                              "detail": str(e)}, indent=2))
+            return 2
+        root = audit.runtime_root("_selfevolve")
+        try:
+            status_, files, message = evolution.run(args.op, payload, root)
+        except evolution.EvolutionReject as e:
+            audit.append("_selfevolve", op=args.op, target=None, event=None,
+                         state_before={}, state_after={}, validation="rejected", rule=e.rule,
+                         files_touched=[], payload=payload, user_intent=None,
+                         duration_ms=int((time.monotonic() - t0) * 1000))
+            print(json.dumps({"rejected": True, "phase": "evolution-validate", "rule": e.rule,
+                              "pkg": args.pkg, "op": args.op, "detail": e.detail}, indent=2))
+            return 2
+        audit.append("_selfevolve", op=args.op, target=None, event=None,
+                     state_before={}, state_after={}, validation=status_, rule=None,
+                     files_touched=files, payload=payload, user_intent=None,
+                     duration_ms=int((time.monotonic() - t0) * 1000))
+        print(f"{args.op} {status_}: {message}")
+        return 0
+
     state = _read_inventory(args.pkg)
 
     # Scan-events path (read-only, no state-gate, no validation).

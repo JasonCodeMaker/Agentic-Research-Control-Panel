@@ -106,6 +106,43 @@ def load_registry(root: str, name: str) -> list:
     return out
 
 
+# Effectiveness-authority ordering for the Rule Store export (proven before advisory, §13.1).
+_AUTHORITY_ORDER = {"proven-effective": 0, "advisory-admitted": 1}
+
+
+def load_rule_store_active(selfevolve_root: str = "outputs/_selfevolve") -> list:
+    """Active Rules from the self-evolve Rule Store, ordered proven-effective first (§13.1)."""
+    from self_evolve import store as se_store  # lib/ already on path
+    log = Path(selfevolve_root) / "rules" / "transitions.jsonl"
+    if not log.exists():
+        return []
+    actives = se_store.active_transitions(se_store.read_log(log))
+    rules = []
+    for (eid, ver), t in actives.items():
+        rel = Path(selfevolve_root) / "rules" / "releases" / eid / ver / "rule.json"
+        if not rel.exists():
+            continue
+        rule = json.loads(rel.read_text(encoding="utf-8"))
+        rules.append({"id": eid, "content": rule.get("content", ""),
+                      "authority": t.get("admission", "advisory-admitted")})
+    rules.sort(key=lambda r: (_AUTHORITY_ORDER.get(r["authority"], 9), r["id"]))
+    return rules
+
+
+def export_learned_rules(selfevolve_root: str, learned_path: str) -> int:
+    """Derived compatibility export (plan D7): Rule Store active Rules → _learned/rules.md.
+
+    The Rule Store is authoritative; this flat file is regenerated, never hand-appended.
+    Proven-effective rules come first so the pack budget prunes advisory rules first.
+    """
+    rules = load_rule_store_active(selfevolve_root)
+    lines = [f"- {r['content']}" for r in rules]
+    p = Path(learned_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    return len(rules)
+
+
 def load_banlist(pkg_id: str) -> list:
     return _load_json(Path("outputs") / pkg_id / "ideate" / "banlist.json", [])
 
@@ -132,9 +169,15 @@ def _write(path: Path, text: str) -> None:
 
 def build(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/transitions.jsonl",
           learned_path: str = "outputs/_learned/rules.md", budget_chars: int = 8000,
-          generated_at: str | None = None):
-    """Load stores → assemble full + core packs → write the three artifacts."""
+          generated_at: str | None = None, selfevolve_root: str | None = None):
+    """Load stores → assemble full + core packs → write the three artifacts.
+
+    When selfevolve_root is given, _learned/rules.md is first regenerated as a derived
+    export of the Rule Store's active Rules (plan D7) before it is read back in.
+    """
     generated_at = generated_at or _now_iso()
+    if selfevolve_root is not None:
+        export_learned_rules(selfevolve_root, learned_path)
     packages = load_packages(root)
     learned_rules = load_learned_rules(learned_path)
     analysis_rules = load_analysis_rules(root, packages)
@@ -198,6 +241,8 @@ def main(argv=None) -> int:
     ap.add_argument("--transitions", default="outputs/_scope/transitions.jsonl")
     ap.add_argument("--learned", default="outputs/_learned/rules.md")
     ap.add_argument("--budget-chars", type=int, default=8000)
+    ap.add_argument("--selfevolve-root", default=None,
+                    help="regenerate _learned/rules.md as a derived export of this Rule Store first")
     ap.add_argument("--if-stale", action="store_true",
                     help="rebuild only when the pack is missing or the scope version advanced")
     args = ap.parse_args(argv)
@@ -207,7 +252,8 @@ def main(argv=None) -> int:
         print(f"context_pack {'rebuilt' if rebuilt else 'already fresh'} for {args.pkg}")
         return 0
     full, _ = build(args.root, args.pkg, transitions_path=args.transitions,
-                    learned_path=args.learned, budget_chars=args.budget_chars)
+                    learned_path=args.learned, budget_chars=args.budget_chars,
+                    selfevolve_root=args.selfevolve_root)
     print(f"context_pack → outputs/{args.pkg}/context_pack.md "
           f"({len(full.sections)} sections); core → {args.root}/data/context-core.js")
     return 0
