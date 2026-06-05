@@ -1,11 +1,10 @@
-"""Stage-1 walking skeleton: one thin idea->paper pass through all seven roles + the real gates.
+"""Stage-1 walking skeleton: one thin idea->verified-result pass through all six roles + the real gates.
 
 Each role is thin/stub; what is real is the wiring — the scope write routes through the SSOT's
 gated writer, R5 reads the yardstick back from the SSOT node, L1 cite-exists partitions citations,
-the writer is grounded-only, and the terminal acquit routes through research-op's acquit gate at
-Supervised (T1 ack), blocked when the metric oracle fails. Roles split into their own skills in
-Stage 2b (research-scope / research-lit / research-ideate / research-write); the orchestrator is
-research-auto.
+and the terminal acquit routes through research-op's acquit gate at Supervised (T1 ack), blocked
+when the metric oracle fails. Roles split into their own skills in Stage 2b (research-scope /
+research-lit / research-ideate); the orchestrator is research-auto.
 """
 
 import json
@@ -71,22 +70,8 @@ def verify(artifact_path, yardstick):
             "measured": measured, "artifact_id": artifact["artifact_id"]}
 
 
-def write_paper(intent, result, verdict, verified_cites, paper_path):
-    """R6: a grounded-only IMRAD skeleton — only verified facts and citations appear."""
-    lines = [
-        f"# {intent}", "",
-        "## Abstract", f"We test whether {intent}.", "",
-        "## Method", f"Primary metric: {result['metric']} (higher is better).", "",
-        "## Results",
-        f"measured={verdict['measured']}; verdict={verdict['result']} (judge={verdict['judge']}).", "",
-        "## References",
-    ]
-    lines += [f"- [{c}]" for c in verified_cites]
-    Path(paper_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
 def run(intent, *, pkg_id, runtime_root, citations, measured):
-    """Drive one thin idea->paper pass through R1..R7 and the real gates. Returns the run record."""
+    """Drive one thin idea->verified-result pass through R1..R6 and the real gates. Returns the run record."""
     runtime_root = Path(runtime_root)
     log_path = runtime_root / "_scope" / "transitions.jsonl"
     chain = []
@@ -109,11 +94,7 @@ def run(intent, *, pkg_id, runtime_root, citations, measured):
     verdict = verify(artifact["path"], yardstick)  # read the number from the artifact, not a prompt
     chain.append("R5:verify")
 
-    paper_path = runtime_root / "paper.md"
-    write_paper(intent, {"metric": "toy_metric"}, verdict, verified, paper_path)
-    chain.append("R6:write")
-
-    # R7 remember + terminal acquit at Supervised — gated by the L1 metric oracle.
+    # R6 remember + terminal acquit at Supervised — gated by the L1 metric oracle.
     acquitted, ack_token = False, None
     if verdict["result"] == "pass":
         payload = {
@@ -128,12 +109,12 @@ def run(intent, *, pkg_id, runtime_root, citations, measured):
         if rej is not None:
             raise RuntimeError(f"acquit unexpectedly blocked: {rej.rule}")
         acquitted, ack_token = True, "T1:supervised-ack"
-    chain.append("R7:remember")
+    chain.append("R6:remember")
 
     record = {
         "chain": chain, "idea": idea, "yardstick": yardstick, "verdict": verdict,
         "verified_citations": verified, "rejected_citations": rejected,
-        "acquitted": acquitted, "ack_token": ack_token, "paper_path": str(paper_path),
+        "acquitted": acquitted, "ack_token": ack_token,
     }
     (runtime_root / "run.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
     return record

@@ -120,9 +120,8 @@ the gate. Do not paper over the error by inventing a source.
 ### 6. Write the deliverable
 
 Only after `unresolved_citations` returns an empty list, write the two JSON artifacts. These are the
-lit role's deliverable and the input to `research-write` (R6) — the role that actually surfaces
-citations into the paper. They are `outputs` runtime artifacts, written directly (`Write` is in
-allowed-tools):
+lit role's deliverable — the verified prior-art context that grounds ideation and the research record.
+They are `outputs` runtime artifacts, written directly (`Write` is in allowed-tools):
 
 ```python
 import json, pathlib
@@ -136,8 +135,7 @@ pathlib.Path("outputs/<pkg>/lit/citations.json").write_text(
 If a fetched source should *also* appear on a package surface as a docs page, that goes through
 research-op as a single doc-file op (`--op insert --target doc-file`), which atomically creates both the
 HTML file and its paired card — do not issue a separate `--target doc-card` op afterward, and never a
-direct HTML edit. In the auto-loop, though, citations flow into the paper via `research-write`, not onto
-a package page here.
+direct HTML edit.
 
 ### 7. Promote durable knowledge to the cross-package registries (optional)
 

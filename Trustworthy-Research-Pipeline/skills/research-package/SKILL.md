@@ -143,7 +143,7 @@ Every field has exactly one home page; other pages link. This prevents overlap a
   - Pre-launch readiness facts (T21: GPU id, CUDA_VISIBLE_DEVICES, conda env, git commit, dataset path, expected runtime, dry-run, smoke) live only on `tracker.html` in the **Launch readiness** card.
   - No-change affirmation (T16: boolean + commit hash + link to `implementation.html#owned-files`) and the T1 launch user-ack slot live only on `tracker.html` in the **Launch readiness** card.
   - Per-run live state (last-log timestamp, missed-checks, retries, ETA, runtime root, recommended action with cited PLAN threshold, optional inline objective curve) lives only on `tracker.html` in the **Per-run cards** section.
-  - The three WORKFLOW.md ledger tables (implementation review, resource allocation, latest live check) live only on `tracker.html`. Stage pages link to the tracker row.
+  - The execution ledger tables **resource allocation** and **latest live check** (`data-table="resource-allocation"`, `data-table="live-check"`) live only on `tracker.html`. The **implementation review** is surfaced on `tracker.html` as a pointer card (`data-card="impl-review-pointer"`); its detail lives on `implementation.html`. Stage pages link to the tracker row.
 - Per-phase launcher *commands* (the executable steps) are not contract content — they live next to the scripts they invoke (`packages/<id>/scripts/*.sh` or `packages/<id>/docs/launchers.md`). `tracker.html` rows link to the script, not duplicate its body.
 
 ## Pipeline timeline (binding)
@@ -265,7 +265,7 @@ The scaffold writes generic templates. Patch these `unmeasured` slots when the p
 - `plan.html` &rarr; metric card subfields (`metric-formula`, `metric-dataset`, `metric-protocol`, `metric-dedup`, `metric-cutoff`); baseline subfields (`baseline-checkpoint`, `baseline-protocol`, `baseline-last-verified`); seed plan; plan-diff. The **Pipeline timeline** section under `[data-section="pipeline-timeline"]` is auto-painted from inventory `experiments[]` by `renderPipelineTimeline()` &mdash; do not hand-edit the painted slot and do not add a `<table data-table="experiments">` next to it; populate the inventory entry's `purpose`/`after`/`output`/`gate`/`status`/`runLink` fields instead. Brainstorm or single-phase packages leave `experiments[]` empty (or with one entry) and the timeline renders an empty-state. See [Pipeline timeline](#pipeline-timeline-binding) for the binding contract.
 - `index.html` &rarr; Plan Status card placeholder is auto-painted from inventory `experiments[]` by `renderPlanStatus()`. Do not hand-edit the painted slot; edit the inventory entry instead.
 - `implementation.html` &rarr; owned-files list; diff summary; one `data-card="change"` per algorithm change with `data-field="component"`, `data-field="code-anchor"` in `file:function` form, `data-field="expected-sign"`, `data-field="expected-magnitude"`, `data-field="validating-exp"`.
-- `tracker.html` &rarr; Resume Block fields are auto-painted from inventory by `renderResumeBlock()`; you only need to update inventory. Append rows to the three ledger tables via the `data-table-body` selector (see [references/package-contract.md](references/package-contract.md)). Fill the **Launch readiness** card (T21 readiness fields, expected runtime, dry-run / smoke status, T16 no-change affirmation, T1 launch user-ack). Add one **Per-run card** per open experiment under the `[data-section="run-cards"]` host (T22 + T15: state, last-log, missed-checks, retries, ETA, runtime root, cited PLAN threshold, recommended action, optional inline objective SVG). The to-do list under `data-field="todo-list"` is strict: each `<li>` must wrap its content in `<label><input type="checkbox"> &hellip;</label>`; add the `checked` attribute when the item is done. Plain `<li>text</li>` is not permitted.
+- `tracker.html` &rarr; Resume Block fields are auto-painted from inventory by `renderResumeBlock()`; you only need to update inventory. Append rows to the two execution ledger tables (`resource-allocation`, `live-check`) via the `data-table-body` selector (see [references/package-contract.md](references/package-contract.md)); the implementation-review pointer card links to `implementation.html`. Fill the **Launch readiness** card (T21 readiness fields, expected runtime, dry-run / smoke status, T16 no-change affirmation, T1 launch user-ack). Add one **Per-run card** per open experiment under the `[data-section="run-cards"]` host (T22 + T15: state, last-log, missed-checks, retries, ETA, runtime root, cited PLAN threshold, recommended action, optional inline objective SVG). The to-do list under `data-field="todo-list"` is strict: each `<li>` must wrap its content in `<label><input type="checkbox"> &hellip;</label>`; add the `checked` attribute when the item is done. Plain `<li>text</li>` is not permitted.
 - `_agent/context.html` &rarr; canonical paths only; do not duplicate identity fields from `index.html`.
 
 ## Validation
@@ -274,11 +274,13 @@ The scaffold writes generic templates. Patch these `unmeasured` slots when the p
 - `node --check <cwd>/research_html/assets/research.js`
 - Open `<cwd>/research_html/index.html` from disk: the new package appears in the dashboard package grid; lane and route filters narrow it.
 - Open `<cwd>/research_html/packages/<id>/index.html`: status strip, package nav, identity card, and page index render. Missing fields show `unmeasured`.
-- Grep that the three ledger tables exist only on `tracker.html` (and not on any sibling stage page):
+- Grep that the execution ledger tables live only on `tracker.html`, and that implementation-review is a pointer card (not a table):
   ```bash
-  grep -nE 'data-table="(implementation-review|resource-allocation|live-check)"' \
+  grep -nE 'data-table="(resource-allocation|live-check)"' \
     <cwd>/research_html/packages/<id>/*.html
   # only tracker.html should match.
+  grep -l 'impl-review-pointer' <cwd>/research_html/packages/<id>/tracker.html
+  # tracker.html carries the implementation-review pointer card; its detail lives on `implementation.html`.
   ```
 - Grep that no stage page links to the retired `launch.html` / `live.html`:
   ```bash
