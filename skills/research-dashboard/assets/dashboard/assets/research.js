@@ -158,7 +158,7 @@
     if (!target) return;
     target.innerHTML = categories().map(function (category) {
       return [
-        '<a class="summary-cell summary-link" href="' + category.href + '" data-category="' + category.id + '">',
+        '<a class="summary-cell summary-link" href="' + htmlEscape(category.href) + '" data-category="' + htmlEscape(category.id) + '">',
         '<div class="k">' + htmlEscape(category.title) + "</div>",
         '<div class="v">' + countByCategory(category.id) + "</div>",
         '<div class="hint">Open lane</div>',
@@ -602,9 +602,9 @@
     var cat = normalizeCategory(pkg.category);
     var isTerminal = cat === "success" || cat === "fail" || cat === "brainstorm";
     return [
-      '<a class="package-card package-link-card" href="' + relativeDetailPath(pkg) + '"',
-      ' data-package-id="' + pkg.id + '"',
-      ' data-category="' + cat + '"',
+      '<a class="package-card package-link-card" href="' + htmlEscape(relativeDetailPath(pkg)) + '"',
+      ' data-package-id="' + htmlEscape(pkg.id) + '"',
+      ' data-category="' + htmlEscape(cat) + '"',
       ' data-route="' + htmlEscape(pkg.nextRoute || "unmeasured") + '"',
       ' data-status="' + htmlEscape(status) + '"',
       ' data-status-family="' + htmlEscape(statusFamily(status)) + '"',
@@ -728,7 +728,7 @@
       tagBadgeHtml(pkg),
       '<span class="tag">' + htmlEscape(pkg.category) + "</span>",
       '<a class="pill" href="' + dashboardHref() + '">Dashboard</a>',
-      '<a class="pill" href="' + rootPrefix() + 'categories/' + pkg.category + '/">Category</a>',
+      '<a class="pill" href="' + rootPrefix() + 'categories/' + htmlEscape(pkg.category) + '/">Category</a>',
       "</div>",
       "</header>",
       overviewOnly(pkg),
@@ -804,7 +804,7 @@
         ].join("");
       }).join(""),
       "</div>",
-      '<div class="notice" style="margin-top:18px;">Evidence and resume are not separate modules. They are expressed as Continuity &amp; Verification in Overview, with exact source paths mirrored in <code>_agent/context.html</code>.</div>',
+      '<div class="notice">Evidence and resume are not separate modules. They are expressed as Continuity &amp; Verification in Overview, with exact source paths mirrored in <code>_agent/context.html</code>.</div>',
       "</section>",
     ].join("");
   }
@@ -824,14 +824,16 @@
 
     document.title = pkg.name + " - " + mod.title;
     root.innerHTML = [
+      '<a class="skip-link" href="#main-content">Skip to main content</a>',
       '<div class="shell page-grid">',
       '<nav class="side-nav" aria-label="Package modules">',
       '<div class="label">Package modules</div>',
       MODULES.map(function (item) {
-        return '<a href="' + modulePageHref(pkg, item.id) + '">' + htmlEscape(item.title) + "</a>";
+        var aria = item.id === mod.id ? ' aria-current="page"' : "";
+        return '<a href="' + modulePageHref(pkg, item.id) + '"' + aria + ">" + htmlEscape(item.title) + "</a>";
       }).join(""),
       "</nav>",
-      "<main>",
+      '<main id="main-content">',
       '<header class="masthead">',
       '<div class="eyebrow">Package module</div>',
       "<h1>" + htmlEscape(mod.title) + "</h1>",
@@ -988,14 +990,16 @@
     var present = pkg.pages || [];
     var category = normalizeCategory(pkg.category);
     var prefix = packagePrefix();
+    var current = document.body ? document.body.getAttribute("data-page") : null;
     var html = STAGE_PAGES.filter(function (p) {
       if (p.slug === "brainstorm") return category === "brainstorm";
       return true;
     }).map(function (p) {
       var isPresent = present.indexOf(p.slug) >= 0 || ALWAYS_PRESENT_PAGES.indexOf(p.slug) >= 0;
       var href = prefix + p.href;
+      var aria = p.slug === current ? ' aria-current="page"' : "";
       if (isPresent) {
-        return '<a class="package-nav-link" href="' + htmlEscape(href) + '" data-page-link="' + p.slug + '">' + htmlEscape(p.label) + "</a>";
+        return '<a class="package-nav-link" href="' + htmlEscape(href) + '" data-page-link="' + p.slug + '"' + aria + ">" + htmlEscape(p.label) + "</a>";
       }
       return '<span class="package-nav-link disabled" aria-disabled="true" data-page-link="' + p.slug + '" title="page not yet created">' + htmlEscape(p.label) + "</span>";
     }).join("");
@@ -1537,6 +1541,7 @@
     }
     host.innerHTML = exps.map(function (e) {
       var id = e && e.id ? String(e.id) : "unmeasured";
+      var label = e && e.label ? String(e.label) : "";
       var status = e && e.status ? String(e.status) : "pending";
       var purpose = e && e.purpose ? String(e.purpose) : "unmeasured";
       var output = e && e.output ? String(e.output) : "unmeasured";
@@ -1549,17 +1554,18 @@
         '<li class="pipeline-node" data-phase-id="' + htmlEscape(id) + '" data-phase-status="' + htmlEscape(status) + '">',
         '<div class="pipeline-node-head">',
         '<code class="phase-id">' + htmlEscape(id) + "</code>",
+        label ? '<span class="pipeline-node-title">' + htmlEscape(label) + "</span>" : "",
         '<span class="chip" data-status="' + htmlEscape(status) + '">' + htmlEscape(status) + "</span>",
         hasEvidence ? '<span class="chip" title="' + htmlEscape(e.gateEvidence.artifactPath) + '">&#9989; evidence</span>' : "",
         locked ? '<span class="chip">&#128274; locked</span>' : "",
         "</div>",
-        '<div class="pipeline-node-body">',
-        '<p class="card-text"><b>purpose:</b> ' + htmlEscape(purpose) + "</p>",
-        '<p class="card-text"><b>after:</b> ' + (after.length ? after.map(htmlEscape).join(", ") : "<em>none</em>") + "</p>",
-        '<p class="card-text"><b>output:</b> ' + htmlEscape(output) + "</p>",
-        '<p class="card-text"><b>gate predicate:</b> ' + htmlEscape(gate) + "</p>",
-        '<p class="card-text"><a href="' + htmlEscape(docsAnchor) + '">' + htmlEscape(docsAnchor) + "</a></p>",
-        "</div>",
+        '<dl class="pipeline-node-fields">',
+        '<dt>Purpose</dt><dd>' + htmlEscape(purpose) + "</dd>",
+        '<dt>After</dt><dd>' + (after.length ? after.map(htmlEscape).join(", ") : "<em>none</em>") + "</dd>",
+        '<dt>Output</dt><dd><code>' + htmlEscape(output) + "</code></dd>",
+        '<dt>Gate</dt><dd>' + htmlEscape(gate) + "</dd>",
+        "</dl>",
+        '<a class="pipeline-node-doc" href="' + htmlEscape(docsAnchor) + '">' + htmlEscape(docsAnchor) + "</a>",
         "</li>",
       ].join("");
     }).join("");
@@ -1836,7 +1842,7 @@
     if (!blocks.length) return;
     host.innerHTML = blocks.map(function (b) {
       var phaseId = b && b.phaseId ? String(b.phaseId) : "unmeasured";
-      var title = b && b.title ? String(b.title) : (phaseId + " &mdash; result");
+      var title = b && b.title ? String(b.title) : (phaseId + " — result");
       var summary = b && b.summary ? String(b.summary) : "unmeasured";
       var detail = b && b.detail ? String(b.detail) : "";
       var main = b && b.mainTable;
@@ -1851,7 +1857,7 @@
                    main.rows.map(function (row) {
                      return "<tr>" + headers.map(function (h) {
                        var v = row[h];
-                       return '<td' + (typeof v === "number" ? ' class="num"' : "") + ">" + htmlEscape(v == null ? "&mdash;" : v) + "</td>";
+                       return '<td' + (typeof v === "number" ? ' class="num"' : "") + ">" + htmlEscape(v == null ? "—" : v) + "</td>";
                      }).join("") + "</tr>";
                    }).join("") +
                    "</tbody></table>";

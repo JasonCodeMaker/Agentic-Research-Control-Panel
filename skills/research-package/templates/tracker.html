@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="../../assets/research.css">
 </head>
 <body data-page="tracker" data-package-id="$package_id">
+  <a class="skip-link" href="#user-zone">Skip to main content</a>
   <div class="shell">
 
     <header class="masthead" data-section="masthead">
@@ -14,7 +15,7 @@
       <h1>Tracker &mdash; $name</h1>
       <p class="lead">Single home for execution state. User zone: To-do &middot; Exp directory atlas &middot; Latest live check. Agent zone: Resume Block &middot; Launch readiness (T21/T16/T1) &middot; Chosen route panel (folded from the retired next-action page) &middot; Resource allocation &middot; Per-run cards &middot; impl-review pointer.</p>
       <div class="toolbar"><a class="pill" href="index.html">Overview</a><a class="pill" href="plan.html">Plan</a><a class="pill" href="results.html">Results</a><a class="pill" href="#chosen-route">Chosen route</a></div>
-      <header class="status-strip" data-status-strip aria-label="Package status (T2)"></header>
+      <div class="status-strip" data-status-strip aria-label="Package status (T2)"></div>
     </header>
 
     <nav class="package-nav" data-package-nav aria-label="Package pages"></nav>
@@ -25,7 +26,7 @@
         <h2>To-do</h2>
         <p class="card-text">Each item links to the page that owns the action. Strict format: every <code>&lt;li&gt;</code> wraps its content in <code>&lt;label&gt;&lt;input type="checkbox"&gt; &hellip;&lt;/label&gt;</code>; add the <code>checked</code> attribute when the item is done.</p>
         <ul class="todo-checklist" data-field="todo-list">
-          <li><label><input type="checkbox"> unmeasured &mdash; <a href="#chosen-route">chosen route</a></label></li>
+          <li><label><input type="checkbox"> unmeasured</label> &mdash; <a href="#chosen-route">chosen route</a></li>
         </ul>
       </article>
 
@@ -100,7 +101,7 @@
           <p class="card-text">T1: do not move into <code>success</code> / <code>fail</code> / <code>STOPPED</code> without a recorded user ack here. Read by <code>learnings_lint.py draft-terminal</code> to draft the E3 terminal block.</p>
         </article>
         <article class="module-card considered-routes-card" data-card="considered-routes">
-          <h3>Considered routes</h3>
+          <h2>Considered routes</h2>
           <table class="data-table considered-routes-table" data-table="considered-routes">
             <thead><tr><th>Route</th><th>Considered?</th><th>One-sentence reason</th><th>Evidence path</th></tr></thead>
             <tbody data-table-body="considered-routes">

@@ -161,7 +161,7 @@ def insert_results_gate_row(pkg: str, payload: dict) -> list[str]:
 
 
 def insert_results_block(pkg: str, payload: dict) -> list[str]:
-    """Append a 6-part result-block <section> to results.html."""
+    """Append a 6-part result-block <article> to results.html."""
     path = Path(f"research_html/packages/{pkg}/results.html")
     text = path.read_text()
     title = payload.get("title", "untitled")
@@ -171,14 +171,14 @@ def insert_results_block(pkg: str, payload: dict) -> list[str]:
     insight = payload.get("insight", "")
     ablation_html = payload.get("ablation_html", "") or "<!-- no ablation -->"
     block_html = (
-        f'\n    <section class="result-block" data-block="result-block">\n'
-        f'      <h3 data-block="title">{title}</h3>\n'
-        f'      <p data-block="summary">{summary}</p>\n'
-        f'      <details data-block="detail"><summary>Full description</summary><p>{detail}</p></details>\n'
-        f'      <div data-block="main-table">{main_table_html}</div>\n'
-        f'      <div data-block="insight">{insight}</div>\n'
-        f'      <details data-block="ablation"><summary>Ablation</summary>{ablation_html}</details>\n'
-        f'    </section>'
+        f'\n    <article class="result-block" data-result-block data-block="result-block">\n'
+        f'      <h2 data-block="title">{title}</h2>\n'
+        f'      <p class="block-summary" data-block="summary">{summary}</p>\n'
+        f'      <details class="block-detail" data-block="detail"><summary>Full description</summary><p>{detail}</p></details>\n'
+        f'      <div class="block-main-table" data-block="main-table">{main_table_html}</div>\n'
+        f'      <section class="block-insight" data-block="insight">{insight}</section>\n'
+        f'      <details class="block-ablation" data-block="ablation"><summary>Ablation</summary>{ablation_html}</details>\n'
+        f'    </article>'
     )
     # Insert before </main> if present, otherwise before </body>.
     if "</main>" in text:
@@ -198,7 +198,7 @@ def insert_analysis_rule(pkg: str, payload: dict) -> list[str]:
     prose = payload.get("prose", "")
     evidence_slug = payload.get("evidence_slug", "")
     li_html = (
-        f'<li class="card-text" id="rule-{slug}" style="margin-bottom:0.8em;">'
+        f'<li class="card-text" id="rule-{slug}">'
         f'{prose} Evidence: <a href="#insight-{evidence_slug}">see insight</a>.'
         f'</li>'
     )
@@ -224,11 +224,9 @@ def insert_analysis_insight(pkg: str, payload: dict) -> list[str]:
     title = payload.get("title", "")
     body = payload.get("body", "")
     details_html = (
-        f'<details class="insight-subblock" id="insight-{slug}" '
-        f'style="margin-top:0.8em; border:1px solid #d8dde6; border-radius:6px; background:#fafbfd;">'
-        f'<summary style="cursor:pointer; padding:10px 14px; font-size:1.05rem; font-weight:600; '
-        f'color:#1f2a44; user-select:none; border-radius:6px;">{title}</summary>'
-        f'<div class="insight-body-inner" style="padding:4px 14px 14px 14px;">{body}</div>'
+        f'<details class="insight-subblock" id="insight-{slug}">'
+        f'<summary>{title}</summary>'
+        f'<div class="insight-subblock-body">{body}</div>'
         f'</details>'
     )
     # Strip the placeholder if present.
@@ -258,9 +256,10 @@ def insert_doc_card(pkg: str, payload: dict) -> list[str]:
     tldr = payload.get("tldr", "")
     group = payload.get("group", "")
     card_html = (
-        f'<article class="doc-card" data-doc-slug="{slug}" data-doc-purpose="{purpose}" '
+        f'<article class="module-card doc-card" data-doc-slug="{slug}" data-doc-purpose="{purpose}" '
         f'data-doc-audience="{audience}" data-doc-status="{status}" data-doc-anchor="{slug}.html">'
-        f'<h4>{title}</h4><p>{tldr}</p></article>'
+        f'<header class="doc-card-header"><h3>{title}</h3></header>'
+        f'<p class="doc-tldr">{tldr}</p></article>'
     )
     # Try to insert into the matching group section; fall back to appending before </body>.
     group_pat = re.compile(
@@ -287,25 +286,36 @@ def insert_doc_file(pkg: str, payload: dict) -> list[str]:
 
 
 def insert_tracker_chosen_route(pkg: str, payload: dict) -> list[str]:
-    """Replace inner HTML of <section data-section="chosen-route"> in tracker.html."""
+    """Update the chosen-route fields in tracker.html in place. Targeted field
+    writes only — never overwrite the section — so the two-article structure
+    (chosen-route-card + considered-routes-card) and every data-* anchor that
+    renderChosenRoutePanel() targets are preserved (R6, T24)."""
     path = Path(f"research_html/packages/{pkg}/tracker.html")
     text = path.read_text()
     route = payload.get("route", "")
     reason = payload.get("reason", "")
     next_command = payload.get("next_command", "")
-    inner_html = (
-        f'<h3>Chosen route</h3>'
-        f'<div class="kv-grid">'
-        f'<div class="k">Route</div><div>{route}</div>'
-        f'<div class="k">Reason</div><div>{reason}</div>'
-        f'<div class="k">Next command</div><code>{next_command}</code>'
-        f'</div>'
-    )
-    new = re.sub(
-        r'(<section[^>]*data-section="chosen-route"[^>]*>).*?(</section>)',
-        rf'\1{inner_html}\2', text, count=1, flags=re.DOTALL,
-    )
-    path.write_text(new)
+
+    def set_field(html: str, field: str, content: str) -> str:
+        """Replace the inner HTML of the first element carrying data-field="<field>"."""
+        pat = re.compile(
+            r'(<(\w+)\b[^>]*\bdata-field="' + re.escape(field) + r'"[^>]*>).*?(</\2>)',
+            re.DOTALL,
+        )
+        return pat.sub(lambda m: m.group(1) + content + m.group(3), html, count=1)
+
+    text = set_field(text, "chosen-route", route)
+    text = set_field(text, "chosen-route-reason", reason)
+    if next_command:
+        # Append a Next-command row after the (unique) reason row, inside the
+        # chosen-route-card kv-grid — additive, never destructive.
+        text = re.sub(
+            r'(<div[^>]*data-field="chosen-route-reason"[^>]*>.*?</div>)',
+            lambda m: m.group(1)
+            + '<div class="k">Next command</div><code>' + next_command + '</code>',
+            text, count=1, flags=re.DOTALL,
+        )
+    path.write_text(text)
     _bump_last_updated(path)
     return [str(path)]
 

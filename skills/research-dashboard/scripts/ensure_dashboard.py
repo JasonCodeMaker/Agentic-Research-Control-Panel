@@ -58,7 +58,7 @@ window.RESEARCH_GLOBAL_PROTOCOL = {
 window.RESEARCH_PROJECT_PROFILE = {};
 
 window.RESEARCH_CATEGORIES = [
-  { id: "brainstorm", title: "Brain Storm", summary: "Pre-package ideas (not packages, not in the SSOT). Convert one or more into a Direction + package.", href: "categories/brainstorm/" },
+  { id: "brainstorm", title: "Brainstorm", summary: "Pre-package ideas (not packages, not in the SSOT). Convert one or more into a Direction + package.", href: "categories/brainstorm/" },
   { id: "in-progress", title: "In Progress", summary: "Active packages with ongoing implementation, execution, or analysis.", href: "categories/in-progress/" },
   { id: "success", title: "Success", summary: "Packages adopted into the active project system.", href: "categories/success/" },
   { id: "fail", title: "Fail", summary: "Directions judged failed, stopped, or not promotable.", href: "categories/fail/" },

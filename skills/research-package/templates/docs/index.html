@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="../../../assets/research.css">
 </head>
 <body data-page="docs" data-package-id="$package_id">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
   <div class="shell">
 
     <header class="masthead" data-section="masthead">
@@ -14,14 +15,14 @@
       <h1>Docs &mdash; $name</h1>
       <p class="lead">Source material that grounds the plan, implementation, runs, and results. Grouped by the group-design rule: 4&ndash;7 groups &middot; each group is a predictable cluster &middot; full coverage &middot; &ge; 2 docs per group.</p>
       <div class="toolbar"><a class="pill" href="../">Overview</a><a class="pill" href="../../../index.html">Dashboard</a></div>
-      <header class="status-strip" data-status-strip aria-label="Package status (T2)"></header>
+      <div class="status-strip" data-status-strip aria-label="Package status (T2)"></div>
     </header>
 
     <nav class="package-nav" data-package-nav aria-label="Package pages"></nav>
 
     <p class="docs-index-lead card-text" data-field="docs-index-lead">Group count: <span data-field="docs-group-count">0</span>. Group ids: <span data-field="docs-group-ids">unmeasured</span>. Replace this line with the actual group set declared below.</p>
 
-    <div class="docs-groups" data-list="docs-groups">
+    <div class="docs-groups" id="main-content" data-list="docs-groups">
 
       <section class="docs-group" data-doc-group="contracts" data-doc-group-kind="contracts" data-doc-group-rationale="frozen interface contracts for plan / metric / dataset / runtime — reader expects to find these first when verifying any downstream claim">
         <header class="docs-group-header">
