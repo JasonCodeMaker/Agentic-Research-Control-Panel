@@ -5,6 +5,266 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Brainstorm - Research Packages</title>
   <link rel="stylesheet" href="../../assets/research.css">
+  <style>
+    /* Brainstorm-lane-local styling. Kept page-local (R8/R12) so the shared
+       chrome and the other three lanes stay byte-for-byte unchanged. No remote
+       fonts (R17), no decorative animation (R11) — only fact-bearing structure,
+       on-disk type tokens, and hover/focus states that aid a reader. */
+
+    /* The masthead lead is filled by renderBrainstorms(); give it a touch more
+       measure than the shared 720px so the lane definition reads as one block. */
+    .masthead .lead { max-width: 760px; }
+    .ideas-section { margin-top: 8px; }
+    .ideas-section .category-link-bar { align-items: baseline; }
+    .ideas-section .category-link-bar h2 {
+      font-family: var(--serif);
+      font-size: 23px;
+      margin: 0;
+    }
+
+    /* ----- Lifecycle rail: where a brainstorm idea sits in the pipeline ----- */
+    .bi-rail {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0;
+      margin: 4px 0 36px;
+      border: 1.5px solid var(--g300);
+      border-radius: 14px;
+      background: var(--paper);
+      overflow: hidden;
+    }
+    @media (max-width: 760px) {
+      .bi-rail { grid-template-columns: 1fr 1fr; }
+    }
+    .bi-rail-step {
+      position: relative;
+      padding: 16px 20px 18px;
+      border-right: 1.5px solid var(--g200);
+    }
+    .bi-rail-step:last-child { border-right: 0; }
+    @media (max-width: 760px) {
+      .bi-rail-step:nth-child(2n) { border-right: 0; }
+      .bi-rail-step:nth-child(-n+2) { border-bottom: 1.5px solid var(--g200); }
+    }
+    .bi-rail-step[data-current] {
+      background: var(--g100);
+      box-shadow: inset 3px 0 0 var(--clay);
+    }
+    .bi-rail-k {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--g500);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-variant-numeric: tabular-nums;
+    }
+    .bi-rail-step[data-current] .bi-rail-k { color: var(--clay-text); }
+    .bi-rail-name {
+      margin: 8px 0 4px;
+      font-family: var(--serif);
+      font-size: 18px;
+      color: var(--slate);
+      letter-spacing: -0.01em;
+    }
+    .bi-rail-note {
+      margin: 0 0 10px;
+      color: var(--g600);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .bi-rail-driver {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--g700);
+      background: var(--ivory);
+      border: 1.5px solid var(--g200);
+      border-radius: 6px;
+      padding: 3px 7px;
+    }
+    .bi-rail-step[data-current] .bi-rail-driver {
+      border-color: var(--rose);
+      color: var(--clay-text);
+    }
+
+    /* ----- Idea cards: the bland flush-text card gets real padding zones ----- */
+    .brainstorm-idea {
+      min-height: 0;
+      border-left: 3px solid var(--clay);
+      gap: 0;
+    }
+    .brainstorm-idea.package-link-card:hover { border-left-color: var(--clay-dark); }
+    .bi-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 20px;
+      border-bottom: 1.5px solid var(--g200);
+      background: var(--g100);
+    }
+    .bi-kicker {
+      color: var(--clay-text);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .bi-date {
+      color: var(--g500);
+      font-family: var(--mono);
+      font-size: 11.5px;
+      font-variant-numeric: tabular-nums;
+    }
+    .bi-body {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      gap: 12px;
+      padding: 18px 20px 16px;
+    }
+    .bi-title {
+      margin: 0;
+      font-family: var(--serif);
+      font-size: 20px;
+      font-weight: 500;
+      line-height: 1.18;
+      letter-spacing: -0.01em;
+      text-wrap: balance;
+    }
+    .bi-idea {
+      margin: 0;
+      max-width: 60ch;
+      color: var(--g700);
+      font-size: 14px;
+      line-height: 1.55;
+      text-wrap: pretty;
+    }
+    .bi-meta {
+      display: grid;
+      gap: 8px;
+      margin: 4px 0 0;
+      padding-top: 12px;
+      border-top: 1.5px solid var(--g200);
+    }
+    .bi-meta-row { margin: 0; }
+    .bi-meta-row dt {
+      color: var(--g500);
+      font-family: var(--mono);
+      font-size: 10.5px;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+    .bi-meta-row dd {
+      margin: 3px 0 0;
+      color: var(--slate);
+      font-size: 13.5px;
+      line-height: 1.4;
+    }
+    .bi-metric {
+      font-variant-numeric: tabular-nums;
+      color: var(--olive-text);
+    }
+    .bi-ungrounded { color: var(--g500); font-style: italic; }
+    .bi-ungrounded code,
+    .bi-empty-cmd code,
+    .bi-rail-note code {
+      font-family: var(--mono);
+      font-size: 0.92em;
+    }
+    .bi-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: auto;
+      padding: 12px 20px;
+      border-top: 1.5px solid var(--g200);
+      background: var(--ivory);
+    }
+    .bi-id {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--g600);
+      letter-spacing: 0.02em;
+    }
+    .bi-stage {
+      font-family: var(--mono);
+      font-size: 10.5px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--g500);
+    }
+    .bi-cta {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--clay-text);
+    }
+
+    /* ----- Composed empty / getting-started state ----- */
+    .bi-empty {
+      grid-column: 1 / -1;
+      max-width: 640px;
+      border: 1.5px solid var(--g300);
+      border-left: 3px solid var(--clay);
+      border-radius: 14px;
+      background: var(--paper);
+      padding: 26px 28px 28px;
+    }
+    .bi-empty h3 {
+      margin: 0 0 10px;
+      font-family: var(--serif);
+      font-size: 22px;
+    }
+    .bi-empty p { margin: 0 0 14px; color: var(--g700); font-size: 14.5px; line-height: 1.55; }
+    .bi-empty-eg {
+      list-style: none;
+      margin: 0 0 16px;
+      padding: 14px 16px;
+      border: 1.5px solid var(--g200);
+      border-radius: 10px;
+      background: var(--ivory);
+    }
+    .bi-empty-eg li {
+      display: flex;
+      gap: 12px;
+      font-size: 13.5px;
+      line-height: 1.5;
+      color: var(--slate);
+    }
+    .bi-empty-eg li + li { margin-top: 8px; }
+    .bi-empty-eg li span {
+      flex: 0 0 86px;
+      color: var(--g500);
+      font-family: var(--mono);
+      font-size: 10.5px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding-top: 2px;
+    }
+    .bi-empty-cmd { margin: 0; color: var(--g700); font-size: 14px; }
+    .bi-empty-cmd code {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--clay-text);
+      background: var(--ivory);
+      border: 1.5px solid var(--rose);
+      border-radius: 6px;
+      padding: 2px 7px;
+    }
+
+    /* ----- Layout fixes: the idea grid shares the section's left edge. The
+       shared .package-grid carries a 48px category indent that left the cards
+       misaligned under the full-width rail + heading; pull them back to x=0 and
+       give a clear gap below the "Pre-package ideas" heading. ----- */
+    #brainstorm-ideas-root { margin-left: 0; }
+    #category-package-root { margin: 0; }
+    .bi-rail { margin: 8px 0 30px; }
+    .ideas-section { margin-top: 0; }
+    .ideas-section .category-link-bar { margin: 0 0 22px; }
+  </style>
 </head>
 <body>
   <a class="skip-link" href="#brainstorm-ideas-root">Skip to main content</a>
@@ -17,9 +277,37 @@
         <a class="pill" href="../../index.html">Dashboard</a>
         <a class="pill" href="../../rules/html-rules.html">HTML Rules</a>
         <a class="pill" href="../../rules/trustworthy-research-rules.html">Trust Rules</a>
-        <span class="tag" id="category-count">0 packages</span>
+        <span class="tag" id="category-count">0 ideas</span>
       </div>
     </header>
+
+    <section class="bi-rail" data-section="lifecycle" aria-label="How a brainstorm idea becomes research">
+      <div class="bi-rail-step" data-current data-stage="idea">
+        <div class="bi-rail-k">Stage 1 · you are here</div>
+        <h2 class="bi-rail-name">Idea</h2>
+        <p class="bi-rail-note">A one-sentence hunch. Cheap, ungated, pre-SSOT.</p>
+        <span class="bi-rail-driver">/research-brainstorm</span>
+      </div>
+      <div class="bi-rail-step" data-stage="direction">
+        <div class="bi-rail-k">Stage 2</div>
+        <h2 class="bi-rail-name">Direction</h2>
+        <p class="bi-rail-note">A ratified objective + yardstick, accepted through Triage.</p>
+        <span class="bi-rail-driver">/research-scope</span>
+      </div>
+      <div class="bi-rail-step" data-stage="package">
+        <div class="bi-rail-k">Stage 3</div>
+        <h2 class="bi-rail-name">Package</h2>
+        <p class="bi-rail-note">Plan, tracker, and results surfaces under one gated home.</p>
+        <span class="bi-rail-driver">/research-package</span>
+      </div>
+      <div class="bi-rail-step" data-stage="outcome">
+        <div class="bi-rail-k">Stage 4</div>
+        <h2 class="bi-rail-name">Outcome</h2>
+        <p class="bi-rail-note">An adopted win or an archived failure, with a methodsTried trace.</p>
+        <span class="bi-rail-driver">learnings.html</span>
+      </div>
+    </section>
+
     <section class="ideas-section" data-section="ideas">
       <div class="category-link-bar">
         <h2>Pre-package ideas</h2>

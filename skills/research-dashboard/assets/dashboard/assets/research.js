@@ -120,6 +120,8 @@
   }
 
   function countByCategory(categoryId) {
+    // Brainstorm is a lane (window.BRAINSTORMS), not a package category; count the ideas.
+    if (categoryId === "brainstorm") return (window.BRAINSTORMS || []).length;
     return packages().filter(function (pkg) {
       return normalizeCategory(pkg.category) === categoryId;
     }).length;
@@ -656,16 +658,58 @@
   }
 
   function brainstormCardHtml(idea) {
+    // Link the card to its doc when the idea carries a detailPath; doc-less ideas render as a static article.
+    var hasDoc = !!idea.detailPath;
+    var open = hasDoc
+      ? '<a class="package-card package-link-card brainstorm-idea" href="' + htmlEscape(relativeDetailPath(idea)) + '" data-brainstorm-id="' + htmlEscape(idea.id) + '">'
+      : '<article class="package-card brainstorm-idea" data-brainstorm-id="' + htmlEscape(idea.id) + '">';
+    var created = idea.created_at ? String(idea.created_at).slice(0, 10) : "";
+    var refs = Array.isArray(idea.lit_refs) ? idea.lit_refs : [];
+    var meta = [];
+    if (idea.rough_metric) {
+      meta.push(
+        '<div class="bi-meta-row" data-field="rough-metric"><dt>Rough metric</dt>' +
+        '<dd class="bi-metric">' + htmlEscape(idea.rough_metric) + "</dd></div>"
+      );
+    }
+    meta.push(
+      '<div class="bi-meta-row" data-field="grounding"><dt>Grounding</dt><dd>' +
+      (refs.length
+        ? htmlEscape(refs.join(" · "))
+        : '<span class="bi-ungrounded">not grounded yet &mdash; run <code>/research-lit</code></span>') +
+      "</dd></div>"
+    );
     return [
-      '<article class="package-card brainstorm-idea">',
-      '<div class="eyebrow">Pre-package idea</div>',
-      "<h3>" + htmlEscape(idea.title || idea.id) + "</h3>",
-      idea.idea ? "<p>" + htmlEscape(idea.idea) + "</p>" : "",
-      idea.rough_metric
-        ? '<div class="k">Rough metric</div><div>' + htmlEscape(idea.rough_metric) + "</div>"
-        : "",
-      '<div class="toolbar"><span class="tag">' + htmlEscape(idea.id) + "</span></div>",
-      "</article>",
+      open,
+      '<header class="bi-top">',
+      '<span class="bi-kicker">Pre-package idea</span>',
+      created ? '<time class="bi-date" datetime="' + htmlEscape(idea.created_at) + '">' + htmlEscape(created) + "</time>" : "",
+      "</header>",
+      '<div class="bi-body">',
+      '<h3 class="bi-title">' + htmlEscape(idea.title || idea.id) + "</h3>",
+      idea.idea ? '<p class="bi-idea">' + htmlEscape(idea.idea) + "</p>" : "",
+      '<dl class="bi-meta">' + meta.join("") + "</dl>",
+      "</div>",
+      '<footer class="bi-foot">',
+      '<span class="bi-id">' + htmlEscape(idea.id) + "</span>",
+      hasDoc ? '<span class="bi-cta">Open idea &rarr;</span>' : '<span class="bi-stage">brainstorm lane</span>',
+      "</footer>",
+      hasDoc ? "</a>" : "</article>",
+    ].join("");
+  }
+
+  // Composed empty / getting-started state for the ideas-only brainstorm lane.
+  function brainstormEmptyHtml() {
+    return [
+      '<div class="bi-empty" data-section="getting-started">',
+      "<h3>No ideas captured yet</h3>",
+      "<p>This lane is for cheap, pre-package hunches &mdash; one sentence is enough. An idea earns its place if it names a concrete change and the rough metric you would expect to move.</p>",
+      '<ul class="bi-empty-eg">',
+      "<li><span>title</span>Share one RQ-VAE codebook across the video and text towers</li>",
+      "<li><span>rough metric</span>R@1 +1.5 on MSR-VTT 1k-A, same codebook size</li>",
+      "</ul>",
+      '<p class="bi-empty-cmd">Capture the first one with <code>/research-brainstorm</code></p>',
+      "</div>",
     ].join("");
   }
 
@@ -675,11 +719,19 @@
     var root = byId("brainstorm-ideas-root");
     if (!root || window.RESEARCH_CATEGORY_ID !== "brainstorm") return;
     var ideas = window.BRAINSTORMS || [];
+    // Ideas-only lane: renderCategoryPage() bails for brainstorm, so the masthead
+    // lead + count would otherwise stay blank / "0 packages". Fill them here.
+    var summary = byId("category-summary");
+    if (summary && !summary.textContent.trim()) {
+      summary.textContent = "Cheap, pre-package, pre-SSOT ideas live here. Each is a hunch worth a sentence — not a committed direction and not gated. Shape one with /research-brainstorm, then convert it through Triage into a ratified Direction with its own package.";
+    }
+    var laneCount = byId("category-count");
+    if (laneCount) laneCount.textContent = ideas.length + " idea" + (ideas.length === 1 ? "" : "s");
     var count = byId("brainstorm-ideas-count");
     if (count) count.textContent = String(ideas.length) + " idea" + (ideas.length === 1 ? "" : "s");
     root.innerHTML = ideas.length
       ? ideas.map(brainstormCardHtml).join("")
-      : '<div class="empty-state">No pre-package ideas yet. Use /research-brainstorm to add one.</div>';
+      : brainstormEmptyHtml();
   }
 
   function packageModuleHref(pkg, moduleId) {
