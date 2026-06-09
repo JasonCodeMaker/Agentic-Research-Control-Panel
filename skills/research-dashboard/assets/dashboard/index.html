@@ -19,6 +19,7 @@
         binding rule files here before opening any package detail.
       </p>
       <div class="toolbar" data-card="dashboard-toolbar">
+        <a class="pill" href="scope.html">Scope Tree</a>
         <a class="pill" href="learnings.html">Learnings</a>
         <a class="pill" href="context.html">Agent Context</a>
         <a class="pill" href="rules/html-rules.html">HTML Rules</a>
@@ -32,7 +33,7 @@
       <a href="#snapshot">Snapshot</a>
       <a href="#lanes">Lanes</a>
       <a href="#packages">Packages</a>
-      <a href="#scope">Scope</a>
+      <a href="scope.html">Scope Tree</a>
       <a href="learnings.html">Learnings</a>
       <a href="context.html">Agent Context</a>
       <a href="#protocol">Protocol</a>
@@ -86,15 +87,6 @@
       <main id="dashboard-package-root" class="package-grid"></main>
     </section>
 
-    <section id="scope" data-section="scope" aria-label="Scope projection">
-      <h2>Scope projection</h2>
-      <p class="lead">
-        Read-only projection of <code>outputs/_scope/transitions.jsonl</code>. Project intent,
-        active Directions, and high-level validation Milestones are rendered here from the folded SSOT.
-      </p>
-      <div id="scope-projection-root" class="scope-projection"></div>
-    </section>
-
     <section id="protocol" data-section="protocol" aria-label="Global protocol">
       <div id="global-context"></div>
     </section>
@@ -134,7 +126,6 @@
 
   <script src="data/schema.js"></script>
   <script src="data/research-packages.js"></script>
-  <script src="data/scope-projection.js"></script>
   <script src="data/brainstorms.js"></script>
   <script src="assets/research.js"></script>
 </body>

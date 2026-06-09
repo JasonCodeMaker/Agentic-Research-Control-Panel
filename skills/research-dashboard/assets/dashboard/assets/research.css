@@ -2733,6 +2733,177 @@ details[data-audience="agent"][open] > summary {
 }
 
 /* ============================================================
+   scope.html — Scope Inspector live view (tree + detail drawer).
+   Reuses the dashboard tokens and the .scope-node / .timeline /
+   .status-strip idioms; adds only the two-pane layout, child
+   indentation, the sticky detail drawer, and source-health coloring.
+   ============================================================ */
+
+.scope-inspector-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 22px;
+  align-items: start;
+  margin-top: 8px;
+}
+
+.scope-panels {
+  min-width: 0;
+}
+
+.scope-forest {
+  display: grid;
+  gap: 14px;
+}
+
+.scope-forest .scope-node[data-select-node],
+.scope-proposal,
+.scope-history-row {
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.scope-forest .scope-node[data-select-node]:hover,
+.scope-proposal:hover {
+  border-color: var(--slate);
+}
+
+.scope-node[data-selected="true"],
+.scope-history-row.is-selected {
+  border-color: var(--clay);
+  background: #f7e6dc;
+}
+
+.scope-node[role="button"]:focus-visible,
+.scope-proposal:focus-visible,
+.scope-history-row:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.scope-node-fields {
+  margin-top: 4px;
+}
+
+/* Children indent under their parent via a left rail (depth from the graph). */
+.scope-children {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0 2px 18px;
+  padding-left: 14px;
+  border-left: 2px solid var(--g200);
+}
+
+.scope-proposal {
+  border-left: 4px solid var(--gold);
+}
+
+.scope-subgrid {
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 4px 10px;
+  margin-top: 2px;
+}
+
+.scope-note {
+  margin: 0 0 14px;
+  color: var(--g600);
+  font-size: 13px;
+}
+
+.scope-history-group {
+  margin: 0 0 28px;
+}
+
+.scope-history-head {
+  margin: 0 0 10px;
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+.scope-history-row {
+  border-radius: 8px;
+  padding: 4px 8px;
+  margin-left: -8px;
+}
+
+.scope-history-txn {
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: var(--g600);
+}
+
+.scope-drawer {
+  position: sticky;
+  top: 24px;
+  align-self: start;
+  border: 1.5px solid var(--g300);
+  border-radius: 12px;
+  background: var(--paper);
+  padding: 16px 18px;
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+
+.scope-drawer-head {
+  margin-bottom: 12px;
+  color: var(--g600);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.scope-drawer-empty {
+  color: var(--g600);
+  font-size: 13.5px;
+}
+
+.scope-drawer-section {
+  margin-top: 16px;
+  border-top: 1px solid var(--g200);
+  padding-top: 12px;
+}
+
+.scope-drawer-label {
+  margin-bottom: 8px;
+  color: var(--clay-text);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.scope-drawer-grid {
+  grid-template-columns: 110px minmax(0, 1fr);
+}
+
+.scope-health .status-cell[data-state="ok"] .v,
+.scope-health .status-cell[data-state="ok"] .hint {
+  color: var(--olive-text);
+}
+
+.scope-health .status-cell[data-state="unreachable"] .v,
+.scope-health .status-cell[data-state="unreachable"] .hint,
+.scope-health .status-cell[data-state="error"] .v {
+  color: var(--clay-dark);
+}
+
+.scope-health .status-cell[data-state="warn"] .v {
+  color: var(--gold-dark);
+}
+
+@media (max-width: 900px) {
+  .scope-inspector-main {
+    grid-template-columns: 1fr;
+  }
+
+  .scope-drawer {
+    position: static;
+    max-height: none;
+  }
+}
+
+/* ============================================================
    Reduced motion — honor the OS "reduce motion" opt-out. This block
    REMOVES motion (it adds none): it neutralizes smooth-scroll, the
    card hover lift, and functional hover/focus transitions. Static
