@@ -2,7 +2,6 @@
 name: research-scope
 description: "R1 scope + the Task/Objective surface — the scope role. Use when defining or revising a project/direction/task's intent, or when the agent wants to change scope. The agent may only PROPOSE a scope change: it lands as a pending Triage item (scripts/triage.py), never a direct SSOT write — the objective cascade is PM-write-only. The human accepts (committed via research-op's scope-transition op) or rejects (archived, SSOT untouched). Reads/writes intent through lib/scope_ssot; all SSOT writes route through research-op. Never invokes git. Use this skill directly when a user defines or changes scope; research-auto invokes the same R1 role internally during the autonomous loop."
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
-context: fork
 disable-model-invocation: false
 ---
 

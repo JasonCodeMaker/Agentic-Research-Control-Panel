@@ -3,7 +3,6 @@ name: research-brainstorm
 description: "The Step-3 direction-formation on-ramp. Use when the user has only a vague or partial research idea and cannot yet state a clear Direction, or types /research-brainstorm, or asks to brainstorm / shape / explore a research direction before committing. Follows the brainstorming method (one question at a time, 2-3 approaches), grounds factual uncertainties with /research-lit, and uses /research-ideate to sharpen hypotheses. Captures cheap pre-package, pre-SSOT ideas onto the dashboard brainstorm lane (research_html/data/brainstorms.js), then converts one or more ideas into a single Direction proposal submitted through the Triage gate. The agent only PROPOSES the Direction — the PM ratifies. Project-agnostic. Requires a committed Project node (run /research-onboard or /research-scope first)."
 argument-hint: "[<dashboard root, defaults to ./research_html>]"
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob, Agent
-context: fork
 disable-model-invocation: false
 ---
 

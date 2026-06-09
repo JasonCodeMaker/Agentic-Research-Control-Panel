@@ -1,8 +1,7 @@
 ---
 name: research-auto
 description: "The auto-research orchestrator — drives one research direction's idea->verified-result loop through the six roles (R1 scope, R2 search/read, R3 ideate, R4 experiment, R5 verify, R6 remember) and the real trust gates. Use whenever the user types /research-auto or asks to run the autonomous research loop on a scoped direction. Stage 1 = a thin walking skeleton (scripts/skeleton.py) that proves the loop composes end-to-end at the Supervised autonomy level with L1 gates; the heavy roles, the L2 cross-model verifier, the per-task autonomy dial (scripts/dial.py) and the PACK continuity bundle (scripts/pack.py) already ship as tested utilities, and later build stages wire them all into the main loop. Reads every yardstick from the Scope SSOT (lib/scope_ssot); every gated write routes through research-op. Never invokes git."
-allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
-context: fork
+allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob, Agent
 disable-model-invocation: false
 ---
 
@@ -16,6 +15,21 @@ write through `research-op`. It is the journey-step actuator for **Run** in the 
 
 The trust guarantee: no citation reaches the record unless its source resolves on disk (L1 cite-exists),
 and the direction is never marked acquitted unless the metric oracle clears the SSOT success predicate.
+
+## Execution model — resident conductor, isolated workers
+
+This skill runs **resident** in the live session (it declares no `context: fork`). The conductor must
+stay in the user's thread so the loop keeps its state across turns, "continue" actually continues, and
+every tick's next-step lands in front of the user — a forked orchestrator returns its report as detached
+stdout and leaves the live agent inert ("No response requested."), which is a continuity failure, not a
+trust feature. Context isolation (核心问题 #1) is achieved at the **role** level, not the conductor
+level: dispatch each heavy, context-polluting role — R2 search/read, R4 implement, R5 verify/review — as
+a **sub-agent via the `Agent` tool** (a fresh context that returns only its typed
+`{agent_role, assigned_scope, status, evidence, blockers, recommended_next_action}` envelope per
+`driver.validate_role_return`). The conductor reads back only the envelope, never the worker's raw
+context. So: isolate the workers, keep the conductor resident — never fork the conductor. The bounded
+mutator/worker skills (`research-op`, `research-lit`, `research-ideate`, `research-reflect`,
+`research-apply`) keep `context: fork` because each is a "do one task, return a result" executor.
 
 ## Resources
 
@@ -153,7 +167,8 @@ never ratify or materialize from pending state.
 | G | committed Project+Direction+Task+package+readiness pass | `enter_auto_loop` → Stage-0 `run_tick` |
 
 Helpers: `detect_admission_state(root, *, readiness_ok=None) -> "A".."G"`;
-`build_admission_actions(state, context) -> [action]` (dedups against `context["pending"]` Triage items →
+`build_admission_actions(state, context, *, root=None) -> [action]` (with `root` set, each action is
+enriched in place with `next_step` + a State-C `seed` — see the Next-Smooth-Step contract; dedups against `context["pending"]` Triage items →
 `block_for_user_disposal` instead of a duplicate proposal; `propose_task` carries
 `autonomy_choices = ["supervised", "checkpoints", "async", "autonomous"]` and defaults to
 `autonomous` unless `context["autonomy_level"]`, `context["dial"]`, or the task proposal says otherwise);
@@ -170,6 +185,36 @@ python3 -m pytest tests/research-auto/test_admission.py -q
 The simplified user story — `init dashboard → /research-auto → accept/reject proposals when prompted` —
 holds without weakening trust. `/research-brainstorm`, `/research-scope`, `/research-package` remain
 explicit manual escape hatches for users who want to drive formation themselves.
+
+### Next-Smooth-Step contract (mandatory close of every turn)
+
+A front-door turn never ends on a raw FSM label ("State C", "readiness --dial autonomous"). The smart
+parts are **baked into the FSM**, not left to you to remember: call
+`admission.build_admission_actions(state, context, root=<cwd>)` (or `run_front_door(root, …)`, which
+passes `root` through). With `root` set, every returned action already carries:
+
+- `action["next_step"]` — the rendered plain-language step (`headline` / `next_action` / `offer` /
+  `awaits_user` / `details`), produced by `render_next_step`. You surface these fields; you do not
+  re-derive them.
+- `action["seed"]` (at **State C** only, when one is found) — a direction already drafted on disk.
+  `detect_seed_direction(root)` scans `packages/*/plan.html` for a populated plan-invariants hypothesis
+  (the real `objectiveContract` shape the generator paints — **not** a registry field) and returns the
+  newest such package plus `candidates`. So when a direction is sitting in `plan.html`, the action
+  proposes **that** package instead of reporting "no direction" and making the user re-supply it (the
+  exact turn-3 failure in the diagnosis). If `root` is omitted the actions come back raw — always pass it.
+
+Surface `action["next_step"]` to the user in this order:
+   - **Where we are** — the plain-language `headline` (one sentence, no FSM jargon).
+   - **The single smoothest next action** — `next_action` (concrete, names the artifact/command).
+   - **The affordance** — `offer`. When `awaits_user` is `False`, the smoothest path is one tap: tell the
+     user to reply `go` and you will do it (draft + propose / materialize / run readiness / enter the
+     loop). When `awaits_user` is `True` (dashboard handoff, a proposal pending in Triage), the move is
+     theirs — say exactly what to type (`accept` / `reject` / the command). Use a 2-option
+     `AskUserQuestion` only at a real fork (e.g. readiness path (a) scaffold vs (b) drop the dial).
+   - The internal state/command goes in a details footnote, never the headline.
+
+Because this skill is **resident** (see *Execution model* above), `go` resumes in the same thread with
+loop state intact — the loop actually continues instead of halting after a detached report.
 
 ## Bundled utilities (available now)
 

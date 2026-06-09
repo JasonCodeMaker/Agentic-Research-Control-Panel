@@ -21,7 +21,7 @@ TARGETS = {
     "status", "activeGate", "primaryMetricVsGate", "lastAction", "lastUpdated",
     "openRuns", "currentBlocker", "terminationMessage", "adoptionPath",
     "supersededBy", "reopenTrigger", "experiments-row", "experiments-status",
-    "methodsTried",
+    "methodsTried", "package-invariant",
     # HTML in-place targets (single-home, no painter)
     "tracker-live-check-row", "tracker-resource-allocation-row",
     "tracker-impl-review-row", "tracker-chosen-route",
@@ -59,6 +59,8 @@ INSERT_LEGAL = {
     },
     "analysis-rule": {("in-progress", s) for s in STATES["in-progress"]},
     "analysis-insight": {("in-progress", s) for s in STATES["in-progress"]},
+    # A binding directive (e.g. a figure-construction rule) may be added at any in-progress stage.
+    "package-invariant": {("in-progress", s) for s in STATES["in-progress"]},
     "doc-file": {("in-progress", s) for s in STATES["in-progress"]},
     "doc-card": {("in-progress", s) for s in STATES["in-progress"]},
     "tracker-chosen-route": {("in-progress", "NEXT_ACTION_READY")},

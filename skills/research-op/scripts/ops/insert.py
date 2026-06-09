@@ -62,6 +62,13 @@ def insert_experiments_row(pkg: str, payload: dict) -> list[str]:
     return [_append_to_inventory_array(pkg, "experiments", payload)]
 
 
+def insert_package_invariant(pkg: str, payload: dict) -> list[str]:
+    """Append a binding directive {rule, rationale, addedAt} to the package's bindingRules[] — the typed,
+    audited home for a user-added rule (e.g. one-notebook-per-figure)."""
+    entry = {k: payload[k] for k in ("rule", "rationale", "addedAt") if k in payload}
+    return [_append_to_inventory_array(pkg, "bindingRules", entry)]
+
+
 def insert_tracker_live_check_row(pkg: str, payload: dict) -> list[str]:
     path = Path(f"research_html/packages/{pkg}/tracker.html")
     text = path.read_text()
@@ -323,6 +330,7 @@ def insert_tracker_chosen_route(pkg: str, payload: dict) -> list[str]:
 _DISPATCH = {
     "methodsTried":                    insert_methodstried,
     "experiments-row":                 insert_experiments_row,
+    "package-invariant":               insert_package_invariant,
     "tracker-live-check-row":          insert_tracker_live_check_row,
     "tracker-resource-allocation-row": insert_tracker_resource_allocation_row,
     "tracker-impl-review-row":         insert_tracker_impl_review_row,

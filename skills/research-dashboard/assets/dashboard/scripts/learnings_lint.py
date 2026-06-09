@@ -174,6 +174,28 @@ def lint_status(data: dict) -> Report:
                 rep.add(Violation(pid, "method-row-bad-verdict",
                                   f"methodsTried[{i}] verdict={v!r} not in {sorted(VERDICTS)}", "error"))
 
+        # Binding rules (directive home) + E0 directive-propagation. A bindingRules[] entry is a user
+        # directive change ("add a rule"); the typed row must carry rule text, and adding one must have
+        # propagated to the tracker lastAction mirror + registry lastUpdated in the same turn — else the
+        # package reads as unchanged (Issue 3: a rule landed in doc prose with nothing else touched).
+        brules = pkg.get("bindingRules") or []
+        if not isinstance(brules, list):
+            rep.add(Violation(pid, "binding-rules-not-list", "bindingRules must be an array", "error"))
+            brules = []
+        for i, r in enumerate(brules):
+            if not r or not field_present((r or {}).get("rule")):
+                rep.add(Violation(pid, "binding-rule-missing-field",
+                                  f"bindingRules[{i}] missing 'rule' text", "error"))
+        if brules:
+            if not _filled(pkg.get("lastAction")):
+                rep.add(Violation(pid, "directive-not-propagated",
+                                  "bindingRules present but lastAction is unset — a directive change must "
+                                  "update the tracker Resume Block in the same turn", "warning"))
+            if not _filled(pkg.get("lastUpdated")):
+                rep.add(Violation(pid, "directive-not-propagated",
+                                  "bindingRules present but lastUpdated is unset — a directive change must "
+                                  "bump the registry timestamp in the same turn", "warning"))
+
         # Contribution spine
         cs = pkg.get("contributionSpineFlag")
         if field_present(cs) and cs not in spine_ids:

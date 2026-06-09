@@ -3,7 +3,6 @@ name: research-onboard
 description: "The steps 1->3 on-ramp: bridge a raw workspace into the Scope SSOT. Use right after /research-dashboard when no Project node exists yet, or whenever the user types /research-onboard, asks to bootstrap / initialize / set up a research project, or asks the agent to analyze a workspace and propose a project objective. Two cases: an EMPTY workspace gets an in-place deep-learning skeleton then a north-star elicited by dialogue; an EXISTING workspace gets analyzed (README / CLAUDE.md / configs / src / data / baselines) into a prior-knowledge artifact plus a drafted objective. Both end by proposing a Project node through Triage for the human to ratify. Project-agnostic. The agent only PROPOSES — it never commits the SSOT and never creates packages."
 argument-hint: "[<cwd, defaults to .>]"
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
-context: fork
 disable-model-invocation: false
 ---
 

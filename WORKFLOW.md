@@ -333,6 +333,7 @@ Live check table update is mandatory and strict:
 
 | Event | Surfaces to update in the same turn |
 | --- | --- |
+| Directive change (user instruction adds a rule / redesigns an experiment / changes metric·baseline·scope) — not an artifact, so `scan-events` will not catch it; propagate by hand | the directive's typed home (`bindingRules[]` via `/research-op insert --target package-invariant`, or the owning plan/scope surface) + tracker Resume Block `lastAction`/`workflow-state` + registry `lastUpdated` |
 | Checkpoint save (`output/**/best_model.pt`) | `tracker.html` live-check row + `tracker.html` resource-allocation Status + `results.html` Track 1 + headline strip + result-gate row + sentinel write (if new best) + registry `experiments[i].status` for the closing phase |
 | Candidate JSON (`candidates/<label>/<dataset>/*.json`) | `results.html` Track 2 / Track 3 row + rerun of `summarize_results.py` |
 | Sentinel (`manifests/*.txt`) | `tracker.html` Resume Block + `results.html` headline + result-gate Observed metric + registry (`research_html/data/research-packages.js`) status fields + registry `experiments[i].status` for the sentinel's phase |

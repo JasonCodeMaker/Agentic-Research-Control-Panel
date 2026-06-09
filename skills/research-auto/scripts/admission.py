@@ -6,6 +6,7 @@ stops. The boundary is strict: formation capability lives in auto, but commit au
 user / Triage — this layer may PROPOSE through Triage, never ratify or materialize from pending state.
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -83,7 +84,31 @@ def detect_admission_state(root, *, readiness_ok=None):
     return "G"
 
 
-def build_admission_actions(state, context=None):
+def build_admission_actions(state, context=None, *, root=None):
+    """Map an admission state to the next front-door action(s). When `root` is given (the real entry
+    path) the actions are ENRICHED deterministically: at State C an on-disk drafted direction is attached
+    as `seed`, and every action carries its rendered plain-language `next_step`. The smart parts are baked
+    into the FSM here — not left to the agent reading prose — so /research-auto's actual output already
+    holds the seed + next step. With `root=None` the raw actions are returned unchanged (pure/back-compat).
+    """
+    actions = _raw_admission_actions(state, context)
+    if root is None:
+        return actions
+    if state == "C":
+        seed = detect_seed_direction(root)
+        if seed.get("found"):
+            for a in actions:
+                if a.get("type") == "propose_direction":
+                    a["seed"] = seed
+    for a in actions:
+        try:
+            a["next_step"] = render_next_step(a, root=root)
+        except ValueError:
+            pass
+    return actions
+
+
+def _raw_admission_actions(state, context=None):
     """Map an admission state to the action(s) the front door should take next (no side effects)."""
     context = context or {}
     if state == "A":
@@ -113,6 +138,110 @@ def build_admission_actions(state, context=None):
     if state == "G":
         return [{"type": "enter_auto_loop"}]
     raise ValueError(f"unknown admission state: {state!r}")
+
+
+_SEED_PLACEHOLDERS = {"", "$hypothesis", "unmeasured", "tbd", "n/a", "hypothesis"}
+
+
+def _hypothesis_filled(raw_html):
+    """True iff a plan-invariants hypothesis cell carries real content, not the scaffold placeholder."""
+    text = re.sub(r"<[^>]+>", " ", raw_html)          # strip tags
+    text = re.sub(r"&[a-z]+;", " ", text)             # strip entities
+    # The cell leads with the "Hypothesis" label span; drop it before judging substance.
+    text = re.sub(r"^\s*hypothesis\b", "", text.strip(), flags=re.I).strip()
+    return text.lower() not in _SEED_PLACEHOLDERS and len(text) >= 12
+
+
+def detect_seed_direction(root):
+    """Find a direction already drafted on disk but not yet committed to the SSOT — a package whose
+    plan.html carries a populated objectiveContract (the painted plan-invariants hypothesis line, the
+    real shape `create_from_scope`/`create_research_package` emit). At State C this lets the front door
+    PROPOSE that plan as the direction instead of asking the user to re-supply what plan.html already
+    holds (the session-b07d0f85 turn-3 failure). Newest package id (date-prefixed) wins; ties are
+    surfaced in `candidates` so render_next_step can offer the alternates.
+    """
+    pkgs_dir = Path(root) / "research_html" / "packages"
+    if not pkgs_dir.exists():
+        return {"found": False, "source": None, "pkg": None, "candidates": []}
+    candidates = []
+    for plan in sorted(pkgs_dir.glob("*/plan.html"), reverse=True):  # date-prefixed id → newest first
+        html = plan.read_text(encoding="utf-8", errors="ignore")
+        m = re.search(r'data-invariant="hypothesis"[^>]*>(.*?)</li>', html, re.S)
+        if m and _hypothesis_filled(m.group(1)):
+            candidates.append(plan.parent.name)
+    if not candidates:
+        return {"found": False, "source": None, "pkg": None, "candidates": []}
+    pkg = candidates[0]
+    return {"found": True, "pkg": pkg, "source": f"packages/{pkg}/plan.html", "candidates": candidates}
+
+
+# Per-action-type next-step copy: (headline, next_action template, offer, awaits_user).
+_NEXT_STEP = {
+    "handoff_dashboard_init": (
+        "No research dashboard exists here yet.",
+        "Run /research-dashboard to scaffold research_html/, then re-run /research-auto.",
+        "This one's yours to run — /research-dashboard sets up the surfaces I write to.", True),
+    "propose_project": (
+        "No project objective is committed yet.",
+        "I'll draft a Project objective from the workspace and send it to Triage for your ratify.",
+        "Reply `go` and I'll draft + propose it; or tell me the objective and I'll use yours.", False),
+    "propose_task": (
+        "Direction is committed — the next move is the first milestone (a Task).",
+        "I'll draft the Task milestone (default autonomy: autonomous) and send it to Triage for your ratify.",
+        "Reply `go` and I'll draft + propose the Task; or set the autonomy level first.", False),
+    "materialize_package": (
+        "Direction and Task are committed, but no package exists yet.",
+        "I'll materialize the package from the committed scope (create_from_scope).",
+        "Reply `go` and I'll create the package surfaces.", False),
+    "enter_auto_loop": (
+        "Everything's ready — the experiment loop can start.",
+        "I'll enter the production loop and run the next eligible experiment.",
+        "Reply `go` to start the loop, or name a specific experiment to run first.", False),
+}
+
+
+def render_next_step(action, *, root=None):
+    """Translate an admission action into a plain-language next step: where we are, the one smoothest next
+    action, and a continue/await affordance. The user-facing headline never carries a raw FSM label.
+    """
+    t = action.get("type")
+    if t == "propose_direction":
+        seed = action.get("seed")
+        if seed is None and root is not None:
+            s = detect_seed_direction(root)
+            seed = s if s.get("found") else None
+        if seed and seed.get("found"):
+            n = len(seed.get("candidates") or [seed["pkg"]])
+            headline = f"A direction is already drafted on disk ({seed['source']}) but not yet committed."
+            next_action = (f"I'll propose the direction from {seed['source']} ({seed['pkg']}) to Triage "
+                           "for your ratify.")
+            offer = ("Reply `go` to propose it as-is, or tell me what to change first."
+                     if n == 1 else
+                     f"Reply `go` to propose it, or name another of the {n} drafted plans to use instead.")
+        else:
+            headline = "Project is committed, but there's no active research direction yet."
+            next_action = "I'll shape a direction (search + ideate) and propose it to Triage for your ratify."
+            offer = "Reply `go` to let me draft one, or point me at a plan/brainstorm to seed it."
+        awaits_user = False
+    elif t == "run_readiness":
+        dial = action.get("dial", "autonomous")
+        headline = f"The package needs a readiness check before the loop can run unattended (dial: {dial})."
+        next_action = f"I'll run the readiness preflight at the {dial} dial and close any gaps it reports."
+        offer = "Reply `go` to run readiness + repair; or drop the dial to supervised for a lighter bar."
+        awaits_user = False
+    elif t == "block_for_user_disposal":
+        level = action.get("level", "proposal")
+        headline = f"A {level} proposal is waiting in Triage."
+        next_action = (f"Accept or reject the pending {level} proposal — commit authority is yours, "
+                       "not the loop's.")
+        offer = "Reply `accept` or `reject` (with edits if you want changes)."
+        awaits_user = True
+    elif t in _NEXT_STEP:
+        headline, next_action, offer, awaits_user = _NEXT_STEP[t]
+    else:
+        raise ValueError(f"cannot render next step for action type: {t!r}")
+    return {"type": t, "headline": headline, "next_action": next_action, "offer": offer,
+            "awaits_user": awaits_user, "details": action.get("message") or f"admission action: {t}"}
 
 
 def validate_admission_action(action):
@@ -151,4 +280,4 @@ def run_front_door(root, *, pkg_id=None, scope_node=None, role_sequence=None, ad
         return {"entered": True, "state": "G",
                 "tick": driver.run_tick(pkg_id, scope_node, role_sequence, adapters, context=context)}
     return {"entered": False, "state": state,
-            "actions": build_admission_actions(state, context)}
+            "actions": build_admission_actions(state, context, root=root)}

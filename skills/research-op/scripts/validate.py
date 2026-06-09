@@ -64,6 +64,20 @@ _METHODSTRIED_FIELDS = {"method", "hypothesis", "gate", "measured", "verdict", "
 _VERDICT_ALLOWED    = {"pass", "fail", "inconclusive"}
 
 
+def rule_package_invariant_has_rule(pkg, op, target, payload) -> Reject | None:
+    if target != "package-invariant" or op != "insert":
+        return None
+    if not (payload.get("rule") or "").strip():
+        return Reject(
+            rule="package-invariant-has-rule",
+            file=None, anchor=None, field="rule",
+            expected="a non-empty 'rule' text (the binding directive)",
+            actual=f"rule={payload.get('rule')!r}",
+            suggested_fix="Set payload.rule to the directive text, e.g. 'one notebook per figure'.",
+        )
+    return None
+
+
 def rule_methodstried_six_fields(pkg, op, target, payload) -> Reject | None:
     if target != "methodsTried" or op != "insert":
         return None
@@ -632,6 +646,7 @@ def rule_analysis_rule_no_bold(pkg, op, target, payload) -> Reject | None:
 
 # Each entry: (rule_fn, needs_state_arg).
 _RULES: list[tuple[Callable, bool]] = [
+    (rule_package_invariant_has_rule,        False),
     (rule_methodstried_six_fields,           False),
     (rule_methodstried_verdict_enum,         False),
     (rule_methodstried_evidence_resolves,    False),
