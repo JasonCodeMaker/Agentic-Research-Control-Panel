@@ -215,7 +215,12 @@ When the host project ships no such templates, fall back to this skill's `templa
 The bundled script reads the stage templates from this skill's `templates/` directory (one per entry in its `STAGE_PAGES` map) and substitutes per-package fields. Invoke it as:
 
 ```bash
-python ~/.claude/skills/research-package/scripts/create_research_package.py \
+PACKAGE_SKILL=""
+for dir in "$HOME/.codex/skills/research-package" "$HOME/.claude/skills/research-package"; do
+  if [ -f "$dir/scripts/create_research_package.py" ]; then PACKAGE_SKILL="$dir"; break; fi
+done
+test -n "$PACKAGE_SKILL"
+python "$PACKAGE_SKILL/scripts/create_research_package.py" \
   --root <cwd>/research_html \
   --id YYYY-MM-DD-slug \
   --name "Package Name" \

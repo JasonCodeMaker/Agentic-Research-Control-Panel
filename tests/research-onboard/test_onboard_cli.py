@@ -25,6 +25,10 @@ def test_cli_scaffold(tmp_path, capsys):
     assert (tmp_path / "src").is_dir()
     out = json.loads(capsys.readouterr().out)
     assert "src" in out["created_dirs"]
+    assert out["claude_md_written"] is True
+    assert out["agents_md_written"] is True
+    assert (tmp_path / "CLAUDE.md").exists()
+    assert (tmp_path / "AGENTS.md").exists()
 
 
 def test_cli_build_proposal(tmp_path, capsys):

@@ -51,6 +51,27 @@ The primary objective and the success rule (metric X must improve under budget Y
 The live anchor record (checkpoint path, metric values, validation seeds).
 """
 
+AGENTS_STUB = """# AGENTS.md
+
+This file is the Codex adapter for a project managed by the Trustworthy Research Pipeline.
+
+## Project Context
+
+Prepend project-specific Codex rules above this section: project objective, datasets, metrics,
+compute constraints, non-goals, and current best checkpoint.
+
+## Trustworthy Pipeline Protocols
+
+- Read `CLAUDE.md` for the full project operating contract.
+- Read `WORKFLOW.md` before any research-package implementation, launch, monitoring, or analysis work.
+- When a protocol or skill body shows `skills/<name>/scripts/...`, resolve it through the installed
+  Codex symlink first, e.g. `$HOME/.codex/skills/<name>/scripts/...`.
+- Keep the Trustworthy pipeline protocol sections project-agnostic; prepend local context instead of
+  rewriting the universal rules.
+- If `CLAUDE.md` or `WORKFLOW.md` is absent, attach the pipeline protocols from the toolbox repo before
+  running `/research-dashboard`, `/research-onboard`, or `/research-auto`.
+"""
+
 
 def workspace_state(cwd) -> str:
     """'empty' if the directory holds nothing but pipeline-managed/noise entries, else 'existing'."""
@@ -83,6 +104,15 @@ def write_project_claude_stub(cwd) -> bool:
     if path.exists():
         return False
     path.write_text(CLAUDE_STUB, encoding="utf-8")
+    return True
+
+
+def write_project_agents_stub(cwd) -> bool:
+    """Write an AGENTS.md stub for Codex only if absent. Returns True if written."""
+    path = Path(cwd) / "AGENTS.md"
+    if path.exists():
+        return False
+    path.write_text(AGENTS_STUB, encoding="utf-8")
     return True
 
 
@@ -140,7 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
     pd = sub.add_parser("detect", help="classify the workspace as empty|existing")
     pd.add_argument("--cwd", default=".")
 
-    ps = sub.add_parser("scaffold", help="create the in-place DL skeleton + CLAUDE.md stub")
+    ps = sub.add_parser("scaffold", help="create the in-place DL skeleton + protocol stubs")
     ps.add_argument("--cwd", default=".")
 
     pw = sub.add_parser("write-prior-knowledge", help="write outputs/_scope/prior_knowledge.md")
@@ -165,8 +195,13 @@ def main(argv: list[str] | None = None) -> int:
                           "content": content_entries(args.cwd)}, ensure_ascii=False))
     elif args.cmd == "scaffold":
         created = scaffold_skeleton(args.cwd)
-        wrote = write_project_claude_stub(args.cwd)
-        print(json.dumps({"created_dirs": created, "claude_md_written": wrote}, ensure_ascii=False))
+        wrote_claude = write_project_claude_stub(args.cwd)
+        wrote_agents = write_project_agents_stub(args.cwd)
+        print(json.dumps({
+            "created_dirs": created,
+            "claude_md_written": wrote_claude,
+            "agents_md_written": wrote_agents,
+        }, ensure_ascii=False))
     elif args.cmd == "write-prior-knowledge":
         path = write_prior_knowledge(args.state_root, args.content)
         print(json.dumps({"path": str(path)}, ensure_ascii=False))

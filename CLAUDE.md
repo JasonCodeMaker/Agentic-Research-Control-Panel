@@ -4,7 +4,7 @@ This file is the agent operating context for any project that adopts the Trustwo
 
 ## What this pipeline produces
 
-A trustworthy research record where every claim is gated by an explicit metric, every metric is backed by a verified artifact, every direction has one declared next route, and every adopted win or archived failure leaves a structured `methodsTried` trace the next session can learn from. The two skills bundled with this repo — `research-dashboard` and `research-package` — install the HTML surfaces and tooling that enforce this. `WORKFLOW.md` is the seven-step controller the agent follows inside any package.
+A trustworthy research record where every claim is gated by an explicit metric, every metric is backed by a verified artifact, every direction has one declared next route, and every adopted win or archived failure leaves a structured `methodsTried` trace the next session can learn from. The skills bundled with this repo install the HTML surfaces, Scope/Triage gates, orchestration, and mutation tooling that enforce this. `WORKFLOW.md` is the seven-step controller the agent follows inside any package.
 
 ## The five protocols the agent obeys
 

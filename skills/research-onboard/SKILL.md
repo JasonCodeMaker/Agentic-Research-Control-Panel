@@ -1,6 +1,6 @@
 ---
 name: research-onboard
-description: "The steps 1->3 on-ramp: bridge a raw workspace into the Scope SSOT. Use right after /research-dashboard when no Project node exists yet, or whenever the user types /research-onboard, asks to bootstrap / initialize / set up a research project, or asks the agent to analyze a workspace and propose a project objective. Two cases: an EMPTY workspace gets an in-place deep-learning skeleton then a north-star elicited by dialogue; an EXISTING workspace gets analyzed (README / CLAUDE.md / configs / src / data / baselines) into a prior-knowledge artifact plus a drafted objective. Both end by proposing a Project node through Triage for the human to ratify. Project-agnostic. The agent only PROPOSES — it never commits the SSOT and never creates packages."
+description: "The steps 1->3 on-ramp: bridge a raw workspace into the Scope SSOT. Use right after /research-dashboard when no Project node exists yet, or whenever the user types /research-onboard, asks to bootstrap / initialize / set up a research project, or asks the agent to analyze a workspace and propose a project objective. Two cases: an EMPTY workspace gets an in-place deep-learning skeleton plus AGENTS.md / CLAUDE.md stubs, then a north-star elicited by dialogue; an EXISTING workspace gets analyzed (README / AGENTS.md / CLAUDE.md / configs / src / data / baselines) into a prior-knowledge artifact plus a drafted objective. Both end by proposing a Project node through Triage for the human to ratify. Project-agnostic. The agent only PROPOSES — it never commits the SSOT and never creates packages."
 argument-hint: "[<cwd, defaults to .>]"
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
 disable-model-invocation: false
@@ -60,7 +60,8 @@ project content to analyze (listed under `"content"`).
 
 **2a. Empty workspace — scaffold, then elicit.**
 
-Scaffold the in-place deep-learning skeleton (idempotent; writes a `CLAUDE.md` stub only if absent):
+Scaffold the in-place deep-learning skeleton (idempotent; writes `AGENTS.md` and `CLAUDE.md` stubs
+only if absent):
 
 ```bash
 python3 skills/research-onboard/scripts/onboard.py scaffold --cwd .
@@ -72,8 +73,8 @@ and the non-goals. Do not invent these. Provenance for the proposal is `user-dia
 
 **2b. Existing workspace — analyze, then draft.**
 
-Read the content entries `detect` reported — typically `README.md`, any `CLAUDE.md`, `configs/`, the `src/`
-tree, dataset locations, and existing `baselines/` or reported metrics. From them, draft:
+Read the content entries `detect` reported — typically `README.md`, any `AGENTS.md` / `CLAUDE.md`,
+`configs/`, the `src/` tree, dataset locations, and existing `baselines/` or reported metrics. From them, draft:
 
 - **prior knowledge** — a human-readable digest the later roles (R2 lit, R3 ideate, R4 experiment) read:
   dataset inventory, existing baselines and any current-best metric, the key file map, training/eval
@@ -85,7 +86,7 @@ tree, dataset locations, and existing `baselines/` or reported metrics. From the
 
 - **a candidate objective** — `north_star`, `contribution_spine`, `non_goals` inferred from what you read.
   Keep these as *intent*, never readings (no measured values inside the yardstick). Provenance lists the
-  files you read, e.g. `read:README.md,CLAUDE.md,configs/train.yaml`.
+  files you read, e.g. `read:README.md,AGENTS.md,CLAUDE.md,configs/train.yaml`.
 
 Confirm the drafted objective with the user before proposing — they may correct the north-star. This is the
 HCI-alignment moment (核心问题 #2): the agent shows its inferred understanding and the user steers it.
@@ -136,7 +137,7 @@ This mirrors `research-scope`'s human-accept path. The PM:
 
 | Path | Written by | Contents |
 |---|---|---|
-| `<cwd>/src`, `configs/`, … + `CLAUDE.md` stub | this skill (empty case only) | in-place DL skeleton |
+| `<cwd>/src`, `configs/`, … + `AGENTS.md` / `CLAUDE.md` stubs | this skill (empty case only) | in-place DL skeleton |
 | `outputs/_scope/prior_knowledge.md` | this skill (existing case) | analysis digest for later roles |
 | `outputs/_scope/triage.jsonl` | `triage.py propose` | one pending Project item |
 | `outputs/_scope/transitions.jsonl` | PM only (via research-op) | committed Project node — never this skill |

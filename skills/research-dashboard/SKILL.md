@@ -41,10 +41,17 @@ Both-audience content is written once, inline, without the blockquote or `<detai
 
 2. **Detect existing dashboard.** Check whether the root already exists. If it does, treat user edits as authoritative — do not overwrite without `--force`. Required files are listed in [references/dashboard-contract.md](references/dashboard-contract.md). On the **repair** path (root exists but is broken or partial), still run the idempotent script in step 3 — it only writes files that are missing — then read that required-file list and report any file still absent after the run.
 
-3. **Run the bundled script.** The scaffold script lives at `~/.claude/skills/research-dashboard/scripts/ensure_dashboard.py`. It writes a minimal compliant scaffold (idempotent: existing files are preserved) plus copies the binding rule files from this skill's `assets/` into `<root>/rules/`. Invoke it as:
+3. **Run the bundled script.** The scaffold script lives in the installed `research-dashboard` skill
+   directory. It writes a minimal compliant scaffold (idempotent: existing files are preserved) plus
+   copies the binding rule files from this skill's `assets/` into `<root>/rules/`. Invoke it as:
 
    ```bash
-   python ~/.claude/skills/research-dashboard/scripts/ensure_dashboard.py --root <root>
+   DASHBOARD_SKILL=""
+   for dir in "$HOME/.codex/skills/research-dashboard" "$HOME/.claude/skills/research-dashboard"; do
+     if [ -f "$dir/scripts/ensure_dashboard.py" ]; then DASHBOARD_SKILL="$dir"; break; fi
+   done
+   test -n "$DASHBOARD_SKILL"
+   python "$DASHBOARD_SKILL/scripts/ensure_dashboard.py" --root <root>
    ```
 
    Pass `--force` only when the user explicitly asks to overwrite.
@@ -70,14 +77,22 @@ Both-audience content is written once, inline, without the blockquote or `<detai
    python <root>/scripts/render_scope_projection.py check --transitions outputs/_scope/transitions.jsonl --projection <root>/data/scope-projection.json
    ```
 
-   If `ensure_dashboard.py` raised, confirm the skill is installed at `~/.claude/skills/research-dashboard/`. If `node --check` exits non-zero, the copied JS is malformed — inspect the matching file in this skill's `assets/dashboard/`. If the anchor grep returns nothing, `index.html` was not written — re-run step 3 with `--force`.
+   If `ensure_dashboard.py` raised, confirm the skill is installed under `~/.codex/skills/` or
+   `~/.claude/skills/`. If `node --check` exits non-zero, the copied JS is malformed — inspect the
+   matching file in this skill's `assets/dashboard/`. If the anchor grep returns nothing, `index.html`
+   was not written — re-run step 3 with `--force`.
 
 5. **Keep the dashboard project-agnostic.** Project objective, success rule, and cautions belong in `window.RESEARCH_PROJECT_PROFILE` inside `<root>/data/research-packages.js`. Project / Direction / Milestone intent belongs in the Scope SSOT and is rendered into `<root>/data/scope-projection.json/js`; do not hand-edit those projection files. Do not edit the universal protocol cards in the same file; those are shared chrome.
 
 6. **Check for a committed objective, then recommend the next step.** The dashboard is chrome; a project still needs a ratified objective in the Scope SSOT before any package work. Check whether a Project node is already committed:
 
    ```bash
-   python ~/.claude/skills/research-onboard/scripts/onboard.py has-project-scope --transitions outputs/_scope/transitions.jsonl
+   ONBOARD_SKILL=""
+   for dir in "$HOME/.codex/skills/research-onboard" "$HOME/.claude/skills/research-onboard"; do
+     if [ -f "$dir/scripts/onboard.py" ]; then ONBOARD_SKILL="$dir"; break; fi
+   done
+   test -n "$ONBOARD_SKILL"
+   python "$ONBOARD_SKILL/scripts/onboard.py" has-project-scope --transitions outputs/_scope/transitions.jsonl
    ```
 
    - If it prints `{"has_project_scope": false}` (the common first-run case), the next step is **`/research-onboard`**, not `/research-package` — onboarding bridges the raw workspace into a pending Project proposal (it scaffolds an empty workspace or analyzes an existing one). Recommend it, and continue into it in the same session unless the user redirects.

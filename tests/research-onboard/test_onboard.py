@@ -46,7 +46,7 @@ def test_scaffold_skeleton_idempotent(tmp_path):
     assert (tmp_path / "src").is_dir()
 
 
-# --- write_project_claude_stub --------------------------------------------
+# --- write project protocol stubs ------------------------------------------
 
 def test_claude_stub_written_when_absent(tmp_path):
     assert onboard.write_project_claude_stub(tmp_path) is True
@@ -57,6 +57,19 @@ def test_claude_stub_no_clobber(tmp_path):
     (tmp_path / "CLAUDE.md").write_text("USER CONTENT\n")
     assert onboard.write_project_claude_stub(tmp_path) is False
     assert (tmp_path / "CLAUDE.md").read_text() == "USER CONTENT\n"
+
+
+def test_agents_stub_written_when_absent(tmp_path):
+    assert onboard.write_project_agents_stub(tmp_path) is True
+    text = (tmp_path / "AGENTS.md").read_text()
+    assert "CLAUDE.md" in text
+    assert "WORKFLOW.md" in text
+
+
+def test_agents_stub_no_clobber(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("USER CONTENT\n")
+    assert onboard.write_project_agents_stub(tmp_path) is False
+    assert (tmp_path / "AGENTS.md").read_text() == "USER CONTENT\n"
 
 
 # --- write_prior_knowledge -------------------------------------------------

@@ -55,7 +55,7 @@ Natural-language paragraphs explain the intent and guardrails. `bash` blocks are
   there is nothing to `pip install`. `pytest` is needed only to run the verification suite in step 2.
 - **Node.js** for dashboard JavaScript syntax checks.
 - An agent that loads skills from a directory: **Claude Code** (`~/.claude/skills/`) or
-  **Codex** (`~/.codex/skills/`).
+  **Codex** (`~/.codex/skills/`, with `AGENTS.md` at the project root).
 
 ### 1 · Install the skills (symlink — never copy)
 
@@ -74,7 +74,7 @@ Run from the toolbox repo root, after setting `DEST` to your chosen scope:
 ```bash
 cd /path/to/Trustworthy-Research-Pipeline      # the toolbox repo (the dir holding skills/ and lib/)
 REPO="$(pwd)"
-DEST="$HOME/.claude/skills"                     # ← set to your chosen scope from the table above
+DEST="$HOME/.claude/skills"                     # Claude Code; use "$HOME/.codex/skills" for Codex
 mkdir -p "$DEST"
 for src in "$REPO"/skills/*/; do
   name="$(basename "$src")"
@@ -86,8 +86,13 @@ done
 ls -l "$DEST" | grep research                   # expect 12 symlinks: 'l…' lines with '-> …/skills/<name>'
 ```
 
-Then reload the agent (restart Claude Code, or open a new session) so it discovers the skills, type
-`/research-` and confirm the 12 commands autocomplete.
+Then reload the agent (restart Claude Code, or open a new Codex session) so it discovers the skills,
+type `/research-` and confirm the 12 commands autocomplete.
+
+When a protocol or skill body shows a script path like `skills/<name>/scripts/...` from inside a managed
+research repo, resolve it through the installed symlink directory, e.g.
+`$HOME/.codex/skills/<name>/scripts/...` for Codex or `$HOME/.claude/skills/<name>/scripts/...` for
+Claude Code. Do not copy the toolbox into the target repo just to make relative script examples work.
 
 ### 2 · Verify the toolbox
 
@@ -101,20 +106,22 @@ If `python3.13` is not on `PATH`, use any Python 3.13 interpreter — e.g.
 ### 3 · Attach the pipeline to a research project
 
 The skills are now callable, but each managed project also needs the operating **protocols**
-(`CLAUDE.md` + `WORKFLOW.md`) at its repo root, with your project context prepended above the universal
-sections.
+(`AGENTS.md` for Codex, `CLAUDE.md` for Claude Code / shared protocol text, and `WORKFLOW.md`) at its
+repo root, with your project context prepended above the universal sections.
 
 ```bash
 cd /path/to/your-research-project
-PIPELINE=/path/to/Trustworthy-Research-Pipeline   # the toolbox repo (the dir holding CLAUDE.md)
+PIPELINE=/path/to/Trustworthy-Research-Pipeline   # the toolbox repo (the dir holding AGENTS.md)
 mkdir -p outputs/_scope outputs/_selfevolve
 
+test -f AGENTS.md || cp "$PIPELINE/AGENTS.md" AGENTS.md
 test -f CLAUDE.md  || cp "$PIPELINE/CLAUDE.md"  CLAUDE.md
 test -f WORKFLOW.md || cp "$PIPELINE/WORKFLOW.md" WORKFLOW.md
 ```
 
-If either file already exists, keep it and merge the framework protocols instead of overwriting. Add the
-project-specific section above the framework protocols:
+If any file already exists, keep it and merge the framework protocols instead of overwriting. `AGENTS.md`
+is the Codex adapter; `CLAUDE.md` remains the full shared operating contract. Add the project-specific
+section above the framework protocols:
 
 - project name and objective;
 - datasets, baselines, metrics, and success criteria;
@@ -350,6 +357,7 @@ rules.
 ```text
 Trustworthy-Research-Pipeline/
 ├── README.md        ← you are here
+├── AGENTS.md        # Codex adapter for this toolbox and consuming projects
 ├── CLAUDE.md        # agent operating protocols (merged into the target research repo)
 ├── WORKFLOW.md      # the 7-step in-package controller the agent obeys
 ├── skills/          # 12 composing skills — the toolbox the agent installs
@@ -403,7 +411,7 @@ This is a research codebase; the bar is traceability and tests, not ceremony.
 - **One mutation surface.** Package HTML is edited only through `research-op`; direct `Edit`/`Write` on a
   package surface is a workflow violation.
 - **Surgical changes.** Touch only what the task needs and match the existing style; do not rewrite the
-  project-agnostic protocol bodies in `CLAUDE.md` / `WORKFLOW.md` — prepend, don't replace.
+  project-agnostic protocol bodies in `AGENTS.md` / `CLAUDE.md` / `WORKFLOW.md` — prepend, don't replace.
 
 The full operating contract is in [`CLAUDE.md`](CLAUDE.md).
 
