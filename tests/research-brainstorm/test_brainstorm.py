@@ -27,6 +27,31 @@ def test_add_assigns_id_and_roundtrips(tmp_path):
     assert "created_at" in items[0]
 
 
+def test_add_generates_english_html_detail_page(tmp_path):
+    bid = brainstorm.add_brainstorm(
+        tmp_path,
+        {
+            "title": "Candidate pool audit",
+            "idea": "Compare stage-1 GT visibility against reranker conversion.",
+            "rough_metric": "CanHit@100 and X-Pool R@10",
+            "lit_refs": ["local candidate CSV"],
+            "created_at": "2026-06-10T00:00:00+00:00",
+        },
+    )
+    item = brainstorm.read_brainstorms(tmp_path)[0]
+    assert item["id"] == bid
+    assert item["detailPath"] == "brainstorm/2026-06-10-candidate-pool-audit.html"
+
+    page = tmp_path / item["detailPath"]
+    assert page.exists()
+    html = page.read_text(encoding="utf-8")
+    assert '<html lang="en">' in html
+    assert "Candidate pool audit" in html
+    assert "Compare stage-1 GT visibility against reranker conversion." in html
+    assert "CanHit@100 and X-Pool R@10" in html
+    assert "local candidate CSV" in html
+
+
 def test_add_dedupes_ids_from_same_title(tmp_path):
     a = brainstorm.add_brainstorm(tmp_path, {"title": "Same idea", "idea": "x"})
     b = brainstorm.add_brainstorm(tmp_path, {"title": "Same idea", "idea": "y"})

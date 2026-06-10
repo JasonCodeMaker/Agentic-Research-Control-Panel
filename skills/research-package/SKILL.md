@@ -110,7 +110,7 @@ Every package object on the dashboard surfaces these fields. If a field is unkno
 | `lastAction` | `--last-action` | The most recent command, edit, or observation (Resume Block field). |
 | `openRuns` | `--open-runs` | tmux/session/job ids or `none` (Resume Block field). Required when status is `EXPERIMENT_RUNNING` or `LIVE_ANALYSIS`. |
 | `lastUpdated` | `--last-updated` | ISO date; toggles `data-stale` on pages that predate it. |
-| `experiments` | (post-scaffold edit) | Array `[{id, label?, purpose, after, output, gate, status, runLink?, docsAnchor?}]` painted onto both `index.html#plan-status` (status chips by `renderPlanStatus()`) and `plan.html#experiments` (pipeline timeline by `renderPipelineTimeline()`). See [Pipeline timeline](#pipeline-timeline-binding) for the binding per-field rules and caps. Update the matching entry's `status` whenever a phase opens/closes (same turn as the tracker row update). Allowed `status`: `pending`/`queued`/`running`/`completed`/`failed`/`skipped`/`blocked`. |
+| `experiments` | `--experiments <json>` at scaffold time, then `/research-op insert/update --target experiments-row` | Typed task spine array `[{id, label?, purpose, after, output, gate, status, measures, requiresCode, complex, runLink?, docsAnchor?}]` painted onto both `index.html#plan-status` (status chips by `renderPlanStatus()`) and `plan.html#experiments` (pipeline timeline by `renderPipelineTimeline()`). `measures` defaults true for new tasks; infra/setup tasks set `measures: false`. See [Pipeline timeline](#pipeline-timeline-binding) for caps. The scaffolders and research-op derive result slots, result-gate rows, change-card stubs, docs/pipeline blocks, and tracker to-dos from this spine. Update the matching entry's `status` whenever a phase opens/closes (same turn as the tracker row update). Allowed `status`: `pending`/`queued`/`running`/`completed`/`failed`/`skipped`/`blocked`. |
 | `methodsTried` | (post-scaffold edit) | Array of `{method, hypothesis, gate, measured, verdict, evidencePath}` rows (verdict ∈ `{PASS, FAIL, INCONCLUSIVE}`). Appended over the life of the package per the Learnings Update Protocol below. Required for success / fail. |
 | `terminationMessage` | (post-scaffold edit) | One sentence: why this package ended. Required for success / fail. |
 | `adoptionPath` | (post-scaffold edit) | Where the win was adopted (e.g., `CLAUDE.md#current-best`, model code path, downstream package id). Required for success. |
@@ -167,7 +167,18 @@ Each entry in `experiments[]` carries the following fields when the timeline is 
 | 7 | `runLink?` | inventory | **dashboard-root-relative path starting with `packages/<pkg-id>/`** (e.g. `packages/2026-05-15-foo/tracker.html#resource-allocation`); the renderer prepends `RESEARCH_ROOT_PREFIX` so the link resolves both from the dashboard and from inside the package | execution surface |
 | 8 | `docsAnchor?` | inventory; defaults to `docs/pipeline.html#<id_lowercase>` | **plan.html-relative** path (e.g. `docs/baseline-xpool.html`, `docs/baseline-xpool.html#feature-extraction`); must resolve to a file on disk under `packages/<pkg-id>/`. If the package uses per-phase doc pages instead of a single `docs/pipeline.html`, set `docsAnchor` explicitly per phase (lint rule `experiment-docs-anchor-missing` errors when the explicit path does not resolve; `experiment-docs-anchor-default-missing` warns when the default fires but `docs/pipeline.html` does not exist). | deep-dive link |
 
-The hard caps are discipline levers: a phase whose `purpose` needs more than 12 words or whose `gate` is compound is almost always two phases hiding inside one. Split it. These caps and the `after` resolution are authoring discipline — `learnings_lint.py lint-status` does not yet enforce them in code.
+The hard caps are discipline levers: a phase whose `purpose` needs more than 12 words or whose `gate` is compound is almost always two phases hiding inside one. Split it. These caps and the `after` resolution are enforced by `learnings_lint.py alignment` for typed task-spine rows.
+
+### Task-spine construction workflow
+
+Every new package and every structural experiment change follows this order:
+
+1. **Intake** — collect identity, category, hypothesis, metric gate, baseline, boundary, artifact root, and first action.
+2. **Spine first** — author `experiments[]` before page content: `id`, action-verb `purpose` (&le;12 words), `after` DAG, one `output`, one `gate`, and `measures`/`requiresCode`/`complex`.
+3. **Scaffold** — run the scaffolder with `--experiments <json>`; the task blocks are derived before content authoring.
+4. **Verify** — run `python <root>/scripts/learnings_lint.py alignment --pkg <id>` and fix every error in the same turn.
+5. **Execute** — status flips and task growth go through `/research-op`; a status flip touches the task's result, implementation, docs, tracker, and inventory thread in one turn.
+6. **Terminate** — run terminal alignment before lane move: `python <root>/scripts/learnings_lint.py alignment --pkg <id> --terminal`, then the normal Stop Gate.
 
 ### Consequences for the deep contract
 
@@ -176,17 +187,19 @@ When the timeline is in use, `docs/pipeline.html` &sect;6 (per-phase spec) stops
 ### Renderer + lint
 
 - `renderPipelineTimeline()` in `assets/research.js` paints the timeline from `experiments[]` into the `[data-card="pipeline-timeline"] [data-field="pipeline-timeline-list"]` slot on `plan.html`.
+- Each node includes task-thread chips linking to the owning tracker, result, implementation, and docs surfaces when the row declares those needs.
 - CSS for the pipeline card lives under `.pipeline-card` in `assets/research.css`.
-- `learnings_lint.py lint-status` is **designed** to enforce the following (these experiment-level checks are not yet implemented in code — treat them as authoring discipline until they ship):
+- `learnings_lint.py alignment` enforces:
   - `experiments[].purpose` word count &le; 12 (error if exceeded);
-  - `experiments[].gate` has no top-level `AND` / `OR` (error if compound);
+  - `experiments[].gate` has no top-level `AND` / `OR`, no semicolon-joined predicates, and fewer than two comparator clauses (error if compound);
   - `experiments[].after` is a list and every id resolves to another `experiments[].id` (error otherwise);
-  - `experiments[].output` is single-line (error if multiline);
-  - `experiments[].runLink`, when present, starts with `packages/<pkg-id>/` (error otherwise &mdash; rule `experiment-runlink-not-rooted`);
-  - `experiments[].docsAnchor`, when present, resolves to a file under `packages/<pkg-id>/` (error otherwise &mdash; rule `experiment-docs-anchor-missing`); when absent, the default `docs/pipeline.html#<id_lowercase>` must resolve (warning otherwise &mdash; rule `experiment-docs-anchor-default-missing`);
-  - `plan.html` contains the painted `<section data-section="pipeline-timeline">` slot and does **not** contain a hand-coded `<table data-table="experiments">` (error otherwise &mdash; rule `plan-static-experiments-table` / `plan-missing-pipeline-timeline`).
+  - a tracker to-do item for every typed task;
+  - for `measures: true`, one result-gate row and one predefined `data-table="result-slot-<id>"` slot;
+  - for `requiresCode: true`, one implementation change card bound by `validating-exp`;
+  - for `complex: true`, a resolving docs anchor;
+  - reverse orphans and status contradictions across result rows and change cards.
 
-  When implemented, the purpose/gate/output/after rules will fire only when the field is present, so legacy entries with just `{id, label, status, runLink}` stay timeline-clean; the `runLink` and static-table conventions above are likewise authoring discipline today, not machine-checked.
+Legacy rows with none of `measures`/`requiresCode`/`complex` skip the derived-block checks with an `alignment-flags-unset` warning; the field caps (purpose/gate/output/`after`) stay always-on for every row.
 
 ## ETA discipline (binding)
 
@@ -242,7 +255,8 @@ python "$PACKAGE_SKILL/scripts/create_research_package.py" \
   --next-route ASK_USER \
   --last-action "scaffolded package" \
   --open-runs "none" \
-  --scope index,plan,tracker,docs,_agent
+  --experiments '[{"id":"P0","purpose":"Verify baseline","after":[],"output":"outputs/P0/result.json","gate":"Recall@1 >= baseline","status":"queued","measures":true,"requiresCode":false,"complex":false}]' \
+  --scope index,plan,results,tracker,docs,_agent
 ```
 
 From an accepted Scope Direction, prefer the materializer instead of manually copying yardstick fields:
@@ -257,6 +271,7 @@ After scaffolding, run:
 
 ```bash
 python <root>/scripts/learnings_lint.py lint-status
+python <root>/scripts/learnings_lint.py alignment --pkg <id>
 ```
 
 It exits 0 if all required fields for `(category, status)` are present.
@@ -279,6 +294,10 @@ The scaffold writes generic templates. Patch these `unmeasured` slots when the p
 - `node --check <cwd>/research_html/assets/research.js`
 - Open `<cwd>/research_html/index.html` from disk: the new package appears in the dashboard package grid; lane and route filters narrow it.
 - Open `<cwd>/research_html/packages/<id>/index.html`: status strip, package nav, identity card, and page index render. Missing fields show `unmeasured`.
+- Run the alignment lint, then use the greps below only for targeted debugging:
+  ```bash
+  python <cwd>/research_html/scripts/learnings_lint.py alignment --pkg <id>
+  ```
 - Grep that the execution ledger tables live only on `tracker.html`, and that implementation-review is a pointer card (not a table):
   ```bash
   grep -nE 'data-table="(resource-allocation|live-check)"' \

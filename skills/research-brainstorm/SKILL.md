@@ -1,6 +1,6 @@
 ---
 name: research-brainstorm
-description: "The Step-3 direction-formation on-ramp. Use when the user has only a vague or partial research idea and cannot yet state a clear Direction, or types /research-brainstorm, or asks to brainstorm / shape / explore a research direction before committing. Follows the brainstorming method (one question at a time, 2-3 approaches), grounds factual uncertainties with /research-lit, and uses /research-ideate to sharpen hypotheses. Captures cheap pre-package, pre-SSOT ideas onto the dashboard brainstorm lane (research_html/data/brainstorms.js), then converts one or more ideas into a single Direction proposal submitted through the Triage gate. The agent only PROPOSES the Direction — the PM ratifies. Project-agnostic. Requires a committed Project node (run /research-onboard or /research-scope first)."
+description: "The Step-3 direction-formation on-ramp. Use when the user has only a vague or partial research idea and cannot yet state a clear Direction, or types /research-brainstorm, or asks to brainstorm / shape / explore a research direction before committing. Captures cheap pre-package, pre-SSOT ideas onto the dashboard brainstorm lane, automatically generates an English brainstorm HTML detail page for each idea, and converts one or more ideas into a single Direction proposal submitted through Triage. The agent only PROPOSES the Direction — the PM ratifies. Project-agnostic. Requires a committed Project node (run /research-onboard or /research-scope first)."
 argument-hint: "[<dashboard root, defaults to ./research_html>]"
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob, Agent
 disable-model-invocation: false
@@ -25,6 +25,7 @@ disposes. The agent never commits the SSOT.
 |---|---|
 | Brainstorm CLI | `<pipeline-root>/skills/research-brainstorm/scripts/brainstorm.py` |
 | Idea store (dashboard lane source) | `research_html/data/brainstorms.js` |
+| Idea detail pages (user-readable) | `research_html/brainstorm/<YYYY-MM-DD>-<idea-id>.html` |
 | Scope SSOT lib | `<pipeline-root>/lib/scope_ssot/__init__.py` |
 | Triage CLI | `<pipeline-root>/skills/research-scope/scripts/triage.py` |
 | Literature role | `research-lit` |
@@ -35,7 +36,7 @@ disposes. The agent never commits the SSOT.
 Brainstorm CLI commands:
 
 ```bash
-python3 skills/research-brainstorm/scripts/brainstorm.py add --root research_html --title '<t>' --idea '<text>' [--rough-metric '<m>'] [--lit-refs '<json list>']
+python3 skills/research-brainstorm/scripts/brainstorm.py add --root research_html --title '<t>' --idea '<text>' [--rough-metric '<m>'] [--lit-refs '<json list>'] [--page-language en]
 python3 skills/research-brainstorm/scripts/brainstorm.py list --root research_html
 python3 skills/research-brainstorm/scripts/brainstorm.py remove --root research_html --id <idea-id>
 python3 skills/research-brainstorm/scripts/brainstorm.py check-project --transitions outputs/_scope/transitions.jsonl
@@ -67,7 +68,16 @@ python3 skills/research-brainstorm/scripts/brainstorm.py add --root research_htm
   --title 'Mixup augmentation' --idea 'Augment CIFAR-10 with mixup to lift top-1' --rough-metric 'top-1 accuracy'
 ```
 
-Ideas appear immediately on the dashboard brainstorm lane for the user to see (HCI alignment, 核心问题 #2).
+`add` writes two user-facing surfaces in the same operation:
+
+1. `research_html/data/brainstorms.js` gets a brainstorm-lane card.
+2. `research_html/brainstorm/<YYYY-MM-DD>-<idea-id>.html` is generated and the card receives `detailPath`.
+
+The generated HTML page is **English by default**. Keep any agent-added page content in English unless the
+user explicitly requests another page language. For a one-sentence hunch, the generated page shell is
+enough; for substantive brainstorming or analysis, immediately enrich that HTML page with the readable
+summary, candidate framings, trade-offs, rough metric, evidence links, and next decision. Do not leave the
+user with only a `brainstorms.js` row when the skill is invoked.
 
 **2. Ground uncertainties with `research-lit`.**
 
@@ -164,12 +174,14 @@ This mirrors `research-scope`'s human-accept path:
 
 | Path | Written by | Contents |
 |---|---|---|
-| `research_html/data/brainstorms.js` | this skill (`add`/`remove`) | pre-package ideas rendered on the brainstorm lane |
+| `research_html/data/brainstorms.js` | this skill (`add`/`remove`) | pre-package ideas rendered on the brainstorm lane, each with `detailPath` |
+| `research_html/brainstorm/<YYYY-MM-DD>-<idea-id>.html` | this skill (`add`, then optional Edit) | English-by-default, user-readable brainstorm page for the idea |
 | `outputs/_scope/triage.jsonl` | `triage.py propose` | one pending Direction item (carries `source_brainstorms`) |
 | `outputs/_scope/transitions.jsonl` | PM only (via research-op) | committed Direction — never this skill |
 
 ## Done condition
 
-The shaped idea(s) are on the brainstorm lane, and — when the user is ready — a conversion-ready Direction
-is a pending Triage item carrying its `source_brainstorms`, shown to the user. The Direction is not yet in
-effect; it takes effect only after PM acceptance and the `research-op --op scope-transition` commit.
+The shaped idea(s) are on the brainstorm lane, each has a readable HTML page linked by `detailPath`, and —
+when the user is ready — a conversion-ready Direction is a pending Triage item carrying its
+`source_brainstorms`, shown to the user. The Direction is not yet in effect; it takes effect only after PM
+acceptance and the `research-op --op scope-transition` commit.

@@ -200,6 +200,29 @@ def copy_helper_scripts(root: Path, force: bool) -> list[Path]:
     return written
 
 
+LIVE_PILL = '<a class="pill" href="live.html">Live Runs</a>'
+LIVE_NAV_LINK = '<a href="live.html">Live Runs</a>'
+SCOPE_PILL = '<a class="pill" href="scope.html">Scope Tree</a>'
+SCOPE_NAV_LINK = '<a href="scope.html">Scope Tree</a>'
+
+
+def ensure_live_nav(root: Path) -> list[Path]:
+    """Insert the Live Runs links into a pre-existing index.html that predates live.html."""
+    index = root / "index.html"
+    if not index.exists():
+        return []
+    text = index.read_text(encoding="utf-8")
+    patched = text
+    if LIVE_PILL not in patched and SCOPE_PILL in patched:
+        patched = patched.replace(SCOPE_PILL, SCOPE_PILL + "\n        " + LIVE_PILL, 1)
+    if LIVE_NAV_LINK not in patched and SCOPE_NAV_LINK in patched:
+        patched = patched.replace(SCOPE_NAV_LINK, SCOPE_NAV_LINK + "\n      " + LIVE_NAV_LINK, 1)
+    if patched == text:
+        return []
+    index.write_text(patched, encoding="utf-8")
+    return [index]
+
+
 def ensure_dashboard(root: Path, force: bool) -> list[Path]:
     written: list[Path] = []
     written.extend(copy_bundled_chrome(root, force))
@@ -209,6 +232,7 @@ def ensure_dashboard(root: Path, force: bool) -> list[Path]:
     written.extend(write_scope_projection_defaults(root, force))
     written.extend(copy_helper_scripts(root, force))
     written.extend(copy_rule_files(root, force))
+    written.extend(ensure_live_nav(root))
     return written
 
 

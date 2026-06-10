@@ -1594,6 +1594,16 @@
       var locked = e && e.lockedAt ? true : false;
       var hasEvidence = e && e.gateEvidence && e.gateEvidence.artifactPath;
       var docsAnchor = e && e.docsAnchor ? String(e.docsAnchor) : ("docs/pipeline.html#" + id.toLowerCase());
+      var threadLinks = ['<a href="tracker.html#todo">tracker</a>'];
+      if (!e || e.measures !== false) {
+        threadLinks.push('<a href="results.html#result-slot-' + htmlEscape(id.toLowerCase()) + '">result</a>');
+      }
+      if (e && e.requiresCode) {
+        threadLinks.push('<a href="implementation.html#changes">impl</a>');
+      }
+      if (e && (e.complex || e.docsAnchor)) {
+        threadLinks.push('<a href="' + htmlEscape(docsAnchor) + '">docs</a>');
+      }
       return [
         '<li class="pipeline-node" data-phase-id="' + htmlEscape(id) + '" data-phase-status="' + htmlEscape(status) + '">',
         '<div class="pipeline-node-head">',
@@ -1609,6 +1619,7 @@
         '<dt>Output</dt><dd><code>' + htmlEscape(output) + "</code></dd>",
         '<dt>Gate</dt><dd>' + htmlEscape(gate) + "</dd>",
         "</dl>",
+        '<nav class="pipeline-thread-links" aria-label="Task thread links">' + threadLinks.join("") + "</nav>",
         '<a class="pipeline-node-doc" href="' + htmlEscape(docsAnchor) + '">' + htmlEscape(docsAnchor) + "</a>",
         "</li>",
       ].join("");

@@ -10,6 +10,8 @@ import re
 import string
 from pathlib import Path
 
+from task_spine import derive_task_blocks
+
 
 # Brainstorm is no longer a package category (pre-package ideas live on the
 # dashboard brainstorm lane). brainstorm.html survives only as a per-package
@@ -221,7 +223,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--last-action", default="", dest="last_action")
     parser.add_argument("--open-runs", default="", dest="open_runs")
     parser.add_argument("--last-updated", default=dt.date.today().isoformat(), dest="last_updated")
-    parser.add_argument("--experiments-json", default="", dest="experiments_json",
+    parser.add_argument("--experiments-json", "--experiments", default="", dest="experiments_json",
                         help="JSON list of initial experiments[] rows to add to inventory")
     parser.add_argument("--source-scope-node", default="", dest="source_scope_node",
                         help="SSOT direction node id that produced this package")
@@ -269,6 +271,9 @@ def main(argv: list[str] | None = None) -> int:
             written.append(out_path)
 
     inventory_updated = append_inventory(root, package_id, args, pages)
+    derived = []
+    if args.experiments_json:
+        derived = derive_task_blocks(package_root, json.loads(args.experiments_json))
 
     print(f"package_id={package_id}")
     print(f"package_root={package_root}")
@@ -276,6 +281,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"files_written={len(written)}")
     for path in written:
         print(path)
+    if derived:
+        print(f"derived_task_blocks={len(derived)}")
+        for path in derived:
+            print(path)
     print(f"inventory_updated={inventory_updated}")
     return 0
 

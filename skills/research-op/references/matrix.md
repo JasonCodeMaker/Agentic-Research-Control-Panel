@@ -25,16 +25,19 @@ update `transitions.py` in the same commit.
 |---|---|---|---|
 | U1 | `status` (lane-crossing) | All except terminal-frozen | **T1 `LANE_TRANSITION_ACK`** ack required (E3) |
 | U2 | `status` (intra-lane) | All `(in-progress, *)` transitions | No ack |
-| U3 | `activeGate` / `primaryMetricVsGate` / `lastAction` / `lastUpdated` / `openRuns` / `currentBlocker` | `(in-progress, *)` | No ack (E2 in-progress update) |
+| U3 | `activeGate` / `primaryMetricVsGate` / `lastAction` / `lastUpdated` / `openRuns` / `currentBlocker` / `objectiveContract` | `(in-progress, *)` | No ack (E2 in-progress update) |
 | U4 | `experiments[i].status` (phase chip) | `(in-progress, *)` | No ack; driven by `scan-events` |
+| U4a | `experiments[]` row replacement | `(in-progress, CONTEXT_LOADED / IMPLEMENTING / READY_TO_LAUNCH)` | Pre-launch only; full replacement row must keep the same `id` |
 | U5 | `terminationMessage` | `(success, *)`, `(fail, *)` during T1 ack | **T1** (E3) |
 | U6 | `adoptionPath` | `(success, ADOPTED_UNCONFIRMED → ADOPTED)` | **T1 `CODEBASE_MERGE_ACK`** (E4) |
 | U7 | `supersededBy` | `(success, WIN_SUPERSEDED)` | **T1** (E5) |
 | U8 | `reopenTrigger` | `(fail, ARCHIVED_CONDITIONAL)` | **T1** (E6) |
 | U9 | any `data-ack-value=""` slot (8 ack types per P2) | when the corresponding event arrives | **T1** of the slot's declared type |
 | U10 | results.html verdict cell | `(in-progress, RESULT_ANALYSIS)` | Mechanically computed from `success.predicate` + verified value (P5); never overridden by prose |
+| U10a | results.html result-gate row cells | `(in-progress, *)` | No ack; updates known `data-field` cells by `exp_id` |
 | U11 | tracker Resume Block (painted from inventory) | any `(in-progress, *)` | No ack — painter re-derives from inventory |
 | U12 | `<time data-field="last-updated">` on any HTML | any | Auto-bumped on every meaningful Insert/Update/Delete to that file |
+| U13 | results.html result block replacement by `data-phase-id` | `(in-progress, RESULT_ANALYSIS / NEXT_ACTION_READY / EXPERIMENT_RUNNING / LIVE_ANALYSIS)` | No ack; replacement HTML must keep the canonical 6-part block anchors |
 
 ### 4.3 Delete — remove row / card / section / file
 
@@ -56,7 +59,8 @@ update `transitions.py` in the same commit.
 | C2 | This-package evidence resolution | All cells, always | `learnings_lint.py lint-evidence --pkg <id>` |
 | C3 | This-package propagation pass (read-only) | All cells, always | `research-op scan-events --pkg <id> --dry-run` |
 | C4 | Project-wide cross-package consistency | All cells, always | `learnings_lint.py all` |
-| C5 | Schema gate for a proposed write (pre-condition for I* / U* / D*) | All cells, always | Pattern B reject-before-write hook |
+| C5 | Task-spine structural alignment | All cells, always | `learnings_lint.py alignment --pkg <id>`; terminal lane moves use `--terminal` |
+| C6 | Schema gate for a proposed write (pre-condition for I* / U* / D*) | All cells, always | Pattern B reject-before-write hook |
 
 ### 4.5 Structural invariants the matrix encodes
 

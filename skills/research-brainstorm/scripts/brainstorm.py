@@ -10,6 +10,7 @@ synthesized into a single Direction proposal submitted through the Triage gate.
 from __future__ import annotations
 
 import argparse
+from html import escape as html_escape
 import json
 import re
 from datetime import datetime, timezone
@@ -55,6 +56,103 @@ def _slug(value: str) -> str:
     return slug or "idea"
 
 
+def _created_date(entry: dict) -> str:
+    created_at = str(entry.get("created_at") or "")
+    if re.match(r"^\d{4}-\d{2}-\d{2}", created_at):
+        return created_at[:10]
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def brainstorm_detail_path(entry: dict) -> str:
+    """Default readable HTML page path for a brainstorm idea."""
+    return f"brainstorm/{_created_date(entry)}-{entry['id']}.html"
+
+
+def render_brainstorm_html(entry: dict, *, language: str = "en") -> str:
+    """Render a compact, English-by-default brainstorm page for a pre-package idea."""
+    title = html_escape(str(entry.get("title") or entry["id"]))
+    idea = html_escape(str(entry.get("idea") or ""))
+    rough_metric = html_escape(str(entry.get("rough_metric") or "Not specified yet"))
+    created = html_escape(str(entry.get("created_at") or "")[:10])
+    idea_id = html_escape(str(entry["id"]))
+    refs = entry.get("lit_refs") or []
+    if refs:
+        refs_html = "\n".join(f"              <li>{html_escape(str(ref))}</li>" for ref in refs)
+    else:
+        refs_html = '              <li class="muted">No literature grounding recorded yet.</li>'
+
+    return f"""<!doctype html>
+<html lang="{html_escape(language or 'en')}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brainstorm - {title}</title>
+  <link rel="stylesheet" href="../assets/research.css">
+  <style>
+    .callout {{ border-left: 4px solid var(--clay); background: #fbf4ea; padding: 12px 16px; margin: 16px 0; font-size: 14px; }}
+    .callout.note {{ border-left-color: #56708e; background: #eef2f8; }}
+    .tagline {{ color: var(--g500); font-family: var(--mono); font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; }}
+    .field-grid {{ display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 12px 18px; margin-top: 16px; }}
+    .field-grid dt {{ color: var(--g500); font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }}
+    .field-grid dd {{ margin: 0; color: var(--slate); }}
+    .muted {{ color: var(--g500); font-style: italic; }}
+    @media (max-width: 720px) {{ .field-grid {{ grid-template-columns: 1fr; }} }}
+  </style>
+</head>
+<body data-page="brainstorm">
+  <div class="shell">
+    <div class="callout note" style="margin:0 0 18px;">
+      <span class="tagline">pre-package idea{(' - ' + created) if created else ''}</span>
+      <p style="margin:6px 0 0;">This is an automatically generated brainstorm page. It is readable by default, but it is not a ratified Direction, not a package, and not an SSOT change.</p>
+    </div>
+
+    <header class="masthead" data-section="masthead">
+      <div class="eyebrow">Brainstorm &middot; pre-package idea</div>
+      <h1>{title}</h1>
+      <p class="lead">{idea}</p>
+      <div class="toolbar">
+        <a class="pill" href="../categories/brainstorm/index.html">Brainstorm lane</a>
+        <a class="pill" href="../index.html">Dashboard</a>
+      </div>
+    </header>
+
+    <main>
+      <section data-section="idea">
+        <article class="module-card">
+          <h2>Idea Snapshot</h2>
+          <dl class="field-grid">
+            <dt>Idea ID</dt>
+            <dd><code>{idea_id}</code></dd>
+            <dt>Rough metric</dt>
+            <dd>{rough_metric}</dd>
+            <dt>Grounding</dt>
+            <dd>
+              <ul style="margin:0; padding-left:18px;">
+{refs_html}
+              </ul>
+            </dd>
+            <dt>Next decision</dt>
+            <dd>Shape this hunch into a typed yardstick only when the user is ready: <code>{{hypothesis, metric, baselines, success_predicate}}</code>. Submit any Direction through Triage; do not commit the SSOT from this page.</dd>
+          </dl>
+        </article>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
+"""
+
+
+def write_brainstorm_html_page(dashboard_root, entry: dict) -> str:
+    """Write the default HTML detail page and return the dashboard-relative path."""
+    detail_path = entry.get("detailPath") or brainstorm_detail_path(entry)
+    entry["detailPath"] = detail_path
+    path = Path(dashboard_root) / detail_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render_brainstorm_html(entry, language=entry.get("page_language", "en")), encoding="utf-8")
+    return detail_path
+
+
 def add_brainstorm(dashboard_root, record: dict) -> str:
     """Append a pre-package idea; assign a unique id (from title) and a timestamp. Returns the id."""
     items = read_brainstorms(dashboard_root)
@@ -67,6 +165,8 @@ def add_brainstorm(dashboard_root, record: dict) -> str:
         bid = f"{bid}-{n}"
     entry = {**record, "id": bid}
     entry.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+    entry.setdefault("page_language", "en")
+    write_brainstorm_html_page(dashboard_root, entry)
     items.append(entry)
     write_brainstorms(dashboard_root, items)
     return bid
@@ -144,6 +244,7 @@ def build_parser() -> argparse.ArgumentParser:
     pa.add_argument("--id", default=None)
     pa.add_argument("--rough-metric", default=None)
     pa.add_argument("--lit-refs", default=None, help="JSON list of source refs")
+    pa.add_argument("--page-language", default="en", help="HTML page language; default is English")
 
     pl = sub.add_parser("list", help="print window.BRAINSTORMS as JSON")
     pl.add_argument("--root", default="research_html")
@@ -178,7 +279,10 @@ def main(argv: list[str] | None = None) -> int:
             record["rough_metric"] = args.rough_metric
         if args.lit_refs:
             record["lit_refs"] = json.loads(args.lit_refs)
-        print(json.dumps({"id": add_brainstorm(args.root, record)}, ensure_ascii=False))
+        record["page_language"] = args.page_language
+        bid = add_brainstorm(args.root, record)
+        item = next(i for i in read_brainstorms(args.root) if i["id"] == bid)
+        print(json.dumps({"id": bid, "detailPath": item.get("detailPath")}, ensure_ascii=False))
     elif args.cmd == "list":
         print(json.dumps(read_brainstorms(args.root), ensure_ascii=False))
     elif args.cmd == "remove":

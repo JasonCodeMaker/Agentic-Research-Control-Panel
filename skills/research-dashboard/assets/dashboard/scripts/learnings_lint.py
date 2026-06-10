@@ -17,6 +17,7 @@ the bundled node helper (dump_packages.js) and runs four kinds of checks:
   all             lint-status + lint-evidence + scan-events for every package
   readiness       auto-research admission gate: per the autonomy dial's unattended
                   horizon, every experiment is fanned out to plan/impl/doc/result/tracker
+  alignment       task-spine structural alignment over every experiment in a package
 """
 
 from __future__ import annotations
@@ -799,6 +800,19 @@ def horizon(dial: str | None, experiments: list[dict]) -> list[dict]:
     return active
 
 
+COMPARATOR = re.compile(r"(?:>=|<=|==|!=|>|<)")
+
+
+def gate_is_compound(gate: str) -> bool:
+    """Return True when a gate hides multiple predicates in one task."""
+    text = gate or ""
+    if ";" in text:
+        return True
+    if re.search(r"\b(AND|OR)\b", text, re.IGNORECASE):
+        return True
+    return len(COMPARATOR.findall(text)) >= 2
+
+
 def check_plan_row(pid: str, e: dict, all_ids: set) -> list[Violation]:
     """C1: the experiment's plan row is complete and well-formed."""
     vs: list[Violation] = []
@@ -811,9 +825,9 @@ def check_plan_row(pid: str, e: dict, all_ids: set) -> list[Violation]:
     if _filled(purpose) and len(purpose.split()) > 12:
         vs.append(Violation(pid, "readiness-purpose-too-long",
                             f"{eid}: purpose is {len(purpose.split())} words (cap 12)", "error"))
-    if _filled(e.get("gate")) and re.search(r"\b(AND|OR)\b", e.get("gate") or ""):
+    if _filled(e.get("gate")) and gate_is_compound(e.get("gate") or ""):
         vs.append(Violation(pid, "readiness-gate-compound",
-                            f"{eid}: gate has a top-level AND/OR; split the phase", "error"))
+                            f"{eid}: gate has multiple predicates; split the phase", "error"))
     for a in (e.get("after") or []):
         if a not in all_ids:
             vs.append(Violation(pid, "readiness-after-unresolved",
@@ -944,6 +958,167 @@ def lint_readiness(data: dict, dial: str | None, pkg_filter: str | None = None) 
     return rep
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# alignment — task-spine structural lint over every experiment
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _alignment(v: Violation) -> Violation:
+    return Violation(v.pkg, v.code.replace("readiness-", "alignment-", 1), v.message, v.severity)
+
+
+def _task_flags_set(e: dict) -> bool:
+    return any(k in e for k in ("measures", "requiresCode", "complex"))
+
+
+def _measures(e: dict) -> bool:
+    return bool(e.get("measures", True))
+
+
+def _exp_status(e: dict) -> str:
+    return str(e.get("status") or "").strip().lower()
+
+
+def result_slot_exists(html: str, eid: str) -> bool:
+    table = re.compile(
+        r'<table\b(?=[^>]*data-table="[^"]*' + re.escape(eid) + r'[^"]*")'
+        r'(?=[^>]*data-exp-id="' + re.escape(eid) + r'")[^>]*>',
+        re.DOTALL,
+    )
+    return bool(table.search(html))
+
+
+def result_row_block(html: str, eid: str) -> str:
+    # Full <tr> including attributes — derived rows carry data-exp-id on the tag itself.
+    for m in re.finditer(r"<tr[^>]*>.*?</tr>", html, re.DOTALL):
+        tr = m.group(0)
+        if f'data-exp-id="{eid}"' in tr or re.search(r'data-field="exp-id"[^>]*>\s*' + re.escape(eid) + r'\s*<', tr):
+            return tr
+    return ""
+
+
+def row_has_decided_verdict(row: dict | None) -> bool:
+    if not row:
+        return False
+    chip = str(row.get("verdict_chip") or "").upper()
+    text = str(row.get("verdict_text") or "").upper()
+    return chip in VERDICTS or text in VERDICTS
+
+
+def row_is_unmeasured(row: dict | None) -> bool:
+    if not row:
+        return True
+    return not _filled(row.get("measured")) and not row_has_decided_verdict(row)
+
+
+def change_exp_ids(items: list[dict]) -> set[str]:
+    ids: set[str] = set()
+    for item in items:
+        raw = item.get("validating-exp", "")
+        for token in re.split(r"[,\s]+", raw):
+            token = token.strip()
+            if token and token.lower() not in PLACEHOLDERS:
+                ids.add(token)
+    return ids
+
+
+def change_bound(items: list[dict], eid: str) -> bool:
+    return eid in change_exp_ids(items)
+
+
+def todo_bound(html: str, eid: str) -> bool:
+    if f'data-exp-id="{eid}"' in html:
+        return True
+    return bool(re.search(r'<li[^>]*>.*\b' + re.escape(eid) + r'\b.*?</li>', html, re.DOTALL))
+
+
+def assess_alignment(pkg: dict, base_dir: Path, terminal: bool = False) -> Report:
+    pid = pkg.get("id", "(no-id)")
+    rep = Report(f"alignment — {pid}")
+    experiments = pkg.get("experiments") or []
+    if not experiments:
+        return rep
+
+    def read(name: str) -> str:
+        p = base_dir / name
+        return p.read_text(encoding="utf-8", errors="ignore") if p.exists() else ""
+
+    impl_html = read("implementation.html")
+    results_html = read("results.html")
+    tracker_html = read("tracker.html")
+    impl_items = parse_change_items(impl_html)
+    gate_rows = parse_result_gate(results_html)
+    gate_by_id = {r.get("exp_id"): r for r in gate_rows if r.get("exp_id")}
+    all_ids = {e.get("id") for e in experiments if e.get("id")}
+
+    for e in experiments:
+        eid = e.get("id", "(no-id)")
+        # Field caps (purpose/gate/output/after) are always-on; only the flag-keyed
+        # derived-block checks below are grandfathered for legacy rows.
+        for v in check_plan_row(pid, e, all_ids):
+            rep.add(_alignment(v))
+        if not _task_flags_set(e):
+            rep.add(Violation(pid, "alignment-flags-unset",
+                              f"{eid}: no measures/requiresCode/complex flags; legacy row is grandfathered",
+                              "warning"))
+            continue
+        if not todo_bound(tracker_html, str(eid)):
+            rep.add(Violation(pid, "alignment-todo-missing",
+                              f"{eid}: no tracker to-do item keyed by data-exp-id", "error"))
+        if e.get("requiresCode") and not change_bound(impl_items, str(eid)):
+            rep.add(Violation(pid, "alignment-impl-missing",
+                              f"{eid}: requiresCode but no change card binds validating-exp={eid}", "error"))
+        if e.get("complex"):
+            for v in check_doc(pid, e, base_dir):
+                rep.add(_alignment(v))
+        if _measures(e):
+            row = gate_by_id.get(eid)
+            for v in check_result_row(pid, e, gate_rows):
+                rep.add(_alignment(v))
+            if not result_slot_exists(results_html, str(eid)):
+                rep.add(Violation(pid, "alignment-result-table-missing",
+                                  f"{eid}: no predefined result table slot keyed by data-exp-id", "error"))
+            status = _exp_status(e)
+            if status == "completed" and row_is_unmeasured(row):
+                rep.add(Violation(pid, "alignment-status-contradiction",
+                                  f"{eid}: status=completed but result-gate row is still unmeasured", "error"))
+            if status in {"pending", "queued"} and row_has_decided_verdict(row):
+                rep.add(Violation(pid, "alignment-status-contradiction",
+                                  f"{eid}: result-gate row has a verdict while status={status}", "error"))
+            if terminal and status not in {"skipped", "blocked"} and not row_has_decided_verdict(row):
+                rep.add(Violation(pid, "alignment-terminal-unresolved",
+                                  f"{eid}: terminal mode requires a resolved verdict or skipped/blocked status",
+                                  "error"))
+            row_block = result_row_block(results_html, str(eid))
+            if row_block and f'data-exp-id="{eid}"' not in row_block:
+                rep.add(Violation(pid, "alignment-thread-anchor-missing",
+                                  f"{eid}: result-gate row lacks data-exp-id", "warning"))
+
+    for row in gate_rows:
+        eid = row.get("exp_id")
+        if eid and eid.lower() not in PLACEHOLDERS and eid not in all_ids:
+            rep.add(Violation(pid, "alignment-orphan-gate-row",
+                              f"result-gate row exp_id={eid!r} resolves to no experiments[] entry", "error"))
+
+    for eid in sorted(change_exp_ids(impl_items) - all_ids):
+        rep.add(Violation(pid, "alignment-orphan-change-card",
+                          f"change card validating-exp={eid!r} resolves to no experiments[] entry", "error"))
+
+    if any(_task_flags_set(e) for e in experiments):
+        for v in check_tracker(pid, tracker_html):
+            rep.add(_alignment(v))
+    return rep
+
+
+def lint_alignment(data: dict, pkg_filter: str | None = None, terminal: bool = False) -> Report:
+    rep = Report("alignment — task-spine structural lint")
+    for pkg in data["packages"]:
+        if pkg_filter and pkg.get("id") != pkg_filter:
+            continue
+        for v in assess_alignment(pkg, pkg_dir(pkg["id"]), terminal=terminal).violations:
+            rep.add(v)
+    return rep
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--strict", action="store_true",
@@ -958,6 +1133,7 @@ def main() -> int:
     p = sub.add_parser("readiness"); p.add_argument("--pkg")
     p.add_argument("--dial", default="AUTONOMOUS",
                    help="autonomy dial; sets the unattended horizon (default: AUTONOMOUS = whole DAG)")
+    p = sub.add_parser("alignment"); p.add_argument("--pkg"); p.add_argument("--terminal", action="store_true")
     args = parser.parse_args()
 
     data = load_data()
@@ -985,11 +1161,16 @@ def main() -> int:
         rep = lint_readiness(data, args.dial, pkg_filter=args.pkg)
         print(rep.render(strict=args.strict))
         return 1 if fail(rep) else 0
+    if args.cmd == "alignment":
+        rep = lint_alignment(data, pkg_filter=args.pkg, terminal=args.terminal)
+        print(rep.render(strict=args.strict))
+        return 1 if fail(rep) else 0
     if args.cmd == "all":
         r1 = lint_status(data); print(r1.render(strict=args.strict)); print()
         r2 = lint_evidence(data); print(r2.render(strict=args.strict)); print()
-        r3 = scan_events(data, pkg_filter=args.pkg); print(r3.render(strict=args.strict))
-        return 1 if (fail(r1) or fail(r2)) else 0
+        r3 = scan_events(data, pkg_filter=args.pkg); print(r3.render(strict=args.strict)); print()
+        r4 = lint_alignment(data, pkg_filter=args.pkg); print(r4.render(strict=args.strict))
+        return 1 if (fail(r1) or fail(r2) or fail(r4)) else 0
 
     return 2
 

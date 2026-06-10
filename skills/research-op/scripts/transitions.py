@@ -21,7 +21,8 @@ TARGETS = {
     # Inventory targets (paint multiple HTML surfaces via renderers)
     "status", "activeGate", "primaryMetricVsGate", "lastAction", "lastUpdated",
     "openRuns", "currentBlocker", "terminationMessage", "adoptionPath",
-    "supersededBy", "reopenTrigger", "experiments-row", "experiments-status",
+    "supersededBy", "reopenTrigger", "objectiveContract",
+    "experiments-row", "experiments-status",
     "methodsTried", "package-invariant",
     # HTML in-place targets (single-home, no painter)
     "tracker-live-check-row", "tracker-resource-allocation-row",
@@ -80,6 +81,10 @@ UPDATE_LEGAL = {
     "lastUpdated":          {(c, s) for c, statuses in STATES.items() for s in statuses},
     "openRuns":             {("in-progress", s) for s in STATES["in-progress"]},
     "currentBlocker":       {("in-progress", s) for s in STATES["in-progress"]},
+    "objectiveContract":    {("in-progress", s) for s in STATES["in-progress"]},
+    "experiments-row":      {
+        ("in-progress", s) for s in ("CONTEXT_LOADED", "IMPLEMENTING", "READY_TO_LAUNCH")
+    },
     "experiments-status":   {("in-progress", s) for s in STATES["in-progress"]},
     "terminationMessage":   ({("success", s) for s in STATES["success"]}
                              | {("fail", s) for s in STATES["fail"]}
@@ -88,6 +93,10 @@ UPDATE_LEGAL = {
     "supersededBy":         {("success", "WIN_SUPERSEDED")},
     "reopenTrigger":        {("fail", "ARCHIVED_CONDITIONAL")},
     "approval-ack-slot":    {(c, s) for c, statuses in STATES.items() for s in statuses},
+    "results-gate-row":     {("in-progress", s) for s in STATES["in-progress"]},
+    "results-block":        {
+        ("in-progress", s) for s in ("EXPERIMENT_RUNNING", "LIVE_ANALYSIS", "RESULT_ANALYSIS", "NEXT_ACTION_READY")
+    },
     "results-verdict":      {("in-progress", "RESULT_ANALYSIS")},
     "last-updated-time":    {(c, s) for c, statuses in STATES.items() for s in statuses},
 }

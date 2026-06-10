@@ -143,7 +143,7 @@ package contract:
 
 - `hypothesis` &mdash; canonical hypothesis text.
 - `noChangeBoundary` &mdash; one-sentence boundary reference.
-- `experiments` &mdash; ordered array `[{ id, label?, purpose, after, output, gate, status, runLink?, docsAnchor? }, …]`. Painted onto `index.html#plan-status` by `renderPlanStatus()` (status chips), and onto `plan.html#experiments` by `renderPipelineTimeline()` (vertical pipeline of nodes). Allowed `status` values: `pending`, `queued`, `running`, `completed`, `failed`, `skipped`, `blocked`. **Timeline-field caps**: `purpose` &le; 12 words leading with an action verb; `gate` is exactly one measurable predicate (no top-level `AND` / `OR`); `output` is exactly one key artifact (single line); `after` is a list of phase ids that must each resolve to another `experiments[].id`; `docsAnchor` defaults to `docs/pipeline.html#<id_lowercase>`. The painters are the only read path; inventory is the only write path. Caps are enforced by `learnings_lint.py lint-status` and fire only when the field is present, so legacy entries with just `{ id, label, status, runLink }` remain lint-clean. Stale plan-status rows are a workflow violation if a tracker resource-allocation row reports a different status.
+- `experiments` &mdash; ordered typed task-spine array `[{ id, label?, purpose, after, output, gate, status, measures, requiresCode, complex, runLink?, docsAnchor? }, …]`. Painted onto `index.html#plan-status` by `renderPlanStatus()` (status chips), and onto `plan.html#experiments` by `renderPipelineTimeline()` (vertical pipeline of nodes plus task-thread chips). Allowed `status` values: `pending`, `queued`, `running`, `completed`, `failed`, `skipped`, `blocked`. **Timeline-field caps**: `purpose` &le; 12 words leading with an action verb; `gate` is exactly one measurable predicate (no top-level `AND` / `OR`, no semicolon-joined predicates, fewer than two comparator clauses); `output` is exactly one key artifact (single line); `after` is a list of phase ids that must each resolve to another `experiments[].id`; `docsAnchor` defaults to `docs/pipeline.html#<id_lowercase>`. The task flags drive derived blocks: `measures: true` (default for new tasks) requires a result-gate row and predefined `data-table="result-slot-<id>"`; `requiresCode: true` requires an implementation change card bound by `validating-exp`; `complex: true` requires a resolving docs block. The painters are the only read path; inventory is the only write path. `learnings_lint.py alignment` enforces caps, derived-block presence, reverse orphan rows/cards, and status contradictions. Legacy entries with none of `measures`/`requiresCode`/`complex` skip the derived-block checks with an `alignment-flags-unset` warning; the field caps stay always-on for every entry.
 - `workflowState`, `activeGate`, `primaryMetricVsGate`, `lastDecision`,
   `lastDecisionEvidencePath`, `nextRoute`, `currentBlocker` &mdash; the six T2
   fields plus an evidence-path hint.
@@ -174,7 +174,8 @@ row. Do not hand-edit the painted slot — write inventory instead.
 `renderPipelineTimeline()` paints the `[data-section="pipeline-timeline"]`
 slot on `plan.html` from the same `experiments[]` array. Each node renders
 the inventory's five spec fields (`id`, `purpose`, `after`, `output`,
-`gate`), a status chip painted from `status`, and a deep-link to
+`gate`), a status chip painted from `status`, task-thread chips to tracker /
+result / implementation / docs surfaces as declared by the task flags, and a deep-link to
 `docs/pipeline.html#<id_lowercase>` (overridable via `docsAnchor`). The
 timeline is the single home for per-phase spec on packages with 3+
 sequential phases — the legacy Experiments List table is retired for those

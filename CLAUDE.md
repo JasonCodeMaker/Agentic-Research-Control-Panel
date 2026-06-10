@@ -6,6 +6,13 @@ This file is the agent operating context for any project that adopts the Trustwo
 
 A trustworthy research record where every claim is gated by an explicit metric, every metric is backed by a verified artifact, every direction has one declared next route, and every adopted win or archived failure leaves a structured `methodsTried` trace the next session can learn from. The skills bundled with this repo install the HTML surfaces, Scope/Triage gates, orchestration, and mutation tooling that enforce this. `WORKFLOW.md` is the seven-step controller the agent follows inside any package.
 
+`research_html/` is the shared context surface, not the authority by itself. For research-affecting tasks,
+load the narrow owning layer: `outputs/_scope/transitions.jsonl` for intent, package pages for
+plan/tracker/result witnesses, `outputs/<pkg>/` plus live process state for measurements, and
+`research_html/data/research-packages.js` for dashboard index state. Derived pages such as `scope.html`,
+`context.html`, `learnings.html`, lane pages, and `scope-projection.json/js` are read-only context unless
+their owning skill says otherwise.
+
 ## The five protocols the agent obeys
 
 The protocols form a stack — each one constrains the layers above it.
@@ -18,25 +25,23 @@ Strictly follow `WORKFLOW.md`: when it says dispatch a sub-agent, dispatch; when
 
 ### 2. Research Output Contract
 
-The only valid in-repo location for new research material is `research/active/<YYYY-MM-DD>-<slug>/` (a research package).
+Research packages live under `research_html/packages/<YYYY-MM-DD>-<slug>/` and are created or materially
+restructured through `/research-package`, never by ad-hoc folders. Materialization reads only committed
+Scope state, not pending Triage proposals. Runtime logs, metrics, event manifests, checkpoints, and
+temporary artifacts go under `outputs/<YYYY-MM-DD>-<slug>/`.
 
-Every research package must contain:
-
-- `README.md`, `plan.html`, `tracker.html`, `results.html` (plus `index.html`, `next-action.html`, optional `implementation.html` and `brainstorm.html`)
-- `docs/` and `_agent/` directories
-- A `scripts/` directory for any package-local one-off scripts (optional). Fact propagation is handled centrally by `/research-op scan-events`, not by per-package byte-copies.
-
-Use `bash scripts/dev/new_research.sh <slug>` (or `/research-package`) to create research packages. Do not create ad-hoc top-level research folders outside `research/`.
-
-Runtime state, supervisor JSON, local logs, and temporary CSVs go under `outputs/<YYYY-MM-DD>-<slug>/`, not in tracked repo roots.
-
-When a research theme is complete or paused, move the whole package to `research/archive/<YYYY-MM-DD>-<slug>/`.
-
-Stable shared entrypoints stay in `scripts/`; one-off experiment scripts belong in the owning research package.
+Current package canon: packages use `index.html`, `plan.html`, `tracker.html`, `results.html`,
+`docs/index.html`, and `_agent/context.html`, with optional `implementation.html`, `analysis.html`,
+conversion-only `brainstorm.html`, and package-local `scripts/`. `tracker.html` owns execution state and
+`tracker.html#chosen-route`; standalone `launch.html`, `live.html`, and `next-action.html` are retired.
+Typed `experiments[]` rows are the task spine; `learnings_lint.py alignment` verifies their result,
+implementation, docs, and tracker thread before launch or lane moves.
+For detailed field ownership, load `skills/research-package/references/package-contract.md` only when a
+package task needs it.
 
 ### 3. Fact Propagation Contract
 
-Every artifact that lands during a research run (checkpoint, candidate JSON, sentinel, phase marker, chain-done) is a "locked fact" that the agent must propagate to every owning surface — `results.html`, `next-action.html`, registry status fields, tracker Resume Block — in the same turn the artifact is observed.
+Every artifact that lands during a research run (checkpoint, candidate JSON, sentinel, phase marker, chain-done) is a "locked fact" that the agent must propagate to every owning surface — `results.html`, `tracker.html#chosen-route`, registry status fields, tracker Resume Block — in the same turn the artifact is observed.
 
 The mechanical check is `/research-op scan-events` (shipped with the `research-op` skill at `skills/research-op/scripts/research_op.py`):
 
@@ -70,7 +75,7 @@ Learnings event names (`LEARNINGS_EVENT` constant — SSOT: this file): `DIRECTI
 | **`DIRECTIVE_CHANGE`** | A user instruction changes the package's constraints / plan / scope (add a binding rule, redesign an experiment, change metric / baseline / roster) — not an artifact event, so `scan-events` will not surface it | none | Write the directive to its typed home (`bindingRules[]` via `--target package-invariant`, or the owning surface) + `lastAction`, `lastUpdated` |
 | **`VERDICT_FINALIZED`** | `results.html` result-gate row gains `PASS` / `FAIL` / `INCONCLUSIVE` / `DIAGNOSTIC` AND artifact verification recorded | none | Append one `methodsTried[]` row |
 | **`STATUS_CHANGED`** | tracker live-check, plan revision, blocker change | none | `status`, `activeGate`, `primaryMetricVsGate`, `currentBlocker`, `openRuns`, `lastAction`, `lastUpdated` |
-| **`TERMINAL_TRANSITION`** | `next-action.html` chosen-route resolves to a terminal lane move (`TERMINATE`, adoption) | **T1** | `category` (lane move), `status` (terminal value), `terminationMessage`; freeze `methodsTried[]` |
+| **`TERMINAL_TRANSITION`** | `tracker.html#chosen-route` resolves to a terminal lane move (`TERMINATE`, adoption) | **T1** | `category` (lane move), `status` (terminal value), `terminationMessage`; freeze `methodsTried[]` |
 | **`ADOPTION`** | `CLAUDE.md` "Current Best" edit, code merge into `models/` / `trainer/`, or a new in-progress package starts citing the win | **T1** | `adoptionPath` (specific anchor or path) |
 | **`SUPERSESSION`** | A newer success package replaces an older one | **T1** | On the *old* package: `status = WIN_SUPERSEDED`, `supersededBy = <new id>` |
 | **`REOPEN`** | User explicitly states a fail package should be revisitable under a named condition | **T1** | `status = ARCHIVED_CONDITIONAL`, `reopenTrigger = "<condition>"` |
@@ -96,14 +101,15 @@ Every row is exactly six fields, drawn verbatim from the witnessing `results.htm
 | `lint-evidence` | Every `methodsTried[].evidencePath` and `lastDecisionEvidencePath` resolves. File-missing is a warning; anchor-missing is an error. |
 | `scan-events [--pkg <id>]` | Runs the three draft writers (`VERDICT_FINALIZED` / `TERMINAL_TRANSITION` / `ADOPTION`). Prints JSON drafts; does not write. |
 | `draft-method <pkg-id> <anchor>` | Print one JSON `methodsTried` row drafted from `results.html#<anchor>`. |
-| `draft-terminal <pkg-id>` | Print the JSON terminal block drafted from `next-action.html#chosen-route`. |
+| `draft-terminal <pkg-id>` | Print the JSON terminal block drafted from `tracker.html#chosen-route` (legacy packages may fall back to `next-action.html#chosen-route`). |
+| `alignment [--pkg <id>] [--terminal]` | Structural task-spine lint: typed `experiments[]` rows have the required result, implementation, docs, and tracker blocks; reverse orphan rows/cards and status contradictions are reported. |
 | `all [--pkg <id>]` | All three lints + scan. Exit non-zero if any error was found. |
 
 Add `--strict` to make warnings count toward the exit code (CI mode).
 
 **Stop-Gate sequence (the contract for every learnings-relevant turn)**
 
-1. Make the upstream-witness edit (results.html / next-action.html / tracker.html).
+1. Make the upstream-witness edit (`results.html` / `tracker.html#chosen-route` / `tracker.html`).
 2. Update `research_html/data/research-packages.js`.
 3. Update tracker Resume Block `lastAction`.
 4. Run `python research_html/scripts/learnings_lint.py all`. Fix every error before closing the turn.
@@ -155,8 +161,12 @@ Terminal transitions (any status change that crosses a lane boundary) require us
 
 ## Cross-cutting agent rules
 
-- **Build context first.** Read the invocation, project profile, package state, active plan, results, and docs before work.
+- **Build context first.** Read the invocation, project profile, Scope SSOT, package state, active plan,
+  results, docs, and runtime evidence required by the task before work.
+- **Use the source-routing model.** Load the SSOT or package witness that owns the decision; use derived
+  `research_html` pages for in-context learning, not as mutation targets or final proof.
 - **Runtime truth wins.** Validate live runs, logs, outputs, summaries, and artifact roots before changing state. Recalled content is unverified (T3).
+- **Use live-run artifacts.** For long-running experiment commands, use the project live-run skill when available. Routine live state comes from structured runtime artifacts, not ad hoc raw scrollback parsing; raw logs are bounded debug fallback.
 - **Consult Learnings before new directions.** Open `research_html/learnings.html` before proposing a new direction, refinement, or experiment idea, and before converting a brainstorm idea into a package.
 - **Surgical changes.** Touch only what the task requires. Match existing style. Do not refactor adjacent code.
 - **No A0 reproduction by default.** Trust the recorded checkpoint and `AGENTS.md` / `CLAUDE.md` unless the user explicitly asks to revalidate the anchor.

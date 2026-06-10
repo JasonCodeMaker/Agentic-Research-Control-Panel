@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Research Live Runs</title>
+  <link rel="stylesheet" href="assets/research.css">
+</head>
+<body data-page="live">
+  <a class="skip-link" href="#live-root">Skip to live runs</a>
+  <div class="shell">
+    <header class="masthead" data-section="masthead">
+      <div class="eyebrow">runtime evidence</div>
+      <h1>Live <em>Runs</em></h1>
+      <p class="lead">
+        A read-only view over structured experiment runtime artifacts. Serve from
+        the project root with <code>python -m http.server</code>; this page reads
+        <code>../outputs/_live/runs.jsonl</code> and each run's
+        <code>status.json</code>.
+      </p>
+      <div class="toolbar" data-card="live-toolbar">
+        <a class="pill" href="index.html">Dashboard</a>
+        <a class="pill" href="scope.html">Scope Tree</a>
+        <a class="pill" href="learnings.html">Learnings</a>
+        <a class="pill" href="context.html">Agent Context</a>
+      </div>
+    </header>
+
+    <nav class="dashboard-nav" data-section="nav" aria-label="Live run sections">
+      <a href="#live-root">Open runs</a>
+      <a href="#attention-rail">Attention</a>
+      <a href="#terminal-runs">Terminal runs</a>
+    </nav>
+
+    <section class="live-strip" data-section="live-health-strip" aria-live="polite">
+      <div class="summary-cell" data-field="running-count"><div class="k">Running</div><div class="v">0</div></div>
+      <div class="summary-cell" data-field="stale-count"><div class="k">Stale</div><div class="v">0</div></div>
+      <div class="summary-cell" data-field="failed-count"><div class="k">Failed 24h</div><div class="v">0</div></div>
+      <div class="summary-cell" data-field="queued-count"><div class="k">Queued</div><div class="v">0</div></div>
+      <div class="summary-cell" data-field="last-refresh"><div class="k">Refresh</div><div class="v">never</div></div>
+      <div class="summary-cell" data-field="poll-state"><div class="k">Poll</div><div class="v">starting</div></div>
+    </section>
+
+    <section id="attention-rail" data-section="attention-rail" aria-label="Runs requiring attention">
+      <h2>Attention</h2>
+      <div class="live-grid" data-field="attention-list">
+        <div class="empty-state">No STALE or RUN_FAILED runs.</div>
+      </div>
+    </section>
+
+    <section id="live-root" data-section="open-runs" aria-label="Open live runs">
+      <h2>Open runs</h2>
+      <p class="lead" data-field="next-check-source">
+        Next Check is recorded by the agent in tracker rows; this page renders measured run state only.
+      </p>
+      <div class="live-grid" data-field="open-run-list">
+        <div class="empty-state">No live runs yet.</div>
+      </div>
+    </section>
+
+    <section id="terminal-runs" data-section="terminal-runs" aria-label="Recent terminal runs">
+      <h2>Recent terminal runs</h2>
+      <details class="details-panel">
+        <summary>Terminal runs from the last 7 days</summary>
+        <div class="live-grid" data-field="terminal-run-list">
+          <div class="empty-state">No terminal runs in the last 7 days.</div>
+        </div>
+      </details>
+    </section>
+
+    <footer class="footer-note" data-field="fetch-help">
+      Cannot fetch runtime files? Start the server from the repository root:
+      <code>python -m http.server 8904</code>, then open
+      <code>http://localhost:8904/research_html/live.html</code>.
+    </footer>
+  </div>
+
+  <script src="data/research-packages.js"></script>
+  <script>
+  (function () {
+    var RUNS_URL = "../outputs/_live/runs.jsonl";
+    var POLL_MS = 3000;
+    var TERMINAL = { COMPLETED: true, RUN_FAILED: true, RUN_HALTED: true, SKIPPED: true };
+
+    function byField(name) {
+      return document.querySelector('[data-field="' + name + '"]');
+    }
+
+    var lastHtml = {};
+
+    function setHtml(field, html) {
+      if (lastHtml[field] === html) return;
+      lastHtml[field] = html;
+      byField(field).innerHTML = html;
+    }
+
+    function deriveState(run) {
+      var status = run.status || {};
+      var state = status.status || run.final_status || "RUNNING";
+      if (state === "RUNNING" || state === "QUEUED") {
+        var ref = status.last_output_at || status.started_at || run.started_at;
+        var heartbeat = status.heartbeat_timeout || 600;
+        if (ref && (Date.now() / 1000 - ref) > heartbeat) state = "STALE";
+      }
+      return state;
+    }
+
+    function shouldFetch(run) {
+      if (!run.terminal) return true;
+      var ended = run.ended_at;
+      return !!ended && (Date.now() / 1000 - ended) <= 7 * 24 * 3600;
+    }
+
+    function failedRecent(run) {
+      var ended = (run.status && run.status.ended_at) || run.ended_at;
+      return !!ended && (Date.now() / 1000 - ended) <= 24 * 3600;
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function packageById(id) {
+      return (window.RESEARCH_PACKAGES || []).find(function (pkg) { return pkg.id === id; }) || {};
+    }
+
+    function experimentFor(pkg, expId) {
+      return (pkg.experiments || []).find(function (exp) { return exp.id === expId; }) || {};
+    }
+
+    function parseJsonl(text) {
+      var records = [];
+      var errors = [];
+      text.split(/\r?\n/).forEach(function (line, idx) {
+        if (!line.trim()) return;
+        try {
+          records.push(JSON.parse(line));
+        } catch (err) {
+          errors.push({ line: idx + 1, message: err.message });
+        }
+      });
+      return { records: records, errors: errors };
+    }
+
+    function foldRuns(records) {
+      var byRun = {};
+      records.forEach(function (rec) {
+        if (!rec.run_id) return;
+        byRun[rec.run_id] = byRun[rec.run_id] || {};
+        Object.assign(byRun[rec.run_id], rec);
+        if (rec.op === "terminal") byRun[rec.run_id].terminal = true;
+      });
+      return Object.keys(byRun).map(function (id) { return byRun[id]; });
+    }
+
+    function runtimeHref(path) {
+      if (!path) return "#";
+      var marker = "/outputs/";
+      var idx = path.indexOf(marker);
+      if (idx >= 0) return "../outputs/" + path.slice(idx + marker.length);
+      if (path.indexOf("outputs/") === 0) return "../" + path;
+      return path;
+    }
+
+    function statusUrl(run) {
+      return runtimeHref(run.dir).replace(/\/$/, "") + "/status.json";
+    }
+
+    function logUrl(run) {
+      return runtimeHref(run.dir).replace(/\/$/, "") + "/log.txt";
+    }
+
+    function trackerHref(pkg) {
+      return pkg.detailPath ? pkg.detailPath.replace(/index\.html$/, "tracker.html#live-check") : "#";
+    }
+
+    function ageText(epochSeconds) {
+      if (!epochSeconds) return "unmeasured";
+      var seconds = Math.max(0, Math.round(Date.now() / 1000 - epochSeconds));
+      if (seconds < 60) return seconds + " s ago";
+      var minutes = Math.floor(seconds / 60);
+      if (minutes < 60) return minutes + " min ago";
+      var hours = Math.floor(minutes / 60);
+      if (hours < 48) return hours + " h ago";
+      return Math.floor(hours / 24) + " d ago";
+    }
+
+    function clockText(epochSeconds) {
+      if (!epochSeconds) return "unmeasured";
+      return new Date(epochSeconds * 1000).toLocaleString();
+    }
+
+    function progressText(status) {
+      var progress = status.progress || {};
+      var parts = [];
+      if (progress.step != null && progress.total != null) parts.push("step " + progress.step + "/" + progress.total);
+      else if (progress.step != null) parts.push("step " + progress.step);
+      if (progress.pct != null) parts.push(progress.pct + "%");
+      if (progress.epoch != null) parts.push("epoch " + progress.epoch);
+      if (status.throughput && status.throughput.rate != null) parts.push(status.throughput.rate + " " + (status.throughput.unit || "it/s"));
+      return parts.length ? parts.join(" · ") : "unmeasured";
+    }
+
+    function metricText(status) {
+      var metrics = status.latest_metrics || {};
+      var keys = Object.keys(metrics);
+      if (!keys.length) return "unmeasured";
+      return keys.slice(0, 6).map(function (key) {
+        return key + " " + metrics[key];
+      }).join(" · ");
+    }
+
+    function resourceText(status) {
+      var resource = status.resource;
+      if (!resource) return "unmeasured";
+      var parts = [];
+      if (resource.gpu_util != null) parts.push("GPU " + resource.gpu_util + "%");
+      if (resource.gpu_mem_gb != null) parts.push(resource.gpu_mem_gb + "GB");
+      return parts.length ? parts.join(" · ") : "unmeasured";
+    }
+
+    function statusClass(state) {
+      if (state === "COMPLETED") return "success";
+      if (state === "RUN_FAILED" || state === "RUN_HALTED" || state === "STALE") return "fail";
+      if (state === "RUNNING" || state === "QUEUED") return "progress";
+      return "";
+    }
+
+    function cardHtml(run) {
+      var status = run.status || {};
+      var pkg = packageById(status.pkg || run.pkg);
+      var expId = status.exp_id || run.exp_id || "unmeasured";
+      var exp = experimentFor(pkg, expId);
+      var state = run.view || status.status || run.final_status || "RUNNING";
+      var pct = status.progress && status.progress.pct != null ? Math.max(0, Math.min(100, status.progress.pct)) : 0;
+      return [
+        '<article class="live-card" data-run-id="' + escapeHtml(run.run_id) + '" data-status="' + escapeHtml(state) + '">',
+        '<div class="live-card-head">',
+        '<span class="status ' + statusClass(state) + '" data-field="run-state">' + escapeHtml(state) + '</span>',
+        '<h3>' + escapeHtml(expId + " — " + (exp.purpose || exp.label || pkg.name || run.pkg || run.run_id)) + '</h3>',
+        '</div>',
+        '<p class="card-text"><strong>pkg:</strong> ' + escapeHtml(status.pkg || run.pkg || "unmeasured") + '</p>',
+        '<div class="progress-meter" aria-label="Progress"><span style="width:' + pct + '%"></span></div>',
+        '<p class="card-text" data-field="progress">' + escapeHtml(progressText(status)) + '</p>',
+        '<p class="card-text" data-field="latest-metrics">' + escapeHtml(metricText(status)) + '</p>',
+        '<p class="card-text"><strong>gate:</strong> ' + escapeHtml(exp.gate || pkg.primaryMetricVsGate || "unmeasured") + '</p>',
+        '<p class="card-text"><strong>last output:</strong> ' + escapeHtml(ageText(status.last_output_at)) + ' · <strong>resource:</strong> ' + escapeHtml(resourceText(status)) + '</p>',
+        '<p class="card-text"><strong>ETA:</strong> ' + escapeHtml(status.eta || "unknown") + ' · <strong>started:</strong> ' + escapeHtml(clockText(status.started_at || run.started_at)) + '</p>',
+        '<p class="card-text"><strong>health:</strong> ' + escapeHtml((status.health && status.health.state) || "unmeasured") + ' ' + escapeHtml((status.health && status.health.reasons || []).join("; ")) + '</p>',
+        '<div class="toolbar live-card-links">',
+        '<a class="pill" href="' + escapeHtml(logUrl(run)) + '">log</a>',
+        '<a class="pill" href="' + escapeHtml(statusUrl(run)) + '">status</a>',
+        '<a class="pill" href="' + escapeHtml(trackerHref(pkg)) + '">tracker row</a>',
+        '</div>',
+        '</article>',
+      ].join("");
+    }
+
+    function empty(text) {
+      return '<div class="empty-state">' + escapeHtml(text) + '</div>';
+    }
+
+    function setCount(field, value) {
+      var target = byField(field);
+      if (target) target.querySelector(".v").textContent = value;
+    }
+
+    function terminalRecent(run) {
+      var ended = (run.status && run.status.ended_at) || run.ended_at;
+      return ended && (Date.now() / 1000 - ended) <= 7 * 24 * 3600;
+    }
+
+    function render(runs) {
+      runs.forEach(function (run) { run.view = deriveState(run); });
+      var open = runs.filter(function (run) { return !TERMINAL[run.view]; });
+      var terminal = runs.filter(function (run) { return TERMINAL[run.view] && terminalRecent(run); });
+      var attention = runs.filter(function (run) {
+        return run.view === "STALE" || (run.view === "RUN_FAILED" && terminalRecent(run));
+      });
+      setCount("running-count", runs.filter(function (run) { return run.view === "RUNNING"; }).length);
+      setCount("stale-count", runs.filter(function (run) { return run.view === "STALE"; }).length);
+      setCount("failed-count", runs.filter(function (run) {
+        return run.view === "RUN_FAILED" && failedRecent(run);
+      }).length);
+      setCount("queued-count", runs.filter(function (run) { return run.view === "QUEUED"; }).length);
+      setCount("last-refresh", new Date().toLocaleTimeString());
+      setCount("poll-state", "ok");
+
+      setHtml("open-run-list", open.length ? open.map(cardHtml).join("") : empty("No live runs yet."));
+      setHtml("attention-list", attention.length ? attention.map(cardHtml).join("") : empty("No STALE or RUN_FAILED runs."));
+      setHtml("terminal-run-list", terminal.length ? terminal.map(cardHtml).join("") : empty("No terminal runs in the last 7 days."));
+    }
+
+    function renderError(message) {
+      setCount("poll-state", "error");
+      lastHtml["open-run-list"] = null;
+      byField("open-run-list").innerHTML = empty("Cannot fetch live run index: " + message);
+    }
+
+    function fetchStatus(run) {
+      return fetch(statusUrl(run), { cache: "no-store" }).then(function (res) {
+        if (!res.ok) throw new Error("status " + res.status);
+        return res.json();
+      }).then(function (status) {
+        run.status = status;
+        return run;
+      }).catch(function () {
+        run.status = {
+          run_id: run.run_id,
+          pkg: run.pkg,
+          exp_id: run.exp_id,
+          status: run.final_status || "RUNNING",
+          latest_metrics: {},
+          progress: {},
+          eta: "unknown",
+        };
+        return run;
+      });
+    }
+
+    function poll() {
+      fetch(RUNS_URL, { cache: "no-store" })
+        .then(function (res) {
+          if (res.status === 404) return "";
+          if (!res.ok) throw new Error("status " + res.status);
+          return res.text();
+        })
+        .then(function (text) {
+          var parsed = parseJsonl(text);
+          if (parsed.errors.length) {
+            throw new Error("parse error on line " + parsed.errors[0].line + ": " + parsed.errors[0].message);
+          }
+          // Fetch status.json only for open + recently-terminal runs; old terminal
+          // runs are filtered on index fields alone so history growth stays free.
+          return Promise.all(foldRuns(parsed.records).filter(shouldFetch).map(fetchStatus));
+        })
+        .then(render)
+        .catch(function (err) {
+          renderError(err.message || String(err));
+        });
+    }
+
+    poll();
+    window.setInterval(poll, POLL_MS);
+  }());
+  </script>
+</body>
+</html>

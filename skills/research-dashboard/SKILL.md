@@ -128,10 +128,11 @@ The dashboard-wide consistency tool is `<root>/scripts/learnings_lint.py` (Pytho
 python <root>/scripts/learnings_lint.py lint-status     # schema + cross-ref lint
 python <root>/scripts/learnings_lint.py lint-evidence   # evidencePath resolution
 python <root>/scripts/learnings_lint.py scan-events     # 3 draft writers (VERDICT_FINALIZED/TERMINAL_TRANSITION/ADOPTION)
-python <root>/scripts/learnings_lint.py all             # all three at once
+python <root>/scripts/learnings_lint.py alignment       # task-spine structural lint
+python <root>/scripts/learnings_lint.py all             # status + evidence + scan + alignment
 ```
 
-The Stop Gate of any learnings-relevant turn requires `learnings_lint.py all` to exit 0. For Scope-materialized packages, `lint-status` also checks that `sourceScopeNode`, `sourceScopeMilestones`, and `experiments[].parentTask` still point to active Scope SSOT nodes.
+The Stop Gate of any learnings-relevant turn requires `learnings_lint.py all` to exit 0. For Scope-materialized packages, `lint-status` also checks that `sourceScopeNode`, `sourceScopeMilestones`, and `experiments[].parentTask` still point to active Scope SSOT nodes; `alignment` checks each typed task's result/implementation/docs/tracker thread.
 
 ## Event-manifest applier (auto-propagation)
 

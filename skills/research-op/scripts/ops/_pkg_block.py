@@ -104,10 +104,6 @@ def find_top_level_field_value(block_text, field):
     i = 1
     while i < n - 1:
         c = block_text[i]
-        s_end = _skip_string(block_text, i)
-        if s_end is not None:
-            i = s_end
-            continue
         c_end = _skip_comment(block_text, i)
         if c_end is not None:
             i = c_end
@@ -115,8 +111,11 @@ def find_top_level_field_value(block_text, field):
         if c == "{" or c == "[":
             i = find_matching_close(block_text, i)
             continue
-        m = re.match(r"([A-Za-z_$][A-Za-z0-9_$]*)\s*:", block_text[i:])
-        if m and m.group(1) == field:
+        m = re.match(
+            r"(?:(['\"])([A-Za-z_$][A-Za-z0-9_$]*)\1|([A-Za-z_$][A-Za-z0-9_$]*))\s*:",
+            block_text[i:],
+        )
+        if m and (m.group(2) or m.group(3)) == field:
             j = i + m.end()
             while j < n and block_text[j].isspace():
                 j += 1
@@ -134,6 +133,10 @@ def find_top_level_field_value(block_text, field):
                         k += 1
                     value_end = k
             return value_start, value_end
+        s_end = _skip_string(block_text, i)
+        if s_end is not None:
+            i = s_end
+            continue
         i += 1
     return None
 

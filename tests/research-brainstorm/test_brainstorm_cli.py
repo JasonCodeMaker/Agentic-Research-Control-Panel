@@ -14,12 +14,16 @@ import brainstorm  # noqa: E402
 def test_cli_add_then_list(tmp_path, capsys):
     rc = brainstorm.main(["add", "--root", str(tmp_path), "--title", "Idea A", "--idea", "do A"])
     assert rc == 0
-    capsys.readouterr()
+    added = json.loads(capsys.readouterr().out)
+    assert added["detailPath"].startswith("brainstorm/")
+    assert added["detailPath"].endswith(f"-{added['id']}.html")
     rc = brainstorm.main(["list", "--root", str(tmp_path)])
     assert rc == 0
     items = json.loads(capsys.readouterr().out)
     assert len(items) == 1
     assert items[0]["title"] == "Idea A"
+    assert items[0]["detailPath"] == added["detailPath"]
+    assert (tmp_path / added["detailPath"]).exists()
 
 
 def test_cli_remove(tmp_path, capsys):

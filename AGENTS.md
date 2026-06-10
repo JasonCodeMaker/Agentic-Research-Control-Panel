@@ -5,8 +5,8 @@ the shared protocol in `CLAUDE.md` and the package controller in `WORKFLOW.md` i
 take inside this toolbox repo or inside a target research project.
 
 Do not treat this file as a weaker copy of `CLAUDE.md`. `CLAUDE.md` remains the durable shared research
-contract; this file tells Codex how to enter it, which files to read, which skill to invoke, which
-surface is allowed to mutate, and when to stop for user ratification.
+contract; this file is the thin Codex bootloader that tells Codex where to start, which skill owns the
+task, which source-of-truth layer to load, and when to stop for user ratification.
 
 ## First Decision: Where Am I?
 
@@ -24,7 +24,7 @@ the target research project and resolve pipeline scripts through installed Codex
 
 ## Required Read Order
 
-For any non-trivial task, read only the relevant files in this order:
+For any non-trivial target-project task, read only the relevant files in this order:
 
 1. User request and any active project-specific section at the top of `AGENTS.md` or `CLAUDE.md`.
 2. `CLAUDE.md` for the project-level operating contract and project-specific guardrails.
@@ -32,11 +32,19 @@ For any non-trivial task, read only the relevant files in this order:
    package state transition.
 4. The relevant skill body under `$HOME/.codex/skills/<skill-name>/SKILL.md`, or `skills/<skill-name>/`
    when editing this toolbox.
-5. Live project surfaces: `research_html/data/research-packages.js`, `outputs/_scope/transitions.jsonl`,
-   the package `tracker.html` Resume Block, `plan.html`, `results.html`, and runtime artifacts.
+5. The smallest live authority set for the task: Scope for intent, package pages for plans/verdicts,
+   runtime artifacts for measurements, and `research_html/data/research-packages.js` for dashboard index
+   state.
 
 Runtime artifacts and live process state override remembered summaries. If a required fact is missing,
 record the gap and stop at the smallest useful user decision instead of inventing intent.
+
+Source hierarchy: Scope owns intent; package `plan.html` owns executable gates; runtime artifacts own
+measurements; package `results.html` owns verdicts; `research-packages.js` owns dashboard index state.
+Derived pages (`scope.html`, `context.html`, `learnings.html`, lane pages, `scope-projection.json/js`) are
+read surfaces unless their owning skill says otherwise. For detailed surface ownership, read only the
+relevant skill/reference, especially `research-dashboard`, `research-package`, `research-op`, and
+`research-scope`.
 
 ## Attaching The Pipeline To A Target Project
 
@@ -98,6 +106,9 @@ For package work, Codex is the decision owner described by `WORKFLOW.md`:
   before claiming the turn is complete.
 - Put long-running experiments, training, preprocessing, downloads, and remote jobs in named `tmux`
   sessions unless the user explicitly asks for a different runner.
+- For long-running experiment commands, use the project live-run skill (`research-exp-live`) when
+  available: launch through its wrapper and read routine run state from structured runtime artifacts
+  (`status.json`), not raw scrollback; raw logs are bounded debug fallback.
 
 Do not declare a win from chat memory. Claims need metric gates, evidence paths, and the package/result
 surface required by `CLAUDE.md` and `WORKFLOW.md`.

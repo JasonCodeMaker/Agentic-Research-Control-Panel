@@ -14,6 +14,8 @@ from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 import verifier  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "research-package" / "scripts"))
+import task_spine  # noqa: E402
 
 
 @dataclass
@@ -156,6 +158,11 @@ _RESULT_GATE_FIELDS = {
     "budget_use", "seed_status", "artifact_completeness", "verdict", "reason",
 }
 _VALIDITY_ALLOWED = {"VALID", "PARTIAL", "RESULT_FAIL", "UNMEASURED"}
+_OBJECTIVE_CONTRACT_FIELDS = {"hypothesisOneLine", "metric", "baseline", "budget", "successPredicate"}
+_RESULT_GATE_UPDATE_FIELDS = {
+    "validity", "baseline", "plan-gate", "observed-metric", "budget-use",
+    "seed-status", "artifact-completeness", "verdict", "reason",
+}
 
 
 def rule_result_gate_ten_cols(pkg, op, target, payload) -> Reject | None:
@@ -190,6 +197,91 @@ def rule_result_gate_validity_enum(pkg, op, target, payload) -> Reject | None:
     return None
 
 
+def rule_experiments_update_payload(pkg, op, target, payload) -> Reject | None:
+    """Updating an experiments[] row requires an id plus a full replacement row with the same id."""
+    if target != "experiments-row" or op != "update":
+        return None
+    exp_id = payload.get("id")
+    row = payload.get("row")
+    if not exp_id or not isinstance(row, dict):
+        return Reject(
+            rule="experiments-update-payload",
+            file=None, anchor=None, field="payload",
+            expected="payload has non-empty id and row object",
+            actual=f"id={exp_id!r}, row_type={type(row).__name__}",
+            suggested_fix='Use {"id":"P0","row":{"id":"P0", ...}}.',
+        )
+    if row.get("id") != exp_id:
+        return Reject(
+            rule="experiments-update-id-match",
+            file=None, anchor=None, field="row.id",
+            expected=f"row.id matches id={exp_id!r}",
+            actual=repr(row.get("id")),
+            suggested_fix="Set payload.row.id to the same experiment id being replaced.",
+        )
+    return None
+
+
+def rule_objective_contract_update_payload(pkg, op, target, payload) -> Reject | None:
+    """objectiveContract can be replaced as a whole or one known field at a time."""
+    if target != "objectiveContract" or op != "update":
+        return None
+    if "field" not in payload:
+        if isinstance(payload.get("to"), dict):
+            return None
+        return Reject(
+            rule="objective-contract-update-payload",
+            file=None, anchor=None, field="payload",
+            expected="either {field,to} for one field or {to:{...}} for whole object",
+            actual=f"keys={sorted(payload.keys())}",
+            suggested_fix='Use {"field":"baseline","to":"..."} or {"to":{"metric":"..."}}.',
+        )
+    field = payload.get("field")
+    if field not in _OBJECTIVE_CONTRACT_FIELDS:
+        return Reject(
+            rule="objective-contract-field-known",
+            file=None, anchor=None, field="field",
+            expected=f"one of {sorted(_OBJECTIVE_CONTRACT_FIELDS)}",
+            actual=repr(field),
+            suggested_fix="Pick a known objectiveContract field.",
+        )
+    if "to" not in payload:
+        return Reject(
+            rule="objective-contract-update-payload",
+            file=None, anchor=None, field="to",
+            expected="replacement value in payload.to",
+            actual="missing",
+            suggested_fix='Add the new value as payload.to.',
+        )
+    return None
+
+
+def rule_results_gate_update_payload(pkg, op, target, payload) -> Reject | None:
+    """Updating a result-gate row requires an exp id and known cell names."""
+    if target != "results-gate-row" or op != "update":
+        return None
+    exp_id = payload.get("exp_id")
+    cells = payload.get("cells")
+    if not exp_id or not isinstance(cells, dict) or not cells:
+        return Reject(
+            rule="results-gate-update-payload",
+            file=None, anchor=None, field="payload",
+            expected="payload has exp_id and non-empty cells object",
+            actual=f"exp_id={exp_id!r}, cells_type={type(cells).__name__}, cells={cells!r}",
+            suggested_fix='Use {"exp_id":"P0","cells":{"plan-gate":"..."}}.',
+        )
+    unknown = set(cells) - _RESULT_GATE_UPDATE_FIELDS
+    if unknown:
+        return Reject(
+            rule="results-gate-update-fields-known",
+            file=None, anchor=None, field="cells",
+            expected=f"keys subset of {sorted(_RESULT_GATE_UPDATE_FIELDS)}",
+            actual=f"unknown={sorted(unknown)}",
+            suggested_fix="Use the data-field names from the result-gate table.",
+        )
+    return None
+
+
 # ---- Result-block rules ----
 
 _RESULT_BLOCK_ANCHORS = [
@@ -205,7 +297,7 @@ _DETAILS_OPEN_RE = re.compile(r"<details\s[^>]*open", re.IGNORECASE)
 
 def rule_result_block_six_parts(pkg, op, target, payload) -> Reject | None:
     """HTML must contain all 6 data-block anchors (or <!-- no ablation --> for ablation)."""
-    if target != "results-block" or op != "insert":
+    if target != "results-block" or op not in {"insert", "update"}:
         return None
     html = payload.get("html", "")
     missing = []
@@ -222,6 +314,23 @@ def rule_result_block_six_parts(pkg, op, target, payload) -> Reject | None:
             expected="all 6 data-block anchors present",
             actual=f"missing={missing}",
             suggested_fix='Add the missing data-block="..." anchors (or <!-- no ablation --> for ablation).',
+        )
+    return None
+
+
+def rule_result_block_update_payload(pkg, op, target, payload) -> Reject | None:
+    """Updating a result block requires a phase id and replacement HTML."""
+    if target != "results-block" or op != "update":
+        return None
+    phase_id = payload.get("phase_id")
+    html = payload.get("html")
+    if not phase_id or not isinstance(html, str) or not html.strip():
+        return Reject(
+            rule="result-block-update-payload",
+            file=None, anchor=None, field="payload",
+            expected='payload has non-empty "phase_id" and replacement "html"',
+            actual=f"phase_id={phase_id!r}, html_type={type(html).__name__}",
+            suggested_fix='Use {"phase_id":"unmeasured","html":"<article ...>...</article>"}',
         )
     return None
 
@@ -519,6 +628,25 @@ def rule_experiments_pre_launch_only(pkg, op, target, payload, state) -> Reject 
     return None
 
 
+def rule_experiments_delete_no_authored_blocks(pkg, op, target, payload, state) -> Reject | None:
+    """Refuse to delete an experiments[] row after derived task blocks are authored."""
+    if target != "experiments-row" or op != "delete":
+        return None
+    exp_id = payload.get("id")
+    if not exp_id:
+        return None
+    hits = task_spine.has_authored_content_for_exp(Path(f"research_html/packages/{pkg}"), str(exp_id))
+    if hits:
+        return Reject(
+            rule="experiments-delete-bound-content",
+            file=", ".join(hits), anchor=str(exp_id), field="id",
+            expected="no authored content in blocks bound to this experiment",
+            actual=f"authored blocks found in {hits}",
+            suggested_fix="Clear or archive the authored task thread before deleting the experiments[] row.",
+        )
+    return None
+
+
 def rule_methodstried_terminal_frozen(pkg, op, target, payload, state) -> Reject | None:
     """Refuse to delete methodsTried rows when package is in a terminal lane."""
     if target != "methodsTried" or op != "delete":
@@ -652,7 +780,11 @@ _RULES: list[tuple[Callable, bool]] = [
     (rule_methodstried_evidence_resolves,    False),
     (rule_result_gate_ten_cols,              False),
     (rule_result_gate_validity_enum,         False),
+    (rule_experiments_update_payload,        False),
+    (rule_objective_contract_update_payload, False),
+    (rule_results_gate_update_payload,       False),
     (rule_result_block_six_parts,            False),
+    (rule_result_block_update_payload,       False),
     (rule_result_block_details_closed,       False),
     (rule_live_check_twelve_cols,            False),
     (rule_live_check_time_local,             False),
@@ -666,6 +798,7 @@ _RULES: list[tuple[Callable, bool]] = [
     (rule_doc_card_six_parts,                False),
     (rule_doc_group_rationale_present,       False),
     (rule_experiments_pre_launch_only,       True),
+    (rule_experiments_delete_no_authored_blocks, True),
     (rule_methodstried_terminal_frozen,      True),
     (rule_verdict_mechanical,                True),
     (rule_analysis_rule_slug_kebab,          False),

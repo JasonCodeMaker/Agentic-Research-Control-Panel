@@ -14,3 +14,14 @@ def test_scope_task_renderer_uses_task_yardstick_fields():
     assert "yard.autonomy_level" in block
     assert "yard.gate_predicate" in block
     assert "yard.objective || yard.hypothesis" not in block
+
+
+def test_pipeline_timeline_renders_task_thread_chips():
+    js = (ROOT / "skills" / "research-dashboard" / "assets" / "dashboard" /
+          "assets" / "research.js").read_text(encoding="utf-8")
+    block = js[js.index("function renderPipelineTimeline"):js.index("function renderImplementationPhaseStrip")]
+
+    assert "pipeline-thread-links" in block
+    assert "tracker.html#todo" in block
+    assert "results.html#result-slot-" in block
+    assert "implementation.html#changes" in block

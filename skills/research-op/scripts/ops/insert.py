@@ -2,10 +2,15 @@
 
 import json
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 
 from . import _pkg_block
+
+PIPELINE_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PIPELINE_ROOT / "skills" / "research-package" / "scripts"))
+from task_spine import derive_task_blocks  # noqa: E402
 
 
 def _bump_last_updated(path: Path) -> None:
@@ -59,7 +64,9 @@ def insert_methodstried(pkg: str, payload: dict) -> list[str]:
 
 
 def insert_experiments_row(pkg: str, payload: dict) -> list[str]:
-    return [_append_to_inventory_array(pkg, "experiments", payload)]
+    files = [_append_to_inventory_array(pkg, "experiments", payload)]
+    files.extend(derive_task_blocks(Path(f"research_html/packages/{pkg}"), [payload]))
+    return files
 
 
 def insert_package_invariant(pkg: str, payload: dict) -> list[str]:

@@ -24,6 +24,18 @@ byte hits disk. Rule ids are the values that appear in the rejection envelope's
 ### Update: results.html verdict cell (U10)
 - `verdict-mechanical`: the verdict string MUST equal `predicate(measured)` where `predicate` is the frozen success.predicate from plan.html. Refuse if they differ. The actual measured value is read from `evidencePath`.
 
+### Update: experiments[] row (U4a)
+- `experiments-update-payload`: payload must include a non-empty `id` and a full replacement `row` object.
+- `experiments-update-id-match`: the replacement row's `id` must equal the row being replaced.
+
+### Update: objectiveContract field (U3)
+- `objective-contract-update-payload`: payload must be either `{field, to}` for one field or `{to: {...}}` for whole-object replacement.
+- `objective-contract-field-known`: field-level updates are limited to the canonical objective contract fields.
+
+### Update: results.html result-gate row cells (U10a)
+- `results-gate-update-payload`: payload must include `exp_id` and a non-empty `cells` object.
+- `results-gate-update-fields-known`: cell names must match the known result-gate data-field names.
+
 ### Update: status — lane-crossing (U1)
 - `lane-t1-ack-present`: the payload must include a non-empty `ack_token` field for any lane-crossing status update (the T1 acknowledgement value).
 - `lane-required-fields`: every required field for the destination cell (per `schema.js`) must be present in the inventory entry.

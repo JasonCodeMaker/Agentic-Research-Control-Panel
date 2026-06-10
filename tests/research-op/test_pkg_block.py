@@ -173,3 +173,117 @@ def test_round_trip_update_status_with_brace_string_earlier(tmp_path, monkeypatc
     assert block[fv[0]:fv[1]] == '"READY_TO_LAUNCH"'
     # Sanity: no duplicate key inserted earlier in the block.
     assert block.count("status:") == 1 + 2  # outer + 2 inside experiments[]
+
+
+def test_round_trip_update_experiments_row_replaces_inline_item(tmp_path, monkeypatch):
+    """Updating an experiments[] row must work on inline arrays with nested fields,
+    the shape produced by package materialization and later package edits."""
+    update = _load("update")
+    p = tmp_path / "research_html" / "data" / "research-packages.js"
+    p.parent.mkdir(parents=True)
+    p.write_text(
+        """const RESEARCH_PACKAGES = [
+  {
+    id: "harness-test",
+    category: "in-progress",
+    status: "CONTEXT_LOADED",
+    experiments: [{"id": "P0", "purpose": "old", "docs": [{"label": "keep", "href": "x"}]}, {"id": "P1", "purpose": "next"}],
+    methodsTried: [{"method": "m1", "evidencePath": "p1"}],
+  },
+];"""
+    )
+    monkeypatch.chdir(tmp_path)
+    update.update_experiments_row(
+        "harness-test",
+        {
+            "id": "P0",
+            "row": {
+                "id": "P0",
+                "purpose": "new",
+                "after": [],
+                "status": "QUEUED",
+                "docs": [{"label": "updated", "href": "docs/x.html"}],
+            },
+        },
+    )
+    new_text = p.read_text()
+    bounds = _pkg_block.find_package_block(new_text, "harness-test")
+    block = new_text[slice(*bounds)]
+    exp_fv = _pkg_block.find_top_level_field_value(block, "experiments")
+    arr = block[exp_fv[0]:exp_fv[1]]
+    p0 = _pkg_block.find_array_item_by_id(arr, "P0")
+    p1 = _pkg_block.find_array_item_by_id(arr, "P1")
+    assert p0 is not None
+    assert p1 is not None
+    assert '"purpose": "new"' in arr[p0[0]:p0[1]]
+    assert '"label": "updated"' in arr[p0[0]:p0[1]]
+    assert '"purpose": "old"' not in arr
+    assert '"purpose": "next"' in arr[p1[0]:p1[1]]
+    assert "methodsTried" in block
+
+
+def test_round_trip_update_objective_contract_field(tmp_path, monkeypatch):
+    update = _load("update")
+    p = tmp_path / "research_html" / "data" / "research-packages.js"
+    p.parent.mkdir(parents=True)
+    p.write_text(
+        """const RESEARCH_PACKAGES = [
+  {
+    id: "harness-test",
+    category: "in-progress",
+    status: "CONTEXT_LOADED",
+    objectiveContract: { baseline: "old", metric: "keep" },
+  },
+];"""
+    )
+    monkeypatch.chdir(tmp_path)
+    update.update_objective_contract("harness-test", {"field": "baseline", "to": "new"})
+    new_text = p.read_text()
+    bounds = _pkg_block.find_package_block(new_text, "harness-test")
+    block = new_text[slice(*bounds)]
+    obj_fv = _pkg_block.find_top_level_field_value(block, "objectiveContract")
+    obj = block[obj_fv[0]:obj_fv[1]]
+    baseline = _pkg_block.find_top_level_field_value(obj, "baseline")
+    metric = _pkg_block.find_top_level_field_value(obj, "metric")
+    assert obj[baseline[0]:baseline[1]] == '"new"'
+    assert obj[metric[0]:metric[1]] == '"keep"'
+
+
+def test_round_trip_update_result_gate_row_cells(tmp_path, monkeypatch):
+    update = _load("update")
+    path = tmp_path / "research_html" / "packages" / "harness-test" / "results.html"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        """<html><body>
+<table><tbody data-table-body="result-gate">
+<tr data-exp-id="P0" id="gate-p0">
+  <td data-field="exp-id">P0</td>
+  <td data-validity="missing">missing</td>
+  <td data-field="baseline">old baseline</td>
+  <td data-field="plan-gate">old gate</td>
+  <td data-field="artifact-completeness">old artifact</td>
+</tr>
+</tbody></table>
+<time data-field="last-updated">2026-06-01</time>
+</body></html>"""
+    )
+    monkeypatch.chdir(tmp_path)
+    update.update_results_gate_row(
+        "harness-test",
+        {
+            "exp_id": "P0",
+            "cells": {
+                "validity": "missing",
+                "baseline": "new baseline",
+                "plan-gate": "new gate",
+                "artifact-completeness": "new artifact",
+            },
+        },
+    )
+    text = path.read_text()
+    assert 'data-validity="missing">missing' in text
+    assert "new baseline" in text
+    assert "new gate" in text
+    assert "new artifact" in text
+    assert "old baseline" not in text
+    assert "2026-06-01" not in text
