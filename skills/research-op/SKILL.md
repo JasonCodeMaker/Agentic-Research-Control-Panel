@@ -1,6 +1,6 @@
 ---
 name: research-op
-description: "The single mutation surface for any existing research package. Use whenever the user types /research-op, asks to insert/update/delete a row/card/section in a package (methodsTried, result-gate, result block, tracker row, doc card, doc file), asks to update an inventory field (status, activeGate, primaryMetricVsGate, lastAction, terminationMessage, adoptionPath), asks to check/lint a package, asks to fan out an artifact event (CHAIN_DONE, CHECKPOINT_SAVED, SENTINEL_WRITE, PHASE_MARKER, CANDIDATE_SUBMITTED). Also use for ad-hoc natural-language fixes like 'set status of <pkg> to BLOCKED'. Project-agnostic. Hard requirement: target package must exist (run /research-package first). Init is owned by /research-package and /research-dashboard, not this skill. Every write goes through a (category, status, op, target) state gate plus per-target invariant validators; on reject no bytes hit disk and the agent receives a structured rule violation. Every successful or rejected op appends one JSONL line to outputs/<pkg>/_actions.jsonl. Never invokes git."
+description: "Use when the user invokes /research-op or needs guarded changes to an existing research package or Scope SSOT: row/card/section edits, inventory field updates, checks/lints, artifact event fanout, registry additions, scope transitions, or natural-language status fixes."
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
 context: fork
 disable-model-invocation: false
