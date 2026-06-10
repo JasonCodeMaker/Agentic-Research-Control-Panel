@@ -142,7 +142,7 @@ ratifying the Direction is the PM's decision.
 This mirrors `research-scope`'s human-accept path:
 
 1. PM `triage.py dispose --decision accept`, then commits with `research-op --op scope-transition`
-   (`gate=user+xmodel-audit`). The Direction enters the SSOT.
+   (`gate=USER_CROSS_MODEL_AUDIT`). The Direction enters the SSOT.
 2. The existing chain takes over: `plan_milestones.py` proposes milestones; after they are committed,
    `create_from_scope.py` materializes the package. Pass the consumed idea ids so they are frozen into the
    package's `brainstorm.html` provenance sub-page and removed from the brainstorm lane:

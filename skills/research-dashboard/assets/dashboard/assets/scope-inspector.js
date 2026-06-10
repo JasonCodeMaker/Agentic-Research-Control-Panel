@@ -17,8 +17,8 @@
 
   // ───────── pure logic (also unit-tested under node) ─────────
 
-  var ACTIVE = "active";          // a node is live while its status reads this (shared with the writer)
-  var PENDING = "pending";        // a triage proposal awaits human disposition while its status reads this
+  var ACTIVE = "ACTIVE";          // a node is live while its status reads this (NODE_STATUS, shared with the writer lib/scope_ssot)
+  var PENDING = "pending";        // a triage proposal awaits human disposition while its triage-record status reads this (triage log keeps lowercase; distinct from the ACTIVE node status and from the UI "active" tab name)
 
   function shortError(e) {
     var m = (e && e.message) ? e.message : String(e);
@@ -149,8 +149,8 @@
   // Mutable view state. Selection + active tab survive re-renders so a live
   // update under the cursor does not yank the drawer the user is reading.
   var state = {
-    tab: "active",
-    selection: null,            // { kind: "node"|"txn"|"triage", id: "..." }
+    tab: "active",              // UI tab id (active|triage|history|raw) — lowercase carve-out; unrelated to the ACTIVE node status
+    selection: null,            // { kind: "node"|"transaction"|"triage", id: "..." }
     transitionsPath: "../outputs/_scope/transitions.jsonl",
     triagePath: "../outputs/_scope/triage.jsonl",
     prevSig: null,
@@ -311,7 +311,7 @@
     var ids = Object.keys(groups).sort(byKey);
     panel.innerHTML = ids.map(function (id) {
       var items = groups[id].map(function (r) {
-        var selected = state.selection && state.selection.kind === "txn" && state.selection.id === r.txn_id;
+        var selected = state.selection && state.selection.kind === "transaction" && state.selection.id === r.transaction_id;
         var meta = [];
         if (r.cause) { meta.push("<p class='card-text'>" + esc(r.cause) + "</p>"); }
         if (r.trigger) { meta.push("<p class='card-text'><b>Trigger:</b> " + esc(r.trigger) + "</p>"); }
@@ -321,9 +321,9 @@
             (r.node && r.node.version != null ? r.node.version : "?")) + "</div>",
           '<div class="dot-col"><span class="dot"></span><span class="line"></span></div>',
           '<div class="timeline-body scope-history-row' + (selected ? " is-selected" : "") +
-            '" data-select-txn="' + esc(r.txn_id || "") + '" tabindex="0" role="button">',
+            '" data-select-txn="' + esc(r.transaction_id || "") + '" tabindex="0" role="button">',
           "<h3>" + esc(r.op || "transition") + "</h3>",
-          '<p class="scope-history-txn"><code>' + esc(r.txn_id || "-") + "</code></p>",
+          '<p class="scope-history-txn"><code>' + esc(r.transaction_id || "-") + "</code></p>",
           meta.join(""),
           "</div>",
           "</div>",
@@ -383,7 +383,7 @@
       ["Provenance", node.provenance ? "<code>" + esc(node.provenance) + "</code>" : '<span class="unmeasured">-</span>'],
     ];
     var prov = [
-      ["Latest txn", rec.txn_id ? "<code>" + esc(rec.txn_id) + "</code>" : '<span class="unmeasured">-</span>'],
+      ["Latest txn", rec.transaction_id ? "<code>" + esc(rec.transaction_id) + "</code>" : '<span class="unmeasured">-</span>'],
       ["Op", esc(rec.op || "-")],
       ["Gate", esc(rec.gate || "-")],
       ["Trigger", rec.trigger ? esc(rec.trigger) : '<span class="unmeasured">-</span>'],
@@ -412,11 +412,11 @@
   function drawerForTxn(txnId, data) {
     var rec = null;
     for (var i = 0; i < data.records.length; i++) {
-      if (data.records[i].txn_id === txnId) { rec = data.records[i]; break; }
+      if (data.records[i].transaction_id === txnId) { rec = data.records[i]; break; }
     }
     if (!rec) { return '<p class="unmeasured">Transition ' + esc(txnId) + " not found.</p>"; }
     var rows = [
-      ["Txn id", "<code>" + esc(rec.txn_id) + "</code>"],
+      ["Txn id", "<code>" + esc(rec.transaction_id) + "</code>"],
       ["Node id", "<code>" + esc(rec.node_id) + "</code>"],
       ["Level", esc(rec.level || "-")],
       ["Op", esc(rec.op || "-")],
@@ -464,7 +464,7 @@
     }
     var body = "";
     if (sel.kind === "node") { body = drawerForNode(sel.id, data); }
-    else if (sel.kind === "txn") { body = drawerForTxn(sel.id, data); }
+    else if (sel.kind === "transaction") { body = drawerForTxn(sel.id, data); }
     else if (sel.kind === "triage") { body = drawerForTriage(sel.id, data); }
     drawer.innerHTML = '<div class="scope-drawer-head">Detail</div>' + body;
   }
@@ -474,7 +474,7 @@
   function renderHealth(data) {
     var strip = $("[data-section='health']");
     if (!strip) { return; }
-    var latestTxn = data.records.length ? (data.records[data.records.length - 1].txn_id || "-") : "-";
+    var latestTxn = data.records.length ? (data.records[data.records.length - 1].transaction_id || "-") : "-";
     var latestVer = "-";
     data.records.forEach(function (r) {
       var v = r.scope_version != null ? r.scope_version : (r.node && r.node.version);
@@ -585,7 +585,7 @@
     var node = e.target.closest("[data-select-node]");
     if (node) { select("node", node.getAttribute("data-select-node")); return; }
     var txn = e.target.closest("[data-select-txn]");
-    if (txn) { select("txn", txn.getAttribute("data-select-txn")); return; }
+    if (txn) { select("transaction", txn.getAttribute("data-select-txn")); return; }
     var prop = e.target.closest("[data-select-triage]");
     if (prop) { select("triage", prop.getAttribute("data-select-triage")); return; }
     if (e.target.closest("[data-action='refresh']")) { e.preventDefault(); refresh(); }

@@ -26,13 +26,13 @@ _PACKAGES_JS = '''window.RESEARCH_PACKAGES = [
     terminationMessage: "did not clear",
     methodsTried: [
       { method: "hard-negative mining", hypothesis: "mining lifts R@1", gate: "R@1>=48",
-        measured: "R@1=44", verdict: "fail",
+        measured: "R@1=44", verdict: "FAIL",
         evidencePath: "packages/2026-05-01-old/results.html#m1" } ] },
   { id: "2026-04-01-win", name: "Win", category: "success", status: "ADOPTED",
     terminationMessage: "adopted", adoptionPath: "models/encoder.py#L40",
     methodsTried: [
       { method: "dual-encoder", hypothesis: "dual beats CLIP", gate: "R@1>=48",
-        measured: "R@1=51", verdict: "pass",
+        measured: "R@1=51", verdict: "PASS",
         evidencePath: "packages/2026-04-01-win/results.html#w1" } ] },
 ];
 '''
@@ -56,12 +56,12 @@ def _setup(tmp_path):
     log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
     node = {
         "id": "dir/retrieval-v2", "level": "direction", "parents": ["project/main"], "version": 3,
-        "status": "active",
+        "status": "ACTIVE",
         "yardstick": {"hypothesis": "Contrastive retrieval improves zero-shot Recall@1",
                       "metric": {"name": "Recall@1", "dir": "higher"},
                       "baselines": ["CLIP=42.3"], "success_predicate": "Recall@1 >= 48"},
     }
-    scope_ssot.propose_transition(node, op="create", gate="user+xmodel-audit", log_path=log)
+    scope_ssot.propose_transition(node, op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
 
     # learned rules + active-pkg overlay stores
     learned = tmp_path / "outputs" / "_learned" / "rules.md"
@@ -117,7 +117,7 @@ def test_build_surfaces_knowledge_registries(tmp_path, monkeypatch):
         json.dumps({"id": "dpr2020", "title": "Dense Passage Retrieval", "url": "http://x"}) + "\n",
         encoding="utf-8")
     (data / "edges.jsonl").write_text(
-        json.dumps({"from": "paper:dpr2020", "to": "paper:ours", "type": "extends", "evidence": "sec3"}) + "\n",
+        json.dumps({"from": "paper:dpr2020", "to": "paper:ours", "type": "EXTENDS", "evidence": "sec3"}) + "\n",
         encoding="utf-8")
     (data / "gaps.jsonl").write_text(
         json.dumps({"id": "G1", "summary": "no zero-shot eval", "status": "open"}) + "\n",
@@ -128,7 +128,7 @@ def test_build_surfaces_knowledge_registries(tmp_path, monkeypatch):
 
     md = (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.md").read_text(encoding="utf-8")
     core_js = (root / "data" / "context-core.js").read_text(encoding="utf-8")
-    for needle in ("Dense Passage Retrieval", "extends", "no zero-shot eval"):
+    for needle in ("Dense Passage Retrieval", "EXTENDS", "no zero-shot eval"):
         assert needle in md
         assert needle in core_js  # registries are cross-package → in the durable core too
 
@@ -176,7 +176,7 @@ def test_ensure_fresh_rebuilds_only_when_scope_advanced(tmp_path, monkeypatch):
     # advance the scope (a metric revise bumps the direction version) → stale → rebuild
     node = scope_ssot.fold(scope_ssot.read_log(str(log)))["dir/retrieval-v2"]
     node["version"] = 4
-    scope_ssot.propose_transition(node, op="revise", gate="user+xmodel-audit", log_path=log)
+    scope_ssot.propose_transition(node, op="revise", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
     assert build.ensure_fresh("research_html", "2026-06-03-retrieval-v2", transitions_path=str(log),
                               learned_path=str(learned), generated_at="t2") is True
     pj2 = json.loads((tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").read_text())

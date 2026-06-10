@@ -14,7 +14,7 @@ def _run(args):
 
 def test_reflect_cli_stages_doom_loop_proposal(tmp_path):
     actions = tmp_path / "_actions.jsonl"
-    rows = [{"op": "insert", "target": "methodsTried", "rule": "x", "validation": "rejected"} for _ in range(3)]
+    rows = [{"op": "insert", "target": "methodsTried", "rule": "x", "validation": "OP_REJECTED"} for _ in range(3)]
     actions.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
     pending = tmp_path / "pending"
 
@@ -39,7 +39,7 @@ def test_reflect_cli_stages_cross_package_dead_end(tmp_path):
     assert r.returncode == 0, r.stderr
     out = json.loads(r.stdout)
     assert len(out["staged"]) == 1
-    assert out["findings"][0]["kind"] == "cross-package-dead-end"
+    assert out["findings"][0]["kind"] == "CROSS_PACKAGE_DEAD_END"
     proposal = json.loads((pending / out["staged"][0] / "proposal.json").read_text())
-    assert proposal["status"] == "staged"
+    assert proposal["status"] == "STAGED"
     assert "hard-negative mining" in proposal["suggested_diff"]

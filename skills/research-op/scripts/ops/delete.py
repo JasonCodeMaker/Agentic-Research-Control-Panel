@@ -133,4 +133,4 @@ def handle(pkg: str, target: str | None, payload: dict, state: dict) -> tuple[st
     if fn is None:
         raise SystemExit(f"delete target not implemented yet: {target}")
     files = fn(pkg, payload)
-    return "passed", files
+    return "PASSED", files

@@ -25,7 +25,7 @@ def scope(intent, pkg_id):
         "level": "direction",
         "parents": ["project/main"],
         "version": 1,
-        "status": "active",
+        "status": "ACTIVE",
         "yardstick": {
             "hypothesis": intent,
             "metric": {"name": "toy_metric", "dir": "higher"},
@@ -66,7 +66,7 @@ def verify(artifact_path, yardstick):
     threshold = float(yardstick["success_predicate"].split(">=")[1].strip())
     measured = artifact["measured"]
     return {"judge": "L1-metric-oracle",
-            "result": "pass" if measured >= threshold else "fail",
+            "result": "PASS" if measured >= threshold else "FAIL",
             "measured": measured, "artifact_id": artifact["artifact_id"]}
 
 
@@ -77,7 +77,7 @@ def run(intent, *, pkg_id, runtime_root, citations, measured):
     chain = []
 
     node = scope(intent, pkg_id)
-    scope_ssot.propose_transition(node, op="create", gate="user+xmodel-audit", log_path=log_path,
+    scope_ssot.propose_transition(node, op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log_path,
                                   trigger=f"intent:{intent}", cause="R1 scope")
     chain.append("R1:scope")
 
@@ -96,9 +96,9 @@ def run(intent, *, pkg_id, runtime_root, citations, measured):
 
     # R6 remember + terminal acquit at Supervised — gated by the L1 metric oracle.
     acquitted, ack_token = False, None
-    if verdict["result"] == "pass":
+    if verdict["result"] == "PASS":
         payload = {
-            "to_status": "ADOPTED_PENDING_ACK", "to_category": "success",
+            "to_status": "ADOPTED_UNCONFIRMED", "to_category": "success",
             "ack_token": "T1:supervised-ack",
             "terminationMessage": f"measured={verdict['measured']} meets gate",
             "adoptionPath": "CLAUDE.md#current-best",

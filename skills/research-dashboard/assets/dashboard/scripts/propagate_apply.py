@@ -8,24 +8,25 @@ default; --write commits the diff. --auto-derive scans every package and
 emits state_derived manifests when narrative fields (currentBlocker /
 nextRoute) drift from what experiments[].status implies.
 
-Event types
+Event types (LEARNINGS_EVENT manifest keys; state_derived is an internal
+auto-derive event, not a learnings event)
 -----------
-verdict_finalized  exp_id, row_anchor, measured, verdict (pass|fail|inconclusive),
+VERDICT_FINALIZED  exp_id, row_anchor, measured, verdict (PASS|FAIL|INCONCLUSIVE|DIAGNOSTIC),
                    evidencePath, lastActionPhrase, hypothesis, gate
-                   -> registry methodsTried[] append + exp status=completed +
+                   -> registry methodsTried[] append + exp status=COMPLETED +
                       results.html row cells + tracker last-action
 
-status_changed     status, [category, lastActionPhrase]
+STATUS_CHANGED     status, [category, lastActionPhrase]
                    -> registry top-level status + optional category lane move
 
-adoption           adoptionPath, [lastActionPhrase]
+ADOPTION           adoptionPath, [lastActionPhrase]
                    -> status=ADOPTED, category=success, adoptionPath set
 
-supersession       supersededBy, [lastActionPhrase]
-                   -> status=SUPERSEDED, supersededBy set
+SUPERSESSION       supersededBy, [lastActionPhrase]
+                   -> status=WIN_SUPERSEDED, supersededBy set
 
-reopen             reopenTrigger, [lastActionPhrase]
-                   -> status=ARCHIVED_REOPENABLE, reopenTrigger set
+REOPEN             reopenTrigger, [lastActionPhrase]
+                   -> status=ARCHIVED_CONDITIONAL, reopenTrigger set
 
 state_derived      [currentBlocker, nextRoute, activeGate, primaryMetricVsGate]
                    -> top-level fields updated (any subset)
@@ -48,7 +49,8 @@ from pathlib import Path
 PKG_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}-[A-Za-z0-9_-]+$")
 JS_STR = r'"(?:[^"\\]|\\.)*"'
 
-VALID_VERDICTS = {"pass", "fail", "inconclusive"}
+# EXPERIMENT_VERDICT canonical values (SCREAMING_SNAKE).
+VALID_VERDICTS = {"PASS", "FAIL", "INCONCLUSIVE", "DIAGNOSTIC"}
 
 
 class EditError(RuntimeError):
@@ -240,7 +242,7 @@ def handle_verdict_finalized(manifest: dict, pkg_id: str) -> dict:
             obj = _replace_top_field(obj, "primaryMetricVsGate", pm)
         if ag is not None:
             obj = _replace_top_field(obj, "activeGate", ag)
-        obj = _set_experiment_status(obj, exp_id, "completed")
+        obj = _set_experiment_status(obj, exp_id, "COMPLETED")
         obj = _append_methods_tried(obj, _format_methods_row(manifest))
         return text[:obj_start] + obj + text[obj_end:]
 
@@ -301,7 +303,7 @@ def handle_supersession(manifest: dict, pkg_id: str) -> dict:
     if "supersededBy" not in manifest:
         raise EditError("supersession: 'supersededBy' required")
     fields = {
-        "status": "SUPERSEDED",
+        "status": "WIN_SUPERSEDED",
         "supersededBy": manifest["supersededBy"],
     }
     targets = {
@@ -316,7 +318,7 @@ def handle_reopen(manifest: dict, pkg_id: str) -> dict:
     if "reopenTrigger" not in manifest:
         raise EditError("reopen: 'reopenTrigger' required")
     fields = {
-        "status": "ARCHIVED_REOPENABLE",
+        "status": "ARCHIVED_CONDITIONAL",
         "reopenTrigger": manifest["reopenTrigger"],
     }
     targets = {
@@ -340,11 +342,11 @@ def handle_state_derived(manifest: dict, pkg_id: str) -> dict:
 
 
 EVENT_DISPATCH = {
-    "verdict_finalized": handle_verdict_finalized,
-    "status_changed": handle_status_changed,
-    "adoption": handle_adoption,
-    "supersession": handle_supersession,
-    "reopen": handle_reopen,
+    "VERDICT_FINALIZED": handle_verdict_finalized,
+    "STATUS_CHANGED": handle_status_changed,
+    "ADOPTION": handle_adoption,
+    "SUPERSESSION": handle_supersession,
+    "REOPEN": handle_reopen,
     "state_derived": handle_state_derived,
 }
 
@@ -356,34 +358,36 @@ def derive_state(category: str, experiments: list[dict]) -> dict:
 
     Rules are conservative; an empty string means 'no rule fired, do not override'.
     """
+    # Experiment statuses are run_execution_status (SCREAMING_SNAKE); nextRoute
+    # values are NEXT_ROUTE (RUN_NEXT_EXPERIMENT / TERMINATE).
     statuses = [e["status"] for e in experiments]
-    failed = [e["id"] for e in experiments if e["status"] == "failed"]
-    blocked = [e["id"] for e in experiments if e["status"] == "blocked"]
-    running = [e["id"] for e in experiments if e["status"] == "running"]
-    pending = [e["id"] for e in experiments if e["status"] in {"pending", "queued"}]
-    all_terminal = bool(experiments) and all(s in {"completed", "skipped"} for s in statuses)
+    failed = [e["id"] for e in experiments if e["status"] == "RUN_FAILED"]
+    blocked = [e["id"] for e in experiments if e["status"] == "RUN_HALTED"]
+    running = [e["id"] for e in experiments if e["status"] == "RUNNING"]
+    pending = [e["id"] for e in experiments if e["status"] == "QUEUED"]
+    all_terminal = bool(experiments) and all(s in {"COMPLETED", "SKIPPED"} for s in statuses)
 
     if category in {"success", "fail"}:
-        return {"currentBlocker": "", "nextRoute": "archive_or_stop"}
+        return {"currentBlocker": "", "nextRoute": "TERMINATE"}
     if failed:
         return {
             "currentBlocker": f"experiments[] failed: {', '.join(failed)}",
-            "nextRoute": "archive_or_stop",
+            "nextRoute": "TERMINATE",
         }
     if blocked:
         return {
             "currentBlocker": f"experiments[] blocked: {', '.join(blocked)}",
-            "nextRoute": "run_next_experiment_from_step4",
+            "nextRoute": "RUN_NEXT_EXPERIMENT",
         }
     if running:
         return {
             "currentBlocker": "",
-            "nextRoute": "run_next_experiment_from_step4",
+            "nextRoute": "RUN_NEXT_EXPERIMENT",
         }
     if all_terminal:
-        return {"currentBlocker": "", "nextRoute": "archive_or_stop"}
+        return {"currentBlocker": "", "nextRoute": "TERMINATE"}
     if pending:
-        return {"currentBlocker": "", "nextRoute": "run_next_experiment_from_step4"}
+        return {"currentBlocker": "", "nextRoute": "RUN_NEXT_EXPERIMENT"}
     return {"currentBlocker": "", "nextRoute": ""}
 
 

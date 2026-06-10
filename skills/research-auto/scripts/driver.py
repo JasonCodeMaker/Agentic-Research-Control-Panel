@@ -21,12 +21,12 @@ import pack  # noqa: E402
 # Typed role-return contract every dispatched role must satisfy.
 ROLE_RETURN_FIELDS = ("agent_role", "assigned_scope", "status", "evidence",
                       "blockers", "recommended_next_action")
-ROLE_STATUSES = {"ok", "blocked", "failed"}
+ROLE_STATUSES = {"ROLE_OK", "ROLE_BLOCKED", "ROLE_FAILED"}
 
 # Mutation envelope contract — the only way a role may change a surface (always via research-op).
 ENVELOPE_FIELDS = {"op", "target", "payload"}
 ALLOWED_OPS = {"insert", "update", "delete", "check", "scan-events",
-               "event", "scope-transition", "registry-add"}
+               "scope-transition", "registry-add"}
 _SURFACE_OPS = {"insert", "update", "delete"}  # these must name a known research-op target
 
 
@@ -55,10 +55,10 @@ def validate_role_return(ret):
         return errs
     if ret["status"] not in ROLE_STATUSES:
         errs.append(f"status {ret['status']!r} not in {sorted(ROLE_STATUSES)}")
-    if ret["status"] == "ok" and not ret["evidence"]:
-        errs.append("status 'ok' requires non-empty evidence")
-    if ret["status"] == "blocked" and not ret["blockers"]:
-        errs.append("status 'blocked' requires a non-empty blockers list")
+    if ret["status"] == "ROLE_OK" and not ret["evidence"]:
+        errs.append("status 'ROLE_OK' requires non-empty evidence")
+    if ret["status"] == "ROLE_BLOCKED" and not ret["blockers"]:
+        errs.append("status 'ROLE_BLOCKED' requires a non-empty blockers list")
     for env in ret.get("mutations", []):
         errs += [f"mutation: {e}" for e in validate_mutation(env)]
     return errs

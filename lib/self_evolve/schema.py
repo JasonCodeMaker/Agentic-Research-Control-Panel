@@ -15,12 +15,12 @@ EVENT_SCHEMA = "selfevolve.event.v1"
 EVIDENCE_SCHEMA = "selfevolve.evidence.v1"
 APPROVAL_SCHEMA = "selfevolve.approval.v1"
 
-APPROVAL_OPERATIONS = ("install", "restore", "rollback")
-APPROVAL_DECISIONS = ("approved", "rejected")
+APPROVAL_OPERATIONS = ("INSTALL", "RESTORATION", "ROLLBACK")
+APPROVAL_DECISIONS = ("APPROVED", "REJECTED")
 
-RISK_CLASSES = ("R0-observe", "R1-context", "R2-shadow", "R3-project-exec", "R4-trust-boundary")
-ORACLE_RESULTS = ("pass", "fail", "inconclusive", "error")
-STORES = ("rule", "skill")
+RISK_CLASSES = ("R0_OBSERVE", "R1_CONTEXT", "R2_SHADOW", "R3_PROJECT_EXEC", "R4_TRUST_BOUNDARY")
+ORACLE_RESULTS = ("ORACLE_PASS", "ORACLE_FAIL", "ORACLE_INCONCLUSIVE", "ORACLE_ERROR")
+STORES = ("rule", "skill", "evidence", "transition")
 
 
 class SchemaViolation(Exception):

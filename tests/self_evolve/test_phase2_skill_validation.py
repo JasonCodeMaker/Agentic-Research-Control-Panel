@@ -32,7 +32,7 @@ def _manifest(**over):
         "tests": {"static": ["x"], "replay": ["x"]},
         "provenance": {"generated_by": "skill-inducer-v1"},
         "activation": {"initial_mode": "canary", "allowed_scope": ["metric-change"]},
-        "rollback": {"suspend_on_oracle_fail": True}, "risk_class": "R3-project-exec",
+        "rollback": {"suspend_on_oracle_fail": True}, "risk_class": "R3_PROJECT_EXEC",
     }
     base.update(over)
     return base
@@ -72,51 +72,51 @@ def test_clean_manifest_is_sandbox_safe():
 # --- skill oracles ---
 
 def test_static_manifest_oracle():
-    assert skill_oracles.static_manifest(_manifest()) == "pass"
+    assert skill_oracles.static_manifest(_manifest()) == "ORACLE_PASS"
     bad = _manifest()
     bad["permissions"]["network"] = "allow"
-    assert skill_oracles.static_manifest(bad) == "fail"
+    assert skill_oracles.static_manifest(bad) == "ORACLE_FAIL"
 
 
 def test_bundle_integrity_oracle():
     files = _files()
-    assert skill_oracles.bundle_integrity(_manifest(_files=files), files) == "pass"
-    assert skill_oracles.bundle_integrity(_manifest(_files=files), {"SKILL.md": "tampered"}) == "fail"
+    assert skill_oracles.bundle_integrity(_manifest(_files=files), files) == "ORACLE_PASS"
+    assert skill_oracles.bundle_integrity(_manifest(_files=files), {"SKILL.md": "tampered"}) == "ORACLE_FAIL"
 
 
 def test_independent_review_requires_distinct_reviewer():
     assert skill_oracles.independent_review(
-        {"reviewer_id": "r", "proposer_id": "p", "unresolved": []}) == "pass"
+        {"reviewer_id": "r", "proposer_id": "p", "unresolved": []}) == "ORACLE_PASS"
     assert skill_oracles.independent_review(
-        {"reviewer_id": "p", "proposer_id": "p", "unresolved": []}) == "fail"
+        {"reviewer_id": "p", "proposer_id": "p", "unresolved": []}) == "ORACLE_FAIL"
 
 
 def test_resolve_validation_all_pass_validated():
-    res = {n: "pass" for n in skill_oracles.PRE_INSTALL_ORACLES}
-    assert skill_oracles.resolve_validation(res) == "validated"
+    res = {n: "ORACLE_PASS" for n in skill_oracles.PRE_INSTALL_ORACLES}
+    assert skill_oracles.resolve_validation(res) == "VALIDATED"
 
 
 def test_resolve_validation_any_fail_rejected():
-    res = {n: "pass" for n in skill_oracles.PRE_INSTALL_ORACLES}
-    res["adversarial"] = "fail"
-    assert skill_oracles.resolve_validation(res) == "rejected"
+    res = {n: "ORACLE_PASS" for n in skill_oracles.PRE_INSTALL_ORACLES}
+    res["adversarial"] = "ORACLE_FAIL"
+    assert skill_oracles.resolve_validation(res) == "REJECTED"
 
 
 # --- skill lifecycle ---
 
 def test_skill_lifecycle_happy_path_to_validated():
-    for a, b in [("observed", "candidate"), ("candidate", "validating"),
-                 ("validating", "validated"), ("validated", "awaiting_install_approval")]:
+    for a, b in [("OBSERVED", "CANDIDATE"), ("CANDIDATE", "VALIDATING"),
+                 ("VALIDATING", "VALIDATED"), ("VALIDATED", "AWAITING_INSTALL_APPROVAL")]:
         assert skill_lifecycle.validate_edge(a, b) is True
 
 
 def test_skill_install_edge_requires_approval():
-    assert skill_lifecycle.requires_approval("awaiting_install_approval", "installing")
-    assert skill_lifecycle.requires_approval("suspended", "canary")
+    assert skill_lifecycle.requires_approval("AWAITING_INSTALL_APPROVAL", "INSTALLING")
+    assert skill_lifecycle.requires_approval("SUSPENDED", "CANARY")
 
 
 def test_suspend_is_authority_removing():
-    assert ("active", "suspended") in skill_lifecycle.AUTHORITY_REMOVING
+    assert ("SKILL_ACTIVE", "SUSPENDED") in skill_lifecycle.AUTHORITY_REMOVING
 
 
 # --- create-skill op ---
@@ -124,11 +124,11 @@ def test_suspend_is_authority_removing():
 def test_create_skill_seals_candidate(tmp_path):
     st, files, _ = evolution.run("evolution-create",
                                  {"manifest": _manifest(), "files": _files()}, tmp_path)
-    assert st == "passed"
+    assert st == "PASSED"
     assert (tmp_path / "skills" / "candidates" / "skill.metric-contract-check"
             / "1.0.0" / "manifest.json").exists()
     assert store.current_state(store.read_log(tmp_path / "skills" / "transitions.jsonl"),
-                               "skill.metric-contract-check", "1.0.0") == "candidate"
+                               "skill.metric-contract-check", "1.0.0") == "CANDIDATE"
 
 
 def test_create_skill_rejects_sandbox_violation(tmp_path):
@@ -147,11 +147,11 @@ def test_create_skill_rejects_bundle_mismatch(tmp_path):
 
 
 def test_skill_install_edge_blocked_in_plain_transition(tmp_path):
-    # awaiting_install_approval -> installing must use the dedicated install op, not transition
+    # AWAITING_INSTALL_APPROVAL -> INSTALLING must use the dedicated install op, not transition
     t = {"schema_version": schema.TRANSITION_SCHEMA, "transition_id": "t1", "store": "skill",
          "entity_id": "skill.x", "entity_version": "1.0.0",
-         "expected_from_state": "awaiting_install_approval", "to_state": "installing",
-         "op": "install", "risk_class": "R3-project-exec", "idempotency_key": "k"}
+         "expected_from_state": "AWAITING_INSTALL_APPROVAL", "to_state": "INSTALLING",
+         "op": "install", "risk_class": "R3_PROJECT_EXEC", "idempotency_key": "k"}
     with pytest.raises(evolution.EvolutionReject) as e:
         evolution.run("evolution-transition", t, tmp_path)
     assert e.value.rule == "use-dedicated-op"

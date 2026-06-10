@@ -22,7 +22,7 @@ from scope_ssot import RuleViolation  # noqa: E402
 def _direction_node(version=1, predicate="Recall@10 >= baseline + 2"):
     return {
         "id": "dir/contrastive-v2", "level": "direction", "parents": ["project/main"],
-        "version": version, "status": "active",
+        "version": version, "status": "ACTIVE",
         "yardstick": {
             "hypothesis": "contrastive pretrain helps recall",
             "metric": {"name": "Recall@10", "dir": "higher"},
@@ -34,10 +34,10 @@ def _direction_node(version=1, predicate="Recall@10 >= baseline + 2"):
 
 def _transitions(tmp_path):
     log = tmp_path / "_scope" / "transitions.jsonl"
-    scope_ssot.propose_transition(_direction_node(1), op="create", gate="user+xmodel-audit",
+    scope_ssot.propose_transition(_direction_node(1), op="create", gate="USER_CROSS_MODEL_AUDIT",
                                   log_path=log, trigger="t0", cause="init")
     scope_ssot.propose_transition(_direction_node(2, "Recall@10 >= baseline + 3"), op="revise",
-                                  gate="user+xmodel-audit", log_path=log, trigger="exp#42",
+                                  gate="USER_CROSS_MODEL_AUDIT", log_path=log, trigger="exp#42",
                                   cause="sharpened")
     return log
 

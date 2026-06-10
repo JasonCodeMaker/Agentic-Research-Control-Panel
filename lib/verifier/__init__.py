@@ -1,6 +1,6 @@
 """Verifier — the layered trust gate. Deterministic independence rules + a Codex jury adapter.
 
-The substantive judgment is made by a fresh, different-family model (via mcp__codex__codex, called
+The substantive judgment is made by a fresh, cross-family model (via mcp__codex__codex, called
 by the research-auto / research-op skill with file paths only). This lib owns the *deterministic*
 half: which independence a Task's autonomy level requires, and whether a verdict is allowed to acquit.
 A judge may DRIVE review but may never ACQUIT its own work.
@@ -16,27 +16,33 @@ _FAMILY_PREFIXES = {
     "codex": "openai", "gemini": "google", "llama": "meta", "mistral": "mistral",
 }
 
+# Autonomy dial canonical values (SSOT for this concept).
+AUTONOMY_LEVELS = ("SUPERVISED", "CHECKPOINTED", "DEFERRED", "AUTONOMOUS")
+
 # Autonomy level -> required judge independence. The dial escalates this.
 INDEPENDENCE_TABLE = {
-    "supervised":  "none",             # human is the backstop; L2 is a deferring placeholder
-    "checkpoints": "different-model",
-    "async":       "different-model",
-    "autonomous":  "different-family",
+    "SUPERVISED":   "HUMAN_BACKSTOP",   # human is the backstop; L2 is a deferring placeholder
+    "CHECKPOINTED": "CROSS_MODEL",
+    "DEFERRED":     "CROSS_MODEL",
+    "AUTONOMOUS":   "CROSS_FAMILY",
 }
+
+# Gate kind canonical values.
+GATE_KIND = ("TERMINAL", "INTERMEDIATE")
 
 # Autonomy level -> pause cadence + whether the loop blocks waiting on a human.
-# Supervised pauses at every gate; Checkpoints only at terminal gates; Async/Autonomous never block.
+# SUPERVISED pauses at every gate; CHECKPOINTED only at terminal gates; DEFERRED/AUTONOMOUS never block.
 DIAL_BEHAVIOR = {
-    "supervised":  {"pauses": ("terminal", "intermediate"), "blocks": True},
-    "checkpoints": {"pauses": ("terminal",),                 "blocks": True},
-    "async":       {"pauses": (),                            "blocks": False},
-    "autonomous":  {"pauses": (),                            "blocks": False},
+    "SUPERVISED":   {"pauses": ("TERMINAL", "INTERMEDIATE"), "blocks": True},
+    "CHECKPOINTED": {"pauses": ("TERMINAL",),                "blocks": True},
+    "DEFERRED":     {"pauses": (),                           "blocks": False},
+    "AUTONOMOUS":   {"pauses": (),                           "blocks": False},
 }
 
-# The 6-state verdict taxonomy a jury may return; only "sound" acquits.
-VERDICT_STATES = ("sound", "unsound", "inconclusive", "needs-revision",
-                  "insufficient-evidence", "abstain")
-ACQUIT_STATES = {"sound"}
+# The 6-state verdict taxonomy a jury may return; only SOUND acquits.
+VERDICT_STATES = ("SOUND", "UNSOUND", "INCONCLUSIVE", "NEEDS_REVISION",
+                  "INSUFFICIENT_EVIDENCE", "ABSTAIN")
+ACQUIT_STATES = {"SOUND"}
 
 
 class VerifierError(Exception):
@@ -57,7 +63,7 @@ def assess_acquit(verdict, autonomy_level):
     required = INDEPENDENCE_TABLE.get(autonomy_level)
     if required is None:
         raise VerifierError(f"unknown autonomy level: {autonomy_level!r}")
-    if required == "none":
+    if required == "HUMAN_BACKSTOP":
         return None  # Supervised: presence + L1 metric gate already enforced upstream
     if verdict.get("result") not in ACQUIT_STATES:
         return f"L2 verdict {verdict.get('result')!r} does not acquit"
@@ -66,7 +72,7 @@ def assess_acquit(verdict, autonomy_level):
         return "L2 verdict needs both producer and judge identities"
     if producer == judge:
         return "producer == judge (may DRIVE review but never ACQUIT)"
-    if required == "different-family" and family_of(producer) == family_of(judge):
+    if required == "CROSS_FAMILY" and family_of(producer) == family_of(judge):
         return f"autonomy {autonomy_level!r} requires a cross-family judge"
     return None
 
@@ -80,7 +86,7 @@ def pauses_at(autonomy_level, gate_kind):
 
 
 def blocks(autonomy_level):
-    """Whether the loop blocks waiting on a human at this autonomy level (Async/Autonomous never do)."""
+    """Whether the loop blocks waiting on a human at this autonomy level (DEFERRED/AUTONOMOUS never do)."""
     behavior = DIAL_BEHAVIOR.get(autonomy_level)
     if behavior is None:
         raise VerifierError(f"unknown autonomy level: {autonomy_level!r}")
@@ -98,12 +104,18 @@ def jury_request(artifact_paths, question, *, judge_model):
 
 
 def interpret(raw_text):
-    """Map a judge's free-text reply to one of the 6 verdict states (abstain if unrecognized)."""
+    """Map a judge's free-text reply to one of the 6 verdict states (ABSTAIN if unrecognized).
+
+    Checks longer states first to avoid substring collisions (e.g. 'sound' inside 'unsound').
+    """
     text = (raw_text or "").strip().lower()
-    for state in VERDICT_STATES:
-        if state in text:
+    # Sort by descending length so longer tokens don't get shadowed by shorter substrings.
+    for state in sorted(VERDICT_STATES, key=len, reverse=True):
+        slug = state.lower()
+        prose = slug.replace("_", " ")
+        if slug in text or prose in text:
             return state
-    return "abstain"
+    return "ABSTAIN"
 
 
 # A persisted verdict record must carry these — the verifier's structured output the acquit gate reads.

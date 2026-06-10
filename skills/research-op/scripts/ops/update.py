@@ -172,7 +172,7 @@ _DISPATCH = {
     "supersededBy":         lambda p, pl: update_simple_field(p, pl, "supersededBy"),
     "reopenTrigger":        lambda p, pl: update_simple_field(p, pl, "reopenTrigger"),
     "experiments-status":   update_experiments_status,
-    "ack-slot":             update_ack_slot,
+    "approval-ack-slot":    update_ack_slot,
     "results-verdict":      update_results_verdict,
     "last-updated-time":    update_last_updated_time,
 }
@@ -183,4 +183,4 @@ def handle(pkg: str, target: str | None, payload: dict, state: dict) -> tuple[st
     if fn is None:
         raise SystemExit(f"update target not implemented yet: {target}")
     files = fn(pkg, payload)
-    return "passed", files
+    return "PASSED", files

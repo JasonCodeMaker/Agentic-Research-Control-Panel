@@ -42,11 +42,11 @@ window.RESEARCH_GLOBAL_PROTOCOL = {
     { title: "Before Success", body: "Move to Success only after adoption into active project state." },
   ],
   routeRules: [
-    { route: "run_next_experiment_from_step4", meaning: "Use when the active plan defines the next run." },
-    { route: "fix_implementation", meaning: "Use for concrete code or artifact issues." },
-    { route: "revise_plan", meaning: "Use when the executable plan changes." },
-    { route: "archive_or_stop", meaning: "Use when evidence says the direction should stop or archive." },
-    { route: "ask_user", meaning: "Use when a user-level decision blocks progress." },
+    { route: "RUN_NEXT_EXPERIMENT", meaning: "Use when the active plan defines the next run." },
+    { route: "FIX_IMPLEMENTATION", meaning: "Use for concrete code or artifact issues." },
+    { route: "REVISE_PLAN", meaning: "Use when the executable plan changes." },
+    { route: "TERMINATE", meaning: "Use when evidence says the direction should stop or archive." },
+    { route: "ASK_USER", meaning: "Use when a user-level decision blocks progress." },
   ],
   hardConstraints: [
     "Do not infer missing metrics, baselines, paths, commands, or ownership.",
@@ -84,7 +84,7 @@ window.RESEARCH_TAG_ROLES = {
 // Terminal-state fields (success / fail):
 //   terminationMessage (≤200 char one-sentence why-this-ended),
 //   methodsTried (array of {method, hypothesis, gate, measured, verdict,
-//     evidencePath} rows; verdict ∈ {pass, fail, inconclusive}),
+//     evidencePath} rows; verdict ∈ {PASS, FAIL, INCONCLUSIVE, DIAGNOSTIC}),
 //   adoptionPath (success only — where the win was adopted),
 //   supersededBy / promotedTo / reopenTrigger (per (category, status)).
 // Brainstorm is not a package category — pre-package ideas live in

@@ -6,7 +6,7 @@ from pathlib import Path
 
 def test_methodstried_six_fields_passes_when_complete():
     p = {"method": "m", "hypothesis": "h", "gate": "g",
-         "measured": "0.85", "verdict": "pass", "evidencePath": "x"}
+         "measured": "0.85", "verdict": "PASS", "evidencePath": "x"}
     assert validate.rule_methodstried_six_fields("pkg", "insert", "methodsTried", p) is None
 
 
@@ -28,13 +28,13 @@ def test_methodstried_six_fields_rejects_extra():
 
 
 def test_verdict_enum_accepts_pass_fail_inconclusive():
-    for v in ("pass", "fail", "inconclusive"):
+    for v in ("PASS", "FAIL", "INCONCLUSIVE"):
         p = {"verdict": v}
         assert validate.rule_methodstried_verdict_enum("pkg", "insert", "methodsTried", p) is None
 
 
 def test_verdict_enum_rejects_others():
-    for v in ("PASS", "ok", "succeeded", "", None):
+    for v in ("pass", "ok", "succeeded", "", None):
         rej = validate.rule_methodstried_verdict_enum("pkg", "insert", "methodsTried", {"verdict": v})
         assert rej is not None
         assert rej.rule == "methodstried-verdict-enum"
@@ -71,9 +71,9 @@ def test_target_known_passes_when_check_op():
 
 def test_result_gate_ten_cols_passes_when_complete():
     p = {
-        "exp_id": "e1", "validity": "ok", "baseline": "0.80", "plan_gate": "R@1>0.85",
+        "exp_id": "e1", "validity": "VALID", "baseline": "0.80", "plan_gate": "R@1>0.85",
         "observed_metric": "0.86", "budget_use": "2h", "seed_status": "3/3",
-        "artifact_completeness": "complete", "verdict": "pass", "reason": "exceeded gate",
+        "artifact_completeness": "complete", "verdict": "PASS", "reason": "exceeded gate",
     }
     assert validate.rule_result_gate_ten_cols("pkg", "insert", "results-gate-row", p) is None
 
@@ -89,7 +89,7 @@ def test_result_gate_ten_cols_rejects_missing():
 # ---- result-gate-validity-enum ----
 
 def test_result_gate_validity_enum_accepts_valid():
-    for v in ("ok", "partial", "fail", "unmeasured"):
+    for v in ("VALID", "PARTIAL", "RESULT_FAIL", "UNMEASURED"):
         p = {"validity": v}
         assert validate.rule_result_gate_validity_enum("pkg", "insert", "results-gate-row", p) is None
 
@@ -142,9 +142,9 @@ def test_result_block_details_closed_rejects_open_details():
 
 _GOOD_LIVE_ROW = {
     "time": "2026-05-24T10:00:00+10:00", "exp_id": "e1", "agent": "exp-agent-1",
-    "run_state": "running", "last_log": "10:00:00", "progress": "50%",
+    "run_state": "RUNNING", "last_log": "10:00:00", "progress": "50%",
     "metrics": "R@1=0.84", "resource": "1×A100", "artifacts": "ckpt-500.pt",
-    "eta": "unknown", "action": "continue", "next_check": "10:10",
+    "eta": "unknown", "action": "CONTINUE_RUN", "next_check": "10:10",
 }
 
 
@@ -276,13 +276,13 @@ def test_doc_group_rationale_rejects_when_absent():
 
 def test_experiments_pre_launch_only_passes_when_all_queued():
     state = {"category": "in-progress"}
-    p = {"existing_experiments_status_list": ["queued", "queued"]}
+    p = {"existing_experiments_status_list": ["QUEUED", "QUEUED"]}
     assert validate.rule_experiments_pre_launch_only("pkg", "delete", "experiments-row", p, state) is None
 
 
 def test_experiments_pre_launch_only_rejects_when_running():
     state = {"category": "in-progress"}
-    p = {"existing_experiments_status_list": ["running", "queued"]}
+    p = {"existing_experiments_status_list": ["RUNNING", "QUEUED"]}
     rej = validate.rule_experiments_pre_launch_only("pkg", "delete", "experiments-row", p, state)
     assert rej is not None
     assert rej.rule == "experiments-pre-launch-only"
@@ -323,7 +323,7 @@ def test_verdict_mechanical_pass_when_measured_meets_gate(tmp_path, monkeypatch)
     _make_plan(tmp_path, "pkg", "measured >= 0.85")
     rej = validate.rule_verdict_mechanical(
         "pkg", "update", "results-verdict",
-        {"measured": "0.87", "verdict": "pass"},
+        {"measured": "0.87", "verdict": "PASS"},
         state={"category": "in-progress", "status": "RESULT_ANALYSIS"},
     )
     assert rej is None
@@ -334,13 +334,13 @@ def test_verdict_mechanical_rejects_pass_when_measured_below_gate(tmp_path, monk
     _make_plan(tmp_path, "pkg", "measured >= 0.85")
     rej = validate.rule_verdict_mechanical(
         "pkg", "update", "results-verdict",
-        {"measured": "0.82", "verdict": "pass"},
+        {"measured": "0.82", "verdict": "PASS"},
         state={"category": "in-progress", "status": "RESULT_ANALYSIS"},
     )
     assert rej is not None
     assert rej.rule == "verdict-mechanical"
-    assert "fail" in rej.expected
-    assert "pass" in rej.actual
+    assert "FAIL" in rej.expected
+    assert "PASS" in rej.actual
 
 
 def test_verdict_mechanical_skips_complex_predicate(tmp_path, monkeypatch):
@@ -348,7 +348,7 @@ def test_verdict_mechanical_skips_complex_predicate(tmp_path, monkeypatch):
     _make_plan(tmp_path, "pkg", "measured > baseline + 0.02")
     rej = validate.rule_verdict_mechanical(
         "pkg", "update", "results-verdict",
-        {"measured": "0.82", "verdict": "pass"},
+        {"measured": "0.82", "verdict": "PASS"},
         state={"category": "in-progress", "status": "RESULT_ANALYSIS"},
     )
     assert rej is None  # Stop-Gate handles complex predicates, not us.

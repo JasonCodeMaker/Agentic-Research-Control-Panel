@@ -39,7 +39,7 @@ def test_verify_reads_metric_from_artifact_not_arg(tmp_path):
     p.write_text(json.dumps(data), encoding="utf-8")
     verdict = skeleton.verify(art["path"], YARD)
     assert verdict["measured"] == 0.5
-    assert verdict["result"] == "fail"
+    assert verdict["result"] == "FAIL"
 
 
 def test_missing_artifact_cannot_acquit(tmp_path):

@@ -5,6 +5,8 @@ gated on a measured go/no-go verdict. Trust-boundary violations are a hard no-go
 of benefit. Effectiveness is measured (error-recurrence reduction), not LLM-judged (D4).
 """
 
+from self_evolve import schema
+
 # The only three bounded Skill units the pilot may induce (§14 Phase 5).
 PILOT_SKILL_UNITS = (
     {"id": "skill.metric-contract-check", "trigger_family": ["metric-change", "metric-claim"],
@@ -14,6 +16,9 @@ PILOT_SKILL_UNITS = (
     {"id": "skill.scaffold-repair", "trigger_family": ["scaffold-broken", "package-repair"],
      "outcome": "a broken dashboard/package scaffold is repaired"},
 )
+
+# Go/no-go verdicts for the pilot expansion gate (§14 Phase 5).
+PILOT_VERDICT = ("PILOT_GO", "PILOT_NO_GO", "PILOT_HOLD")
 
 DEFAULT_THRESHOLDS = {
     "min_error_recurrence_reduction": 0.20,  # must measurably reduce repeated errors
@@ -34,7 +39,7 @@ def summarize(records):
     rolled_back, suspended, trust_violation, cost}. Missing keys default to safe values.
     """
     n = len(records)
-    accepted = sum(1 for r in records if r.get("approval_decision") == "approved")
+    accepted = sum(1 for r in records if r.get("approval_decision") == schema.APPROVAL_DECISIONS[0])
     baseline_recur = sum(1 for r in records if r.get("baseline_error_recurred"))
     recur = sum(1 for r in records if r.get("error_recurred"))
     return {
@@ -44,7 +49,7 @@ def summarize(records):
         "error_recurrence_reduction": _rate(baseline_recur - recur, max(baseline_recur, recur, 1)),
         "false_positive_rate": _rate(sum(1 for r in records if r.get("false_positive")), n),
         "approval_acceptance_rate": _rate(accepted, sum(
-            1 for r in records if r.get("approval_decision") in ("approved", "rejected"))),
+            1 for r in records if r.get("approval_decision") in schema.APPROVAL_DECISIONS)),
         "rollback_rate": _rate(sum(1 for r in records
                                    if r.get("rolled_back") or r.get("suspended")), max(accepted, 1)),
         "trust_boundary_violations": sum(1 for r in records if r.get("trust_violation")),
@@ -57,7 +62,7 @@ def evaluate_gonogo(metrics, thresholds=None):
     t = {**DEFAULT_THRESHOLDS, **(thresholds or {})}
     reasons = []
     if metrics.get("trust_boundary_violations", 0) > 0:
-        return {"verdict": "no-go", "reasons": ["trust-boundary-violation"], "checks": {}}
+        return {"verdict": "PILOT_NO_GO", "reasons": ["trust-boundary-violation"], "checks": {}}
     checks = {
         "error_recurrence_reduction":
             metrics.get("error_recurrence_reduction", 0) >= t["min_error_recurrence_reduction"],
@@ -70,17 +75,17 @@ def evaluate_gonogo(metrics, thresholds=None):
     }
     failed = [k for k, ok in checks.items() if not ok]
     if not failed:
-        return {"verdict": "go", "reasons": ["all-criteria-met"], "checks": checks}
+        return {"verdict": "PILOT_GO", "reasons": ["all-criteria-met"], "checks": checks}
     # A measurable benefit miss is a hold (gather more pilot data); a benefit regression is no-go.
     if metrics.get("error_recurrence_reduction", 0) < 0:
-        verdict = "no-go"
+        verdict = "PILOT_NO_GO"
         reasons = ["benefit-regression", *failed]
     else:
-        verdict = "hold"
+        verdict = "PILOT_HOLD"
         reasons = failed
     return {"verdict": verdict, "reasons": reasons, "checks": checks}
 
 
 def should_expand(verdict):
-    """Tier-2 expansion beyond the pilot is allowed only on a 'go' verdict (§14)."""
-    return verdict.get("verdict") == "go"
+    """Tier-2 expansion beyond the pilot is allowed only on a PILOT_GO verdict (§14)."""
+    return verdict.get("verdict") == "PILOT_GO"

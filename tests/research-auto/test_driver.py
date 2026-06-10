@@ -13,7 +13,7 @@ import driver  # noqa: E402
 
 NODE = {
     "id": "dir/2026-driver", "level": "direction", "parents": ["project/main"],
-    "version": 1, "status": "active",
+    "version": 1, "status": "ACTIVE",
     "yardstick": {"hypothesis": "X improves recall", "metric": {"name": "recall", "dir": "higher"},
                   "baselines": ["b0"], "success_predicate": "measured >= 0.80"},
     "provenance": "txn-0",
@@ -22,7 +22,7 @@ NODE = {
 
 def _ok_return(role, *, mutations=None):
     return {
-        "agent_role": role, "assigned_scope": "dir/2026-driver", "status": "ok",
+        "agent_role": role, "assigned_scope": "dir/2026-driver", "status": "ROLE_OK",
         "evidence": [f"{role}-evidence"], "blockers": [],
         "recommended_next_action": "proceed", "mutations": mutations or [],
     }
@@ -50,7 +50,7 @@ def test_role_return_missing_field_rejected():
 
 def test_role_return_blocked_requires_blockers():
     ret = _ok_return("run")
-    ret["status"] = "blocked"
+    ret["status"] = "ROLE_BLOCKED"
     ret["blockers"] = []
     errs = driver.validate_role_return(ret)
     assert any("blocker" in e for e in errs)

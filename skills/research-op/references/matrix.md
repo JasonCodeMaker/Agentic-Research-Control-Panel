@@ -23,14 +23,14 @@ update `transitions.py` in the same commit.
 
 | # | Target | Legal in `(category, status)` | Ack type · source |
 |---|---|---|---|
-| U1 | `status` (lane-crossing) | All except terminal-frozen | **T1 `lane-transition`** ack required (E3) |
+| U1 | `status` (lane-crossing) | All except terminal-frozen | **T1 `LANE_TRANSITION_ACK`** ack required (E3) |
 | U2 | `status` (intra-lane) | All `(in-progress, *)` transitions | No ack |
 | U3 | `activeGate` / `primaryMetricVsGate` / `lastAction` / `lastUpdated` / `openRuns` / `currentBlocker` | `(in-progress, *)` | No ack (E2 in-progress update) |
 | U4 | `experiments[i].status` (phase chip) | `(in-progress, *)` | No ack; driven by `scan-events` |
 | U5 | `terminationMessage` | `(success, *)`, `(fail, *)` during T1 ack | **T1** (E3) |
-| U6 | `adoptionPath` | `(success, ADOPTED_PENDING_ACK → ADOPTED)` | **T1 `codebase-merge`** (E4) |
-| U7 | `supersededBy` | `(success, SUPERSEDED)` | **T1** (E5) |
-| U8 | `reopenTrigger` | `(fail, ARCHIVED_REOPENABLE)` | **T1** (E6) |
+| U6 | `adoptionPath` | `(success, ADOPTED_UNCONFIRMED → ADOPTED)` | **T1 `CODEBASE_MERGE_ACK`** (E4) |
+| U7 | `supersededBy` | `(success, WIN_SUPERSEDED)` | **T1** (E5) |
+| U8 | `reopenTrigger` | `(fail, ARCHIVED_CONDITIONAL)` | **T1** (E6) |
 | U9 | any `data-ack-value=""` slot (8 ack types per P2) | when the corresponding event arrives | **T1** of the slot's declared type |
 | U10 | results.html verdict cell | `(in-progress, RESULT_ANALYSIS)` | Mechanically computed from `success.predicate` + verified value (P5); never overridden by prose |
 | U11 | tracker Resume Block (painted from inventory) | any `(in-progress, *)` | No ack — painter re-derives from inventory |

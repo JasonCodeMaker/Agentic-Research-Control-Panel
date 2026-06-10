@@ -26,7 +26,7 @@ def test_walking_skeleton_smoke(tmp_path):
     assert [c.split(":")[0] for c in r["chain"]] == ["R1", "R2", "R3", "R4", "R5", "R6"]
     # the yardstick was read from the SSOT node, not invented
     assert r["yardstick"]["success_predicate"] == "measured >= 0.80"
-    assert r["verdict"]["result"] == "pass"
+    assert r["verdict"]["result"] == "PASS"
     assert r["acquitted"] is True
     assert r["ack_token"] == "T1:supervised-ack"
     # the scope write landed as an append-only transition in the SSOT log
@@ -47,6 +47,6 @@ def test_fabricated_citation_rejected_by_r2(tmp_path):
 def test_metric_miss_blocks_acquit(tmp_path):
     r = skeleton.run(INTENT, pkg_id="2026-skeleton", runtime_root=tmp_path,
                      citations=_citations(tmp_path, fabricated=False), measured=0.5)
-    assert r["verdict"]["result"] == "fail"
+    assert r["verdict"]["result"] == "FAIL"
     assert r["acquitted"] is False       # metric oracle blocks the terminal success transition
     assert r["ack_token"] is None

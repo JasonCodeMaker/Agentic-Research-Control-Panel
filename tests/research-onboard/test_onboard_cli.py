@@ -40,7 +40,7 @@ def test_cli_build_proposal(tmp_path, capsys):
     assert rc == 0
     item = json.loads(capsys.readouterr().out)
     assert item["level"] == "project"
-    assert item["gate"] == "user"
+    assert item["gate"] == "USER_ONLY"
 
 
 def test_cli_has_project_scope_false(tmp_path, capsys):

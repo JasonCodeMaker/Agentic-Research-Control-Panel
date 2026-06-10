@@ -19,7 +19,7 @@ def test_check_passes_on_legal_state(tmp_package):
     log = tmp_package / "outputs" / "test-pkg" / "_actions.jsonl"
     entry = json.loads(log.read_text().strip())
     assert entry["op"] == "check"
-    assert entry["validation"] == "passed"
+    assert entry["validation"] == "PASSED"
 
 
 def test_state_gate_rejects_illegal_insert(tmp_package):

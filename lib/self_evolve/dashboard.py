@@ -24,16 +24,16 @@ def build_projection(selfevolve_root):
     root = Path(selfevolve_root)
     rules = _fold_states(root / "rules" / "transitions.jsonl")
     skills = _fold_states(root / "skills" / "transitions.jsonl")
-    pending = sorted(k for k, st in skills.items() if st == "awaiting_install_approval")
-    suspended = sorted(k for k, st in skills.items() if st == "suspended")
+    pending = sorted(k for k, st in skills.items() if st == "AWAITING_INSTALL_APPROVAL")
+    suspended = sorted(k for k, st in skills.items() if st == "SUSPENDED")
     return {
         "rules": rules,
         "skills": skills,
         "pending_approvals": pending,
         "suspended_skills": suspended,
         "counts": {"rules": len(rules), "skills": len(skills),
-                   "active_rules": sum(1 for s in rules.values() if s == "active"),
-                   "active_skills": sum(1 for s in skills.values() if s in ("active", "canary"))},
+                   "active_rules": sum(1 for s in rules.values() if s == "RULE_ACTIVE"),
+                   "active_skills": sum(1 for s in skills.values() if s in ("SKILL_ACTIVE", "CANARY"))},
     }
 
 

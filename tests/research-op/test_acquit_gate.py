@@ -15,14 +15,14 @@ _IN_PROGRESS = {"category": "in-progress", "status": "CONTEXT_LOADED"}
 
 def _acquit_payload(with_verdict):
     p = {
-        "to_status": "ADOPTED_PENDING_ACK",
+        "to_status": "ADOPTED_UNCONFIRMED",
         "to_category": "success",
         "ack_token": "user-ack-123",
         "terminationMessage": "beat baseline by 3pts",
         "adoptionPath": "CLAUDE.md#current-best",
     }
     if with_verdict:
-        p["verdict"] = {"judge": "claude-sonnet-4-6", "verdict": "pass",
+        p["verdict"] = {"judge": "claude-sonnet-4-6", "verdict": "SOUND",
                         "evidence": "beat baseline by 3pts"}
     return p
 

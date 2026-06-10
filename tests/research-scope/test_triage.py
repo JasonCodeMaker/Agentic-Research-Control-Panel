@@ -8,7 +8,7 @@ import triage  # noqa: E402
 
 
 def _item():
-    return {"id": "tr1", "node_id": "dir/x", "op": "revise", "gate": "user+xmodel-audit",
+    return {"id": "tr1", "node_id": "dir/x", "op": "revise", "gate": "USER_CROSS_MODEL_AUDIT",
             "cause": "metric saturated"}
 
 
@@ -25,6 +25,6 @@ def test_reject_archives_and_leaves_ssot_untouched(tmp_path):
     triage_log = tmp_path / "triage.jsonl"
     scope_log = tmp_path / "_scope" / "transitions.jsonl"
     triage.propose(triage_log, _item())
-    triage.dispose(triage_log, "tr1", "reject")
+    triage.dispose(triage_log, "tr1", "REJECTED")
     assert triage.pending(triage_log) == []        # no longer pending
     assert not scope_log.exists()                  # rejection never touches the SSOT

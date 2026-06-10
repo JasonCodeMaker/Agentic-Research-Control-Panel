@@ -18,7 +18,7 @@ def _launch_payload(verdict=None):
     return p
 
 
-def _v(producer="impl:coder", judge="reviewer", result="sound"):
+def _v(producer="impl:coder", judge="reviewer", result="SOUND"):
     return {"producer": producer, "judge": judge, "result": result,
             "scope_version": 1, "artifact_id": "diff-1"}
 
@@ -42,7 +42,7 @@ def test_launch_with_self_judged_verdict_rejected():
 
 def test_launch_with_non_acquitting_verdict_rejected():
     rej = validate.validate("test-pkg", "update", "status",
-                            _launch_payload(_v(result="needs-revision")), _IN_REVIEW)
+                            _launch_payload(_v(result="NEEDS_REVISION")), _IN_REVIEW)
     assert rej is not None and rej.rule == "launch-acquits"
 
 
@@ -60,25 +60,25 @@ def test_non_launch_transition_not_gated():
 
 
 def test_supervised_does_not_relax():
-    # Gap 4: even with autonomy_level=supervised, a non-acquitting verdict is still rejected.
-    payload = _launch_payload(_v(result="needs-revision"))
-    payload["autonomy_level"] = "supervised"
+    # Gap 4: even with autonomy_level=SUPERVISED, a non-acquitting verdict is still rejected.
+    payload = _launch_payload(_v(result="NEEDS_REVISION"))
+    payload["autonomy_level"] = "SUPERVISED"
     rej = validate.validate("test-pkg", "update", "status", payload, _IN_REVIEW)
     assert rej is not None and rej.rule == "launch-acquits"
 
 
 def test_launch_with_missing_judge_rejected():
     # The missing-identity branch (judge absent) is still a launch-acquits rejection.
-    verdict = {"producer": "impl:coder", "result": "sound",
+    verdict = {"producer": "impl:coder", "result": "SOUND",
                "scope_version": 1, "artifact_id": "diff-1"}
     rej = validate.validate("test-pkg", "update", "status", _launch_payload(verdict), _IN_REVIEW)
     assert rej is not None and rej.rule == "launch-acquits"
 
 
 def test_launch_autonomous_not_tightened():
-    # Autonomy-independent both ways: at autonomous, a distinct same-family sound verdict still passes
+    # Autonomy-independent both ways: at AUTONOMOUS, a distinct same-family sound verdict still passes
     # (this gate adds no cross-family requirement).
     payload = _launch_payload(_v())
-    payload["autonomy_level"] = "autonomous"
+    payload["autonomy_level"] = "AUTONOMOUS"
     rej = validate.validate("test-pkg", "update", "status", payload, _IN_REVIEW)
     assert rej is None

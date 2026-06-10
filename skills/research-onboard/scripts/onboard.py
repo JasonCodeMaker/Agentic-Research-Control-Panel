@@ -110,7 +110,7 @@ def build_project_proposal(node_id: str, yardstick: dict, *, provenance: str,
     """Build a validated level=project Triage item. Raises RuleViolation on a bad yardstick."""
     node = {
         "id": node_id, "level": "project", "parents": [], "version": 1,
-        "status": "active", "yardstick": yardstick, "provenance": provenance,
+        "status": "ACTIVE", "yardstick": yardstick, "provenance": provenance,
     }
     scope_ssot.validate_node(node)  # reject-before-propose: yardstick must be project-legal
     return {
@@ -130,7 +130,7 @@ def build_project_proposal(node_id: str, yardstick: dict, *, provenance: str,
 def has_project_scope(transitions_path) -> bool:
     """True iff the committed SSOT already holds an active Project node (backs the dashboard auto-chain)."""
     projection = scope_ssot.fold(scope_ssot.read_log(transitions_path))
-    return any(n.get("level") == "project" and n.get("status") == "active" for n in projection.values())
+    return any(n.get("level") == "project" and n.get("status") == "ACTIVE" for n in projection.values())
 
 
 def build_parser() -> argparse.ArgumentParser:

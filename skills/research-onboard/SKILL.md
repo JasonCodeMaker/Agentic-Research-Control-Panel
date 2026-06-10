@@ -118,7 +118,7 @@ Show the pending item and stop. Onboarding is done — committing the objective 
 This mirrors `research-scope`'s human-accept path. The PM:
 
 1. `triage.py dispose --decision accept`.
-2. Commits the Project node with `research-op --op scope-transition` and `gate=user` (the project gate).
+2. Commits the Project node with `research-op --op scope-transition` and `gate=USER_ONLY` (the project gate).
 3. Once the Project is committed, the journey advances to **step 3** — forming a Direction under the
    ratified Project. If the user only has a vague idea, route through **`/research-brainstorm`** (shape it,
    ground uncertainties with `/research-lit`, converge to a Direction proposal). If they already have a

@@ -37,7 +37,8 @@ PACKAGES_DIR = DASHBOARD_ROOT / "packages"
 DUMP_SCRIPT = DASHBOARD_ROOT / "scripts" / "dump_packages.js"
 SCOPE_LOG = REPO_ROOT / "outputs" / "_scope" / "transitions.jsonl"
 
-VERDICTS = {"pass", "fail", "inconclusive"}
+# EXPERIMENT_VERDICT canonical values (per-experiment gate outcome, SCREAMING_SNAKE).
+VERDICTS = {"PASS", "FAIL", "INCONCLUSIVE", "DIAGNOSTIC"}
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -149,9 +150,13 @@ def lint_status(data: dict) -> Report:
                 "error",
             ))
 
-        required = list((cat_schema.get("required") or {}).get("_all") or [])
-        if status and (cat_schema.get("required") or {}).get(status):
-            required.extend(cat_schema["required"][status])
+        rules = cat_schema.get("required") or {}
+        # The _all trio applies to every state except those in _all_exempt
+        # (STOPPED is terminal-within-lane and only carries its own fields).
+        exempt = status in (rules.get("_all_exempt") or [])
+        required = [] if exempt else list(rules.get("_all") or [])
+        if status and rules.get(status):
+            required.extend(rules[status])
         for f in required:
             if not field_present(pkg.get(f)):
                 rep.add(Violation(pid, "missing-required", f"field {f!r} required for ({cat}, {status})", "error"))
@@ -170,7 +175,7 @@ def lint_status(data: dict) -> Report:
                 if not r or not field_present(r.get(k)):
                     rep.add(Violation(pid, "method-row-missing-field", f"methodsTried[{i}] missing {k!r}", "error"))
             v = (r or {}).get("verdict")
-            if v and str(v).lower() not in VERDICTS:
+            if v and str(v).upper() not in VERDICTS:
                 rep.add(Violation(pid, "method-row-bad-verdict",
                                   f"methodsTried[{i}] verdict={v!r} not in {sorted(VERDICTS)}", "error"))
 
@@ -297,7 +302,7 @@ def check_scope_provenance(pkg: dict) -> list[Violation]:
     if direction.get("level") != "direction":
         violations.append(Violation(pid, "scope-source-not-direction",
                                     f"sourceScopeNode={direction_id!r} has level={direction.get('level')!r}", "error"))
-    if direction.get("status") != "active":
+    if direction.get("status") != "ACTIVE":
         violations.append(Violation(pid, "scope-source-inactive",
                                     f"sourceScopeNode={direction_id!r} has status={direction.get('status')!r}", "error"))
 
@@ -311,7 +316,7 @@ def check_scope_provenance(pkg: dict) -> list[Violation]:
     active_milestones = {
         node_id for node_id, node in projection.items()
         if node.get("level") == "task"
-        and node.get("status") == "active"
+        and node.get("status") == "ACTIVE"
         and direction_id in (node.get("parents") or [])
     }
     milestone_rows = pkg.get("sourceScopeMilestones") or []
@@ -473,18 +478,22 @@ def strip_html(s: str) -> str:
 
 
 def validity_to_verdict(text_chip: str, raw: str) -> str:
-    """Map the result-gate verdict cell to a methodsTried verdict."""
+    """Map the result-gate verdict cell to a methodsTried verdict (EXPERIMENT_VERDICT).
+
+    Matching is case-insensitive so it tolerates both the canonical SCREAMING_SNAKE
+    chip/body values and any legacy lowercase residue.
+    """
     chip = (text_chip or "").lower()
     body = (raw or "").lower()
     if chip in {"ok", "pass", "valid"} or "pass" in body:
-        return "pass"
-    if chip in {"fail", "failed"} or "fail" in body:
-        return "fail"
+        return "PASS"
+    if chip in {"fail", "failed", "result_fail"} or "fail" in body:
+        return "FAIL"
     if chip in {"partial", "diagnostic_only", "diagnostic-only", "unmeasured", "missing", "inconclusive"}:
-        return "inconclusive"
+        return "INCONCLUSIVE"
     if "inconclusive" in body or "diagnostic" in body or "pending" in body:
-        return "inconclusive"
-    return "inconclusive"
+        return "INCONCLUSIVE"
+    return "INCONCLUSIVE"
 
 
 def parse_result_gate(html: str) -> list[dict]:
@@ -617,8 +626,9 @@ def detect_e3(pkg: dict) -> dict | None:
         verdict = (fields.get("verdict") or "")
     else:
         return None
-    # Terminal signals: route mentions archive_or_stop, or target_state mentions STOPPED/ADOPTED/SUPERSEDED.
-    terminal_route = ("archive_or_stop" in route) or ("adopt" in route) or ("promote" in route)
+    # Terminal signals: route is TERMINATE (lowercased here), or target_state
+    # mentions STOPPED/ADOPTED/WIN_SUPERSEDED.
+    terminal_route = ("terminate" in route) or ("adopt" in route) or ("promote" in route)
     cat = (pkg.get("category") or "").lower()
     status = (pkg.get("status") or "").upper()
     if cat in {"success", "fail"}:
@@ -627,10 +637,10 @@ def detect_e3(pkg: dict) -> dict | None:
         return None
     # Suggest a destination category + status from the route language.
     is_adoption = ("adopt" in route) or ("promote" in route) or ("adopt" in verdict.lower())
-    suggested_cat = "success" if is_adoption else ("fail" if "archive_or_stop" in route else None)
+    suggested_cat = "success" if is_adoption else ("fail" if "terminate" in route else None)
     suggested_status = None
     if suggested_cat == "success":
-        suggested_status = "ADOPTED_PENDING_ACK"
+        suggested_status = "ADOPTED_UNCONFIRMED"
     elif suggested_cat == "fail":
         suggested_status = "ARCHIVED"
     return {
@@ -775,14 +785,16 @@ def _filled(text) -> bool:
 def horizon(dial: str | None, experiments: list[dict]) -> list[dict]:
     """The experiments the agent reaches before its next forced human pause.
 
-    supervised pauses at every gate -> only the runnable frontier. Every other level
-    (checkpoints pauses only at the terminal end-of-direction gate; async / autonomous
-    never pause) -> the whole remaining DAG. Unknown dial -> whole DAG (fail-safe:
-    require everything when we cannot prove a human will be present).
+    SUPERVISED pauses at every gate -> only the runnable frontier. Every other level
+    (CHECKPOINTED pauses only at the terminal end-of-direction gate; DEFERRED /
+    AUTONOMOUS never pause) -> the whole remaining DAG. Unknown dial -> whole DAG
+    (fail-safe: require everything when we cannot prove a human will be present).
+
+    Experiment status is run_execution_status (COMPLETED is matched case-insensitively).
     """
-    active = [e for e in experiments if (e.get("status") or "").lower() != "completed"]
-    if (dial or "").lower() == "supervised":
-        done = {e.get("id") for e in experiments if (e.get("status") or "").lower() == "completed"}
+    active = [e for e in experiments if (e.get("status") or "").upper() != "COMPLETED"]
+    if (dial or "").upper() == "SUPERVISED":
+        done = {e.get("id") for e in experiments if (e.get("status") or "").upper() == "COMPLETED"}
         return [e for e in active if all(a in done for a in (e.get("after") or []))]
     return active
 
@@ -892,7 +904,7 @@ def check_tracker(pid: str, html: str) -> list[Violation]:
 def assess_readiness(pkg: dict, dial: str | None, base_dir: Path) -> Report:
     """Run the full admission gate for one package at a given autonomy dial."""
     pid = pkg.get("id", "(no-id)")
-    rep = Report(f"readiness — {pid} @ {dial or 'autonomous'}")
+    rep = Report(f"readiness — {pid} @ {dial or 'AUTONOMOUS'}")
     experiments = pkg.get("experiments") or []
     if not experiments:
         rep.add(Violation(pid, "readiness-no-experiments",
@@ -923,7 +935,7 @@ def assess_readiness(pkg: dict, dial: str | None, base_dir: Path) -> Report:
 
 def lint_readiness(data: dict, dial: str | None, pkg_filter: str | None = None) -> Report:
     """CLI wrapper: assess every (filtered) package against PACKAGES_DIR."""
-    rep = Report(f"readiness — auto-research admission gate @ {dial or 'autonomous'}")
+    rep = Report(f"readiness — auto-research admission gate @ {dial or 'AUTONOMOUS'}")
     for pkg in data["packages"]:
         if pkg_filter and pkg.get("id") != pkg_filter:
             continue
@@ -944,8 +956,8 @@ def main() -> int:
     p = sub.add_parser("draft-terminal"); p.add_argument("pkg_id")
     p = sub.add_parser("all"); p.add_argument("--pkg")
     p = sub.add_parser("readiness"); p.add_argument("--pkg")
-    p.add_argument("--dial", default="autonomous",
-                   help="autonomy dial; sets the unattended horizon (default: autonomous = whole DAG)")
+    p.add_argument("--dial", default="AUTONOMOUS",
+                   help="autonomy dial; sets the unattended horizon (default: AUTONOMOUS = whole DAG)")
     args = parser.parse_args()
 
     data = load_data()

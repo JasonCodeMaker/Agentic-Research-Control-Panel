@@ -53,7 +53,7 @@ def test_budget_reserve_and_exhaustion_pauses():
     dec, spent = worker.reserve(limits, {"llm_tokens": 0}, {"llm_tokens": 40, "llm_calls": 1})
     assert dec == "reserved" and spent["llm_tokens"] == 40
     dec, result = worker.reserve(limits, {"llm_tokens": 80}, {"llm_tokens": 40})
-    assert dec == "pause" and result == "inconclusive"  # never silent success
+    assert dec == "pause" and result == "ORACLE_INCONCLUSIVE"  # never silent success
 
 
 # --- dashboard ---
@@ -62,23 +62,23 @@ def _seed_rule_active(se):
     rule = {"schema_version": schema.RULE_SCHEMA, "id": "rule.x", "version": "1.0.0",
             "title": "t", "description": "d", "content": "c",
             "scope": {"project": "*", "packages": ["*"], "task_types": ["x"]},
-            "risk_class": "R1-context", "provenance": {"generated_by": "g"},
+            "risk_class": "R1_CONTEXT", "provenance": {"generated_by": "g"},
             "validation_policy": {"required_oracles": ["faithfulness", "conflict"]}}
     evolution.run("evolution-create", rule, se)
-    for frm, to in [("candidate", "validating"), ("validating", "provisional"),
-                    ("provisional", "active")]:
+    for frm, to in [("CANDIDATE", "VALIDATING"), ("VALIDATING", "PROVISIONAL"),
+                    ("PROVISIONAL", "RULE_ACTIVE")]:
         evolution.run("evolution-transition",
                       {"schema_version": schema.TRANSITION_SCHEMA, "transition_id": f"t-{to}",
                        "store": "rule", "entity_id": "rule.x", "entity_version": "1.0.0",
                        "expected_from_state": frm, "to_state": to, "op": "promote",
-                       "risk_class": "R1-context", "idempotency_key": f"rule.x:{to}"}, se)
+                       "risk_class": "R1_CONTEXT", "idempotency_key": f"rule.x:{to}"}, se)
 
 
 def test_projection_reflects_active_rule(tmp_path):
     se = tmp_path / "_selfevolve"
     _seed_rule_active(se)
     proj = dashboard.build_projection(se)
-    assert proj["rules"]["rule.x@1.0.0"] == "active"
+    assert proj["rules"]["rule.x@1.0.0"] == "RULE_ACTIVE"
     assert proj["counts"]["active_rules"] == 1
 
 
@@ -97,6 +97,6 @@ def test_consistency_fails_closed_on_drift(tmp_path):
     good = dashboard.build_projection(se)
     assert dashboard.assert_consistent(se, good) is True
     tampered = json.loads(json.dumps(good))
-    tampered["rules"]["rule.x@1.0.0"] = "invalidated"  # planted drift
+    tampered["rules"]["rule.x@1.0.0"] = "INVALIDATED"  # planted drift
     with pytest.raises(dashboard.ConsistencyError):
         dashboard.assert_consistent(se, tampered)

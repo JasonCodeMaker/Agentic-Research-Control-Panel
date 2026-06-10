@@ -6,6 +6,12 @@ whole event reports rejected (no rollback — the agent is expected to fix and r
 from the cursor).
 """
 
+# Canonical artifact event names (SCREAMING_SNAKE).
+EVENT_NAMES = ("CHECKPOINT_SAVED", "CANDIDATE_SUBMITTED", "SENTINEL_WRITE", "PHASE_MARKER", "CHAIN_DONE")
+
+# Binary dispatch outcome values.
+FANOUT_RESULT = ("PASSED", "REJECTED")
+
 
 # Payload mappers — extract per-op fields from the composite-event payload.
 # Each takes the event's full payload dict and returns the per-op payload dict.
@@ -32,28 +38,28 @@ def _ch_update_last_updated_results(payload: dict) -> dict:
 
 def _cs_update_live_check(payload: dict) -> dict:
     # payload from caller: {"exp_id": "P1", "artifact": "...", "measured": "..."}
-    return {"exp_id": payload["exp_id"], "run_state": "completed",
+    return {"exp_id": payload["exp_id"], "run_state": "COMPLETED",
             "metrics": payload.get("measured", "unmeasured")}
 
 
 def _cs_update_allocation(payload: dict) -> dict:
-    return {"exp_id": payload["exp_id"], "status": "completed"}
+    return {"exp_id": payload["exp_id"], "status": "COMPLETED"}
 
 
 def _cs_insert_result_gate(payload: dict) -> dict:
-    return {"exp_id": payload["exp_id"], "validity": "ok", "baseline": "unmeasured",
+    return {"exp_id": payload["exp_id"], "validity": "VALID", "baseline": "unmeasured",
             "plan_gate": "unmeasured", "observed_metric": payload.get("measured", "unmeasured"),
             "budget_use": "unmeasured", "seed_status": "unmeasured",
-            "artifact_completeness": "ok", "verdict": "pass", "reason": "checkpoint saved"}
+            "artifact_completeness": "ok", "verdict": "PASS", "reason": "checkpoint saved"}
 
 
 def _cs_update_verdict(payload: dict) -> dict:
     return {"exp_id": payload["exp_id"], "measured": payload.get("measured", ""),
-            "to": "pass"}
+            "to": "PASS"}
 
 
 def _cs_update_exp_status(payload: dict) -> dict:
-    return {"id": payload["exp_id"], "to": "completed"}
+    return {"id": payload["exp_id"], "to": "COMPLETED"}
 
 
 def _cs_update_last_updated_tracker(payload: dict) -> dict:
@@ -66,7 +72,7 @@ def _cs_update_last_updated_results(payload: dict) -> dict:
 
 # Event → list of (op, target, payload_mapper) tuples.
 EVENTS = {
-    "chain-done": [
+    "CHAIN_DONE": [
         # Per-phase ops (results-block, results-verdict, experiments-status) require the caller
         # to invoke this event ONCE PER PHASE, with the phase id in payload. For an MVP, we
         # only fan out the package-wide updates here; per-phase fan-out is left to the caller
@@ -78,7 +84,7 @@ EVENTS = {
         ("update", "last-updated-time", _ch_update_last_updated_results),
     ],
 
-    "checkpoint-saved": [
+    "CHECKPOINT_SAVED": [
         # Per-exp fan-out. Payload: {"exp_id": "...", "artifact": "...", "measured": "..."}.
         ("update", "tracker-live-check-row",          _cs_update_live_check),
         ("update", "tracker-resource-allocation-row", _cs_update_allocation),
@@ -89,16 +95,16 @@ EVENTS = {
         ("update", "last-updated-time",               _cs_update_last_updated_results),
     ],
 
-    # sentinel-write, phase-marker, candidate-json: fan-outs deferred until concrete
+    # SENTINEL_WRITE, PHASE_MARKER, CANDIDATE_SUBMITTED: fan-outs deferred until concrete
     # surface map can be enumerated from a real running package (see Phase 6 pilot).
-    "sentinel-write":  [],
-    "phase-marker":    [],
-    "candidate-json":  [],
+    "SENTINEL_WRITE":      [],
+    "PHASE_MARKER":        [],
+    "CANDIDATE_SUBMITTED": [],
 }
 
 
 def fanout(event: str, pkg: str, payload: dict, dispatch_fn) -> tuple[str, list[str]]:
-    """Run every sub-op for `event`. If any rejects, abort and return ('rejected', files_touched_so_far).
+    """Run every sub-op for `event`. If any rejects, abort and return ('REJECTED', files_touched_so_far).
 
     Note: true atomicity requires snapshot-and-rollback. For MVP we accept "stop on first
     reject and surface reject; the agent retries from cursor."
@@ -111,6 +117,6 @@ def fanout(event: str, pkg: str, payload: dict, dispatch_fn) -> tuple[str, list[
         sub_payload = mapper(payload) if mapper else payload
         validation, sub_files = dispatch_fn(op, pkg, target, sub_payload)
         files.extend(sub_files)
-        if validation != "passed":
-            return "rejected", files
-    return "passed", files
+        if validation != "PASSED":
+            return "REJECTED", files
+    return "PASSED", files

@@ -8,13 +8,13 @@ byte hits disk. Rule ids are the values that appear in the rejection envelope's
 
 ### Insert: methodsTried row (I2)
 - `methodstried-six-fields`: payload must have exactly `{method, hypothesis, gate, measured, verdict, evidencePath}`. Extra or missing keys reject.
-- `methodstried-verdict-enum`: `verdict ∈ {pass, fail, inconclusive}`.
+- `methodstried-verdict-enum`: `verdict ∈ {PASS, FAIL, INCONCLUSIVE}`.
 - `methodstried-evidence-resolves`: `evidencePath` is either a real file under `outputs/<pkg>/` or `output/`, or an HTML anchor `results.html#<exp-anchor>` that exists on disk.
 <!-- planned, not yet implemented: methodstried-source-row-exists — the upstream results.html row at evidencePath exists with a verdict already finalized -->
 
 ### Insert: results.html result-gate row (I6)
 - `result-gate-ten-cols`: all 10 columns from WORKFLOW.md required schema are present.
-- `result-gate-validity-enum`: `Validity ∈ {ok, partial, fail, unmeasured}`.
+- `result-gate-validity-enum`: `Validity ∈ {VALID, PARTIAL, RESULT_FAIL, UNMEASURED}`.
 - `result-gate-pass-triple-check` *(planned, not yet implemented)* (only if `verdict=pass`): the P5 triple-check passes — hypothesis string-eq frozen contract; metric/dataset/protocol/dedup/cutoff string-eq frozen contract; evidence file's manifest names the canonical eval split.
 
 ### Insert: results.html result block (I7)
@@ -32,7 +32,7 @@ byte hits disk. Rule ids are the values that appear in the rejection envelope's
 ### Update: status — acquit into the success lane (U1, success-bound)
 These fire in addition to the lane-crossing rules above whenever the destination category is `success`.
 - `acquit-needs-verdict`: the payload must carry a non-empty `verdict` record (judge, verdict, evidence) for any acquit into the success lane.
-- `acquit-judge-independent`: the verdict's judge must satisfy the independence constraint for the task's `autonomy_level` (default `"supervised"`); at `"autonomous"` the judge must be cross-family from the producer. Implemented via `lib/verifier.assess_acquit(verdict, level)` — acquit only on a `sound` verdict.
+- `acquit-judge-independent`: the verdict's judge must satisfy the independence constraint for the task's `autonomy_level` (default `"SUPERVISED"`); at `"AUTONOMOUS"` the judge must be cross-family from the producer. Implemented via `lib/verifier.assess_acquit(verdict, level)` — acquit only on a `SOUND` verdict.
 
 ### Insert: doc-file (I9) + paired doc-card
 - `doc-file-path-under-package`: file path matches `research_html/packages/<pkg>/docs/<slug>.html`.
@@ -47,7 +47,7 @@ These fire in addition to the lane-crossing rules above whenever the destination
 - `methodstried-terminal-frozen`: refuse if `(category, status)` is in `(success/*, fail/*)`.
 
 ### Delete: experiments-row (D1)
-- `experiments-pre-launch-only`: refuse if any `experiments[].status` for the package is one of `running`, `completed`, `failed`.
+- `experiments-pre-launch-only`: refuse if any `experiments[].status` for the package is one of `RUNNING`, `COMPLETED`, `RUN_FAILED`.
 
 ## Universal rules (every op)
 

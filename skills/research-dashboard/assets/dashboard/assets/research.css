@@ -1322,8 +1322,8 @@ body[data-page="analysis"] #rules {
   color: var(--olive-text);
 }
 
-.chip[data-route="ask_user"],
-.chip[data-route="archive_or_stop"] {
+.chip[data-route="ASK_USER"],
+.chip[data-route="TERMINATE"] {
   border-color: var(--clay);
   color: var(--clay-dark);
 }
@@ -1479,10 +1479,10 @@ html[data-stale="true"] .masthead {
 .chip-status.status-live { border-color: var(--olive-text); color: var(--olive-text); background: rgba(116, 142, 80, 0.10); }
 .chip-status.status-analyze { border-color: var(--gold); color: var(--gold-dark); }
 .chip-status.status-stop { border-color: var(--clay); color: var(--clay-dark); }
-.chip-status.status-stop-reopen { border-color: var(--clay); color: var(--clay-dark); border-style: dashed; }
+.chip-status.status-ARCHIVED_CONDITIONAL { border-color: var(--clay); color: var(--clay-dark); border-style: dashed; }
 .chip-status.status-win { border-color: var(--gold); color: var(--gold-dark); background: rgba(181, 138, 59, 0.12); }
-.chip-status.status-win-pending { border-color: var(--gold); color: var(--gold-dark); border-style: dashed; }
-.chip-status.status-win-old { border-color: var(--g600); color: var(--g600); border-style: dashed; }
+.chip-status.status-WIN_UNCONFIRMED { border-color: var(--gold); color: var(--gold-dark); border-style: dashed; }
+.chip-status.status-WIN_SUPERSEDED { border-color: var(--g600); color: var(--g600); border-style: dashed; }
 .chip-status.status-unknown { border-style: dashed; color: var(--g600); }
 
 /* Missing-required warning chip on package cards. */

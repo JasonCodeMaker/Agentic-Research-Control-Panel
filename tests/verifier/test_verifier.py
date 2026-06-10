@@ -14,33 +14,33 @@ def test_family_of():
     assert verifier.family_of("gemini-2.5") == "google"
 
 
-def _verdict(producer, judge, result="sound"):
+def _verdict(producer, judge, result="SOUND"):
     return {"producer": producer, "judge": judge, "result": result, "evidence": "e"}
 
 
 def test_supervised_skips_l2():
-    # At Supervised the human is the backstop — L2 independence is not required.
-    assert verifier.assess_acquit(_verdict("x", "x", result="pass"), "supervised") is None
+    # At SUPERVISED the human is the backstop — L2 independence is not required.
+    assert verifier.assess_acquit(_verdict("x", "x", result="PASS"), "SUPERVISED") is None
 
 
 def test_producer_equals_judge_rejected_when_independence_required():
-    assert verifier.assess_acquit(_verdict("claude-opus-4-8", "claude-opus-4-8"), "async") is not None
+    assert verifier.assess_acquit(_verdict("claude-opus-4-8", "claude-opus-4-8"), "DEFERRED") is not None
 
 
 def test_non_acquitting_verdict_blocks():
     assert verifier.assess_acquit(
-        _verdict("claude-opus-4-8", "gpt-5", result="unsound"), "async") is not None
+        _verdict("claude-opus-4-8", "gpt-5", result="UNSOUND"), "DEFERRED") is not None
 
 
 def test_autonomous_requires_cross_family():
     # same family (both anthropic) -> blocked
     assert verifier.assess_acquit(
-        _verdict("claude-opus-4-8", "claude-sonnet-4-6"), "autonomous") is not None
+        _verdict("claude-opus-4-8", "claude-sonnet-4-6"), "AUTONOMOUS") is not None
     # cross family -> ok
     assert verifier.assess_acquit(
-        _verdict("claude-opus-4-8", "gpt-5"), "autonomous") is None
+        _verdict("claude-opus-4-8", "gpt-5"), "AUTONOMOUS") is None
 
 
 def test_checkpoints_different_model_ok():
     assert verifier.assess_acquit(
-        _verdict("claude-opus-4-8", "claude-sonnet-4-6"), "checkpoints") is None
+        _verdict("claude-opus-4-8", "claude-sonnet-4-6"), "CHECKPOINTED") is None

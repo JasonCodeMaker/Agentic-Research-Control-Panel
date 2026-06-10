@@ -19,7 +19,7 @@ def _direction_node():
         "level": "direction",
         "parents": ["project/main"],
         "version": 2,
-        "status": "active",
+        "status": "ACTIVE",
         "yardstick": {
             "hypothesis": "Contrastive retrieval improves zero-shot Recall@1",
             "metric": {"name": "Recall@1", "dir": "higher"},
@@ -34,7 +34,7 @@ def _write_direction(log):
     scope_ssot.propose_transition(
         _direction_node(),
         op="create",
-        gate="user+xmodel-audit",
+        gate="USER_CROSS_MODEL_AUDIT",
         log_path=log,
         trigger="accepted direction",
         cause="PM accepted direction",
@@ -56,9 +56,9 @@ def test_plan_milestones_writes_pending_task_proposals_only(tmp_path):
     pending = triage.pending(triage_log)
     assert len(pending) == 5
     assert all(item["level"] == "task" for item in pending)
-    assert all(item["gate"] == "agent+async-ack" for item in pending)
+    assert all(item["gate"] == "AGENT_DEFERRED_ACK" for item in pending)
     assert pending[0]["proposed_node"]["parents"] == ["dir/retrieval-v2"]
-    assert pending[0]["proposed_node"]["yardstick"]["autonomy_level"] == "checkpoints"
+    assert pending[0]["proposed_node"]["yardstick"]["autonomy_level"] == "CHECKPOINTED"
 
     # The script proposes only; the committed transition log still has just the Direction.
     records = scope_ssot.read_log(transitions)

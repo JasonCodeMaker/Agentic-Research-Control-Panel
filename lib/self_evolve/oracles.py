@@ -12,73 +12,76 @@ ORACLES = ("schema_scope", "faithfulness", "correction_integrity",
            "original_reproduction", "regression_smoke", "conflict")
 
 
+ORACLE_PASS, ORACLE_FAIL, ORACLE_INCONCLUSIVE, ORACLE_ERROR = schema.ORACLE_RESULTS
+
+
 def schema_scope(rule):
     """schema + bounded-scope gate."""
     try:
         schema.validate_rule(rule)
-        return "pass"
+        return ORACLE_PASS
     except schema.SchemaViolation:
-        return "fail"
+        return ORACLE_FAIL
 
 
 def faithfulness(judge):
     """LLM-judge entailment verdict (injected): is the Rule entailed by its cited source?"""
     if judge is None:
-        return "inconclusive"
-    return "pass" if judge.get("entailed") else "fail"
+        return ORACLE_INCONCLUSIVE
+    return ORACLE_PASS if judge.get("entailed") else ORACLE_FAIL
 
 
 def correction_integrity(rule, *, source_excerpt=None, source_task_types=None):
     """Exact user correction preserved and scope not silently widened beyond it."""
     if source_excerpt and source_excerpt not in rule.get("content", ""):
-        return "fail"
+        return ORACLE_FAIL
     if source_task_types is not None:
         rule_tt = set(rule.get("scope", {}).get("task_types", []))
         if not rule_tt.issubset(set(source_task_types)):
-            return "fail"
-    return "pass"
+            return ORACLE_FAIL
+    return ORACLE_PASS
 
 
 def original_reproduction(repro):
     """Measured: the failure reproduced before the Rule-guided fix and is gone after."""
     if not repro:
-        return "inconclusive"
-    return "pass" if repro.get("before") == "fail" and repro.get("after") == "pass" else "fail"
+        return ORACLE_INCONCLUSIVE
+    return ORACLE_PASS if repro.get("before") == "fail" and repro.get("after") == "pass" else ORACLE_FAIL
 
 
 def regression_smoke(report):
     """No protected existing case regressed."""
     if report is None:
-        return "inconclusive"
-    return "fail" if report.get("regressions") else "pass"
+        return ORACLE_INCONCLUSIVE
+    return ORACLE_FAIL if report.get("regressions") else ORACLE_PASS
 
 
 def conflict(conflict_set):
     """No unresolved conflict with a higher-authority active entry."""
-    return "fail" if conflict_set else "pass"
+    return ORACLE_FAIL if conflict_set else ORACLE_PASS
 
 
 def resolve_admission(results):
     """Map oracle results → admission outcome (§11.2).
 
-    Returns one of: 'rejected' | 'inconclusive' | 'advisory-admitted' | 'proven-effective'.
+    Returns one of: 'REJECTED' | 'INCONCLUSIVE' | 'TENTATIVELY_ADMITTED' | 'FULLY_ADMITTED'.
     Any failing oracle rejects. Effectiveness (proven) requires a measured oracle pass;
-    otherwise a clean candidate is advisory-admitted (active, reduced priority, never floor).
+    otherwise a clean candidate is TENTATIVELY_ADMITTED (active, reduced priority, never floor).
     """
     vals = list(results.values())
-    if any(v == "fail" for v in vals):
-        return "rejected"
-    if any(v == "error" for v in vals):
-        return "inconclusive"
+    if any(v == ORACLE_FAIL for v in vals):
+        return "REJECTED"
+    if any(v == ORACLE_ERROR for v in vals):
+        return "INCONCLUSIVE"
 
     def ok(name):
-        return results.get(name) == "pass"
+        return results.get(name) == ORACLE_PASS
 
     base = ok("schema_scope") and ok("conflict") and (ok("faithfulness") or ok("correction_integrity"))
     if not base:
-        return "inconclusive"
-    if ok("original_reproduction") or ok("regression_delta"):
-        return "proven-effective"
+        return "INCONCLUSIVE"
+    if ok("original_reproduction"):
+        return "FULLY_ADMITTED"
     if ok("regression_smoke"):
-        return "advisory-admitted"
-    return "inconclusive"
+        return "TENTATIVELY_ADMITTED"
+    return "INCONCLUSIVE"

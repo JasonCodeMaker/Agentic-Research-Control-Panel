@@ -19,6 +19,19 @@ from dataclasses import dataclass, field
 # "never prune failures / rules" invariant the wiki's query_pack enshrines.
 PROTECTED_KEYS = ("direction", "rules", "failed_methods")
 
+# Canonical section key names (snake_case identifiers, not state-machine values — casing carve-out).
+SECTION_KEYS = (
+    "direction",
+    "rules",
+    "failed_methods",
+    "adopted_wins",
+    "banned_ideas",
+    "papers",
+    "papers_registry",
+    "relationships",
+    "open_gaps",
+)
+
 # Minimal injection screen for re-injected web-sourced text (lit excerpts).
 # Best-effort: the point is the banner mechanism, not exhaustive coverage.
 _INJECTION_PATTERNS = [
@@ -59,7 +72,7 @@ def cross_package_failures(packages, *, min_packages=2):
     for pkg in sorted(packages, key=lambda p: p.get("id", "")):
         pid = pkg.get("id", "")
         for m in pkg.get("methodsTried", []) or []:
-            if m.get("verdict") in ("fail", "inconclusive"):
+            if m.get("verdict") in ("FAIL", "INCONCLUSIVE"):
                 entry = by_method.setdefault(
                     m.get("method", ""),
                     {"method": m.get("method", ""), "hypothesis": m.get("hypothesis", ""), "packages": []})
@@ -126,7 +139,7 @@ def _failed_methods_section(packages) -> Section | None:
     lines = []
     for pkg in sorted(packages, key=lambda p: p.get("id", "")):
         for m in pkg.get("methodsTried", []) or []:
-            if m.get("verdict") in ("fail", "inconclusive"):
+            if m.get("verdict") in ("FAIL", "INCONCLUSIVE"):
                 lines.append(
                     f"- [{pkg.get('id', '')}] {m.get('method', '')}: {m.get('hypothesis', '')} "
                     f"→ {m['verdict']} (gate {m.get('gate', '?')}, measured {m.get('measured', '?')}) "
@@ -142,10 +155,10 @@ def _adopted_wins_section(packages) -> Section | None:
         if pkg.get("category") != "success":
             continue
         for m in pkg.get("methodsTried", []) or []:
-            if m.get("verdict") == "pass":
+            if m.get("verdict") == "PASS":
                 ev = pkg.get("adoptionPath") or m.get("evidencePath", "")
                 lines.append(
-                    f"- [{pkg.get('id', '')}] {m.get('method', '')}: {m.get('hypothesis', '')} → pass — {ev}")
+                    f"- [{pkg.get('id', '')}] {m.get('method', '')}: {m.get('hypothesis', '')} → PASS — {ev}")
     if not lines:
         return None
     return Section("adopted_wins", "Adopted wins", lines, protected=False)

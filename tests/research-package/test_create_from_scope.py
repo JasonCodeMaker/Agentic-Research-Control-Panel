@@ -19,7 +19,7 @@ def _dashboard(tmp_path):
     return root
 
 
-def _direction_node(status="active"):
+def _direction_node(status="ACTIVE"):
     return {
         "id": "dir/retrieval-v2",
         "level": "direction",
@@ -42,7 +42,7 @@ def _project_node():
         "level": "project",
         "parents": [],
         "version": 1,
-        "status": "active",
+        "status": "ACTIVE",
         "yardstick": {
             "north_star": "trustworthy auto research",
             "contribution_spine": "SSOT plus gates",
@@ -57,7 +57,7 @@ def _write_direction_log(tmp_path, node=None):
     rec = scope_ssot.propose_transition(
         node or _direction_node(),
         op="create",
-        gate="user+xmodel-audit",
+        gate="USER_CROSS_MODEL_AUDIT",
         log_path=log,
         trigger="accepted triage",
         cause="PM accepted direction",
@@ -71,12 +71,12 @@ def _milestone_node(parent, suffix, gate="Gate is explicit"):
         "level": "task",
         "parents": [parent],
         "version": 1,
-        "status": "active",
+        "status": "ACTIVE",
         "yardstick": {
             "experiment": f"Validate {suffix}",
             "config_ref": f"scope:{parent}#{suffix.lower()}",
             "gate_predicate": gate,
-            "autonomy_level": "checkpoints",
+            "autonomy_level": "CHECKPOINTED",
         },
         "provenance": f"test:{suffix}",
     }
@@ -91,7 +91,7 @@ def _write_milestones(log):
         recs.append(scope_ssot.propose_transition(
             _milestone_node("dir/retrieval-v2", suffix, gate=gate),
             op="create",
-            gate="agent+async-ack",
+            gate="AGENT_DEFERRED_ACK",
             log_path=log,
             trigger="accepted milestone",
             cause="PM accepted validation milestone",
@@ -116,9 +116,9 @@ def test_materializes_committed_direction_as_package(tmp_path, monkeypatch):
     inventory = (tmp_path / "research_html" / "data" / "research-packages.js").read_text(encoding="utf-8")
     assert 'id: "2026-06-03-retrieval-v2"' in inventory
     assert 'sourceScopeNode: "dir/retrieval-v2"' in inventory
-    assert f'sourceScopeTxn: "{rec["txn_id"]}"' in inventory
+    assert f'sourceScopeTxn: "{rec["transaction_id"]}"' in inventory
     assert "sourceScopeMilestones" in inventory
-    assert f'"txn": "{milestone_recs[0]["txn_id"]}"' in inventory
+    assert f'"txn": "{milestone_recs[0]["transaction_id"]}"' in inventory
     assert "experiments" in inventory
     assert '"parentTask": "task/retrieval-v2/M0-baseline-validity"' in inventory
     assert '"purpose": "Verify baseline"' in inventory
@@ -187,7 +187,7 @@ def test_non_direction_node_rejected(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _dashboard(tmp_path)
     log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
-    scope_ssot.propose_transition(_project_node(), op="create", gate="user", log_path=log)
+    scope_ssot.propose_transition(_project_node(), op="create", gate="USER_ONLY", log_path=log)
 
     with pytest.raises(SystemExit, match="level='project'"):
         create_from_scope.main([

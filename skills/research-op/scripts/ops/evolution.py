@@ -16,7 +16,7 @@ EVOLUTION_OPS = ("evolution-observe", "evolution-create", "evolution-evidence-ad
                  "evolution-approve", "evolution-install-skill",
                  "evolution-suspend-skill", "evolution-rollback-skill")
 
-_R3R4 = ("R3-project-exec", "R4-trust-boundary")
+_R3R4 = ("R3_PROJECT_EXEC", "R4_TRUST_BOUNDARY")
 
 
 class EvolutionReject(Exception):
@@ -91,7 +91,7 @@ def _observe(payload, root):
             if line.strip() and json.loads(line).get("idempotency_key") == payload["idempotency_key"]:
                 return "skipped", [], f"duplicate event {payload['event_id']}"
     _append_jsonl(log, payload)
-    return "passed", [str(log)], f"observed {payload['type']} {payload['event_id']}"
+    return "PASSED",[str(log)], f"observed {payload['type']} {payload['event_id']}"
 
 
 def _create(payload, root):
@@ -118,13 +118,13 @@ def _create_skill(payload, root):
         "schema_version": schema.TRANSITION_SCHEMA,
         "transition_id": f"trn-create-skill-{eid}-{ver}",
         "store": "skill", "entity_id": eid, "entity_version": ver,
-        "expected_from_state": "observed", "to_state": "candidate", "op": "create",
+        "expected_from_state": "OBSERVED", "to_state": "CANDIDATE", "op": "create",
         "risk_class": manifest["risk_class"],
         "idempotency_key": f"create-skill:{eid}:{ver}",
         "evidence_refs": [], "approval_ref": None,
     }
     schema.validate_transition(t)
-    skill_lifecycle.validate_edge("observed", "candidate")
+    skill_lifecycle.validate_edge("OBSERVED", "CANDIDATE")
     try:
         _, skipped = store.append_transition(_skills_log(root), t)
     except store.ConcurrencyConflict as e:
@@ -139,7 +139,7 @@ def _create_skill(payload, root):
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
         touched.append(str(p))
-    return "passed", touched, f"skill candidate {eid}@{ver} created"
+    return "PASSED",touched, f"skill candidate {eid}@{ver} created"
 
 
 def _create_rule(payload, root):
@@ -153,13 +153,13 @@ def _create_rule(payload, root):
         "schema_version": schema.TRANSITION_SCHEMA,
         "transition_id": f"trn-create-{rule['id']}-{rule['version']}",
         "store": "rule", "entity_id": rule["id"], "entity_version": rule["version"],
-        "expected_from_state": "observed", "to_state": "candidate", "op": "create",
+        "expected_from_state": "OBSERVED", "to_state": "CANDIDATE", "op": "create",
         "risk_class": rule["risk_class"],
         "idempotency_key": f"create:{rule['id']}:{rule['version']}",
         "evidence_refs": [], "approval_ref": None,
     }
     schema.validate_transition(t)
-    lifecycle.validate_edge("observed", "candidate")
+    lifecycle.validate_edge("OBSERVED", "CANDIDATE")
     try:
         _, skipped = store.append_transition(_rules_log(root), t)
     except store.ConcurrencyConflict as e:
@@ -167,7 +167,7 @@ def _create_rule(payload, root):
     if skipped:
         return "skipped", [], f"candidate {rule['id']}@{rule['version']} already exists"
     _write_json(cand, rule)
-    return "passed", [str(cand), str(_rules_log(root))], f"candidate {rule['id']}@{rule['version']} created"
+    return "PASSED",[str(cand), str(_rules_log(root))], f"candidate {rule['id']}@{rule['version']} created"
 
 
 def _evidence_add(payload, root):
@@ -178,7 +178,7 @@ def _evidence_add(payload, root):
     p = (Path(root) / "evidence" / payload["entity_id"] / payload["entity_version"]
          / f"{payload['evidence_id']}.json")
     _write_json(p, payload)
-    return "passed", [str(p)], f"evidence {payload['evidence_id']} = {payload['oracle']['result']}"
+    return "PASSED",[str(p)], f"evidence {payload['evidence_id']} = {payload['oracle']['result']}"
 
 
 def _transition(payload, root):
@@ -193,8 +193,8 @@ def _transition(payload, root):
         lifecycle.validate_edge(t["expected_from_state"], t["to_state"])
     except lifecycle.IllegalTransition as e:
         raise EvolutionReject("illegal-edge", str(e))
-    # R3/R4 candidates are parked: never auto-promote to active without an approval.
-    if t["to_state"] == "active" and t["risk_class"] in _R3R4 and not t.get("approval_ref"):
+    # R3/R4 candidates are parked: never auto-promote to RULE_ACTIVE without an approval.
+    if t["to_state"] == "RULE_ACTIVE" and t["risk_class"] in _R3R4 and not t.get("approval_ref"):
         raise EvolutionReject("needs-approval",
                               f"{t['risk_class']} promotion to active requires approval_ref")
     try:
@@ -204,9 +204,9 @@ def _transition(payload, root):
     if skipped:
         return "skipped", [], f"{t['entity_id']}@{t['entity_version']} -> {t['to_state']} (already applied)"
     files = [str(_rules_log(root))]
-    if t["to_state"] == "active":
+    if t["to_state"] == "RULE_ACTIVE":
         files += _seal_release(root, t["entity_id"], t["entity_version"])
-    return "passed", files, f"{t['entity_id']}@{t['entity_version']} -> {t['to_state']}"
+    return "PASSED",files, f"{t['entity_id']}@{t['entity_version']} -> {t['to_state']}"
 
 
 def _transition_skill(t, root):
@@ -224,7 +224,7 @@ def _transition_skill(t, root):
     except store.ConcurrencyConflict as e:
         raise EvolutionReject("concurrency", str(e))
     files = [str(_skills_log(root))]
-    if not skipped and t["to_state"] == "validated":
+    if not skipped and t["to_state"] == "VALIDATED":
         files += _seal_skill_release(root, t["entity_id"], t["entity_version"])
     suffix = " (already applied)" if skipped else ""
     return ("skipped" if skipped else "passed"), files, \
@@ -267,7 +267,7 @@ def _skill_transition(root, eid, ver, frm, to, op, *, approval_ref=None, reason=
     t = {"schema_version": schema.TRANSITION_SCHEMA,
          "transition_id": f"trn-{op}-{eid}-{ver}-{to}", "store": "skill",
          "entity_id": eid, "entity_version": ver, "expected_from_state": frm, "to_state": to,
-         "op": op, "risk_class": "R3-project-exec",
+         "op": op, "risk_class": "R3_PROJECT_EXEC",
          "idempotency_key": f"{op}:{eid}:{ver}:{to}",
          "approval_ref": approval_ref, "reason": reason}
     schema.validate_transition(t)
@@ -292,7 +292,7 @@ def _approve(payload, root, project_root):
             if line.strip() and json.loads(line).get("approval_id") == payload["approval_id"]:
                 return "skipped", [], f"approval {payload['approval_id']} already recorded"
     _append_jsonl(log, payload)
-    return "passed", [str(log)], f"approval {payload['approval_id']} {payload['decision']}"
+    return "PASSED",[str(log)], f"approval {payload['approval_id']} {payload['decision']}"
 
 
 def _install_skill(payload, root, project_root):
@@ -300,30 +300,30 @@ def _install_skill(payload, root, project_root):
     manifest = _load_release_manifest(root, eid, ver)
     approval = _load_approval(payload, root)
     cur = store.current_state(store.read_log(_skills_log(root)), eid, ver)
-    if cur != "awaiting_install_approval":
-        raise EvolutionReject("bad-state", f"{eid}@{ver} is {cur}, expected awaiting_install_approval")
-    _skill_transition(root, eid, ver, "awaiting_install_approval", "installing", "install",
+    if cur != "AWAITING_INSTALL_APPROVAL":
+        raise EvolutionReject("bad-state", f"{eid}@{ver} is {cur}, expected AWAITING_INSTALL_APPROVAL")
+    _skill_transition(root, eid, ver, "AWAITING_INSTALL_APPROVAL", "INSTALLING", "install",
                       approval_ref=approval.get("approval_id"))
     try:
         dest, link = install.install_skill(root, project_root, manifest, approval,
                                            now=payload.get("now"))
     except install.InstallError as e:
-        _skill_transition(root, eid, ver, "installing", "install_failed", "install-fail",
+        _skill_transition(root, eid, ver, "INSTALLING", "INSTALL_FAILED", "install-fail",
                           reason=e.detail)
         raise EvolutionReject(e.rule, e.detail)
-    _skill_transition(root, eid, ver, "installing", "canary", "install",
+    _skill_transition(root, eid, ver, "INSTALLING", "CANARY", "install",
                       approval_ref=approval.get("approval_id"))
-    return "passed", [str(link), str(_skills_log(root))], f"installed {eid}@{ver} -> canary at {link}"
+    return "PASSED",[str(link), str(_skills_log(root))], f"installed {eid}@{ver} -> canary at {link}"
 
 
 def _suspend_skill(payload, root, project_root):
     """Authority-removing: always allowed automatically (§7.2)."""
     eid, ver = payload["entity_id"], payload["entity_version"]
     cur = store.current_state(store.read_log(_skills_log(root)), eid, ver)
-    if cur not in ("canary", "active"):
+    if cur not in ("CANARY", "SKILL_ACTIVE"):
         raise EvolutionReject("bad-state", f"cannot suspend {eid}@{ver} from {cur}")
-    _skill_transition(root, eid, ver, cur, "suspended", "suspend", reason=payload.get("reason"))
-    return "passed", [str(_skills_log(root))], f"suspended {eid}@{ver} (was {cur})"
+    _skill_transition(root, eid, ver, cur, "SUSPENDED", "suspend", reason=payload.get("reason"))
+    return "PASSED",[str(_skills_log(root))], f"suspended {eid}@{ver} (was {cur})"
 
 
 def _rollback_skill(payload, root, project_root):
@@ -338,16 +338,16 @@ def _rollback_skill(payload, root, project_root):
         raise EvolutionReject("rollback-unauthorized", reason)
     # target must be an intact previously-superseded release
     cur = store.current_state(store.read_log(_skills_log(root)), eid, target_ver)
-    if cur != "superseded":
-        raise EvolutionReject("bad-state", f"rollback target {eid}@{target_ver} is {cur}, expected superseded")
+    if cur != "SKILL_SUPERSEDED":
+        raise EvolutionReject("bad-state", f"rollback target {eid}@{target_ver} is {cur}, expected SKILL_SUPERSEDED")
     dest = (Path(project_root) / ".claude" / "skills" / ".versions" / eid
             / install._version_dirname(target_ver, manifest["bundle_digest"]))
     if not dest.exists():
         raise EvolutionReject("no-installed-target", f"no intact installed release {eid}@{target_ver}")
     install._atomic_symlink(Path(project_root) / ".claude" / "skills" / eid, dest)
-    _skill_transition(root, eid, target_ver, "superseded", "canary", "rollback",
+    _skill_transition(root, eid, target_ver, "SKILL_SUPERSEDED", "CANARY", "rollback",
                       reason=f"rollback ({reason})")
-    return "passed", [str(_skills_log(root))], f"rolled back to {eid}@{target_ver} ({reason})"
+    return "PASSED",[str(_skills_log(root))], f"rolled back to {eid}@{target_ver} ({reason})"
 
 
 def _seal_release(root, eid, ver):
@@ -369,7 +369,7 @@ def _project(payload, root):
     skills = _fold_states(_skills_log(root))
     p = Path(root) / "projections" / "current-state.json"
     _write_json(p, {"rules": rules, "skills": skills})
-    return "passed", [str(p)], f"projected {len(rules)} rule + {len(skills)} skill versions"
+    return "PASSED",[str(p)], f"projected {len(rules)} rule + {len(skills)} skill versions"
 
 
 def _check(payload, root):
@@ -391,4 +391,4 @@ def _check(payload, root):
             problems.append(f"missing-skill-candidate:{eid}@{ver}")
     if problems:
         raise EvolutionReject("consistency", "; ".join(problems))
-    return "passed", [], f"consistent: {len(rules)} rule + {len(skills)} skill versions"
+    return "PASSED",[], f"consistent: {len(rules)} rule + {len(skills)} skill versions"

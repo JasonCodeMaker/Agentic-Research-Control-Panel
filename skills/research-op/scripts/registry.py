@@ -11,7 +11,7 @@ from pathlib import Path
 
 # Edge types we build (each has a consumer in our loop). `supersedes` is already expressed by the
 # package supersededBy field; `tested_by`/`supports` duplicate evidencePath — intentionally omitted.
-EDGE_TYPES = {"extends", "contradicts", "addresses_gap", "invalidates"}
+EDGE_TYPES = {"EXTENDS", "CONTRADICTS", "ADDRESSES_GAP", "INVALIDATES"}
 
 STORES = {"paper": "papers.jsonl", "edge": "edges.jsonl", "gap": "gaps.jsonl"}
 

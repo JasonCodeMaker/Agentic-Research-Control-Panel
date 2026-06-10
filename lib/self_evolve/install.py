@@ -10,7 +10,7 @@ import os
 import shutil
 from pathlib import Path
 
-from self_evolve import bundle
+from self_evolve import bundle, schema
 
 
 class InstallError(Exception):
@@ -35,7 +35,7 @@ def _bundle_files(directory):
 def approval_matches(approval, *, entity_id, entity_version, operation,
                      bundle_digest, permission_digest, now=None):
     """Exact single-purpose match (§9.6). Returns (ok, reason)."""
-    if approval.get("decision") != "approved":
+    if approval.get("decision") != schema.APPROVAL_DECISIONS[0]:
         return False, "not-approved"
     if approval.get("approved_by") != "user":
         return False, "not-user-approved"
@@ -73,7 +73,7 @@ def install_skill(selfevolve_root, project_root, manifest, approval, *, now=None
     eid, ver = manifest["id"], manifest["version"]
     bd = manifest["bundle_digest"]
     pd = bundle.permission_digest(manifest["permissions"])
-    ok, reason = approval_matches(approval, entity_id=eid, entity_version=ver, operation="install",
+    ok, reason = approval_matches(approval, entity_id=eid, entity_version=ver, operation="INSTALL",
                                   bundle_digest=bd, permission_digest=pd, now=now)
     if not ok:
         raise InstallError("approval-mismatch", reason)
@@ -101,11 +101,11 @@ def installed_target(project_root, entity_id):
 
 def is_invocation_allowed(state, manifest, requested_trigger):
     """Runtime gate (§12.3): deny when suspended / not deployed / outside canary scope."""
-    if state == "suspended":
+    if state == "SUSPENDED":
         return False, "suspended"
-    if state not in ("canary", "active"):
+    if state not in ("CANARY", "SKILL_ACTIVE"):
         return False, f"not-deployed:{state}"
-    if state == "canary":
+    if state == "CANARY":
         allowed = set(manifest.get("activation", {}).get("allowed_scope", []))
         if requested_trigger not in allowed:
             return False, "canary-scope-escape"
@@ -129,9 +129,9 @@ def authorize_rollback(*, target_version, current_approval=None, pre_authorizati
             return True, "pre-authorized"
         return False, "pre-authorization-target-mismatch"
     if current_approval is not None:
-        if current_approval.get("decision") == "approved" \
+        if current_approval.get("decision") == schema.APPROVAL_DECISIONS[0] \
                 and current_approval.get("approved_by") == "user" \
-                and current_approval.get("operation") == "rollback" \
+                and current_approval.get("operation") == "ROLLBACK" \
                 and current_approval.get("entity_version") == target_version:
             return True, "user-approved"
         return False, "approval-mismatch"

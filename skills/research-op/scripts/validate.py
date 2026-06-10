@@ -61,7 +61,7 @@ def rule_payload_json_valid(pkg: str, op: str, target: str | None, payload_raw: 
 # ---- Per-target rules ----
 
 _METHODSTRIED_FIELDS = {"method", "hypothesis", "gate", "measured", "verdict", "evidencePath"}
-_VERDICT_ALLOWED    = {"pass", "fail", "inconclusive"}
+_VERDICT_ALLOWED    = {"PASS", "FAIL", "INCONCLUSIVE"}
 
 
 def rule_package_invariant_has_rule(pkg, op, target, payload) -> Reject | None:
@@ -105,7 +105,7 @@ def rule_methodstried_verdict_enum(pkg, op, target, payload) -> Reject | None:
             file=None, anchor=None, field="verdict",
             expected=f"one of {sorted(_VERDICT_ALLOWED)}",
             actual=repr(v),
-            suggested_fix="Set verdict to pass / fail / inconclusive. Single-seed pass is inconclusive until multi-seed gate is met.",
+            suggested_fix="Set verdict to PASS / FAIL / INCONCLUSIVE. Single-seed PASS is INCONCLUSIVE until multi-seed gate is met.",
         )
     return None
 
@@ -155,7 +155,7 @@ _RESULT_GATE_FIELDS = {
     "exp_id", "validity", "baseline", "plan_gate", "observed_metric",
     "budget_use", "seed_status", "artifact_completeness", "verdict", "reason",
 }
-_VALIDITY_ALLOWED = {"ok", "partial", "fail", "unmeasured"}
+_VALIDITY_ALLOWED = {"VALID", "PARTIAL", "RESULT_FAIL", "UNMEASURED"}
 
 
 def rule_result_gate_ten_cols(pkg, op, target, payload) -> Reject | None:
@@ -185,7 +185,7 @@ def rule_result_gate_validity_enum(pkg, op, target, payload) -> Reject | None:
             file=None, anchor=None, field="validity",
             expected=f"one of {sorted(_VALIDITY_ALLOWED)}",
             actual=repr(v),
-            suggested_fix="Set validity to ok / partial / fail / unmeasured.",
+            suggested_fix="Set validity to VALID / PARTIAL / RESULT_FAIL / UNMEASURED.",
         )
     return None
 
@@ -358,7 +358,7 @@ def rule_acquit_judge_independent(pkg, op, target, payload, state) -> Reject | N
     verdict = payload.get("verdict")
     if not verdict:
         return None  # presence is handled by rule_acquit_needs_verdict
-    level = payload.get("autonomy_level", "supervised")
+    level = payload.get("autonomy_level", "SUPERVISED")
     reason = verifier.assess_acquit(verdict, level)
     if reason:
         return Reject(
@@ -499,7 +499,7 @@ def rule_doc_group_rationale_present(pkg, op, target, payload) -> Reject | None:
 # ---- Delete rules ----
 
 _TERMINAL_CATEGORIES = {"success", "fail"}
-_BLOCKING_STATUSES   = {"running", "completed", "failed"}
+_BLOCKING_STATUSES   = {"RUNNING", "COMPLETED", "RUN_FAILED"}
 
 
 def rule_experiments_pre_launch_only(pkg, op, target, payload, state) -> Reject | None:
@@ -512,9 +512,9 @@ def rule_experiments_pre_launch_only(pkg, op, target, payload, state) -> Reject 
         return Reject(
             rule="experiments-pre-launch-only",
             file=None, anchor=None, field="existing_experiments_status_list",
-            expected="all experiments in pre-launch state (queued/stale/blocked)",
+            expected="all experiments in pre-launch state (QUEUED/STALE/RUN_HALTED)",
             actual=f"blocking statuses found: {blocking}",
-            suggested_fix="Cannot delete experiments-row while runs are running, completed, or failed.",
+            suggested_fix="Cannot delete experiments-row while runs are RUNNING, COMPLETED, or RUN_FAILED.",
         )
     return None
 
@@ -594,7 +594,7 @@ def rule_verdict_mechanical(pkg, op, target, payload, state) -> Reject | None:
             actual=repr(measured),
             suggested_fix="Coerce measured to a number before recording the verdict.",
         )
-    expected_verdict = "pass" if m_val >= threshold else "fail"
+    expected_verdict = "PASS" if m_val >= threshold else "FAIL"
     if verdict != expected_verdict:
         return Reject(
             rule="verdict-mechanical",
@@ -602,7 +602,7 @@ def rule_verdict_mechanical(pkg, op, target, payload, state) -> Reject | None:
             field="verdict",
             expected=f"verdict={expected_verdict} (predicate {predicate} with measured={m_val})",
             actual=f"verdict={verdict}",
-            suggested_fix=f"Set verdict={expected_verdict}; the measured value {'meets' if expected_verdict == 'pass' else 'does not meet'} the gate.",
+            suggested_fix=f"Set verdict={expected_verdict}; the measured value {'meets' if expected_verdict == 'PASS' else 'does not meet'} the gate.",
         )
     return None
 

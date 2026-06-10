@@ -50,11 +50,11 @@ def read_metric_artifact(path):
 
 
 def _verdict_for(measured, predicate):
-    """Compute pass/fail for a `measured >= <float>` success predicate."""
+    """Compute PASS/FAIL for a `measured >= <float>` success predicate."""
     m = re.match(r"measured\s*>=\s*([0-9.]+)", predicate.strip())
     if not m:
         raise ValueError(f"unsupported predicate shape: {predicate!r}")
-    return "pass" if float(measured) >= float(m.group(1)) else "fail"
+    return "PASS" if float(measured) >= float(m.group(1)) else "FAIL"
 
 
 def verdict_update_envelope(artifact, predicate):
@@ -74,7 +74,7 @@ def build_jury_request(artifact_paths, question, *, judge_model):
 def acquit_update_envelope(verdict, autonomy_level, *, termination_message, adoption_path, ack_token):
     """Acquit (cross into success) envelope; the acquit gate enforces judge independence for the dial."""
     return {"op": "update", "target": "status",
-            "payload": {"to_category": "success", "to_status": "ADOPTED_PENDING_ACK",
+            "payload": {"to_category": "success", "to_status": "ADOPTED_UNCONFIRMED",
                         "verdict": verdict, "autonomy_level": autonomy_level,
                         "terminationMessage": termination_message, "adoptionPath": adoption_path,
                         "ack_token": ack_token}}
@@ -83,24 +83,24 @@ def acquit_update_envelope(verdict, autonomy_level, *, termination_message, adop
 # ---- Stage 4: dial revert + unattended run monitor ----
 
 def dial_revert(tasks, transition):
-    """Revert dial-affected Tasks to Supervised and emit one scope-transition envelope per reverted Task."""
+    """Revert dial-affected Tasks to SUPERVISED and emit one scope-transition envelope per reverted Task."""
     reverted = dial.revert_on_scope_change(tasks, transition)
     affected = set(transition.get("dial_revert", [])) if transition.get("level") in ("direction", "project") else set()
     envs = [{"op": "scope-transition", "target": t["id"],
-             "payload": {"autonomy_level": "supervised", "locked": True, "cause": "dial-revert"}}
+             "payload": {"autonomy_level": "SUPERVISED", "locked": True, "cause": "dial-revert"}}
             for t in reverted if t["id"] in affected]
     return reverted, envs
 
 
 def monitor_run(run_state, *, exp_id):
     """Route an observed run state to the next-status envelope(s) for the unattended driver-lite."""
-    if run_state == "completed":
+    if run_state == "COMPLETED":
         return [{"op": "update", "target": "status", "payload": {"to_status": "RESULT_ANALYSIS"}}]
-    if run_state in ("failed", "vanished", "stale"):
+    if run_state in ("RUN_FAILED", "RUN_HALTED", "STALE"):
         return [{"op": "update", "target": "status", "payload": {"to_status": "BLOCKED"}},
                 {"op": "update", "target": "currentBlocker",
                  "payload": {"value": f"run {exp_id} {run_state}"}}]
-    return []  # running — keep going
+    return []  # RUNNING or unknown — keep going
 
 
 # ---- Stage 5: heavy R2/R3 deterministic gates ----
@@ -123,11 +123,11 @@ def run_reflection(*, actions, transitions, cross_failures):
     """Read-only proposer: surface doom-loops / scope-thrash / cross-package dead-ends. Lands nothing."""
     findings = []
     if reflect.detect_doom_loop(actions):
-        findings.append({"kind": "doom-loop"})
+        findings.append({"kind": "CONSECUTIVE_VALIDATION_FAILURE"})
     if reflect.detect_scope_thrash(transitions):
-        findings.append({"kind": "scope-thrash"})
+        findings.append({"kind": "REPEATED_SCOPE_REVISION"})
     if reflect.detect_cross_package_dead_end(cross_failures):
-        findings.append({"kind": "cross-package-dead-end"})
+        findings.append({"kind": "CROSS_PACKAGE_DEAD_END"})
     return findings
 
 

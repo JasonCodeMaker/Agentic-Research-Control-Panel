@@ -25,7 +25,7 @@ def test_insert_package_invariant_appends_and_audits(tmp_package):
     assert "bindingRules" in inv and "one notebook per figure" in inv
     log = tmp_package / "outputs" / "test-pkg" / "_actions.jsonl"
     entries = [json.loads(l) for l in log.read_text().splitlines() if l.strip()]
-    assert any(e.get("target") == "package-invariant" and e["validation"] == "passed" for e in entries)
+    assert any(e.get("target") == "package-invariant" and e["validation"] == "PASSED" for e in entries)
 
 
 def test_package_invariant_requires_rule_text(tmp_package):

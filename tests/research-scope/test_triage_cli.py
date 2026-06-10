@@ -23,7 +23,7 @@ def test_triage_cli_propose_pending_dispose(tmp_path):
     assert r.returncode == 0, r.stderr
     assert [i["id"] for i in json.loads(r.stdout)] == ["t1"]
 
-    r = _run(["dispose", "--log", str(log), "--id", "t1", "--decision", "accept"])
+    r = _run(["dispose", "--log", str(log), "--id", "t1", "--decision", "ACCEPTED"])
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "accepted"
 

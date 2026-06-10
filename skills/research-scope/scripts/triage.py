@@ -35,11 +35,11 @@ def pending(triage_log):
 
 
 def dispose(triage_log, item_id, decision):
-    """Record a human disposition (accept | reject). Never mutates the SSOT itself."""
-    if decision not in ("accept", "reject"):
-        raise ValueError(f"decision must be accept|reject, got {decision!r}")
+    """Record a human disposition (ACCEPTED | REJECTED). Never mutates the SSOT itself."""
+    if decision not in ("ACCEPTED", "REJECTED"):
+        raise ValueError(f"decision must be ACCEPTED|REJECTED, got {decision!r}")
     triage_log = Path(triage_log)
-    status = "accepted" if decision == "accept" else "archived"
+    status = "accepted" if decision == "ACCEPTED" else "archived"
     with triage_log.open("a", encoding="utf-8") as f:
         f.write(json.dumps({"id": item_id, "status": status}, ensure_ascii=False) + "\n")
     return status
@@ -52,7 +52,7 @@ def main(argv=None):
     sub = p.add_subparsers(dest="cmd", required=True)
     pp = sub.add_parser("propose"); pp.add_argument("--log", required=True); pp.add_argument("--item", required=True, help="JSON object; must include an 'id'")
     pn = sub.add_parser("pending"); pn.add_argument("--log", required=True)
-    pd = sub.add_parser("dispose"); pd.add_argument("--log", required=True); pd.add_argument("--id", required=True); pd.add_argument("--decision", required=True, choices=("accept", "reject"))
+    pd = sub.add_parser("dispose"); pd.add_argument("--log", required=True); pd.add_argument("--id", required=True); pd.add_argument("--decision", required=True, choices=("ACCEPTED", "REJECTED"))
     args = p.parse_args(argv)
     if args.cmd == "propose":
         print(propose(args.log, json.loads(args.item)))

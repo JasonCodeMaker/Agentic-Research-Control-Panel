@@ -101,7 +101,7 @@ def _child_milestones(direction_id: str, records: list[dict]) -> list[dict]:
             continue
         if direction_id not in node.get("parents", []):
             continue
-        if node.get("status") != "active":
+        if node.get("status") != "ACTIVE":
             continue
         milestones.append({"node": node, "record": latest[node_id]})
     milestones.sort(key=lambda item: item["node"]["id"])
@@ -138,7 +138,7 @@ def _experiment_rows(package_id: str, milestones: list[dict]) -> list[dict]:
             "after": [] if idx == 0 else [f"P{idx - 1}"],
             "output": f"outputs/{package_id}/{exp_id}/result.json",
             "gate": node["yardstick"]["gate_predicate"],
-            "status": "pending",
+            "status": "QUEUED",
             "requiresCode": requires_code,
             "complex": complex_phase,
             "docsAnchor": f"docs/pipeline.html#p{idx}" if complex_phase else "docs/index.html",
@@ -202,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"Transition for {args.direction_id} does not carry a node snapshot")
     if node.get("level") != "direction":
         raise SystemExit(f"--direction-id must point to a direction node, got level={node.get('level')!r}")
-    if node.get("status") != "active":
+    if node.get("status") != "ACTIVE":
         raise SystemExit(f"Direction must be active before materialization, got status={node.get('status')!r}")
 
     scope_ssot.validate_node(node)
@@ -220,8 +220,8 @@ def main(argv: list[str] | None = None) -> int:
 
     source_brainstorms = json.loads(args.source_brainstorms)
     scope = args.scope
-    if source_brainstorms and "brainstorm" not in scope.split(","):
-        scope = scope + ",brainstorm"  # register the provenance sub-page in nav
+    # brainstorm.html is provenance-only — written directly by _write_brainstorm_provenance,
+    # not a STAGE_PAGES entry; do not inject it into scope.
 
     hypothesis = str(yardstick["hypothesis"])
     metric = _metric_label(yardstick["metric"])
@@ -230,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
         {
             "id": item["node"]["id"],
             "scopeVersion": item["record"]["scope_version"],
-            "txn": item["record"]["txn_id"],
+            "txn": item["record"]["transaction_id"],
         }
         for item in milestones
     ]
@@ -261,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
         "--experiments-json", json.dumps(_experiment_rows(package_id, milestones), ensure_ascii=False),
         "--source-scope-node", args.direction_id,
         "--source-scope-version", str(record["scope_version"]),
-        "--source-scope-txn", str(record["txn_id"]),
+        "--source-scope-txn", str(record["transaction_id"]),
         "--source-scope-milestones", json.dumps(milestone_provenance, ensure_ascii=False),
     ]
     if args.source_path:

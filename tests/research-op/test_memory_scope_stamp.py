@@ -19,13 +19,13 @@ from scope_ssot import RuleViolation  # noqa: E402
 def test_memory_entry_without_scope_version_rejected(tmp_path):
     log = tmp_path / "memory.jsonl"
     with pytest.raises(RuleViolation):
-        scope_ssot.append_memory(log, {"id": "m1", "kind": "idea", "failed_on_metric": "Recall@10"})
+        scope_ssot.append_memory(log, {"id": "m1", "kind": "IDEA", "failed_on_metric": "Recall@10"})
     assert not log.exists()  # reject-before-write
 
 
 def test_memory_entry_with_scope_version_appended(tmp_path):
     log = tmp_path / "memory.jsonl"
-    scope_ssot.append_memory(log, {"id": "m1", "kind": "idea",
+    scope_ssot.append_memory(log, {"id": "m1", "kind": "IDEA",
                                    "failed_on_metric": "Recall@10", "scope_version": 1})
     lines = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines() if line.strip()]
     assert lines[0]["scope_version"] == 1
@@ -33,11 +33,11 @@ def test_memory_entry_with_scope_version_appended(tmp_path):
 
 def test_stamped_memory_roundtrips_into_propagate(tmp_path):
     log = tmp_path / "memory.jsonl"
-    scope_ssot.append_memory(log, {"id": "i1", "kind": "idea",
+    scope_ssot.append_memory(log, {"id": "i1", "kind": "IDEA",
                                    "failed_on_metric": "Recall@10", "scope_version": 1})
-    scope_ssot.append_memory(log, {"id": "r1", "kind": "result",
+    scope_ssot.append_memory(log, {"id": "r1", "kind": "RESULT",
                                    "metric": "nDCG@10", "scope_version": 1})
     memory = scope_ssot.read_log(log)
     out = scope_ssot.propagate(old_metric="Recall@10", new_metric="nDCG@10", memory=memory)
-    assert out["reopen"] == ["i1"]
-    assert out["carry"] == ["r1"]
+    assert out["REOPEN_IDEA"] == ["i1"]
+    assert out["RETAIN"] == ["r1"]

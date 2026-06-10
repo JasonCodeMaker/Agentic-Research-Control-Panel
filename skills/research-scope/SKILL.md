@@ -52,14 +52,14 @@ python3 skills/research-scope/scripts/triage.py pending \
 python3 skills/research-scope/scripts/triage.py dispose \
     --log outputs/_scope/triage.jsonl \
     --id <item-id> \
-    --decision accept|reject
+    --decision ACCEPTED|REJECTED
 ```
 
 On accept, the human then commits the transition (agent does NOT do this). The payload must carry all seven node fields **plus** `op` (one of `create` / `revise` / `supersede` / `reopen` / `archive`) and `gate` (the required gate for the node's level — see the gate table below); `research_op.py` reads `op` and `gate` out of the payload and passes them to `scope_ssot.propose_transition`, which rejects a missing/illegal `op` or a mismatched `gate`:
 ```bash
 python3 skills/research-op/scripts/research_op.py \
     --pkg <pkg-id> --op scope-transition \
-    --payload '{"id":"dir-retrieval-v2","level":"direction","parents":[],"version":1,"status":"active","yardstick":{...},"provenance":"...","op":"create","gate":"user+xmodel-audit"}'
+    --payload '{"id":"dir-retrieval-v2","level":"direction","parents":[],"version":1,"status":"ACTIVE","yardstick":{...},"provenance":"...","op":"create","gate":"USER_CROSS_MODEL_AUDIT"}'
 ```
 
 ## Node shape
@@ -72,7 +72,7 @@ A node has these required fields:
   "level": "project|direction|task",
   "parents": ["<parent-id>"],
   "version": 1,
-  "status": "active",
+  "status": "ACTIVE",
   "yardstick": { ... },
   "provenance": "<free text or reference>"
 }
@@ -92,9 +92,9 @@ Required gate per level — the `gate` field passed to `scope_ssot.propose_trans
 
 | level | gate |
 |---|---|
-| `project` | `user` |
-| `direction` | `user+xmodel-audit` |
-| `task` | `agent+async-ack` |
+| `project` | `USER_ONLY` |
+| `direction` | `USER_CROSS_MODEL_AUDIT` |
+| `task` | `AGENT_DEFERRED_ACK` |
 
 ## Procedure
 
@@ -187,7 +187,7 @@ python3 skills/research-package/scripts/create_from_scope.py \
     --transitions outputs/_scope/transitions.jsonl
 ```
 
-**Human reject path:** PM runs `triage.py dispose --decision reject`. The item is archived in `triage.jsonl`; the SSOT is untouched.
+**Human reject path:** PM runs `triage.py dispose --decision REJECTED`. The item is archived in `triage.jsonl`; the SSOT is untouched.
 
 Example — proposing a direction node:
 
@@ -228,6 +228,6 @@ The skill is done when the pending Triage item is visible in `triage.jsonl`, has
 | Error | Meaning | Action |
 |---|---|---|
 | `RuleViolation` from `validate_node` | The node dict violates the schema (missing field, wrong level, reading in yardstick, etc.) | Fix the node dict and retry `validate_node` before calling `triage.py propose`. Never hand-edit the log. |
-| `RuleViolation` from `scope_ssot.propose_transition` (human path) | The transition op was refused by the gate check | Confirm the `gate` value matches `REQUIRED_GATE[node.level]` and retry. |
+| `RuleViolation` from `scope_ssot.propose_transition` (human path) | The transition op was refused by the gate check | Confirm the `gate` value matches `scope_ssot.REQUIRED_GATE[node["level"]]` (e.g. `USER_CROSS_MODEL_AUDIT` for direction) and retry. |
 | `triage.py propose` exits non-zero | Item JSON is malformed, or the `id` key is missing (the script enforces only `id`) | Check the `--item` JSON parses and carries `id`. `level`, `change`, `rationale`, and `proposed_yardstick` are required by this contract (downstream consumers need them) but are not validated by the script — include them anyway. |
 | Triage item sits pending indefinitely | PM has not disposed it | Surface the pending list again; do not re-propose the same change. |

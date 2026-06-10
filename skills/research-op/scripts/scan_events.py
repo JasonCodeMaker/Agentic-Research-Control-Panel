@@ -42,13 +42,13 @@ def scan(pkg: str) -> list[dict]:
             continue
         name = p.name
         if name.endswith("best_model.pt"):
-            events.append({"event": "checkpoint-saved", "artifact": str(p), "mtime": m})
+            events.append({"event": "CHECKPOINT_SAVED", "artifact": str(p), "mtime": m})
         elif p.parent.name == "manifests" and name.endswith(".txt"):
-            events.append({"event": "sentinel-write", "artifact": str(p), "mtime": m})
+            events.append({"event": "SENTINEL_WRITE", "artifact": str(p), "mtime": m})
         elif "candidates" in p.parts and name.endswith(".json"):
-            events.append({"event": "candidate-json", "artifact": str(p), "mtime": m})
+            events.append({"event": "CANDIDATE_SUBMITTED", "artifact": str(p), "mtime": m})
         elif name.endswith(".done"):
-            events.append({"event": "chain-done", "artifact": str(p), "mtime": m})
+            events.append({"event": "CHAIN_DONE", "artifact": str(p), "mtime": m})
     return events
 
 

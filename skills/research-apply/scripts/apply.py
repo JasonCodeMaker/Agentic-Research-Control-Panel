@@ -13,6 +13,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
 import verifier  # noqa: E402
 
+# Canonical proposal status values shared with research-reflect.
+PROPOSAL_STATUS = ("STAGED", "LANDED")
+
 
 def apply(proposal_dir, *, human_token, jury_verdict, rules_path):
     """Land a staged proposal into the project rules. Requires a human action + a sound jury verdict."""
@@ -25,7 +28,7 @@ def apply(proposal_dir, *, human_token, jury_verdict, rules_path):
     rules_path = Path(rules_path)
     with rules_path.open("a", encoding="utf-8") as f:
         f.write(f"- {proposal['suggested_diff']}\n")
-    proposal["status"] = "landed"
+    proposal["status"] = "LANDED"
     proposal["landed_by"] = human_token
     (proposal_dir / "proposal.json").write_text(json.dumps(proposal, indent=2), encoding="utf-8")
     return rules_path

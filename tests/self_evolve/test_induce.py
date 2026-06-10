@@ -49,13 +49,13 @@ def test_recipe_workflow_profile_is_advisory():
 
 
 def test_default_risk_is_advisory_context():
-    assert induce.induce_rule(_event(), _draft())["risk_class"] == "R1-context"
+    assert induce.induce_rule(_event(), _draft())["risk_class"] == "R1_CONTEXT"
 
 
 def test_draft_declared_r3_is_preserved_for_parking():
     d = _draft()
-    d["risk_class"] = "R3-project-exec"
-    assert induce.induce_rule(_event(), d)["risk_class"] == "R3-project-exec"
+    d["risk_class"] = "R3_PROJECT_EXEC"
+    assert induce.induce_rule(_event(), d)["risk_class"] == "R3_PROJECT_EXEC"
 
 
 def test_unknown_event_type_rejected():

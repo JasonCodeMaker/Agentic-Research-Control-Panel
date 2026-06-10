@@ -107,11 +107,12 @@ def load_registry(root: str, name: str) -> list:
 
 
 # Effectiveness-authority ordering for the Rule Store export (proven before advisory, §13.1).
-_AUTHORITY_ORDER = {"proven-effective": 0, "advisory-admitted": 1}
+# Keys are rule_oracle_admission canonical values (FULLY_ADMITTED before TENTATIVELY_ADMITTED).
+_AUTHORITY_ORDER = {"FULLY_ADMITTED": 0, "TENTATIVELY_ADMITTED": 1}
 
 
 def load_rule_store_active(selfevolve_root: str = "outputs/_selfevolve") -> list:
-    """Active Rules from the self-evolve Rule Store, ordered proven-effective first (§13.1)."""
+    """Active Rules from the self-evolve Rule Store, ordered FULLY_ADMITTED first (§13.1)."""
     from self_evolve import store as se_store  # lib/ already on path
     log = Path(selfevolve_root) / "rules" / "transitions.jsonl"
     if not log.exists():
@@ -124,7 +125,7 @@ def load_rule_store_active(selfevolve_root: str = "outputs/_selfevolve") -> list
             continue
         rule = json.loads(rel.read_text(encoding="utf-8"))
         rules.append({"id": eid, "content": rule.get("content", ""),
-                      "authority": t.get("admission", "advisory-admitted")})
+                      "authority": t.get("admission", "TENTATIVELY_ADMITTED")})
     rules.sort(key=lambda r: (_AUTHORITY_ORDER.get(r["authority"], 9), r["id"]))
     return rules
 

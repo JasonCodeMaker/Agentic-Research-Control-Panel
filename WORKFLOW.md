@@ -73,13 +73,13 @@ Every subagent returns a compact report that gives the main agent evidence witho
 Every report includes: `agent_role`, `assigned_scope`, `status`, `evidence`, `blockers`, and `recommended_next_action`.
 
 Step-specific returns:
-- `implementation_planner`: objective, constraints, required context dossier, verified code anchors, implementation units, unknowns, validation plan
-- `implementation_agent`: implementation id, owned files, status `ready_for_review` or `blocked`, diff summary, checks run, complexity note, residual risks
-- `review_agent`: implementation/change id, verdict `pass`/`needs_fix`/`blocked`, findings classified as `blocking`/`non_blocking`/`question`/`invalid`, required fixes, review table rows
-- `resource_planner`: live capacity snapshot, allocation rows, blocked resources, assignment rationale
-- `experiment_agent`: experiment id, run status, command/cwd/env, session or job id, latest metrics, resource use, artifact paths, ETA, PLAN-threshold check, issue classification, recommended live action `continue`/`early_stop`/`repair`/`ask_user`/`blocked`, next check time, final result package when complete
-- `live_run_reviewer` escalation only: experiment id, escalation reason, independent action `continue`/`early_stop`/`repair`/`ask_user`/`blocked`, PLAN-threshold evidence, minimum next action
-- `result_analyzer`: perspective, verdict, useful insights, local noise, gate assessment, unsupported claims, next action recommendation
+- `IMPLEMENTATION_PLANNER`: objective, constraints, required context dossier, verified code anchors, implementation units, unknowns, validation plan
+- `IMPLEMENTATION_AGENT`: implementation id, owned files, status `READY_FOR_REVIEW` or `IMPL_BLOCKED`, diff summary, checks run, complexity note, residual risks
+- `REVIEW_AGENT`: implementation/change id, verdict `REVIEW_PASS`/`NEEDS_FIX`/`REVIEW_BLOCKED`, findings classified as `BLOCKING`/`NON_BLOCKING`/`QUESTION`/`INVALID_FINDING`, required fixes, review table rows
+- `RESOURCE_PLANNER`: live capacity snapshot, allocation rows, blocked resources, assignment rationale
+- `EXPERIMENT_AGENT`: experiment id, run status, command/cwd/env, session or job id, latest metrics, resource use, artifact paths, ETA, PLAN-threshold check, issue classification, recommended live action `CONTINUE_RUN`/`EARLY_STOP`/`REPAIR`/`ASK_USER`/`ESCALATE`, next check time, final result package when complete
+- `LIVE_RUN_REVIEWER` escalation only: experiment id, escalation reason, independent action `CONTINUE_RUN`/`EARLY_STOP`/`REPAIR`/`ASK_USER`/`ESCALATE`, PLAN-threshold evidence, minimum next action
+- `RESULT_ANALYZER`: perspective, verdict, useful insights, local noise, gate assessment, unsupported claims, next action recommendation
 
 Subagent outputs are evidence, not authority. The main agent may accept, reject, narrow, or request more evidence based on the global context.
 
@@ -167,7 +167,7 @@ State transitions:
 START -> CONTEXT_LOADED after Step 1 decision passes
 CONTEXT_LOADED -> IMPLEMENTING when implementation units are grounded
 CONTEXT_LOADED -> READY_TO_LAUNCH when the active plan is launch-only or prior implementation already passed review
-IMPLEMENTING -> IMPLEMENTATION_REVIEW when the implementation owner returns ready_for_review
+IMPLEMENTING -> IMPLEMENTATION_REVIEW when the implementation owner returns READY_FOR_REVIEW
 IMPLEMENTATION_REVIEW -> IMPLEMENTING on clear blocking findings with a consolidated fix brief
 IMPLEMENTATION_REVIEW -> DECISION_ADJUDICATION when findings conflict, repeat, lack evidence, or expose plan/context ambiguity
 IMPLEMENTATION_REVIEW -> READY_TO_LAUNCH when all blocking findings are resolved
@@ -177,8 +177,8 @@ DECISION_ADJUDICATION -> READY_TO_LAUNCH when findings are resolved, invalid, or
 DECISION_ADJUDICATION -> BLOCKED only when the main agent determines that a user-level decision, approval, resource, or material plan change is required
 READY_TO_LAUNCH -> EXPERIMENT_RUNNING after launch provenance is recorded
 EXPERIMENT_RUNNING -> LIVE_ANALYSIS on each 10-minute status report
-LIVE_ANALYSIS -> EXPERIMENT_RUNNING on continue
-LIVE_ANALYSIS -> RESULT_ANALYSIS on completed or PLAN-defined early_stop
+LIVE_ANALYSIS -> EXPERIMENT_RUNNING on CONTINUE_RUN
+LIVE_ANALYSIS -> RESULT_ANALYSIS on COMPLETED or PLAN-defined EARLY_STOP
 LIVE_ANALYSIS -> IMPLEMENTING on concrete code/function issue
 RESULT_ANALYSIS -> NEXT_ACTION_READY after results.html is updated
 NEXT_ACTION_READY -> READY_TO_LAUNCH | IMPLEMENTING | BLOCKED | STOPPED
@@ -189,6 +189,57 @@ Routing and terminal states:
 - `DECISION_ADJUDICATION`: active reasoning state for hard implementation/review convergence. Do not use it as a terminal state.
 - `BLOCKED`: terminal-for-now state caused by a Stop Condition. Stop only after the smallest required user decision is recorded.
 - `STOPPED`: terminal state caused by a Stop Condition, explicit user stop, achieved goal, or archive/stop after evidence review; confirm no open runs are untracked.
+
+## Definitions
+
+Canonical enum constants used throughout this workflow. The SSOT for each set is the location listed; only the values here are legal.
+
+**Naming convention:** `STATE = SCREAMING_SNAKE` (all enum values below). Package category lanes (`in-progress`, `success`, `fail`) are a deliberate lowercase-kebab carve-out — they are URL/CSS facets, not state-machine values.
+
+```text
+# Package statuses (in-progress lane) — SSOT: schema.js RESEARCH_STATUS_SCHEMA['in-progress'].states
+IN_PROGRESS_STATUSES = (
+    CONTEXT_LOADED, IMPLEMENTING, IMPLEMENTATION_REVIEW, DECISION_ADJUDICATION,
+    READY_TO_LAUNCH, EXPERIMENT_RUNNING, LIVE_ANALYSIS, RESULT_ANALYSIS,
+    NEXT_ACTION_READY, BLOCKED, STOPPED
+)
+
+# Run execution status — SSOT: WORKFLOW.md (this file)
+RUN_STATUS = (QUEUED, RUNNING, COMPLETED, RUN_FAILED, RUN_HALTED, STALE, SKIPPED)
+
+# Live-run action — SSOT: WORKFLOW.md (this file)
+LIVE_ACTION = (CONTINUE_RUN, EARLY_STOP, REPAIR, ASK_USER, ESCALATE)
+
+# Next route — SSOT: WORKFLOW.md (this file)
+NEXT_ROUTE = (RUN_NEXT_EXPERIMENT, FIX_IMPLEMENTATION, REVISE_PLAN, TERMINATE, ASK_USER)
+
+# Reviewer verdict — SSOT: WORKFLOW.md (this file)
+REVIEWER_VERDICT = (REVIEW_PASS, NEEDS_FIX, REVIEW_BLOCKED)
+
+# Finding class — SSOT: WORKFLOW.md (this file)
+FINDING_CLASS = (BLOCKING, NON_BLOCKING, QUESTION, INVALID_FINDING)
+
+# Implementation agent status — SSOT: WORKFLOW.md (this file)
+IMPL_AGENT_STATUS = (READY_FOR_REVIEW, IMPL_BLOCKED)
+
+# Adjudication root cause — SSOT: WORKFLOW.md (this file)
+ROOT_CAUSE = (CODE_ISSUE, CONTEXT_GAP, PLAN_AMBIGUITY, REVIEWER_DISAGREEMENT, VALIDATION_GAP, EXTERNAL_BLOCKER)
+
+# Subagent roles — SSOT: WORKFLOW.md (this file)
+SUBAGENT_ROLES = (
+    IMPLEMENTATION_PLANNER, IMPLEMENTATION_AGENT, REVIEW_AGENT,
+    RESOURCE_PLANNER, EXPERIMENT_AGENT, LIVE_RUN_REVIEWER, RESULT_ANALYZER
+)
+
+# Artifact event names — SSOT: skills/research-op/scripts/events.py EVENT_NAMES
+EVENT_NAMES = (CHECKPOINT_SAVED, CANDIDATE_SUBMITTED, SENTINEL_WRITE, PHASE_MARKER, CHAIN_DONE)
+
+# Learnings events — SSOT: CLAUDE.md §Learnings Update Protocol
+LEARNINGS_EVENT = (
+    DIRECTIVE_CHANGE, VERDICT_FINALIZED, STATUS_CHANGED, TERMINAL_TRANSITION,
+    ADOPTION, SUPERSESSION, REOPEN
+)
+```
 
 ## Required Table Schemas
 
@@ -212,9 +263,9 @@ Result gate table (`results.html`):
 | Exp ID | Validity | Baseline | PLAN Gate | Observed Metric | Budget/Resource Use | Seed Status | Artifact Completeness | Verdict | Reason |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
-Allowed review verdicts: `pass`, `needs_fix`, `blocked`.
+Allowed review verdicts: `REVIEW_PASS`, `NEEDS_FIX`, `REVIEW_BLOCKED`.
 
-Allowed run statuses: `queued`, `running`, `stale`, `completed`, `failed`, `blocked`.
+Allowed run statuses: `QUEUED`, `RUNNING`, `STALE`, `COMPLETED`, `RUN_FAILED`, `RUN_HALTED`.
 
 ## Workflow
 
@@ -263,7 +314,7 @@ The main agent decides the implementation owner, owned scope, acceptance criteri
 
 The implementation owner must modify only owned files, follow local style, make the clearest concise minimal change, use appropriate time complexity, preserve out-of-scope behavior, and run focused checks when feasible.
 
-Implementation owner status is `ready_for_review` or `blocked`. Record ownership, status, changed files, commands, and validation in `tracker.html`.
+Implementation owner status is `READY_FOR_REVIEW` or `IMPL_BLOCKED`. Record ownership, status, changed files, commands, and validation in `tracker.html`.
 
 ### 3. Review Implementation
 
@@ -271,14 +322,14 @@ Dispatch multiple review agents for the completed implementation. Reviewers rece
 
 Each review agent checks its focus against the full context, including plan-clause match, clear local code style, concise implementation, minimal code-space impact, appropriate time complexity, preserved out-of-scope behavior, required runtime paths/logging/provenance, focused validation, and metric/evaluation consistency.
 
-Each review agent returns `pass`, `needs_fix`, or `blocked`. Every finding must be classified as `blocking`, `non_blocking`, `question`, or `invalid`, and blocking findings must cite concrete evidence and the violated plan, metric, runtime, or code contract.
+Each review agent returns `REVIEW_PASS`, `NEEDS_FIX`, or `REVIEW_BLOCKED`. Every finding must be classified as `BLOCKING`, `NON_BLOCKING`, `QUESTION`, or `INVALID_FINDING`, and blocking findings must cite concrete evidence and the violated plan, metric, runtime, or code contract.
 
-The main agent has final acceptance authority. It performs decision adjudication when needed and does not simply route every `needs_fix` back to implementation. It first decides whether findings are truly blocking, under-evidenced, duplicated, context errors, reviewer disagreements, or non-blocking concerns.
+The main agent has final acceptance authority. It performs decision adjudication when needed and does not simply route every `NEEDS_FIX` back to implementation. It first decides whether findings are truly blocking, under-evidenced, duplicated, context errors, reviewer disagreements, or non-blocking concerns.
 
 Decision adjudication output:
 - accepted blocking findings
 - rejected or downgraded findings with rationale
-- root cause category: code issue, context gap, plan ambiguity, reviewer disagreement, validation gap, or external blocker
+- root cause category: `CODE_ISSUE`, `CONTEXT_GAP`, `PLAN_AMBIGUITY`, `REVIEWER_DISAGREEMENT`, `VALIDATION_GAP`, or `EXTERNAL_BLOCKER`
 - one consolidated fix brief for the same implementation owner, or one targeted verification brief for reviewers
 - routing decision: `IMPLEMENTING`, `IMPLEMENTATION_REVIEW`, `READY_TO_LAUNCH`, or `BLOCKED`
 
@@ -327,18 +378,18 @@ Live check table update is mandatory and strict:
 - All 12 columns must be filled with verified values from the experiment agent's report and runtime artifacts (`Time`, `Exp ID`, `Agent`, `Run state`, `Last log`, `Progress`, `Latest metrics`, `Resource use`, `Artifacts`, `ETA`, `Live action`, `Next check`). Missing values render literal `unmeasured`; never silently leave a `<td>` from the prior cycle.
 - The `Time` field carries the report's local wall-clock timestamp (no timezone suffix), not the launch timestamp. Every timestamp on the page must use the same local clock so resume-time math reconciles. The `Next check` field carries an absolute or `+10 min`-style relative time consistent with the armed re-entry (`ScheduleWakeup` / `Monitor` / background `Bash`).
 - Emitting the §5 status line to the user without updating the live check row in the same turn is a workflow violation.
-- When a run closes (`completed` / `failed` / `blocked`), update the row one final time with the terminal state and `Live action`, then move the run's evidence path to `results.html`; do not delete the closing row in the same turn the run ends.
+- When a run closes (`COMPLETED` / `RUN_FAILED` / `RUN_HALTED`), update the row one final time with the terminal state and `Live action`, then move the run's evidence path to `results.html`; do not delete the closing row in the same turn the run ends.
 
-**Fact Propagation Contract (binding).** Every artifact that lands during a run — checkpoint save, candidate JSON export, sentinel write, phase marker, chain-done — is a "locked fact" that the main agent must propagate to *every* surface that owns a view of it in the same turn the artifact is observed. Owning surfaces:
+**Fact Propagation Contract (binding).** Every artifact that lands during a run — `CHECKPOINT_SAVED`, `CANDIDATE_SUBMITTED`, `SENTINEL_WRITE`, `PHASE_MARKER`, `CHAIN_DONE` — is a "locked fact" that the main agent must propagate to *every* surface that owns a view of it in the same turn the artifact is observed. Owning surfaces:
 
 | Event | Surfaces to update in the same turn |
 | --- | --- |
-| Directive change (user instruction adds a rule / redesigns an experiment / changes metric·baseline·scope) — not an artifact, so `scan-events` will not catch it; propagate by hand | the directive's typed home (`bindingRules[]` via `/research-op insert --target package-invariant`, or the owning plan/scope surface) + tracker Resume Block `lastAction`/`workflow-state` + registry `lastUpdated` |
-| Checkpoint save (`output/**/best_model.pt`) | `tracker.html` live-check row + `tracker.html` resource-allocation Status + `results.html` Track 1 + headline strip + result-gate row + sentinel write (if new best) + registry `experiments[i].status` for the closing phase |
-| Candidate JSON (`candidates/<label>/<dataset>/*.json`) | `results.html` Track 2 / Track 3 row + rerun of `summarize_results.py` |
-| Sentinel (`manifests/*.txt`) | `tracker.html` Resume Block + `results.html` headline + result-gate Observed metric + registry (`research_html/data/research-packages.js`) status fields + registry `experiments[i].status` for the sentinel's phase |
-| Phase marker (`--- P` / `### P` in chain log) | `tracker.html` live-check + `tracker.html` resource-allocation Status + registry `experiments[i].status` (`queued` → `running`, or `running` → `completed`/`failed`) + to-do tick for closed phase |
-| Chain done (`=== … done ===`) | `results.html` final tables + verdict chips + `next-action.html` route + registry `nextRoute`/`openRuns` + registry `experiments[i].status` for every phase the chain closed + tracker Resume Block + to-do |
+| `DIRECTIVE_CHANGE` (user instruction adds a rule / redesigns an experiment / changes metric·baseline·scope) — not an artifact, so `scan-events` will not catch it; propagate by hand | the directive's typed home (`bindingRules[]` via `/research-op insert --target package-invariant`, or the owning plan/scope surface) + tracker Resume Block `lastAction`/`workflow-state` + registry `lastUpdated` |
+| `CHECKPOINT_SAVED` (`output/**/best_model.pt`) | `tracker.html` live-check row + `tracker.html` resource-allocation Status + `results.html` Track 1 + headline strip + result-gate row + sentinel write (if new best) + registry `experiments[i].status` for the closing phase |
+| `CANDIDATE_SUBMITTED` (`candidates/<label>/<dataset>/*.json`) | `results.html` Track 2 / Track 3 row + rerun of `summarize_results.py` |
+| `SENTINEL_WRITE` (`manifests/*.txt`) | `tracker.html` Resume Block + `results.html` headline + result-gate Observed metric + registry (`research_html/data/research-packages.js`) status fields + registry `experiments[i].status` for the sentinel's phase |
+| `PHASE_MARKER` (`--- P` / `### P` in chain log) | `tracker.html` live-check + `tracker.html` resource-allocation Status + registry `experiments[i].status` (`QUEUED` → `RUNNING`, or `RUNNING` → `COMPLETED`/`RUN_FAILED`) + to-do tick for closed phase |
+| `CHAIN_DONE` (`=== … done ===`) | `results.html` final tables + verdict chips + `next-action.html` route + registry `nextRoute`/`openRuns` + registry `experiments[i].status` for every phase the chain closed + tracker Resume Block + to-do |
 
 The contract is enforced mechanically by `/research-op scan-events` (artifact detection) + `/research-op event <name>` (atomic fan-out). Each per-turn algorithm includes a **Step 3.5 — Propagation pass** between the tracker live-check update and the §5 status line:
 
@@ -351,24 +402,24 @@ The contract is enforced mechanically by `/research-op scan-events` (artifact de
 
 Skipping Step 3.5 while the report is non-empty is a workflow violation equivalent to skipping the live-check row update. The Stop Gate (§ Stop Gate below) also requires `/research-op scan-events` to return an empty report before `STOPPED` is allowed.
 
-Loop continuity: while any run is `queued`, `running`, or `stale`, the main agent must either be actively processing events or have a scheduled re-entry due within 10 minutes (`ScheduleWakeup(delaySeconds<=600)`, `Monitor` filtered on the run's stdout, or `Bash run_in_background` waiting on a terminal condition). Ending a turn while a run is open without an armed re-entry is a workflow violation. On every re-entry, emit one compact §5 status line per open experiment to the user before reasoning about the next action.
+Loop continuity: while any run is `QUEUED`, `RUNNING`, or `STALE`, the main agent must either be actively processing events or have a scheduled re-entry due within 10 minutes (`ScheduleWakeup(delaySeconds<=600)`, `Monitor` filtered on the run's stdout, or `Bash run_in_background` waiting on a terminal condition). Ending a turn while a run is open without an armed re-entry is a workflow violation. On every re-entry, emit one compact §5 status line per open experiment to the user before reasoning about the next action.
 
-If one expected report is missed, mark the run `stale`. If two expected reports are missed, dispatch a liveness check through the experiment agent or resource agent and route from verified state.
+If one expected report is missed, mark the run `STALE`. If two expected reports are missed, dispatch a liveness check through the experiment agent or resource agent and route from verified state.
 
 The experiment agent's routine report must include the PLAN objective, experiment purpose, config, PLAN-defined thresholds, latest metrics, logs, resource status, ETA, known risks, threshold evidence, issue classification, and recommended action.
 
-Early stop is allowed only when a PLAN-defined early-stop threshold is met. Do not early-stop from subjective trend judgment. If PLAN has no early-stop threshold, the only live-analysis actions are `continue`, `repair`, `ask_user`, or `blocked`.
+Early stop is allowed only when a PLAN-defined early-stop threshold is met. Do not early-stop from subjective trend judgment. If PLAN has no early-stop threshold, the only live-analysis actions are `CONTINUE_RUN`, `REPAIR`, `ASK_USER`, or `ESCALATE`.
 
-Dispatch a live run reviewer only for escalation: an `early_stop` or `repair` recommendation, ambiguous metric/runtime evidence, conflict between the experiment report and `plan.html`, repeated stale reports, high-cost resource decisions, or any case where independent live judgment would materially reduce risk.
+Dispatch a live run reviewer only for escalation: an `EARLY_STOP` or `REPAIR` recommendation, ambiguous metric/runtime evidence, conflict between the experiment report and `plan.html`, repeated stale reports, high-cost resource decisions, or any case where independent live judgment would materially reduce risk.
 
-An escalation reviewer returns `continue`, `early_stop`, `repair`, `ask_user`, or `blocked`, with evidence and minimum next action.
+An escalation reviewer returns `CONTINUE_RUN`, `EARLY_STOP`, `REPAIR`, `ASK_USER`, or `ESCALATE`, with evidence and minimum next action.
 
 The main agent decides the live-run action from verified run state, PLAN thresholds, the experiment-agent report, optional escalation-reviewer evidence, and runtime artifacts. Record a Step 5 `Decision` and `Evidence Used`.
 
 After each live decision, output exactly one compact user-facing line per open experiment:
 
 ```text
-<exp_name>: progress=<phase/epoch/iteration>; performance=<objective_metric=value plus gate/baseline relation>; est_time=<remaining time or expected finish time>; action=<continue/early_stop/repair/ask_user/blocked>
+<exp_name>: progress=<phase/epoch/iteration>; performance=<objective_metric=value plus gate/baseline relation>; est_time=<remaining time or expected finish time>; action=<CONTINUE_RUN/EARLY_STOP/REPAIR/ASK_USER/ESCALATE>
 ```
 
 Use the key metric tied to the research objective, not a full metric dump. If a field is not yet available, write a short placeholder such as `performance=pending(first_eval)` or `est_time=unknown`, and keep the detailed evidence in runtime artifacts and the latest live check table.
@@ -398,21 +449,21 @@ Revise `plan.html` only when the active executable plan changes. If `plan.html` 
 Allowed next actions:
 
 ```text
-run_next_experiment_from_step4
-fix_implementation
-revise_plan
-archive_or_stop
-ask_user
+RUN_NEXT_EXPERIMENT
+FIX_IMPLEMENTATION
+REVISE_PLAN
+TERMINATE
+ASK_USER
 ```
 
 Action routing:
 
 ```text
-run_next_experiment_from_step4 -> READY_TO_LAUNCH
-fix_implementation -> IMPLEMENTING
-revise_plan -> CONTEXT_LOADED after the approved plan.html revision, or BLOCKED if approval is needed
-archive_or_stop -> STOPPED
-ask_user -> BLOCKED
+RUN_NEXT_EXPERIMENT -> READY_TO_LAUNCH
+FIX_IMPLEMENTATION -> IMPLEMENTING
+REVISE_PLAN -> CONTEXT_LOADED after the approved plan.html revision, or BLOCKED if approval is needed
+TERMINATE -> STOPPED
+ASK_USER -> BLOCKED
 ```
 
 Record the selected action, target state, reason, and next concrete command or question in the `tracker.html` Resume Block.
@@ -444,4 +495,4 @@ You may end the current execution only in `BLOCKED` or `STOPPED`. Before ending:
 - runtime artifacts are located or missing artifacts are recorded
 - no open run is untracked
 - `/research-op scan-events` returns an empty report (cursor advanced past every artifact mtime); a non-empty report at the Stop Gate is a workflow violation
-- if any run is still `queued` / `running` / `stale`, a re-entry is armed (`ScheduleWakeup` <= 600 s, `Monitor`, or background `Bash`); ending without an armed re-entry is a violation, not a clean end. The correct end-of-turn shape during the loop is one compact §5 status line per open experiment followed by the schedule call — not a written summary.
+- if any run is still `QUEUED` / `RUNNING` / `STALE`, a re-entry is armed (`ScheduleWakeup` <= 600 s, `Monitor`, or background `Bash`); ending without an armed re-entry is a violation, not a clean end. The correct end-of-turn shape during the loop is one compact §5 status line per open experiment followed by the schedule call — not a written summary.

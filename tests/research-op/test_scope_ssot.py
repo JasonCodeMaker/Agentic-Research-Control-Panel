@@ -16,7 +16,7 @@ def _direction_node():
         "level": "direction",
         "parents": ["project/main"],
         "version": 1,
-        "status": "active",
+        "status": "ACTIVE",
         "yardstick": {
             "hypothesis": "contrastive pretrain helps recall",
             "metric": {"name": "Recall@10", "dir": "higher"},
@@ -50,7 +50,7 @@ def test_direction_transition_requires_user_xmodel_gate(tmp_path):
     log = tmp_path / "transitions.jsonl"
     node = _direction_node()
     with pytest.raises(RuleViolation):
-        scope_ssot.propose_transition(node, op="revise", gate="agent+async-ack", log_path=log)
+        scope_ssot.propose_transition(node, op="revise", gate="AGENT_DEFERRED_ACK", log_path=log)
     assert scope_ssot.read_log(log) == []  # reject-before-write: nothing appended
 
 
@@ -58,7 +58,7 @@ def test_direction_transition_accepts_correct_gate(tmp_path):
     log = tmp_path / "transitions.jsonl"
     node = _direction_node()
     scope_ssot.propose_transition(
-        node, op="revise", gate="user+xmodel-audit", log_path=log,
+        node, op="revise", gate="USER_CROSS_MODEL_AUDIT", log_path=log,
         trigger="exp#42", cause="metric saturated",
     )
     recs = scope_ssot.read_log(log)
@@ -68,15 +68,15 @@ def test_direction_transition_accepts_correct_gate(tmp_path):
 
 def test_propagation_invalidate_and_reopen():
     memory = [
-        {"id": "r1", "kind": "result", "metric": "Recall@10"},
-        {"id": "r2", "kind": "result", "metric": "nDCG@10"},
-        {"id": "i1", "kind": "idea", "failed_on_metric": "Recall@10"},
-        {"id": "i2", "kind": "idea", "failed_on_metric": "latency"},
+        {"id": "r1", "kind": "RESULT", "metric": "Recall@10"},
+        {"id": "r2", "kind": "RESULT", "metric": "nDCG@10"},
+        {"id": "i1", "kind": "IDEA", "failed_on_metric": "Recall@10"},
+        {"id": "i2", "kind": "IDEA", "failed_on_metric": "latency"},
     ]
     out = scope_ssot.propagate(old_metric="Recall@10", new_metric="nDCG@10", memory=memory)
-    assert set(out["invalidate"]) == {"r1"}
-    assert set(out["reopen"]) == {"i1"}
-    assert set(out["carry"]) == {"r2", "i2"}
+    assert set(out["INVALIDATE"]) == {"r1"}
+    assert set(out["REOPEN_IDEA"]) == {"i1"}
+    assert set(out["RETAIN"]) == {"r2", "i2"}
 
 
 def test_multihomed_refcount():
@@ -92,12 +92,12 @@ def _create_revise_log(tmp_path):
     """A two-transition log on one node: create v1 -> revise v2 (metric sharpened)."""
     log = tmp_path / "transitions.jsonl"
     n1 = _direction_node()
-    scope_ssot.propose_transition(n1, op="create", gate="user+xmodel-audit", log_path=log,
+    scope_ssot.propose_transition(n1, op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log,
                                   trigger="t0", cause="initial")
     n2 = _direction_node()
     n2["version"] = 2
     n2["yardstick"]["success_predicate"] = "Recall@10 >= baseline + 3"
-    scope_ssot.propose_transition(n2, op="revise", gate="user+xmodel-audit", log_path=log,
+    scope_ssot.propose_transition(n2, op="revise", gate="USER_CROSS_MODEL_AUDIT", log_path=log,
                                   trigger="exp#42", cause="metric saturated")
     return log
 
@@ -115,11 +115,11 @@ def test_fold_marks_archived_node(tmp_path):
     log = _create_revise_log(tmp_path)
     n3 = _direction_node()
     n3["version"] = 3
-    n3["status"] = "archived"
-    scope_ssot.propose_transition(n3, op="archive", gate="user+xmodel-audit", log_path=log,
+    n3["status"] = "ARCHIVED"
+    scope_ssot.propose_transition(n3, op="archive", gate="USER_CROSS_MODEL_AUDIT", log_path=log,
                                   trigger="t3", cause="superseded by v3")
     proj = scope_ssot.fold(scope_ssot.read_log(log))
-    assert proj["dir/contrastive-v2"]["status"] == "archived"
+    assert proj["dir/contrastive-v2"]["status"] == "ARCHIVED"
 
 
 def test_intent_returns_current_yardstick(tmp_path):

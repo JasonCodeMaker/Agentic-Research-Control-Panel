@@ -10,9 +10,10 @@ the matrix, change it here. The CLI looks up legality via is_legal().
 STATES = {
     "in-progress": ["CONTEXT_LOADED", "IMPLEMENTING", "IMPLEMENTATION_REVIEW",
                     "READY_TO_LAUNCH", "EXPERIMENT_RUNNING", "LIVE_ANALYSIS",
-                    "RESULT_ANALYSIS", "NEXT_ACTION_READY", "BLOCKED"],
-    "success":     ["ADOPTED_PENDING_ACK", "ADOPTED", "SUPERSEDED"],
-    "fail":        ["ARCHIVED", "ARCHIVED_REOPENABLE"],
+                    "RESULT_ANALYSIS", "NEXT_ACTION_READY", "BLOCKED",
+                    "DECISION_ADJUDICATION", "STOPPED"],
+    "success":     ["ADOPTED_UNCONFIRMED", "ADOPTED", "WIN_SUPERSEDED"],
+    "fail":        ["ARCHIVED", "ARCHIVED_CONDITIONAL"],
 }
 
 # Targets the matrix recognizes.
@@ -28,7 +29,7 @@ TARGETS = {
     "results-gate-row", "results-block", "results-verdict",
     "analysis-rule", "analysis-insight",
     "doc-file", "doc-card",
-    "ack-slot",
+    "approval-ack-slot",
     "last-updated-time",
 }
 
@@ -80,11 +81,13 @@ UPDATE_LEGAL = {
     "openRuns":             {("in-progress", s) for s in STATES["in-progress"]},
     "currentBlocker":       {("in-progress", s) for s in STATES["in-progress"]},
     "experiments-status":   {("in-progress", s) for s in STATES["in-progress"]},
-    "terminationMessage":   {("success", s) for s in STATES["success"]} | {("fail", s) for s in STATES["fail"]},
-    "adoptionPath":         {("success", "ADOPTED_PENDING_ACK"), ("success", "ADOPTED")},
-    "supersededBy":         {("success", "SUPERSEDED")},
-    "reopenTrigger":        {("fail", "ARCHIVED_REOPENABLE")},
-    "ack-slot":             {(c, s) for c, statuses in STATES.items() for s in statuses},
+    "terminationMessage":   ({("success", s) for s in STATES["success"]}
+                             | {("fail", s) for s in STATES["fail"]}
+                             | {("in-progress", "STOPPED")}),
+    "adoptionPath":         {("success", "ADOPTED_UNCONFIRMED"), ("success", "ADOPTED")},
+    "supersededBy":         {("success", "WIN_SUPERSEDED")},
+    "reopenTrigger":        {("fail", "ARCHIVED_CONDITIONAL")},
+    "approval-ack-slot":    {(c, s) for c, statuses in STATES.items() for s in statuses},
     "results-verdict":      {("in-progress", "RESULT_ANALYSIS")},
     "last-updated-time":    {(c, s) for c, statuses in STATES.items() for s in statuses},
 }

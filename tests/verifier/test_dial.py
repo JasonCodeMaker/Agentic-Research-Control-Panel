@@ -8,20 +8,20 @@ import verifier  # noqa: E402
 
 
 def test_supervised_pauses_at_every_gate():
-    assert verifier.pauses_at("supervised", "terminal") is True
-    assert verifier.pauses_at("supervised", "intermediate") is True
+    assert verifier.pauses_at("SUPERVISED", "TERMINAL") is True
+    assert verifier.pauses_at("SUPERVISED", "INTERMEDIATE") is True
 
 
 def test_checkpoints_pauses_only_at_terminal_gates():
-    assert verifier.pauses_at("checkpoints", "terminal") is True
-    assert verifier.pauses_at("checkpoints", "intermediate") is False
+    assert verifier.pauses_at("CHECKPOINTED", "TERMINAL") is True
+    assert verifier.pauses_at("CHECKPOINTED", "INTERMEDIATE") is False
 
 
 def test_async_never_blocks():
-    assert verifier.blocks("async") is False
-    assert verifier.pauses_at("async", "terminal") is False
+    assert verifier.blocks("DEFERRED") is False
+    assert verifier.pauses_at("DEFERRED", "TERMINAL") is False
 
 
 def test_autonomous_requires_cross_family_judge():
-    assert verifier.INDEPENDENCE_TABLE["autonomous"] == "different-family"
-    assert verifier.blocks("autonomous") is False
+    assert verifier.INDEPENDENCE_TABLE["AUTONOMOUS"] == "CROSS_FAMILY"
+    assert verifier.blocks("AUTONOMOUS") is False

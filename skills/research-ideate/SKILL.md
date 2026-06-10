@@ -48,10 +48,10 @@ python3 skills/research-ideate/scripts/banlist.py reopen \
 ```
 
 Banlist file schema — JSON array of entries. `kind` and `failed_on_metric` are **required** for the
-reopen logic: `scope_ssot.propagate` only reopens an entry whose `kind == "idea"` and whose
+reopen logic: `scope_ssot.propagate` only reopens an entry whose `kind == "IDEA"` and whose
 `failed_on_metric` equals the old metric.
 ```json
-{"id": "...", "kind": "idea", "hypothesis": "...", "failed_on_metric": "...", "scope_version": 1, "banned_at": "..."}
+{"id": "...", "kind": "IDEA", "hypothesis": "...", "failed_on_metric": "...", "scope_version": 1, "banned_at": "..."}
 ```
 
 ---
@@ -133,7 +133,7 @@ before and after the revise (supplied by the orchestrator — they are not store
 import json
 memory = json.load(open("outputs/<pkg>/ideate/banlist.json"))   # entries carry kind + failed_on_metric
 result = scope_ssot.propagate(old_metric=old_metric, new_metric=new_metric, memory=memory)
-reopened_ids = result["reopen"]   # ids whose failure condition no longer applies
+reopened_ids = result["REOPEN_IDEA"]   # ids whose failure condition no longer applies
 ```
 
 Then prune those entries from the banlist file:

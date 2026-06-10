@@ -39,7 +39,10 @@
   }
 
   function normalizeCategory(category) {
-    return String(category || "brainstorm").toLowerCase();
+    // Package category is one of the lane facets (in-progress / success / fail).
+    // Brainstorm is no longer a package category (it is the ideas-only lane), so
+    // there is no brainstorm fallback here; a category-less package matches no lane.
+    return String(category || "").toLowerCase();
   }
 
   function categories() {
@@ -201,8 +204,8 @@
     }
     var nodes = ids.map(function (id) { return projection[id]; }).filter(Boolean);
     var projects = nodes.filter(function (node) { return node.level === "project"; });
-    var directions = nodes.filter(function (node) { return node.level === "direction" && node.status === "active"; });
-    var tasks = nodes.filter(function (node) { return node.level === "task" && node.status === "active"; });
+    var directions = nodes.filter(function (node) { return node.level === "direction" && node.status === "ACTIVE"; });
+    var tasks = nodes.filter(function (node) { return node.level === "task" && node.status === "ACTIVE"; });
     var projectHtml = projects.length
       ? projects.map(scopeProjectHtml).join("")
       : '<article class="scope-node scope-node-project"><h3>Project</h3><p class="card-text">No Project node found.</p></article>';
@@ -480,9 +483,13 @@
     var schema = statusSchema()[normalizeCategory(pkg.category)];
     if (!schema) return [];
     var status = packageStatus(pkg);
-    var required = [].concat(schema.required && schema.required._all ? schema.required._all : []);
-    if (status && schema.required && schema.required[status]) {
-      required = required.concat(schema.required[status]);
+    var rules = schema.required || {};
+    // The _all trio applies to every state except those listed in _all_exempt
+    // (STOPPED is terminal-within-lane and only needs its own per-status fields).
+    var exempt = (rules._all_exempt || []).indexOf(status) >= 0;
+    var required = [].concat(!exempt && rules._all ? rules._all : []);
+    if (status && rules[status]) {
+      required = required.concat(rules[status]);
     }
     var missing = [];
     required.forEach(function (field) {
@@ -510,9 +517,10 @@
   }
 
   function verdictCounts(rows) {
-    var c = { pass: 0, fail: 0, inconclusive: 0 };
+    // EXPERIMENT_VERDICT values are SCREAMING_SNAKE (PASS/FAIL/INCONCLUSIVE/DIAGNOSTIC).
+    var c = { PASS: 0, FAIL: 0, INCONCLUSIVE: 0, DIAGNOSTIC: 0 };
     rows.forEach(function (r) {
-      var v = (r && r.verdict) ? String(r.verdict).toLowerCase() : "";
+      var v = (r && r.verdict) ? String(r.verdict).toUpperCase() : "";
       if (c[v] != null) c[v] += 1;
     });
     return c;
@@ -526,9 +534,9 @@
     var counts = verdictCounts(rows);
     var head = [
       '<div class="methods-tried-summary">',
-      '<span class="chip chip-verdict-pass" data-verdict="pass">pass ' + counts.pass + "</span>",
-      '<span class="chip chip-verdict-fail" data-verdict="fail">fail ' + counts.fail + "</span>",
-      '<span class="chip chip-verdict-inc" data-verdict="inconclusive">inconclusive ' + counts.inconclusive + "</span>",
+      '<span class="chip chip-verdict-pass" data-verdict="PASS">PASS ' + counts.PASS + "</span>",
+      '<span class="chip chip-verdict-fail" data-verdict="FAIL">FAIL ' + counts.FAIL + "</span>",
+      '<span class="chip chip-verdict-inc" data-verdict="INCONCLUSIVE">INCONCLUSIVE ' + counts.INCONCLUSIVE + "</span>",
       '<span class="methods-tried-count">' + rows.length + " methods tried</span>",
       "</div>",
     ].join("");
@@ -537,7 +545,7 @@
     var list = [
       '<ul class="methods-tried-mini">',
       shown.map(function (r) {
-        var v = (r && r.verdict) ? String(r.verdict).toLowerCase() : "unmeasured";
+        var v = (r && r.verdict) ? String(r.verdict).toUpperCase() : "unmeasured";
         return [
           '<li data-verdict="' + htmlEscape(v) + '">',
           '<span class="verdict-tag verdict-' + htmlEscape(v) + '">' + htmlEscape(v) + "</span>",
@@ -576,21 +584,10 @@
     ].join("");
   }
 
-  function directionTileHtml(pkg) {
-    if (normalizeCategory(pkg.category) !== "brainstorm") return "";
-    var spine = pkg.contributionSpineFlag ? htmlEscape(pkg.contributionSpineFlag) : "unmeasured";
-    return [
-      '<div class="card-tile card-tile-direction" data-tile="direction">',
-      '<div class="tile-label">Direction</div>',
-      '<p class="tile-message">' + fieldOrUnmeasured(pkg.direction) + "</p>",
-      '<p class="tile-meta"><strong>Contribution spine:</strong> ' + spine + "</p>",
-      pkg.promotedTo ? '<p class="tile-meta"><strong>Promoted to:</strong> ' + htmlEscape(pkg.promotedTo) + "</p>" : "",
-      "</div>",
-    ].join("");
-  }
-
   function terminalTileHtml(pkg) {
-    return postmortemTileHtml(pkg) + adoptionTileHtml(pkg) + directionTileHtml(pkg);
+    // Brainstorm is no longer a package category, so no Direction tile is rendered
+    // for packages; pre-package ideas live on the ideas-only brainstorm lane.
+    return postmortemTileHtml(pkg) + adoptionTileHtml(pkg);
   }
 
   function lastUpdatedHtml(pkg) {
@@ -602,7 +599,7 @@
   function packageCardHtml(pkg) {
     var status = packageStatus(pkg) || "unmeasured";
     var cat = normalizeCategory(pkg.category);
-    var isTerminal = cat === "success" || cat === "fail" || cat === "brainstorm";
+    var isTerminal = cat === "success" || cat === "fail";
     return [
       '<a class="package-card package-link-card" href="' + htmlEscape(relativeDetailPath(pkg)) + '"',
       ' data-package-id="' + htmlEscape(pkg.id) + '"',
@@ -829,7 +826,7 @@
       '<div class="kv-grid">',
       '<div class="k">State</div><div data-workflow-state>Read Tracker Resume Block, then verify live/runtime state.</div>',
       '<div class="k">Active Gate</div><div data-gate>Use the active plan metrics, budgets, baselines, and stop gates as authority.</div>',
-      '<div class="k">Next Route</div><div data-route>run_next_experiment_from_step4 | fix_implementation | revise_plan | archive_or_stop | ask_user</div>',
+      '<div class="k">Next Route</div><div data-route>RUN_NEXT_EXPERIMENT | FIX_IMPLEMENTATION | REVISE_PLAN | TERMINATE | ASK_USER</div>',
       '<div class="k">Decision Record</div><div data-field="decision-record">Persist only concise Decision / Evidence Used in the owning module.</div>',
       "</div>",
       "</article>",
@@ -935,9 +932,9 @@
       '<div class="module-header"><span class="idx">01</span><h2>Tracker Cards</h2></div>',
       '<div class="subcard-grid">',
       '<article class="module-card" data-card="resume-block"><h3>Resume Block</h3><div class="kv-grid"><div class="k">Current State</div><div data-workflow-state>CONTEXT_LOADED | IMPLEMENTING | READY_TO_LAUNCH | EXPERIMENT_RUNNING | RESULT_ANALYSIS | BLOCKED | STOPPED</div><div class="k">Active Plan</div><div data-field="active-plan">Plan section, spec section, or experiment name.</div><div class="k">Last Action</div><div data-field="last-action">Timestamp plus command, edit, or observation.</div><div class="k">Next Action</div><div data-next-action>Single concrete next step.</div><div class="k">Artifact Root</div><code data-artifact="artifact-root">artifacts/research/...</code><div class="k">Open Runs</div><div data-field="open-runs">session/job ids or none.</div><div class="k">Blocking Issue</div><div data-field="blocking-issue">none or concrete blocker.</div></div></article>',
-      '<article class="module-card" data-card="implementation-review"><h3>Implementation Review</h3><table class="data-table" data-table="implementation-review"><thead><tr><th>Change ID</th><th>Purpose</th><th>Unit</th><th>Owned Files</th><th>Reviewer Verdict</th><th>Finding Class</th><th>Required Fix</th><th>Main Decision</th><th>Validation</th></tr></thead><tbody><tr><td>change_id</td><td>purpose</td><td>unit</td><td>files</td><td>pass|needs_fix|blocked</td><td>blocking|non_blocking|question|invalid</td><td>fix</td><td data-decision>Decision / Evidence Used</td><td>checks</td></tr></tbody></table></article>',
-      '<article class="module-card" data-card="resource-allocation"><h3>Resource Allocation</h3><table class="data-table" data-table="resource-allocation"><thead><tr><th>Exp ID</th><th>Purpose</th><th>Dependency</th><th>Target</th><th>Capacity</th><th>Command/CWD/Env</th><th>Session/Job</th><th>Artifact Root</th><th>Log Path</th><th>Status</th></tr></thead><tbody><tr><td>exp_id</td><td>purpose</td><td>dependency</td><td>resource/job</td><td>live snapshot</td><td><code class="command">command</code></td><td>session</td><td>artifact root</td><td>log</td><td>queued|running|completed|failed|blocked</td></tr></tbody></table></article>',
-      '<article class="module-card" data-card="latest-live-check"><h3>Latest Live Check</h3><table class="data-table" data-table="live-check"><thead><tr><th>Time</th><th>Exp ID</th><th>Run State</th><th>Progress</th><th>Latest Metrics</th><th>Resource Use</th><th>Artifact Status</th><th>ETA</th><th>Live Action</th><th>Next Check</th></tr></thead><tbody><tr><td>time</td><td>exp_id</td><td>running|stale|completed</td><td>phase/epoch</td><td>objective metric only</td><td>resource/job</td><td>ok|missing</td><td>eta</td><td>continue|repair|ask_user|blocked</td><td>time</td></tr></tbody></table><p>Keep only the latest live check here. Detailed logs belong in artifacts.</p></article>',
+      '<article class="module-card" data-card="implementation-review"><h3>Implementation Review</h3><table class="data-table" data-table="implementation-review"><thead><tr><th>Change ID</th><th>Purpose</th><th>Unit</th><th>Owned Files</th><th>Reviewer Verdict</th><th>Finding Class</th><th>Required Fix</th><th>Main Decision</th><th>Validation</th></tr></thead><tbody><tr><td>change_id</td><td>purpose</td><td>unit</td><td>files</td><td>REVIEW_PASS|NEEDS_FIX|REVIEW_BLOCKED</td><td>BLOCKING|NON_BLOCKING|QUESTION|INVALID_FINDING</td><td>fix</td><td data-decision>Decision / Evidence Used</td><td>checks</td></tr></tbody></table></article>',
+      '<article class="module-card" data-card="resource-allocation"><h3>Resource Allocation</h3><table class="data-table" data-table="resource-allocation"><thead><tr><th>Exp ID</th><th>Purpose</th><th>Dependency</th><th>Target</th><th>Capacity</th><th>Command/CWD/Env</th><th>Session/Job</th><th>Artifact Root</th><th>Log Path</th><th>Status</th></tr></thead><tbody><tr><td>exp_id</td><td>purpose</td><td>dependency</td><td>resource/job</td><td>live snapshot</td><td><code class="command">command</code></td><td>session</td><td>artifact root</td><td>log</td><td>QUEUED|RUNNING|COMPLETED|RUN_FAILED|RUN_HALTED</td></tr></tbody></table></article>',
+      '<article class="module-card" data-card="latest-live-check"><h3>Latest Live Check</h3><table class="data-table" data-table="live-check"><thead><tr><th>Time</th><th>Exp ID</th><th>Run State</th><th>Progress</th><th>Latest Metrics</th><th>Resource Use</th><th>Artifact Status</th><th>ETA</th><th>Live Action</th><th>Next Check</th></tr></thead><tbody><tr><td>time</td><td>exp_id</td><td>RUNNING|STALE|COMPLETED</td><td>phase/epoch</td><td>objective metric only</td><td>resource/job</td><td>ok|missing</td><td>eta</td><td>CONTINUE_RUN|REPAIR|ASK_USER|ESCALATE</td><td>time</td></tr></tbody></table><p>Keep only the latest live check here. Detailed logs belong in artifacts.</p></article>',
       '<article class="module-card" data-card="launch-command"><h3>Launch Command Template</h3><pre class="code-box"><code id="tracker-launch-command" class="command">run-experiment-command --config configs/experiment.yaml --output artifacts/research/...</code></pre><button class="copy-button" type="button" data-copy-target="#tracker-launch-command">Copy Command</button></article>',
       '<article class="module-card" data-card="decision-log"><h3>Concise Decision</h3><p data-decision>Decision: route or judgment. Evidence Used: files, artifacts, runtime facts, or subagent reports.</p></article>',
       "</div>",
@@ -951,11 +948,11 @@
       '<div class="module-header"><span class="idx">01</span><h2>Result Cards</h2></div>',
       '<div class="subcard-grid">',
       '<article class="module-card exp-card" data-exp-id="template"><h3>Exp_Name (date)</h3><div class="metric-strip"><div class="metric-card"><div class="k">Validity</div><div class="v" data-field="validity">--</div></div><div class="metric-card"><div class="k">Primary</div><div class="v" data-metric="primary">--</div></div><div class="metric-card"><div class="k">Budget</div><div class="v" data-metric="budget">--</div></div><div class="metric-card"><div class="k">Verdict</div><div class="v" data-decision>--</div></div></div></article>',
-      '<article class="module-card" data-card="result-gate"><h3>Result Gate</h3><table class="data-table" data-table="result-gate"><thead><tr><th>Exp ID</th><th>Validity</th><th>Baseline</th><th>PLAN Gate</th><th>Observed Metric</th><th>Budget/Resource Use</th><th>Seed Status</th><th>Artifact Completeness</th><th>Verdict</th><th>Reason</th></tr></thead><tbody><tr><td>exp_id</td><td>valid|invalid</td><td>baseline</td><td>gate</td><td>metric</td><td>budget</td><td>seed</td><td>artifacts</td><td data-decision>pass|fail|diagnostic</td><td>reason</td></tr></tbody></table></article>',
+      '<article class="module-card" data-card="result-gate"><h3>Result Gate</h3><table class="data-table" data-table="result-gate"><thead><tr><th>Exp ID</th><th>Validity</th><th>Baseline</th><th>PLAN Gate</th><th>Observed Metric</th><th>Budget/Resource Use</th><th>Seed Status</th><th>Artifact Completeness</th><th>Verdict</th><th>Reason</th></tr></thead><tbody><tr><td>exp_id</td><td>VALID|PARTIAL|RESULT_FAIL</td><td>baseline</td><td>gate</td><td>metric</td><td>budget</td><td>seed</td><td>artifacts</td><td data-decision>PASS|FAIL|INCONCLUSIVE|DIAGNOSTIC</td><td>reason</td></tr></tbody></table></article>',
       '<article class="module-card" data-card="artifact-verification"><h3>Artifact Verification</h3><div class="artifact-list"><div class="artifact-row"><div class="kind">primary artifact</div><code data-artifact="primary-artifact">artifacts/research/.../primary_output</code></div><div class="artifact-row"><div class="kind">log</div><code data-artifact="log">artifacts/research/.../logs/run.log</code></div><div class="artifact-row"><div class="kind">summary</div><code data-artifact="summary">artifacts/research/.../summaries/result.json</code></div></div><p>Before recording numbers, verify artifacts exist, match the experiment id/config, and were modified after launch.</p></article>',
       '<article class="module-card" data-card="analysis"><h3>Supported Claims</h3><p data-field="analysis">Concise interpretation tied to PLAN objective, gates, baseline, budget, seed status, and artifact completeness.</p></article>',
       '<article class="module-card" data-card="unsupported-claims"><h3>Unsupported Claims</h3><p data-field="unsupported-claims">List claims this result does not support, including metric, seed, budget, route, or rerank limitations.</p></article>',
-      '<article class="module-card" data-card="next-action"><h3>Step 7 Next Action</h3><div class="kv-grid"><div class="k">Route</div><div data-route>run_next_experiment_from_step4 | fix_implementation | revise_plan | archive_or_stop | ask_user</div><div class="k">Reason</div><div data-field="next-action-reason">Apply PLAN gates to verified evidence.</div><div class="k">Decision</div><div data-decision>Decision / Evidence Used</div></div></article>',
+      '<article class="module-card" data-card="next-action"><h3>Step 7 Next Action</h3><div class="kv-grid"><div class="k">Route</div><div data-route>RUN_NEXT_EXPERIMENT | FIX_IMPLEMENTATION | REVISE_PLAN | TERMINATE | ASK_USER</div><div class="k">Reason</div><div data-field="next-action-reason">Apply PLAN gates to verified evidence.</div><div class="k">Decision</div><div data-decision>Decision / Evidence Used</div></div></article>',
       "</div>",
       "</section>",
     ].join("");
@@ -977,18 +974,20 @@
     ].join("");
   }
 
+  // Page slugs match the physical filenames created by create_research_package.py
+  // (Python is authoritative). The landing page slug is "index" (index.html), not
+  // "overview". Brainstorm is not a stage page (the brainstorm lane is ideas-only).
   var STAGE_PAGES = [
-    { slug: "overview", label: "Overview", href: "index.html" },
+    { slug: "index", label: "Overview", href: "index.html" },
     { slug: "plan", label: "Plan", href: "plan.html" },
     { slug: "implementation", label: "Implementation", href: "implementation.html" },
     { slug: "results", label: "Results", href: "results.html" },
     { slug: "analysis", label: "Analysis", href: "analysis.html" },
     { slug: "tracker", label: "Tracker", href: "tracker.html" },
     { slug: "docs", label: "Docs", href: "docs/" },
-    { slug: "brainstorm", label: "Brainstorm", href: "brainstorm.html" },
   ];
 
-  var ALWAYS_PRESENT_PAGES = ["overview", "tracker", "docs"];
+  var ALWAYS_PRESENT_PAGES = ["index", "tracker", "docs"];
 
   function currentPackage() {
     var id = window.RESEARCH_PACKAGE_ID;
@@ -1040,13 +1039,9 @@
     var pkg = currentPackage();
     if (!pkg) return;
     var present = pkg.pages || [];
-    var category = normalizeCategory(pkg.category);
     var prefix = packagePrefix();
     var current = document.body ? document.body.getAttribute("data-page") : null;
-    var html = STAGE_PAGES.filter(function (p) {
-      if (p.slug === "brainstorm") return category === "brainstorm";
-      return true;
-    }).map(function (p) {
+    var html = STAGE_PAGES.map(function (p) {
       var isPresent = present.indexOf(p.slug) >= 0 || ALWAYS_PRESENT_PAGES.indexOf(p.slug) >= 0;
       var href = prefix + p.href;
       var aria = p.slug === current ? ' aria-current="page"' : "";
@@ -1084,7 +1079,8 @@
     if (!summary) return;
     var rows = document.querySelectorAll('[data-table="result-gate"] tbody tr');
     if (!rows.length) return;
-    var counts = { valid: 0, diagnostic_only: 0, failed: 0, missing: 0 };
+    // RESULT_VALIDITY buckets (SCREAMING_SNAKE data-validity values).
+    var counts = { VALID: 0, PARTIAL: 0, RESULT_FAIL: 0, UNMEASURED: 0, DIAGNOSTIC_ONLY: 0, MISSING: 0 };
     rows.forEach(function (tr) {
       var cell = tr.querySelector("[data-validity]");
       if (!cell) return;
@@ -1110,7 +1106,7 @@
     host.innerHTML = items.map(function (e) {
       var id = e && e.id ? String(e.id) : "unmeasured";
       var label = e && e.label ? String(e.label) : "";
-      var status = e && e.status ? String(e.status) : "pending";
+      var status = e && e.status ? String(e.status) : "QUEUED";
       var run = e && e.runLink ? String(e.runLink) : "tracker.html#resource-allocation";
       return [
         '<div class="plan-status-row" data-exp-status-binding="' + htmlEscape(id) + '">',
@@ -1243,7 +1239,7 @@
       "</tr></thead>",
       "<tbody>",
       rows.map(function (r) {
-        var v = (r && r.verdict) ? String(r.verdict).toLowerCase() : "unmeasured";
+        var v = (r && r.verdict) ? String(r.verdict).toUpperCase() : "unmeasured";
         var ev = r && r.evidencePath ? '<code>' + htmlEscape(r.evidencePath) + '</code>' : unmeasuredHtml();
         return [
           '<tr data-verdict="' + htmlEscape(v) + '">',
@@ -1313,15 +1309,14 @@
   }
 
   function learningsHeroHtml(pkgs) {
-    var counts = { adopted: 0, pending: 0, superseded: 0, archived: 0, reopenable: 0, abandoned: 0 };
+    var counts = { adopted: 0, pending: 0, superseded: 0, archived: 0, reopenable: 0 };
     pkgs.forEach(function (p) {
       var s = packageStatus(p);
       if (s === "ADOPTED") counts.adopted += 1;
-      else if (s === "ADOPTED_PENDING_ACK") counts.pending += 1;
-      else if (s === "SUPERSEDED") counts.superseded += 1;
+      else if (s === "ADOPTED_UNCONFIRMED") counts.pending += 1;
+      else if (s === "WIN_SUPERSEDED") counts.superseded += 1;
       else if (s === "ARCHIVED") counts.archived += 1;
-      else if (s === "ARCHIVED_REOPENABLE") counts.reopenable += 1;
-      else if (s === "ABANDONED") counts.abandoned += 1;
+      else if (s === "ARCHIVED_CONDITIONAL") counts.reopenable += 1;
     });
     return [
       '<section class="learnings-hero" data-card="learnings-hero">',
@@ -1333,8 +1328,7 @@
       '<div class="stat-cell"><div class="k">Pending ack</div><div class="v">' + counts.pending + "</div></div>",
       '<div class="stat-cell"><div class="k">Superseded</div><div class="v">' + counts.superseded + "</div></div>",
       '<div class="stat-cell"><div class="k">Archived (fail)</div><div class="v">' + counts.archived + "</div></div>",
-      '<div class="stat-cell"><div class="k">Archived · reopenable</div><div class="v">' + counts.reopenable + "</div></div>",
-      '<div class="stat-cell"><div class="k">Abandoned (brainstorm)</div><div class="v">' + counts.abandoned + "</div></div>",
+      '<div class="stat-cell"><div class="k">Archived · conditional</div><div class="v">' + counts.reopenable + "</div></div>",
       "</div>",
       "</section>",
     ].join("");
@@ -1346,20 +1340,18 @@
     var all = packages().slice();
     var adopted = all.filter(function (p) {
       var s = packageStatus(p);
-      return s === "ADOPTED" || s === "ADOPTED_PENDING_ACK" || s === "SUPERSEDED";
+      return s === "ADOPTED" || s === "ADOPTED_UNCONFIRMED" || s === "WIN_SUPERSEDED";
     });
     var failed = all.filter(function (p) {
       var s = packageStatus(p);
-      return s === "ARCHIVED" || s === "ARCHIVED_REOPENABLE";
+      return s === "ARCHIVED" || s === "ARCHIVED_CONDITIONAL";
     });
-    var reopenable = all.filter(function (p) { return packageStatus(p) === "ARCHIVED_REOPENABLE"; });
-    var abandoned = all.filter(function (p) { return packageStatus(p) === "ABANDONED"; });
+    var reopenable = all.filter(function (p) { return packageStatus(p) === "ARCHIVED_CONDITIONAL"; });
     root.innerHTML = [
       learningsHeroHtml(all),
       learningsGroupHtml("Adopted wins", adopted, { id: "adopted", kind: "success" }),
       learningsGroupHtml("Failed attempts", failed, { id: "failed", kind: "fail" }),
-      learningsGroupHtml("Reopenable archive", reopenable, { id: "reopenable", kind: "fail" }),
-      learningsGroupHtml("Abandoned brainstorm directions", abandoned, { id: "abandoned", kind: "brainstorm" }),
+      learningsGroupHtml("Conditional archive", reopenable, { id: "reopenable", kind: "fail" }),
     ].join("");
   }
 
@@ -1507,7 +1499,7 @@
       html = '<p class="card-text"><b>' + htmlEscape(h.metricLabel || "Metric") + ":</b> " +
              '<span class="num">' + htmlEscape(h.value || "unmeasured") + "</span>" +
              (h.evidencePath ? ' &middot; <code>' + htmlEscape(h.evidencePath) + "</code>" : "") + "</p>";
-    } else if (kind === "baselines") {
+    } else if (kind === "baseline") {
       var rows = Array.isArray(h.baselines) ? h.baselines : [];
       html = "<ul>" + rows.map(function (b) {
         return "<li><code>" + htmlEscape(b.id || "baseline") + "</code> &mdash; " +
@@ -1561,15 +1553,15 @@
     if (!Array.isArray(exps) || !exps.length) return { nextEligible: null, runningNow: null };
     var byId = {};
     exps.forEach(function (e) { if (e && e.id) byId[e.id] = e; });
-    var running = exps.filter(function (e) { return e && e.status === "running"; }).map(function (e) { return e.id; });
+    var running = exps.filter(function (e) { return e && e.status === "RUNNING"; }).map(function (e) { return e.id; });
     var next = null;
     for (var i = 0; i < exps.length; i++) {
       var e = exps[i];
-      if (!e || e.status !== "pending") continue;
+      if (!e || e.status !== "QUEUED") continue;
       var after = Array.isArray(e.after) ? e.after : [];
       var depsDone = after.every(function (d) {
         var dep = byId[d];
-        return dep && (dep.status === "completed" || dep.status === "skipped");
+        return dep && (dep.status === "COMPLETED" || dep.status === "SKIPPED");
       });
       if (depsDone) { next = e.id; break; }
     }
@@ -1594,7 +1586,7 @@
     host.innerHTML = exps.map(function (e) {
       var id = e && e.id ? String(e.id) : "unmeasured";
       var label = e && e.label ? String(e.label) : "";
-      var status = e && e.status ? String(e.status) : "pending";
+      var status = e && e.status ? String(e.status) : "QUEUED";
       var purpose = e && e.purpose ? String(e.purpose) : "unmeasured";
       var output = e && e.output ? String(e.output) : "unmeasured";
       var gate = e && (e.gatePredicate || e.gate) ? String(e.gatePredicate || e.gate) : "unmeasured";
@@ -1643,7 +1635,7 @@
     });
     host.innerHTML = exps.map(function (e) {
       var id = e && e.id ? String(e.id) : "unmeasured";
-      var status = e && e.status ? String(e.status) : "pending";
+      var status = e && e.status ? String(e.status) : "QUEUED";
       var nums = byPhase[id] || [];
       var reuse = nums.length === 0 ? "true" : "false";
       var nlabel = nums.length ? nums.join("+") : "&mdash;";
@@ -1676,13 +1668,15 @@
   }
 
   function rollupTestState(tests) {
+    // Change-block test.state input values use the EXPERIMENT_VERDICT vocabulary
+    // (PASS/FAIL/NOT_APPLICABLE); "pending" is a test-not-yet-run state.
     if (!Array.isArray(tests) || !tests.length) return { state: "pending", text: "0 tests" };
     var pass = 0, fail = 0, pending = 0, na = 0;
     tests.forEach(function (t) {
-      var s = t && t.state ? String(t.state) : "pending";
-      if (s === "pass") pass++;
-      else if (s === "fail") fail++;
-      else if (s === "n/a") na++;
+      var s = t && t.state ? String(t.state).toUpperCase() : "PENDING";
+      if (s === "PASS") pass++;
+      else if (s === "FAIL") fail++;
+      else if (s === "NOT_APPLICABLE") na++;
       else pending++;
     });
     var state = fail ? "fail" : (pending ? (pass ? "partial" : "pending") : (pass ? "pass" : "pending"));
@@ -1692,16 +1686,16 @@
 
   function changeTestsTodoHtml(tests) {
     if (!Array.isArray(tests) || !tests.length) {
-      return '<li class="test-row" data-state="pending"><span class="test-state-icon">&#9675;</span> <em>no tests declared</em></li>';
+      return '<li class="test-row" data-state="PENDING"><span class="test-state-icon">&#9675;</span> <em>no tests declared</em></li>';
     }
-    var icons = { pass: "&#9989;", fail: "&#10060;", pending: "&#9675;", "n/a": "&oslash;" };
+    var icons = { PASS: "&#9989;", FAIL: "&#10060;", PENDING: "&#9675;", NOT_APPLICABLE: "&oslash;" };
     return tests.map(function (t) {
-      var s = t && t.state ? String(t.state) : "pending";
+      var s = t && t.state ? String(t.state).toUpperCase() : "PENDING";
       var id = t && t.testId ? String(t.testId) : "test-id";
       var note = t && t.note ? String(t.note) : "";
       var ev = t && t.evidencePath ? String(t.evidencePath) : "";
       return '<li class="test-row" data-state="' + htmlEscape(s) + '">' +
-             '<span class="test-state-icon">' + (icons[s] || icons.pending) + "</span> " +
+             '<span class="test-state-icon">' + (icons[s] || icons.PENDING) + "</span> " +
              '<code>' + htmlEscape(id) + "</code>" +
              (note ? " &mdash; " + htmlEscape(note) : "") +
              (ev ? ' &middot; <code>' + htmlEscape(ev) + "</code>" : "") +
@@ -1827,7 +1821,7 @@
       html += "<h3>" + htmlEscape(phase) + "</h3>";
       byPhase[phase].forEach(function (d) {
         var paths = (d && d.paths) || {};
-        var state = d && d.state ? String(d.state) : "pending";
+        var state = d && d.state ? String(d.state) : "QUEUED";
         html += '<div class="exp-block" data-exp-id="' + htmlEscape(d.expId || "unmeasured") + '" data-state="' + htmlEscape(state) + '">';
         html += '<header class="exp-block-header"><code>' + htmlEscape(d.expId || "unmeasured") + '</code><span class="chip exp-state-chip">' + htmlEscape(state) + "</span></header>";
         html += '<dl class="path-lines">';

@@ -96,7 +96,7 @@ def active_project_ids(transitions_path) -> list[str]:
     """Committed active Project node ids — the precondition + parent for a Direction."""
     projection = scope_ssot.fold(scope_ssot.read_log(transitions_path))
     return [nid for nid, n in projection.items()
-            if n.get("level") == "project" and n.get("status") == "active"]
+            if n.get("level") == "project" and n.get("status") == "ACTIVE"]
 
 
 def direction_ready(yardstick: dict) -> bool:
@@ -115,7 +115,7 @@ def build_direction_proposal(node_id: str, yardstick: dict, *, parent_project_id
     """Build a validated level=direction Triage item. Raises RuleViolation on a bad yardstick."""
     node = {
         "id": node_id, "level": "direction", "parents": [parent_project_id], "version": 1,
-        "status": "active", "yardstick": yardstick, "provenance": provenance,
+        "status": "ACTIVE", "yardstick": yardstick, "provenance": provenance,
     }
     scope_ssot.validate_node(node)  # reject-before-propose: direction-legal yardstick only
     return {

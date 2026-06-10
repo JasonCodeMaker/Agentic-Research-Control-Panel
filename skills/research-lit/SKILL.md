@@ -148,13 +148,13 @@ python3 skills/research-op/scripts/research_op.py --pkg <pkg> --op registry-add 
   --payload '{"id":"<slug-or-arxiv>","title":"<title>","url":"<url>","source_id":"<src-id>"}'
 ```
 
-When you identify a typed relationship between two registered papers — this work builds on (`extends`)
-or disagrees with (`contradicts`) another — record it as an edge so it enters the Context Pack's
+When you identify a typed relationship between two registered papers — this work builds on (`EXTENDS`)
+or disagrees with (`CONTRADICTS`) another — record it as an edge so it enters the Context Pack's
 Relationships section and the Agent Context surface:
 
 ```bash
 python3 skills/research-op/scripts/research_op.py --pkg <pkg> --op registry-add --target edge \
-  --payload '{"from":"paper:<a>","to":"paper:<b>","type":"extends","evidence":"<section/why>"}'
+  --payload '{"from":"paper:<a>","to":"paper:<b>","type":"EXTENDS","evidence":"<section/why>"}'
 ```
 
 Both are reject-before-write (a bad edge type never lands) and dedup idempotently.

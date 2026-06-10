@@ -43,7 +43,7 @@ def _transition(eid, ver, frm, to, **over):
     base = {"schema_version": schema.TRANSITION_SCHEMA, "transition_id": f"{eid}-{to}",
             "store": "rule", "entity_id": eid, "entity_version": ver,
             "expected_from_state": frm, "to_state": to, "op": "promote",
-            "risk_class": "R1-context", "idempotency_key": f"{eid}:{ver}:{to}"}
+            "risk_class": "R1_CONTEXT", "idempotency_key": f"{eid}:{ver}:{to}"}
     base.update(over)
     return base
 
@@ -54,14 +54,14 @@ def test_failure_to_active_to_contextpack(tmp_path):
 
     # 1. observe
     st, _, _ = evolution.run("evolution-observe", _failure_event(), se)
-    assert st == "passed"
+    assert st == "PASSED"
 
     # 2. induce candidate (LLM draft injected) + 3. create
     rule = induce.induce_rule(_failure_event(), _draft())
     eid, ver = rule["id"], rule["version"]
     evolution.run("evolution-create", rule, se)
 
-    # 4. run the failure-derived oracle profile (measured repro present → proven-effective)
+    # 4. run the failure-derived oracle profile (measured repro present → FULLY_ADMITTED)
     results = {
         "schema_scope": oracles.schema_scope(rule),
         "faithfulness": oracles.faithfulness({"entailed": True}),
@@ -70,33 +70,33 @@ def test_failure_to_active_to_contextpack(tmp_path):
         "conflict": oracles.conflict([]),
     }
     admission = oracles.resolve_admission(results)
-    assert admission == "proven-effective"
+    assert admission == "FULLY_ADMITTED"
 
     # 5. record evidence for each oracle
     for stage, res in results.items():
         evolution.run("evolution-evidence-add", _evidence(eid, ver, stage, res), se)
 
-    # 6. R1 auto-promote candidate → active, stamping the admission authority
-    for frm, to in [("candidate", "validating"), ("validating", "provisional")]:
+    # 6. R1 auto-promote candidate → RULE_ACTIVE, stamping the admission authority
+    for frm, to in [("CANDIDATE", "VALIDATING"), ("VALIDATING", "PROVISIONAL")]:
         evolution.run("evolution-transition", _transition(eid, ver, frm, to), se)
     evolution.run("evolution-transition",
-                  _transition(eid, ver, "provisional", "active", admission=admission), se)
+                  _transition(eid, ver, "PROVISIONAL", "RULE_ACTIVE", admission=admission), se)
     assert store.active_version(store.read_log(se / "rules" / "transitions.jsonl"), eid) == ver
 
     # 7. project + check consistent
     evolution.run("evolution-project", {}, se)
-    assert evolution.run("evolution-check", {}, se)[0] == "passed"
+    assert evolution.run("evolution-check", {}, se)[0] == "PASSED"
 
     # 8. derived export reaches the Context Pack
     cb.export_learned_rules(str(se), str(learned))
     assert rule["content"] in learned.read_text()
     actives = cb.load_rule_store_active(str(se))
-    assert actives[0]["authority"] == "proven-effective"
+    assert actives[0]["authority"] == "FULLY_ADMITTED"
 
     # 9. scope change invalidates the rule → drops from active + export
     evolution.run("evolution-transition",
-                  _transition(eid, ver, "active", "invalidated",
-                              transition_id=f"{eid}-inv", idempotency_key=f"{eid}:{ver}:invalidated",
+                  _transition(eid, ver, "RULE_ACTIVE", "INVALIDATED",
+                              transition_id=f"{eid}-inv", idempotency_key=f"{eid}:{ver}:INVALIDATED",
                               op="invalidate", reason="scope changed"), se)
     assert store.active_version(store.read_log(se / "rules" / "transitions.jsonl"), eid) is None
     cb.export_learned_rules(str(se), str(learned))
@@ -105,6 +105,7 @@ def test_failure_to_active_to_contextpack(tmp_path):
 
 def test_failed_repro_rejects_admission():
     # DoD: a failing regression/repro blocks activation (resolves to rejected)
-    results = {"schema_scope": "pass", "faithfulness": "pass",
-               "original_reproduction": "fail", "regression_smoke": "pass", "conflict": "pass"}
-    assert oracles.resolve_admission(results) == "rejected"
+    results = {"schema_scope": "ORACLE_PASS", "faithfulness": "ORACLE_PASS",
+               "original_reproduction": "ORACLE_FAIL", "regression_smoke": "ORACLE_PASS",
+               "conflict": "ORACLE_PASS"}
+    assert oracles.resolve_admission(results) == "REJECTED"

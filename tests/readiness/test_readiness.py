@@ -27,7 +27,7 @@ def exp(eid, **kw):
         "after": [],
         "output": f"outputs/{eid}/result.json",
         "gate": "top-1 > baseline + 1.0",
-        "status": "pending",
+        "status": "QUEUED",
     }
     base.update(kw)
     return base
@@ -101,19 +101,19 @@ def codeset(violations):
 
 def test_horizon_autonomous_returns_whole_dag():
     exps = [exp("P0"), exp("P1", after=["P0"])]
-    got = {e["id"] for e in L.horizon("autonomous", exps)}
+    got = {e["id"] for e in L.horizon("AUTONOMOUS", exps)}
     assert got == {"P0", "P1"}
 
 
 def test_horizon_supervised_returns_only_frontier_at_launch():
     exps = [exp("P0"), exp("P1", after=["P0"])]
-    got = {e["id"] for e in L.horizon("supervised", exps)}
+    got = {e["id"] for e in L.horizon("SUPERVISED", exps)}
     assert got == {"P0"}
 
 
 def test_horizon_supervised_advances_when_root_completed():
-    exps = [exp("P0", status="completed"), exp("P1", after=["P0"])]
-    got = {e["id"] for e in L.horizon("supervised", exps)}
+    exps = [exp("P0", status="COMPLETED"), exp("P1", after=["P0"])]
+    got = {e["id"] for e in L.horizon("SUPERVISED", exps)}
     assert got == {"P1"}
 
 
@@ -125,7 +125,7 @@ def test_horizon_unknown_dial_defaults_to_whole_dag_failsafe():
 
 def test_horizon_checkpoints_folds_into_whole_dag():
     exps = [exp("P0"), exp("P1", after=["P0"])]
-    got = {e["id"] for e in L.horizon("checkpoints", exps)}
+    got = {e["id"] for e in L.horizon("CHECKPOINTED", exps)}
     assert got == {"P0", "P1"}
 
 
@@ -252,25 +252,25 @@ def _pkg():
 
 def test_assess_readiness_fully_ready_passes(tmp_path):
     _ready_pkg_dir(tmp_path, with_p1_doc=True)
-    rep = L.assess_readiness(_pkg(), "autonomous", tmp_path)
+    rep = L.assess_readiness(_pkg(), "AUTONOMOUS", tmp_path)
     assert rep.errors() == []
 
 
 def test_assess_readiness_autonomous_flags_downstream_gap(tmp_path):
-    # P1 (downstream, complex) has no doc → autonomous horizon includes P1 → error.
+    # P1 (downstream, complex) has no doc → AUTONOMOUS horizon includes P1 → error.
     _ready_pkg_dir(tmp_path, with_p1_doc=False)
-    rep = L.assess_readiness(_pkg(), "autonomous", tmp_path)
+    rep = L.assess_readiness(_pkg(), "AUTONOMOUS", tmp_path)
     assert "readiness-doc-missing" in {v.code for v in rep.errors()}
 
 
 def test_assess_readiness_supervised_ignores_downstream_gap(tmp_path):
-    # Same gap, but supervised horizon excludes P1 → no error (human present at the pause).
+    # Same gap, but SUPERVISED horizon excludes P1 → no error (human present at the pause).
     _ready_pkg_dir(tmp_path, with_p1_doc=False)
-    rep = L.assess_readiness(_pkg(), "supervised", tmp_path)
+    rep = L.assess_readiness(_pkg(), "SUPERVISED", tmp_path)
     assert rep.errors() == []
 
 
 def test_assess_readiness_empty_experiments_errors(tmp_path):
     _ready_pkg_dir(tmp_path)
-    rep = L.assess_readiness({"id": "x", "experiments": []}, "autonomous", tmp_path)
+    rep = L.assess_readiness({"id": "x", "experiments": []}, "AUTONOMOUS", tmp_path)
     assert "readiness-no-experiments" in {v.code for v in rep.errors()}

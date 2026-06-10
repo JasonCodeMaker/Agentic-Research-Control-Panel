@@ -4,6 +4,8 @@ Pure and deterministic — the actual daemon (systemd service + path/timer trigg
 these. Keeping the decision logic here makes the worker testable without a process.
 """
 
+from self_evolve import schema
+
 # Trigger → (candidate store, job kind) (§10.2). In v1 most map to the Rule Store; the
 # workflow-repeated trigger escalates to a Skill candidate only in this Tier-2 build.
 TRIGGER_JOBS = {
@@ -24,7 +26,7 @@ RETRY_POLICY = {
     "oracle-fail": {"retry": False, "terminal": "reject-or-suspend"},
     "oracle-inconclusive": {"retry": True, "terminal": "escalate-tier"},
     "schema-rejection": {"retry": False, "terminal": "dead-letter"},
-    "install-fail": {"retry": True, "terminal": "install_failed-same-release"},
+    "install-fail": {"retry": True, "terminal": "install-failed-current-release"},
     "budget-exhaustion": {"retry": False, "terminal": "pause"},
 }
 
@@ -82,10 +84,10 @@ def reserve(limits, spent, requested, *, on_exhaustion="pause"):
     """Budget gate (§10.6). Returns (decision, result).
 
     decision ∈ {'reserved','paused'}. Exhaustion is never success/fail — it pauses and the
-    stage result is 'inconclusive'.
+    stage result is ORACLE_INCONCLUSIVE.
     """
     if would_exceed(limits, spent, requested):
-        return on_exhaustion, "inconclusive"
+        return on_exhaustion, schema.ORACLE_RESULTS[2]  # ORACLE_INCONCLUSIVE
     new_spent = dict(spent)
     for k, v in requested.items():
         new_spent[k] = new_spent.get(k, 0) + v

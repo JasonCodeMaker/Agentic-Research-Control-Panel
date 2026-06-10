@@ -17,7 +17,7 @@ def test_pilot_bounded_to_three_units():
 
 def _good_run(**over):
     base = {"task_success": True, "baseline_error_recurred": True, "error_recurred": False,
-            "false_positive": False, "approval_decision": "approved",
+            "false_positive": False, "approval_decision": "APPROVED",
             "rolled_back": False, "suspended": False, "trust_violation": False, "cost": 100}
     base.update(over)
     return base
@@ -34,14 +34,14 @@ def test_summary_computes_recurrence_reduction():
 def test_clean_pilot_is_go():
     m = pilot.summarize([_good_run() for _ in range(10)])
     verdict = pilot.evaluate_gonogo(m)
-    assert verdict["verdict"] == "go"
+    assert verdict["verdict"] == "PILOT_GO"
     assert pilot.should_expand(verdict) is True
 
 
 def test_trust_violation_is_hard_no_go():
     recs = [_good_run() for _ in range(10)] + [_good_run(trust_violation=True)]
     verdict = pilot.evaluate_gonogo(pilot.summarize(recs))
-    assert verdict["verdict"] == "no-go"
+    assert verdict["verdict"] == "PILOT_NO_GO"
     assert "trust-boundary-violation" in verdict["reasons"]
     assert pilot.should_expand(verdict) is False
 
@@ -49,7 +49,7 @@ def test_trust_violation_is_hard_no_go():
 def test_high_false_positive_holds():
     recs = [_good_run(false_positive=True) for _ in range(10)]
     verdict = pilot.evaluate_gonogo(pilot.summarize(recs))
-    assert verdict["verdict"] == "hold"
+    assert verdict["verdict"] == "PILOT_HOLD"
     assert "false_positive_rate" in verdict["reasons"]
     assert pilot.should_expand(verdict) is False
 
@@ -58,12 +58,12 @@ def test_benefit_regression_is_no_go():
     # more errors recurred than baseline → negative reduction
     recs = [_good_run(baseline_error_recurred=False, error_recurred=True) for _ in range(10)]
     verdict = pilot.evaluate_gonogo(pilot.summarize(recs))
-    assert verdict["verdict"] == "no-go"
+    assert verdict["verdict"] == "PILOT_NO_GO"
     assert "benefit-regression" in verdict["reasons"]
 
 
 def test_frequent_rollback_holds():
     recs = [_good_run() for _ in range(8)] + [_good_run(rolled_back=True) for _ in range(4)]
     verdict = pilot.evaluate_gonogo(pilot.summarize(recs))
-    assert verdict["verdict"] == "hold"
+    assert verdict["verdict"] == "PILOT_HOLD"
     assert "rollback_rate" in verdict["reasons"]

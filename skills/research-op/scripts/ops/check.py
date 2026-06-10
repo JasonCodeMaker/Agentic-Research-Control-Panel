@@ -16,8 +16,8 @@ def handle(pkg: str, target: str | None, payload: dict, state: dict) -> tuple[st
     r = subprocess.run(lint_args, capture_output=True, text=True)
     if r.returncode != 0:
         # Non-zero is informational here; check never writes, just reports.
-        return "rejected", files_inspected
+        return "OP_REJECTED", files_inspected
     files_inspected.append(f"research_html/packages/{pkg}/")
     if scope == "all":
         files_inspected.append("research_html/data/research-packages.js")
-    return "passed", files_inspected
+    return "PASSED", files_inspected

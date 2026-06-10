@@ -14,7 +14,7 @@ def test_append_writes_jsonl_line(tmp_path, monkeypatch):
         op="check", target=None, event=None,
         state_before={"category": "in-progress", "status": "CONTEXT_LOADED"},
         state_after ={"category": "in-progress", "status": "CONTEXT_LOADED"},
-        validation="passed", rule=None,
+        validation="PASSED", rule=None,
         files_touched=[], payload={"scope": "all"},
         user_intent=None, duration_ms=42,
     )
@@ -22,7 +22,7 @@ def test_append_writes_jsonl_line(tmp_path, monkeypatch):
     assert log.exists()
     entry = json.loads(log.read_text().strip())
     assert entry["op"] == "check"
-    assert entry["validation"] == "passed"
+    assert entry["validation"] == "PASSED"
     assert entry["payload"]["scope"] == "all"
     assert "payload_sha256" in entry
 
@@ -32,7 +32,7 @@ def test_append_creates_parent_dirs(tmp_path, monkeypatch):
     audit.append(
         "test-pkg", op="check", target=None, event=None,
         state_before={}, state_after={},
-        validation="passed", rule=None, files_touched=[], payload={},
+        validation="PASSED", rule=None, files_touched=[], payload={},
         user_intent=None, duration_ms=1,
     )
     assert (tmp_path / "deep" / "nested" / "test-pkg" / "_actions.jsonl").exists()

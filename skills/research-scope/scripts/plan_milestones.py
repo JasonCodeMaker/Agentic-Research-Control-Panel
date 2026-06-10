@@ -56,13 +56,13 @@ def latest_direction(direction_id: str, transitions_path: str | Path) -> dict:
         raise SystemExit(f"Transition for {direction_id} does not carry a node snapshot")
     if node.get("level") != "direction":
         raise SystemExit(f"--direction-id must point to a direction node, got level={node.get('level')!r}")
-    if node.get("status") != "active":
-        raise SystemExit(f"Direction must be active before milestone planning, got status={node.get('status')!r}")
+    if node.get("status") != "ACTIVE":
+        raise SystemExit(f"Direction must be ACTIVE before milestone planning, got status={node.get('status')!r}")
     scope_ssot.validate_node(node)
     return node
 
 
-def build_milestones(direction_node: dict, *, autonomy_level: str = "checkpoints") -> list[dict]:
+def build_milestones(direction_node: dict, *, autonomy_level: str = "CHECKPOINTED") -> list[dict]:
     """Return high-level Task/Milestone node proposals for a Direction node."""
     direction_id = direction_node["id"]
     dslug = _direction_slug(direction_id)
@@ -110,7 +110,7 @@ def build_milestones(direction_node: dict, *, autonomy_level: str = "checkpoints
             "level": "task",
             "parents": [direction_id],
             "version": 1,
-            "status": "active",
+            "status": "ACTIVE",
             "yardstick": {
                 "experiment": experiment,
                 "config_ref": f"scope:{direction_id}#{suffix.lower()}",
@@ -145,7 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--direction-id", required=True)
     p.add_argument("--transitions", default="outputs/_scope/transitions.jsonl")
     p.add_argument("--triage", default="outputs/_scope/triage.jsonl")
-    p.add_argument("--autonomy-level", default="checkpoints")
+    p.add_argument("--autonomy-level", default="CHECKPOINTED")
     p.add_argument("--dry-run", action="store_true", help="print proposals without writing triage")
     return p
 

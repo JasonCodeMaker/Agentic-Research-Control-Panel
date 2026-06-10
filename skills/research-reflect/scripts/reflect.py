@@ -10,18 +10,27 @@ import json
 from collections import Counter
 from pathlib import Path
 
+# Canonical finding kind values for reflect findings.
+FINDING_KINDS = ("CONSECUTIVE_VALIDATION_FAILURE", "REPEATED_SCOPE_REVISION", "CROSS_PACKAGE_DEAD_END")
+
+# Canonical proposal status values shared with research-apply.
+PROPOSAL_STATUS = ("STAGED", "LANDED")
+
+# Audit log validation field values that signal a doom-loop streak.
+DOOM_LOOP_SIGNALS = ("OP_REJECTED", "OP_FAILED")
+
 
 def detect_doom_loop(actions, threshold=3):
     """Surface a finding when >= threshold consecutive identical failures appear in the audit log."""
     findings = []
     streak_key, streak = None, 0
     for a in actions:
-        if a.get("validation") in ("rejected", "failed"):
+        if a.get("validation") in DOOM_LOOP_SIGNALS:
             key = (a.get("op"), a.get("target"), a.get("rule"))
             streak = streak + 1 if key == streak_key else 1
             streak_key = key
             if streak == threshold:  # emit once, when the threshold is first reached
-                findings.append({"kind": "doom-loop", "signature": key, "count": streak})
+                findings.append({"kind": "CONSECUTIVE_VALIDATION_FAILURE", "signature": key, "count": streak})
         else:
             streak_key, streak = None, 0
     return findings
@@ -30,7 +39,7 @@ def detect_doom_loop(actions, threshold=3):
 def detect_scope_thrash(transitions, threshold=3):
     """Surface a finding for any node revised >= threshold times (recurring goalpost churn)."""
     counts = Counter(t["node_id"] for t in transitions if t.get("op") == "revise")
-    return [{"kind": "scope-thrash", "node_id": node, "count": n}
+    return [{"kind": "REPEATED_SCOPE_REVISION", "node_id": node, "count": n}
             for node, n in counts.items() if n >= threshold]
 
 
@@ -42,7 +51,7 @@ def detect_cross_package_dead_end(cross_failures, threshold=2):
     self-learning from intra-package (doom-loop) to cross-package: a method that is a dead-end
     project-wide should not be re-proposed without a materially different approach.
     """
-    return [{"kind": "cross-package-dead-end", "method": e["method"],
+    return [{"kind": "CROSS_PACKAGE_DEAD_END", "method": e["method"],
              "packages": e["packages"], "count": e["count"]}
             for e in cross_failures if e["count"] >= threshold]
 
@@ -54,7 +63,7 @@ def propose(pending_dir, finding, suggested_diff):
     d = pending_dir / pid
     d.mkdir(parents=True, exist_ok=True)
     (d / "proposal.json").write_text(
-        json.dumps({"finding": finding, "suggested_diff": suggested_diff, "status": "staged"}, indent=2),
+        json.dumps({"finding": finding, "suggested_diff": suggested_diff, "status": "STAGED"}, indent=2),
         encoding="utf-8")
     return pid
 
@@ -89,9 +98,9 @@ def main(argv=None):
         findings += detect_cross_package_dead_end(cross, args.threshold)
     staged = []
     for f in findings:
-        if f["kind"] == "doom-loop":
+        if f["kind"] == "CONSECUTIVE_VALIDATION_FAILURE":
             diff = f"After {f['count']} identical failures of {f['signature']}, require an approach or scope change before retrying."
-        elif f["kind"] == "cross-package-dead-end":
+        elif f["kind"] == "CROSS_PACKAGE_DEAD_END":
             diff = (f"Method '{f['method']}' has failed across {f['count']} packages "
                     f"({', '.join(f['packages'])}); do not re-propose it without a materially "
                     f"different approach or a scope change.")

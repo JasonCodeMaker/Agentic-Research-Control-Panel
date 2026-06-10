@@ -9,17 +9,17 @@ sys.path.insert(0, str(SCRIPTS))
 import learnings_lint  # noqa: E402
 
 TRACKER_TERMINAL = """<html><body>
-<div data-route data-field="chosen-route">archive_or_stop</div>
+<div data-route data-field="chosen-route">TERMINATE</div>
 <div data-field="chosen-route-reason">metric never cleared the gate after 3 seeds</div>
 </body></html>"""
 
 TRACKER_NONTERMINAL = """<html><body>
-<div data-route data-field="chosen-route">run_next_experiment_from_step4</div>
+<div data-route data-field="chosen-route">RUN_NEXT_EXPERIMENT</div>
 <div data-field="chosen-route-reason">next sweep cell</div>
 </body></html>"""
 
 LEGACY_NEXT_ACTION = """<html><body>
-<div data-field="route">archive_or_stop</div>
+<div data-field="route">TERMINATE</div>
 <div data-field="reason">done</div>
 </body></html>"""
 

@@ -19,7 +19,7 @@ def _rule(**over):
         "description": "Prevents metric-name ambiguity from becoming a research claim.",
         "content": "If a custom metric changes, validate its contract before accepting the result.",
         "scope": {"project": "*", "packages": ["*"], "task_types": ["metric-change"]},
-        "risk_class": "R1-context",
+        "risk_class": "R1_CONTEXT",
         "provenance": {"generated_by": "rule-inducer-v1", "source_event_ids": ["evt_1"]},
         "validation_policy": {"required_oracles": ["faithfulness", "conflict"]},
     }
@@ -34,11 +34,11 @@ def _transition(**over):
         "store": "rule",
         "entity_id": "rule.verify-metric-contract",
         "entity_version": "1.0.0",
-        "expected_from_state": "provisional",
-        "to_state": "active",
+        "expected_from_state": "PROVISIONAL",
+        "to_state": "RULE_ACTIVE",
         "op": "promote",
-        "risk_class": "R1-context",
-        "idempotency_key": "promote:rule.verify-metric-contract:1.0.0:active",
+        "risk_class": "R1_CONTEXT",
+        "idempotency_key": "promote:rule.verify-metric-contract:1.0.0:RULE_ACTIVE",
     }
     base.update(over)
     return base

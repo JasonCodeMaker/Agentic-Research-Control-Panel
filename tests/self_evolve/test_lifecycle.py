@@ -18,30 +18,30 @@ def test_all_declared_edges_are_legal():
 
 
 def test_full_happy_path_observed_to_active():
-    path = ["observed", "candidate", "validating", "provisional", "active"]
+    path = ["OBSERVED", "CANDIDATE", "VALIDATING", "PROVISIONAL", "RULE_ACTIVE"]
     for a, b in zip(path, path[1:]):
         assert lc.validate_edge(a, b) is True
 
 
 def test_invalidate_then_reopen_loops_back_to_candidate():
-    for a, b in [("active", "invalidated"), ("invalidated", "archived_reopenable"),
-                 ("archived_reopenable", "candidate")]:
+    for a, b in [("RULE_ACTIVE", "INVALIDATED"), ("INVALIDATED", "ARCHIVED_CONDITIONAL"),
+                 ("ARCHIVED_CONDITIONAL", "CANDIDATE")]:
         assert lc.validate_edge(a, b) is True
 
 
 def test_illegal_skip_edge_rejected():
     with pytest.raises(lc.IllegalTransition):
-        lc.validate_edge("candidate", "active")  # must pass through validating/provisional
+        lc.validate_edge("CANDIDATE", "RULE_ACTIVE")  # must pass through VALIDATING/PROVISIONAL
 
 
 def test_cannot_revive_active_from_rejected():
     with pytest.raises(lc.IllegalTransition):
-        lc.validate_edge("rejected", "active")
+        lc.validate_edge("RULE_REJECTED", "RULE_ACTIVE")
 
 
 def test_unknown_state_rejected():
     with pytest.raises(lc.IllegalTransition):
-        lc.validate_edge("active", "zombie")
+        lc.validate_edge("RULE_ACTIVE", "zombie")
 
 
 def test_no_undeclared_edge_is_legal():
@@ -50,5 +50,5 @@ def test_no_undeclared_edge_is_legal():
         assert lc.is_legal(a, b) == ((a, b) in lc.RULE_EDGES)
 
 
-def test_only_active_is_retrievable():
-    assert lc.RETRIEVABLE_STATES == frozenset({"active"})
+def test_only_rule_active_is_retrievable():
+    assert lc.RETRIEVABLE_STATES == frozenset({"RULE_ACTIVE"})

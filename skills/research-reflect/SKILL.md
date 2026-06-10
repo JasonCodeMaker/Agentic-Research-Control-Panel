@@ -104,13 +104,13 @@ outputs/<pkg>/pending/<pid>/proposal.json
 with shape (`finding` is the detector's dict, not a string):
 ```json
 {
-  "finding": {"kind": "doom-loop", "signature": ["<op>", "<target>", "<rule>"], "count": 3},
+  "finding": {"kind": "CONSECUTIVE_VALIDATION_FAILURE", "signature": ["<op>", "<target>", "<rule>"], "count": 3},
   "suggested_diff": "...",
-  "status": "staged"
+  "status": "STAGED"
 }
 ```
-A scope-thrash finding instead looks like `{"kind": "scope-thrash", "node_id": "<id>", "count": 4}`.
-A cross-package dead-end finding looks like `{"kind": "cross-package-dead-end", "method": "<name>", "packages": ["<id>", ...], "count": 3}`.
+A scope-thrash finding instead looks like `{"kind": "REPEATED_SCOPE_REVISION", "node_id": "<id>", "count": 4}`.
+A cross-package dead-end finding looks like `{"kind": "CROSS_PACKAGE_DEAD_END", "method": "<name>", "packages": ["<id>", ...], "count": 3}`.
 
 The learnable corpus is **project-level rules only** — never the universal protocols, skills, or
 validators. A proposal's `suggested_diff` must target project-level config (e.g. a rule in the
@@ -128,4 +128,4 @@ awaiting human review via `research-apply`.
 | `_actions.jsonl` not found | No `research-op` calls have been made for this package yet | Run at least one `research-op` op first, then re-invoke |
 | `reflect.py` exits non-zero | Parse error or malformed log line | Read the stderr output; fix the offending log entry or report the bug |
 | `staged` empty | No pattern reached threshold | Lower `--threshold` or wait for more pipeline activity; report "no findings" to user |
-| Proposal `status` is not `staged` | A prior reflect run left a proposal in a different state | Check `pending/` for existing proposals; `research-apply` owns state transitions past `staged` |
+| Proposal `status` is not `STAGED` | A prior reflect run left a proposal in a different state | Check `pending/` for existing proposals; `research-apply` owns state transitions past `STAGED` |

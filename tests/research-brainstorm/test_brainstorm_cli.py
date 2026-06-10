@@ -42,7 +42,7 @@ def test_cli_build_proposal(tmp_path, capsys):
     assert rc == 0
     item = json.loads(capsys.readouterr().out)
     assert item["level"] == "direction"
-    assert item["gate"] == "user+xmodel-audit"
+    assert item["gate"] == "USER_CROSS_MODEL_AUDIT"
     assert item["source_brainstorms"] == ["bs-1"]
 
 

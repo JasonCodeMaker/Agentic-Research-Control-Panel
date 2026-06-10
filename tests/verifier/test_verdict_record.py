@@ -17,7 +17,7 @@ from verifier import VerifierError  # noqa: E402
 
 def _verdict(**over):
     v = {"producer": "claude-opus", "judge": "gpt-4o", "scope_version": 1,
-         "artifact_id": "exp-001", "result": "sound"}
+         "artifact_id": "exp-001", "result": "SOUND"}
     v.update(over)
     return v
 

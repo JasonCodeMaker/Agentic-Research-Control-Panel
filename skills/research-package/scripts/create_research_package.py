@@ -25,7 +25,6 @@ STAGE_PAGES: dict[str, tuple[str, str]] = {
     "results": ("results.html", "results.html"),
     "analysis": ("analysis.html", "analysis.html"),
     "tracker": ("tracker.html", "tracker.html"),
-    "brainstorm": ("brainstorm.html", "brainstorm.html"),
     "docs": ("docs/index.html", "docs/index.html"),
     "_agent": ("_agent/context.html", "_agent/context.html"),
 }

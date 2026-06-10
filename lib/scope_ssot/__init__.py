@@ -28,11 +28,26 @@ READING_FIELDS = frozenset({
 OPS = ("create", "revise", "supersede", "reopen", "archive")
 
 # Graduated gating: the node's level fixes the change-gate (design §3, Table 1).
+# Values are SCREAMING_SNAKE; REQUIRED_GATE is the SSOT for scope_required_gate.
 REQUIRED_GATE = {
-    "project":   "user",
-    "direction": "user+xmodel-audit",
-    "task":      "agent+async-ack",
+    "project":   "USER_ONLY",
+    "direction": "USER_CROSS_MODEL_AUDIT",
+    "task":      "AGENT_DEFERRED_ACK",
 }
+
+# Node lifecycle status values — SCREAMING_SNAKE state-machine values.
+# Two-tier convention: LANE = lowercase-kebab; STATE = SCREAMING_SNAKE.
+# PENDING_TRIAGE = awaiting human Triage disposition (not yet in objective cascade).
+NODE_STATUS = frozenset({"ACTIVE", "SUPERSEDED", "ARCHIVED", "PENDING_TRIAGE"})
+
+# Triage decision outcomes (human PM disposition of a proposed scope change).
+TRIAGE_DECISION = ("ACCEPTED", "REJECTED")
+
+# Propagate outcome bucket keys (results of a metric-revising memory pass).
+PROPAGATE_OUTCOME = ("INVALIDATE", "REOPEN_IDEA", "RETAIN")
+
+# Memory entry kind values.
+MEMORY_KIND = frozenset({"RESULT", "IDEA"})
 
 
 class RuleViolation(Exception):
@@ -72,7 +87,7 @@ def propose_transition(node, *, op, gate, log_path, trigger=None, cause=None,
     if gate != required:
         raise RuleViolation(f"{node['level']} transition requires gate {required!r}, got {gate!r}")
     record = {
-        "txn_id": uuid.uuid4().hex[:12],
+        "transaction_id": uuid.uuid4().hex[:12],
         "scope_version": node["version"],
         "node_id": node["id"],
         "level": node["level"],
@@ -131,14 +146,14 @@ def assert_consistent(projection, records):
 
 def propagate(*, old_metric, new_metric, memory):
     """Carry / invalidate / reopen pass for a metric-revising transition (exact-metric-match v1)."""
-    out = {"invalidate": [], "reopen": [], "carry": []}
+    out = {"INVALIDATE": [], "REOPEN_IDEA": [], "RETAIN": []}
     for item in memory:
-        if item.get("kind") == "result" and item.get("metric") == old_metric:
-            out["invalidate"].append(item["id"])
-        elif item.get("kind") == "idea" and item.get("failed_on_metric") == old_metric:
-            out["reopen"].append(item["id"])
+        if item.get("kind") == "RESULT" and item.get("metric") == old_metric:
+            out["INVALIDATE"].append(item["id"])
+        elif item.get("kind") == "IDEA" and item.get("failed_on_metric") == old_metric:
+            out["REOPEN_IDEA"].append(item["id"])
         else:
-            out["carry"].append(item["id"])
+            out["RETAIN"].append(item["id"])
     return out
 
 

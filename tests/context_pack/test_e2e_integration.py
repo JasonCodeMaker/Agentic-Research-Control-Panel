@@ -31,10 +31,10 @@ _PACKAGES_JS = '''window.RESEARCH_PACKAGES = [
     sourceScopeNode: "dir/active", activeGate: "g", primaryMetricVsGate: "m vs g", nextRoute: "run",
     methodsTried: [] },
   { id: "2026-05-01-f1", name: "F1", category: "fail", status: "ARCHIVED", terminationMessage: "x",
-    methodsTried: [ { method: "mining", hypothesis: "h1", gate: "g", measured: "m", verdict: "fail",
+    methodsTried: [ { method: "mining", hypothesis: "h1", gate: "g", measured: "m", verdict: "FAIL",
                       evidencePath: "packages/2026-05-01-f1/results.html#m1" } ] },
   { id: "2026-05-02-f2", name: "F2", category: "fail", status: "ARCHIVED", terminationMessage: "x",
-    methodsTried: [ { method: "mining", hypothesis: "h2", gate: "g", measured: "m", verdict: "fail",
+    methodsTried: [ { method: "mining", hypothesis: "h2", gate: "g", measured: "m", verdict: "FAIL",
                       evidencePath: "packages/2026-05-02-f2/results.html#m1" } ] },
 ];
 '''
@@ -53,9 +53,9 @@ def test_full_wiki_integration(tmp_path, monkeypatch):
     log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
     scope_ssot.propose_transition(
         {"id": "dir/active", "level": "direction", "parents": ["project/main"], "version": 1,
-         "status": "active", "yardstick": {"hypothesis": "active hypothesis", "metric": {"name": "R@1"},
+         "status": "ACTIVE", "yardstick": {"hypothesis": "active hypothesis", "metric": {"name": "R@1"},
                                            "baselines": ["b"], "success_predicate": "R@1>=48"}},
-        op="create", gate="user+xmodel-audit", log_path=log)
+        op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
     learned = tmp_path / "outputs" / "_learned" / "rules.md"
     learned.parent.mkdir(parents=True, exist_ok=True)
     learned.write_text("- reproduce the baseline first\n", encoding="utf-8")
@@ -66,7 +66,7 @@ def test_full_wiki_integration(tmp_path, monkeypatch):
                                         "url": "http://x"})).returncode == 0
     assert _op(tmp_path, "--pkg", "2026-06-03-active", "--op", "registry-add", "--target", "edge",
                "--payload", json.dumps({"from": "paper:dpr2020", "to": "paper:ours",
-                                        "type": "extends", "evidence": "sec3"})).returncode == 0
+                                        "type": "EXTENDS", "evidence": "sec3"})).returncode == 0
     assert _op(tmp_path, "--pkg", "2026-06-03-active", "--op", "registry-add", "--target", "gap",
                "--payload", json.dumps({"id": "G1", "summary": "no zero-shot eval"})).returncode == 0
     # reject-before-write still holds end-to-end
@@ -78,7 +78,7 @@ def test_full_wiki_integration(tmp_path, monkeypatch):
                 learned_path=str(learned), generated_at="2026-06-04T00:00:00Z")
     md = (tmp_path / "outputs" / "2026-06-03-active" / "context_pack.md").read_text(encoding="utf-8")
     for needle in ("active hypothesis", "reproduce the baseline first", "mining",
-                   "Dense Passage Retrieval", "extends", "no zero-shot eval"):
+                   "Dense Passage Retrieval", "EXTENDS", "no zero-shot eval"):
         assert needle in md, needle
 
     # Phase 3: reflect reads the pack's facts → cross-package dead-end (mining failed in 2 packages)
@@ -89,7 +89,7 @@ def test_full_wiki_integration(tmp_path, monkeypatch):
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
     out = json.loads(r.stdout)
-    assert any(f["kind"] == "cross-package-dead-end" and f["method"] == "mining" for f in out["findings"])
+    assert any(f["kind"] == "CROSS_PACKAGE_DEAD_END" and f["method"] == "mining" for f in out["findings"])
 
     # Phase 2: the human surface renders the same durable core
     core_js = root / "data" / "context-core.js"

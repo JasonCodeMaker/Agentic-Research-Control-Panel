@@ -5,43 +5,43 @@ canary, suspension, and rollback are first-class states with human gates between
 """
 
 SKILL_STATES = (
-    "observed", "candidate", "validating", "rejected", "validated",
-    "awaiting_install_approval", "installing", "install_failed",
-    "canary", "active", "suspended", "superseded", "retired",
+    "OBSERVED", "CANDIDATE", "VALIDATING", "SKILL_REJECTED", "VALIDATED",
+    "AWAITING_INSTALL_APPROVAL", "INSTALLING", "INSTALL_FAILED",
+    "CANARY", "SKILL_ACTIVE", "SUSPENDED", "SKILL_SUPERSEDED", "RETIRED",
 )
 
 SKILL_EDGES = frozenset({
-    ("observed", "candidate"),
-    ("candidate", "validating"),
-    ("validating", "rejected"),
-    ("validating", "validated"),
-    ("validated", "awaiting_install_approval"),
-    ("awaiting_install_approval", "candidate"),
-    ("awaiting_install_approval", "installing"),
-    ("installing", "canary"),
-    ("installing", "install_failed"),
-    ("install_failed", "awaiting_install_approval"),
-    ("canary", "active"),
-    ("canary", "suspended"),
-    ("active", "suspended"),
-    ("active", "superseded"),
-    ("suspended", "canary"),
-    ("suspended", "retired"),
-    ("superseded", "canary"),
-    ("rejected", "candidate"),
+    ("OBSERVED", "CANDIDATE"),
+    ("CANDIDATE", "VALIDATING"),
+    ("VALIDATING", "SKILL_REJECTED"),
+    ("VALIDATING", "VALIDATED"),
+    ("VALIDATED", "AWAITING_INSTALL_APPROVAL"),
+    ("AWAITING_INSTALL_APPROVAL", "CANDIDATE"),
+    ("AWAITING_INSTALL_APPROVAL", "INSTALLING"),
+    ("INSTALLING", "CANARY"),
+    ("INSTALLING", "INSTALL_FAILED"),
+    ("INSTALL_FAILED", "AWAITING_INSTALL_APPROVAL"),
+    ("CANARY", "SKILL_ACTIVE"),
+    ("CANARY", "SUSPENDED"),
+    ("SKILL_ACTIVE", "SUSPENDED"),
+    ("SKILL_ACTIVE", "SKILL_SUPERSEDED"),
+    ("SUSPENDED", "CANARY"),
+    ("SUSPENDED", "RETIRED"),
+    ("SKILL_SUPERSEDED", "CANARY"),
+    ("SKILL_REJECTED", "CANDIDATE"),
 })
 
 # States in which the installed Skill may actually run.
-DEPLOYED_STATES = frozenset({"canary", "active"})
+DEPLOYED_STATES = frozenset({"CANARY", "SKILL_ACTIVE"})
 
 # Transitions that REMOVE authority — always allowed automatically (§7.2).
-AUTHORITY_REMOVING = frozenset({("canary", "suspended"), ("active", "suspended")})
+AUTHORITY_REMOVING = frozenset({("CANARY", "SUSPENDED"), ("SKILL_ACTIVE", "SUSPENDED")})
 
 # Transitions that GRANT or RESTORE authority — never automatic without approval (§8/§12).
 APPROVAL_REQUIRED = frozenset({
-    ("awaiting_install_approval", "installing"),  # install
-    ("suspended", "canary"),                      # restoration
-    ("superseded", "canary"),                     # rollback (unless pre-authorized)
+    ("AWAITING_INSTALL_APPROVAL", "INSTALLING"),  # install
+    ("SUSPENDED", "CANARY"),                       # restoration
+    ("SKILL_SUPERSEDED", "CANARY"),                # rollback (unless pre-authorized)
 })
 
 

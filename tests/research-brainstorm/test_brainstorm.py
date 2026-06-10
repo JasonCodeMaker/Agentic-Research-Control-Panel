@@ -65,8 +65,8 @@ def _project_yardstick():
 
 def _commit_project(log, node_id="project/main"):
     node = {"id": node_id, "level": "project", "parents": [], "version": 1,
-            "status": "active", "yardstick": _project_yardstick(), "provenance": "accepted"}
-    scope_ssot.propose_transition(node, op="create", gate="user", log_path=log)
+            "status": "ACTIVE", "yardstick": _project_yardstick(), "provenance": "accepted"}
+    scope_ssot.propose_transition(node, op="create", gate="USER_ONLY", log_path=log)
 
 
 def test_active_project_ids(tmp_path):
@@ -108,7 +108,7 @@ def test_build_direction_proposal_valid():
         source_brainstorms=["bs-1", "bs-2"])
     assert item["level"] == "direction"
     assert item["op"] == "create"
-    assert item["gate"] == "user+xmodel-audit"  # direction gate
+    assert item["gate"] == "USER_CROSS_MODEL_AUDIT"  # direction gate
     assert item["proposed_node"]["parents"] == ["project/main"]
     assert item["proposed_node"]["yardstick"] == _good_direction_yardstick()
     assert item["source_brainstorms"] == ["bs-1", "bs-2"]

@@ -34,8 +34,9 @@ def _render(state, context=None, root=None):
 # ---- render_next_step: shape + non-emptiness for every action type ----
 
 def test_every_action_renders_a_nonempty_next_step():
-    for state in ("A", "B", "C", "D", "E", "F", "G"):
-        ctx = {"direction_id": "direction/x", "source_txn": "txn1"} if state == "E" else None
+    for state in ("NO_DASHBOARD", "NO_PROJECT", "NO_DIRECTION", "NO_TASK",
+                  "NO_PACKAGE", "NOT_READY", "READY"):
+        ctx = {"direction_id": "direction/x", "source_txn": "txn1"} if state == "NO_PACKAGE" else None
         step = _render(state, ctx)
         for key in ("headline", "next_action", "offer", "awaits_user", "details"):
             assert key in step, f"state {state}: missing {key}"
@@ -45,25 +46,25 @@ def test_every_action_renders_a_nonempty_next_step():
 
 
 def test_drafting_states_offer_one_tap_continue():
-    step = _render("D")
+    step = _render("NO_TASK")
     assert step["awaits_user"] is False
     assert "go" in step["offer"].lower()
 
 
 def test_disposal_state_awaits_user():
-    step = _render("D", {"pending": [{"id": "p1", "level": "task"}]})
+    step = _render("NO_TASK", {"pending": [{"id": "p1", "level": "task"}]})
     assert step["awaits_user"] is True
     assert "accept" in step["offer"].lower() or "reject" in step["offer"].lower()
 
 
 def test_dashboard_handoff_points_at_the_command():
-    step = _render("A")
+    step = _render("NO_DASHBOARD")
     assert step["awaits_user"] is True
     assert "/research-dashboard" in step["next_action"]
 
 
 def test_enter_loop_headline_is_plain_not_fsm_jargon():
-    assert "State G" not in _render("G")["headline"]
+    assert "READY" not in _render("READY")["headline"]
 
 
 # ---- detect_seed_direction: reads the REAL on-disk shape ----
@@ -100,8 +101,8 @@ def test_detect_seed_picks_newest_and_lists_candidates(tmp_path):
 def test_build_actions_bakes_seed_and_next_step_at_state_C(tmp_path):
     _scaffold_plan(tmp_path, "2026-06-08-grdr-efficiency-figures",
                    "H1: GRDR total latency <= every ANN baseline at a matched candidate budget.")
-    a = admission.build_admission_actions("C", {}, root=tmp_path)[0]
-    assert a["type"] == "propose_direction"
+    a = admission.build_admission_actions("NO_DIRECTION", {}, root=tmp_path)[0]
+    assert a["type"] == "PROPOSE_DIRECTION"
     assert a["seed"]["found"] is True                          # attached by the FSM, not by prose
     assert "2026-06-08-grdr-efficiency-figures" in a["next_step"]["next_action"]
     assert a["next_step"]["awaits_user"] is False
@@ -117,14 +118,14 @@ def test_run_front_door_emits_next_step(tmp_path):
     import scope_ssot  # noqa: E402
     log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
     scope_ssot.propose_transition({"id": "project/grdr", "level": "project", "parents": [],
-                                   "version": 1, "status": "active",
+                                   "version": 1, "status": "ACTIVE",
                                    "yardstick": {}, "provenance": "t"},
-                                  op="create", gate="user", log_path=log)
+                                  op="create", gate="USER_ONLY", log_path=log)
     res = admission.run_front_door(tmp_path, context={})
-    assert res["state"] == "C"
+    assert res["state"] == "NO_DIRECTION"
     assert res["actions"][0]["next_step"]["next_action"].strip()
 
 
 def test_build_actions_without_root_stays_raw():
     # back-compat: no root => no enrichment (keeps the pure contract other admission tests rely on)
-    assert admission.build_admission_actions("F", {})[0] == {"type": "run_readiness", "dial": "autonomous"}
+    assert admission.build_admission_actions("NOT_READY", {})[0] == {"type": "RUN_READINESS", "dial": "AUTONOMOUS"}

@@ -1,6 +1,6 @@
 ---
 name: research-op
-description: "The single mutation surface for any existing research package. Use whenever the user types /research-op, asks to insert/update/delete a row/card/section in a package (methodsTried, result-gate, result block, tracker row, doc card, doc file), asks to update an inventory field (status, activeGate, primaryMetricVsGate, lastAction, terminationMessage, adoptionPath), asks to check/lint a package, asks to fan out an artifact event (chain-done, checkpoint-saved, sentinel-write, phase-marker, candidate-json). Also use for ad-hoc natural-language fixes like 'set status of <pkg> to BLOCKED'. Project-agnostic. Hard requirement: target package must exist (run /research-package first). Init is owned by /research-package and /research-dashboard, not this skill. Every write goes through a (category, status, op, target) state gate plus per-target invariant validators; on reject no bytes hit disk and the agent receives a structured rule violation. Every successful or rejected op appends one JSONL line to outputs/<pkg>/_actions.jsonl. Never invokes git."
+description: "The single mutation surface for any existing research package. Use whenever the user types /research-op, asks to insert/update/delete a row/card/section in a package (methodsTried, result-gate, result block, tracker row, doc card, doc file), asks to update an inventory field (status, activeGate, primaryMetricVsGate, lastAction, terminationMessage, adoptionPath), asks to check/lint a package, asks to fan out an artifact event (CHAIN_DONE, CHECKPOINT_SAVED, SENTINEL_WRITE, PHASE_MARKER, CANDIDATE_SUBMITTED). Also use for ad-hoc natural-language fixes like 'set status of <pkg> to BLOCKED'. Project-agnostic. Hard requirement: target package must exist (run /research-package first). Init is owned by /research-package and /research-dashboard, not this skill. Every write goes through a (category, status, op, target) state gate plus per-target invariant validators; on reject no bytes hit disk and the agent receives a structured rule violation. Every successful or rejected op appends one JSONL line to outputs/<pkg>/_actions.jsonl. Never invokes git."
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
 context: fork
 disable-model-invocation: false
@@ -19,11 +19,11 @@ Two shapes — structured (autonomous) and natural-language (user).
 ```bash
 # Structured (agent + WORKFLOW.md + scan-events callers)
 python skills/research-op/scripts/research_op.py --pkg <id> --op insert --target methodsTried --payload '{...}'
-python skills/research-op/scripts/research_op.py --pkg <id> --event chain-done --payload '{"artifact": "..."}'
+python skills/research-op/scripts/research_op.py --pkg <id> --event CHAIN_DONE --payload '{"artifact": "..."}'
 python skills/research-op/scripts/research_op.py --pkg <id> --op check --scope all
 python skills/research-op/scripts/research_op.py --pkg <id> --op scan-events
 python skills/research-op/scripts/research_op.py --pkg <id> --op scope-transition \
-  --payload '{"id":"dir/<id>","level":"direction","parents":["project/main"],"version":1,"status":"active","yardstick":{...},"provenance":"txn-0","op":"create","gate":"user+xmodel-audit"}'
+  --payload '{"id":"dir/<id>","level":"direction","parents":["project/main"],"version":1,"status":"ACTIVE","yardstick":{...},"provenance":"txn-0","op":"create","gate":"USER_CROSS_MODEL_AUDIT"}'
 # Project-level knowledge registries (papers / edges / gaps) — durable cross-package stores
 python skills/research-op/scripts/research_op.py --pkg <id> --op registry-add --target paper \
   --payload '{"id":"dpr2020","title":"Dense Passage Retrieval","url":"https://arxiv.org/abs/2004.04906"}'
@@ -56,7 +56,7 @@ python skills/research-op/scripts/research_op.py --nl 'update: set status of 202
 
 ## Op surface
 
-Primitives: `insert · update · delete · check`. Composite events: `chain-done · checkpoint-saved · sentinel-write · phase-marker · candidate-json`. Full legality matrix in [references/matrix.md](references/matrix.md). Per-event surface map in [references/composite-events.md](references/composite-events.md).
+Primitives: `insert · update · delete · check`. Composite events: `CHAIN_DONE · CHECKPOINT_SAVED · SENTINEL_WRITE · PHASE_MARKER · CANDIDATE_SUBMITTED`. Full legality matrix in [references/matrix.md](references/matrix.md). Per-event surface map in [references/composite-events.md](references/composite-events.md).
 
 Three ops live outside the `(category, status)` matrix (they are project-level, not package surfaces):
 
@@ -74,7 +74,7 @@ Read the structured envelope. The `suggested_fix` field tells you how to adjust 
 
 ## Audit log
 
-Path: `outputs/<pkg>/_actions.jsonl`. One JSONL line per op invocation (success or reject). Verbatim payload included. Never tracked in git. `tail -f` is the live-observability surface; `grep '"validation": "rejected"'` is the agent-stuck debug surface.
+Path: `outputs/<pkg>/_actions.jsonl`. One JSONL line per op invocation (success or reject). Verbatim payload included. Never tracked in git. `tail -f` is the live-observability surface; `grep '"validation": "OP_REJECTED"'` is the agent-stuck debug surface.
 
 ## Single-home invariants this skill protects
 

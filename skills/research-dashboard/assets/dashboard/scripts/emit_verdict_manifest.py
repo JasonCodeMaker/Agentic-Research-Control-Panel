@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Parse a GRDR trainer log + write a verdict_finalized manifest.
+"""Parse a GRDR trainer log + write a VERDICT_FINALIZED manifest.
 
 Designed to be called from a launcher at chain-done. Reads the last
 'Candidate-expanded retrieval: {...}' dict from the log, then emits a
 manifest JSON with the measured numbers shaped for propagate_apply.py.
 
-Default verdict is 'inconclusive' — training-time eval on the test pool is
+Default verdict is INCONCLUSIVE — training-time eval on the test pool is
 not the gate's full 4-cell evaluation. A downstream X-Pool launcher emits the
-final pass/fail.
+final PASS/FAIL.
 """
 
 from __future__ import annotations
@@ -54,8 +54,8 @@ def main() -> int:
     ap.add_argument("--exp-id", required=True)
     ap.add_argument("--row-anchor", required=True)
     ap.add_argument("--gate", default="")
-    ap.add_argument("--verdict", default="inconclusive",
-                    choices=["pass", "fail", "inconclusive"])
+    ap.add_argument("--verdict", default="INCONCLUSIVE",
+                    choices=["PASS", "FAIL", "INCONCLUSIVE", "DIAGNOSTIC"])
     ap.add_argument("--phase", default="")
     ap.add_argument("--cell", default="")
     ap.add_argument("--evidence", default="")
@@ -72,7 +72,7 @@ def main() -> int:
     )
 
     manifest = {
-        "event": "verdict_finalized",
+        "event": "VERDICT_FINALIZED",
         "exp_id": args.exp_id,
         "row_anchor": args.row_anchor,
         "measured": measured,

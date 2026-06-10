@@ -49,7 +49,7 @@ python skills/research-op/scripts/research_op.py --pkg <pkg-id> --op scan-events
 
 The cursor lives at `<runtime-root>/manifests/.propagation_cursor` (epoch float). An empty report = nothing to propagate. A non-empty report at the Stop Gate is a workflow violation.
 
-**Directive changes are locked facts too (E0).** A *user instruction that changes a package's constraints, plan, or scope* — "add a rule", "redesign experiment P1", "change the metric/baseline/roster" — is a locked fact on the same footing as an artifact event. It is not surfaced by `scan-events` (no artifact landed), so the agent must propagate it explicitly in the same turn: write the directive to its typed home (a binding rule → `/research-op insert --target package-invariant`; a plan/scope change → its owning surface), **and** update the tracker Resume Block `lastAction`/`workflow-state` **and** the registry `lastUpdated`. A directive that touches only one surface (e.g. a rule buried in a doc while the tracker and registry read unchanged) is a propagation violation — `learnings_lint.py lint-status` flags it as `directive-not-propagated`.
+**Directive changes are locked facts too (`DIRECTIVE_CHANGE`).** A *user instruction that changes a package's constraints, plan, or scope* — "add a rule", "redesign experiment P1", "change the metric/baseline/roster" — is a locked fact on the same footing as an artifact event. It is not surfaced by `scan-events` (no artifact landed), so the agent must propagate it explicitly in the same turn: write the directive to its typed home (a binding rule → `/research-op insert --target package-invariant`; a plan/scope change → its owning surface), **and** update the tracker Resume Block `lastAction`/`workflow-state` **and** the registry `lastUpdated`. A directive that touches only one surface (e.g. a rule buried in a doc while the tracker and registry read unchanged) is a propagation violation — `learnings_lint.py lint-status` flags it as `directive-not-propagated`.
 
 ### 4. Learnings Update Protocol
 
@@ -58,20 +58,22 @@ The cross-package learnings index at `research_html/learnings.html` is a derived
 **Core principles**
 
 1. **Upstream surface is the witness, the data file is the index.** A `methodsTried[]` row is written to `research-packages.js` *only after* the corresponding row exists in the package's `results.html` with a stable section anchor, and the `evidencePath` resolves to a real file or anchor. Never invent a row from memory.
-2. **Drafts are auto-detected; writes are user-acked at terminal transitions.** In-progress facts (E1, E2 below) update without user ack because the source-of-truth surface already exists. Terminal facts (E3–E6) require T1 user ack.
+2. **Drafts are auto-detected; writes are user-acked at terminal transitions.** In-progress facts (`VERDICT_FINALIZED`, `STATUS_CHANGED`) update without user ack because the source-of-truth surface already exists. Terminal facts (`TERMINAL_TRANSITION`, `ADOPTION`, `SUPERSESSION`, `REOPEN`) require T1 user ack.
 3. **Atomic per-turn closure.** Any turn that mutates a learnings-relevant field must, in the same turn, touch all of: upstream surface row → `research-packages.js` → tracker Resume Block `lastAction` → run `learnings_lint.py`. A non-empty lint report is a Stop-Gate violation.
 
 **Event trigger table**
 
+Learnings event names (`LEARNINGS_EVENT` constant — SSOT: this file): `DIRECTIVE_CHANGE`, `VERDICT_FINALIZED`, `STATUS_CHANGED`, `TERMINAL_TRANSITION`, `ADOPTION`, `SUPERSESSION`, `REOPEN`.
+
 | Event | Trigger (where it originates) | User ack | Fields written in `research-packages.js` |
 | --- | --- | --- | --- |
-| **E0. Directive change** | A user instruction changes the package's constraints / plan / scope (add a binding rule, redesign an experiment, change metric / baseline / roster) — not an artifact event, so `scan-events` will not surface it | none | Write the directive to its typed home (`bindingRules[]` via `--target package-invariant`, or the owning surface) + `lastAction`, `lastUpdated` |
-| **E1. Per-experiment verdict finalized** | `results.html` result-gate row gains `pass` / `fail` / `inconclusive` AND artifact verification recorded | none | Append one `methodsTried[]` row |
-| **E2. In-progress live update** | tracker live-check, plan revision, blocker change | none | `status`, `activeGate`, `primaryMetricVsGate`, `currentBlocker`, `openRuns`, `lastAction`, `lastUpdated` |
-| **E3. Terminal status transition** | `next-action.html` chosen-route resolves to a terminal lane move (`archive_or_stop`, adoption) | **T1** | `category` (lane move), `status` (terminal value), `terminationMessage`; freeze `methodsTried[]` |
-| **E4. Adoption** | `CLAUDE.md` "Current Best" edit, code merge into `models/` / `trainer/`, or a new in-progress package starts citing the win | **T1** | `adoptionPath` (specific anchor or path) |
-| **E5. Supersession** | A newer success package replaces an older one | **T1** | On the *old* package: `status = SUPERSEDED`, `supersededBy = <new id>` |
-| **E6. Reopen marked** | User explicitly states a fail package should be revisitable under a named condition | **T1** | `status = ARCHIVED_REOPENABLE`, `reopenTrigger = "<condition>"` |
+| **`DIRECTIVE_CHANGE`** | A user instruction changes the package's constraints / plan / scope (add a binding rule, redesign an experiment, change metric / baseline / roster) — not an artifact event, so `scan-events` will not surface it | none | Write the directive to its typed home (`bindingRules[]` via `--target package-invariant`, or the owning surface) + `lastAction`, `lastUpdated` |
+| **`VERDICT_FINALIZED`** | `results.html` result-gate row gains `PASS` / `FAIL` / `INCONCLUSIVE` / `DIAGNOSTIC` AND artifact verification recorded | none | Append one `methodsTried[]` row |
+| **`STATUS_CHANGED`** | tracker live-check, plan revision, blocker change | none | `status`, `activeGate`, `primaryMetricVsGate`, `currentBlocker`, `openRuns`, `lastAction`, `lastUpdated` |
+| **`TERMINAL_TRANSITION`** | `next-action.html` chosen-route resolves to a terminal lane move (`TERMINATE`, adoption) | **T1** | `category` (lane move), `status` (terminal value), `terminationMessage`; freeze `methodsTried[]` |
+| **`ADOPTION`** | `CLAUDE.md` "Current Best" edit, code merge into `models/` / `trainer/`, or a new in-progress package starts citing the win | **T1** | `adoptionPath` (specific anchor or path) |
+| **`SUPERSESSION`** | A newer success package replaces an older one | **T1** | On the *old* package: `status = WIN_SUPERSEDED`, `supersededBy = <new id>` |
+| **`REOPEN`** | User explicitly states a fail package should be revisitable under a named condition | **T1** | `status = ARCHIVED_CONDITIONAL`, `reopenTrigger = "<condition>"` |
 
 **`methodsTried` row contract**
 
@@ -81,10 +83,10 @@ Every row is exactly six fields, drawn verbatim from the witnessing `results.htm
 { method, hypothesis, gate, measured, verdict, evidencePath }
 ```
 
-- `verdict` ∈ `{pass, fail, inconclusive}`. Diagnostic-only rows are `inconclusive`, not `pass`.
+- `verdict` ∈ `{PASS, FAIL, INCONCLUSIVE, DIAGNOSTIC}`. Diagnostic-only rows use `DIAGNOSTIC` (not `INCONCLUSIVE`). Single-seed or ambiguous results use `INCONCLUSIVE`.
 - `evidencePath` must resolve. Either a file under `outputs/...` / `output/...`, or an HTML anchor like `packages/<id>/results.html#<exp-anchor>`. If the anchor doesn't exist yet, write the row only after creating it.
 - N upstream result-gate rows may collapse to 1 `methodsTried` row when they share a method (e.g., a 9-cell sweep summarized as one entry that links to the cell-level data). Prefer aggregation.
-- Single-seed `pass` is `inconclusive` until the gate's seed requirement is met.
+- Single-seed `PASS` is `INCONCLUSIVE` until the gate's seed requirement is met. Runs producing only diagnostic evidence (no hypothesis test) use `DIAGNOSTIC`.
 
 **The dashboard-wide tool: `research_html/scripts/learnings_lint.py`**
 
@@ -92,7 +94,7 @@ Every row is exactly six fields, drawn verbatim from the witnessing `results.htm
 | --- | --- |
 | `lint-status` | Schema lint per package: `(category, status)` legal; required fields present; forbidden fields absent; `methodsTried` rows have the six fields and a legal verdict; cross-references (`supersededBy`, `promotedTo`) resolve; on-disk `packages/<id>/` ⇄ registry entries match. |
 | `lint-evidence` | Every `methodsTried[].evidencePath` and `lastDecisionEvidencePath` resolves. File-missing is a warning; anchor-missing is an error. |
-| `scan-events [--pkg <id>]` | Runs the three draft writers (E1 / E3 / E4). Prints JSON drafts; does not write. |
+| `scan-events [--pkg <id>]` | Runs the three draft writers (`VERDICT_FINALIZED` / `TERMINAL_TRANSITION` / `ADOPTION`). Prints JSON drafts; does not write. |
 | `draft-method <pkg-id> <anchor>` | Print one JSON `methodsTried` row drafted from `results.html#<anchor>`. |
 | `draft-terminal <pkg-id>` | Print the JSON terminal block drafted from `next-action.html#chosen-route`. |
 | `all [--pkg <id>]` | All three lints + scan. Exit non-zero if any error was found. |
@@ -105,7 +107,7 @@ Add `--strict` to make warnings count toward the exit code (CI mode).
 2. Update `research_html/data/research-packages.js`.
 3. Update tracker Resume Block `lastAction`.
 4. Run `python research_html/scripts/learnings_lint.py all`. Fix every error before closing the turn.
-5. If the turn includes a terminal status transition (E3–E6), confirm user ack is in hand.
+5. If the turn includes a terminal status transition (`TERMINAL_TRANSITION` / `ADOPTION` / `SUPERSESSION` / `REOPEN`), confirm user ack is in hand.
 
 ### 5. Refinement Guardrails
 
@@ -124,13 +126,18 @@ When a refinement direction is explicitly judged failed, remove all worktrees cr
 
 `research_html/data/schema.js` declares the `(category, status)` state machine and the required-field rules each cell must satisfy. The card renderer and `learnings_lint.py` both import from it.
 
+**Naming convention:** Package *category* (lane) values are lowercase-kebab (`in-progress`, `success`, `fail`) — they are URL/CSS/attribute facets. Package *status* values are SCREAMING_SNAKE — they are state-machine positions. Never recase the lane values; never use lowercase for status values.
+
 ```
 category=in-progress → status ∈ { CONTEXT_LOADED, IMPLEMENTING, IMPLEMENTATION_REVIEW,
-                                  READY_TO_LAUNCH, EXPERIMENT_RUNNING, LIVE_ANALYSIS,
-                                  RESULT_ANALYSIS, NEXT_ACTION_READY, BLOCKED }
-category=success     → status ∈ { ADOPTED_PENDING_ACK, ADOPTED, SUPERSEDED }
-category=fail        → status ∈ { ARCHIVED, ARCHIVED_REOPENABLE }
+                                  DECISION_ADJUDICATION, READY_TO_LAUNCH, EXPERIMENT_RUNNING,
+                                  LIVE_ANALYSIS, RESULT_ANALYSIS, NEXT_ACTION_READY,
+                                  BLOCKED, STOPPED }
+category=success     → status ∈ { ADOPTED_UNCONFIRMED, ADOPTED, WIN_SUPERSEDED }
+category=fail        → status ∈ { ARCHIVED, ARCHIVED_CONDITIONAL }
 ```
+
+`STOPPED` is a terminal-within-lane state: it requires `terminationMessage` and is exempt from the `activeGate`/`primaryMetricVsGate`/`nextRoute` trio. `DECISION_ADJUDICATION` is a transient active state that keeps the full trio.
 
 Brainstorm is **not** a package category. Pre-package, pre-SSOT ideas live on the dashboard brainstorm
 lane (`research_html/data/brainstorms.js`); they become a package only at conversion (`/research-brainstorm`
@@ -139,9 +146,10 @@ lane (`research_html/data/brainstorms.js`); they become a package only at conver
 
 Field requirements key off `(category, status)`:
 
-- `category=in-progress`: requires `activeGate`, `primaryMetricVsGate`, `nextRoute`.
+- `category=in-progress` (except `STOPPED`): requires `activeGate`, `primaryMetricVsGate`, `nextRoute`.
+- `category=in-progress`, `status=STOPPED`: requires `terminationMessage`; exempt from the trio above.
 - `category=success`: requires `terminationMessage`, `methodsTried`, `adoptionPath`.
-- `category=fail`: requires `terminationMessage`, `methodsTried`; `reopenable` iff `status=ARCHIVED_REOPENABLE`.
+- `category=fail`: requires `terminationMessage`, `methodsTried`; `reopenTrigger` iff `status=ARCHIVED_CONDITIONAL`.
 
 Terminal transitions (any status change that crosses a lane boundary) require user ack per Trust rule T1.
 

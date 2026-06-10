@@ -32,11 +32,11 @@ def build_prompt(event):
 
 
 def classify_risk(draft):
-    """Default advisory R1-context unless the draft declares a default/trust-changing effect."""
+    """Default advisory R1_CONTEXT unless the draft declares a default/trust-changing effect."""
     rc = draft.get("risk_class")
     if rc in schema.RISK_CLASSES:
         return rc
-    return "R1-context"
+    return "R1_CONTEXT"
 
 
 def induce_rule(event, draft, *, version="1.0.0"):

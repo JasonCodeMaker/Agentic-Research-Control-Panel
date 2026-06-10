@@ -29,19 +29,19 @@ def _manifest(version="1.0.0", **over):
         "inputs": [], "outputs": [], "invariants": ["x"],
         "tests": {"static": ["x"]}, "provenance": {"generated_by": "skill-inducer-v1"},
         "activation": {"initial_mode": "canary", "allowed_scope": ["metric-change"]},
-        "rollback": {"suspend_on_oracle_fail": True}, "risk_class": "R3-project-exec",
+        "rollback": {"suspend_on_oracle_fail": True}, "risk_class": "R3_PROJECT_EXEC",
     }
     base.update(over)
     return base
 
 
-def _approval(manifest, operation="install", **over):
+def _approval(manifest, operation="INSTALL", **over):
     base = {
         "schema_version": schema.APPROVAL_SCHEMA, "approval_id": f"apr_{operation}_{manifest['version']}",
         "entity_type": "skill", "entity_id": manifest["id"], "entity_version": manifest["version"],
         "operation": operation, "bundle_digest": manifest["bundle_digest"],
         "permission_digest": bundle.permission_digest(manifest["permissions"]),
-        "evidence_digest": "sha256:ev", "decision": "approved", "approved_by": "user",
+        "evidence_digest": "sha256:ev", "decision": "APPROVED", "approved_by": "user",
         "approved_at": "2026-06-05T00:00:00+10:00",
     }
     base.update(over)
@@ -51,13 +51,13 @@ def _approval(manifest, operation="install", **over):
 def _drive_to_awaiting(se, version="1.0.0"):
     m = _manifest(version)
     evolution.run("evolution-create", {"manifest": m, "files": _files(version)}, se)
-    for frm, to in [("candidate", "validating"), ("validating", "validated"),
-                    ("validated", "awaiting_install_approval")]:
+    for frm, to in [("CANDIDATE", "VALIDATING"), ("VALIDATING", "VALIDATED"),
+                    ("VALIDATED", "AWAITING_INSTALL_APPROVAL")]:
         evolution.run("evolution-transition",
                       {"schema_version": schema.TRANSITION_SCHEMA, "transition_id": f"t-{to}-{version}",
                        "store": "skill", "entity_id": m["id"], "entity_version": version,
                        "expected_from_state": frm, "to_state": to, "op": "advance",
-                       "risk_class": "R3-project-exec", "idempotency_key": f"{m['id']}:{version}:{to}"}, se)
+                       "risk_class": "R3_PROJECT_EXEC", "idempotency_key": f"{m['id']}:{version}:{to}"}, se)
     return m
 
 
@@ -73,12 +73,12 @@ def test_install_with_valid_approval_reaches_canary(tmp_path):
     evolution.run("evolution-approve", _approval(m), se, proj)
     st, _, _ = evolution.run("evolution-install-skill",
                              {"entity_id": m["id"], "entity_version": "1.0.0",
-                              "approval_id": "apr_install_1.0.0"}, se, proj)
-    assert st == "passed"
+                              "approval_id": "apr_INSTALL_1.0.0"}, se, proj)
+    assert st == "PASSED"
     link = proj / ".claude" / "skills" / m["id"]
     assert link.is_symlink()
     assert store.current_state(store.read_log(se / "skills" / "transitions.jsonl"),
-                               m["id"], "1.0.0") == "canary"
+                               m["id"], "1.0.0") == "CANARY"
 
 
 def test_install_rejects_mismatched_bundle_digest(tmp_path):
@@ -116,13 +116,13 @@ def test_worker_cannot_approve(tmp_path, monkeypatch):
 
 def test_canary_scope_enforcement():
     m = _manifest()
-    assert install.is_invocation_allowed("canary", m, "metric-change")[0] is True
-    ok, reason = install.is_invocation_allowed("canary", m, "delete-everything")
+    assert install.is_invocation_allowed("CANARY", m, "metric-change")[0] is True
+    ok, reason = install.is_invocation_allowed("CANARY", m, "delete-everything")
     assert ok is False and reason == "canary-scope-escape"
 
 
 def test_suspended_denies_invocation():
-    ok, reason = install.is_invocation_allowed("suspended", _manifest(), "metric-change")
+    ok, reason = install.is_invocation_allowed("SUSPENDED", _manifest(), "metric-change")
     assert ok is False and reason == "suspended"
 
 
@@ -131,12 +131,12 @@ def test_suspend_then_deny(tmp_path):
     m = _drive_to_awaiting(se)
     evolution.run("evolution-approve", _approval(m), se, proj)
     evolution.run("evolution-install-skill",
-                  {"entity_id": m["id"], "entity_version": "1.0.0", "approval_id": "apr_install_1.0.0"}, se, proj)
+                  {"entity_id": m["id"], "entity_version": "1.0.0", "approval_id": "apr_INSTALL_1.0.0"}, se, proj)
     st, _, _ = evolution.run("evolution-suspend-skill",
                              {"entity_id": m["id"], "entity_version": "1.0.0", "reason": "regression"}, se, proj)
-    assert st == "passed"
+    assert st == "PASSED"
     assert store.current_state(store.read_log(se / "skills" / "transitions.jsonl"),
-                               m["id"], "1.0.0") == "suspended"
+                               m["id"], "1.0.0") == "SUSPENDED"
 
 
 def test_rollback_requires_authorization():

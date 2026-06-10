@@ -20,14 +20,14 @@ from scope_ssot import RuleViolation  # noqa: E402
 
 def _project_node():
     return {
-        "id": "project/main", "level": "project", "parents": [], "version": 1, "status": "active",
+        "id": "project/main", "level": "project", "parents": [], "version": 1, "status": "ACTIVE",
         "yardstick": {"north_star": "trustworthy auto-research",
                       "contribution_spine": "typed gates + SSOT", "non_goals": "multi-project"},
         "provenance": "txn-0",
     }
 
 
-def _direction_node(version=1, status="active"):
+def _direction_node(version=1, status="ACTIVE"):
     return {
         "id": "dir/contrastive-v2", "level": "direction", "parents": ["project/main"],
         "version": version, "status": status,
@@ -40,9 +40,9 @@ def _direction_node(version=1, status="active"):
 
 def _log(tmp_path):
     log = tmp_path / "_scope" / "transitions.jsonl"
-    scope_ssot.propose_transition(_project_node(), op="create", gate="user",
+    scope_ssot.propose_transition(_project_node(), op="create", gate="USER_ONLY",
                                   log_path=log, trigger="t0", cause="init project")
-    scope_ssot.propose_transition(_direction_node(), op="create", gate="user+xmodel-audit",
+    scope_ssot.propose_transition(_direction_node(), op="create", gate="USER_CROSS_MODEL_AUDIT",
                                   log_path=log, trigger="t1", cause="init direction")
     return log
 
@@ -58,12 +58,12 @@ def test_profile_projects_project_node(tmp_path):
 def test_card_status_matches_ssot_task_state(tmp_path):
     log = _log(tmp_path)
     # archive the direction via a gated transition; the card must follow the SSOT
-    scope_ssot.propose_transition(_direction_node(version=2, status="archived"), op="archive",
-                                  gate="user+xmodel-audit", log_path=log, trigger="t2",
+    scope_ssot.propose_transition(_direction_node(version=2, status="ARCHIVED"), op="archive",
+                                  gate="USER_CROSS_MODEL_AUDIT", log_path=log, trigger="t2",
                                   cause="superseded")
     inv = ri.build_inventory(scope_ssot.fold(scope_ssot.read_log(log)))
     card = next(c for c in inv["cards"] if c["id"] == "dir/contrastive-v2")
-    assert card["status"] == "archived"
+    assert card["status"] == "ARCHIVED"
 
 
 def test_manual_inventory_divergence_flagged(tmp_path):

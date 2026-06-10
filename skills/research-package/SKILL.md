@@ -98,20 +98,20 @@ Every package object on the dashboard surfaces these fields. If a field is unkno
 
 | Inventory field | CLI flag | What it answers |
 | --- | --- | --- |
-| `status` | `--status` | The `(category, status)` cell. Legal values per category come from `data/schema.js`. in-progress: `CONTEXT_LOADED`/`IMPLEMENTING`/`IMPLEMENTATION_REVIEW`/`READY_TO_LAUNCH`/`EXPERIMENT_RUNNING`/`LIVE_ANALYSIS`/`RESULT_ANALYSIS`/`NEXT_ACTION_READY`/`BLOCKED`. success: `ADOPTED_PENDING_ACK`/`ADOPTED`/`SUPERSEDED`. fail: `ARCHIVED`/`ARCHIVED_REOPENABLE`. `--workflow-state` is kept as a deprecated alias. |
+| `status` | `--status` | The `(category, status)` cell. Legal values per category come from `data/schema.js`. in-progress: `CONTEXT_LOADED`/`IMPLEMENTING`/`IMPLEMENTATION_REVIEW`/`READY_TO_LAUNCH`/`EXPERIMENT_RUNNING`/`LIVE_ANALYSIS`/`RESULT_ANALYSIS`/`NEXT_ACTION_READY`/`BLOCKED`. success: `ADOPTED_UNCONFIRMED`/`ADOPTED`/`WIN_SUPERSEDED`. fail: `ARCHIVED`/`ARCHIVED_CONDITIONAL`. `--workflow-state` is kept as a deprecated alias. |
 | `contributionSpineFlag` | `--contribution-spine-flag` | Which project-spine contribution this package touches (id from `RESEARCH_CONTRIBUTION_SPINE` in schema.js). |
 | `direction` | `--direction` | One-sentence research direction (optional; create_from_scope sets it from the Direction hypothesis). |
 | `activeGate` | `--active-gate` | The plan/spec gate that owns the next decision. Required for in-progress. |
 | `primaryMetricVsGate` | `--primary-metric-vs-gate` | One-line "metric=value vs gate" string for the dashboard card. Required for in-progress. |
 | `lastDecision` | `--last-decision` | One sentence per WORKFLOW.md "Decision" line. |
 | `lastDecisionEvidencePath` | `--last-decision-evidence-path` | Artifact path under runtime root that backs `lastDecision`. Verified by `lint-evidence`. |
-| `nextRoute` | `--next-route` | One of `run_next_experiment_from_step4`, `fix_implementation`, `revise_plan`, `archive_or_stop`, `ask_user`. Required for in-progress. |
+| `nextRoute` | `--next-route` | One of `RUN_NEXT_EXPERIMENT`, `FIX_IMPLEMENTATION`, `REVISE_PLAN`, `TERMINATE`, `ASK_USER`. Required for in-progress. |
 | `currentBlocker` | `--current-blocker` | One sentence; `unmeasured` if none. Required when status is `BLOCKED`. |
 | `lastAction` | `--last-action` | The most recent command, edit, or observation (Resume Block field). |
 | `openRuns` | `--open-runs` | tmux/session/job ids or `none` (Resume Block field). Required when status is `EXPERIMENT_RUNNING` or `LIVE_ANALYSIS`. |
 | `lastUpdated` | `--last-updated` | ISO date; toggles `data-stale` on pages that predate it. |
 | `experiments` | (post-scaffold edit) | Array `[{id, label?, purpose, after, output, gate, status, runLink?, docsAnchor?}]` painted onto both `index.html#plan-status` (status chips by `renderPlanStatus()`) and `plan.html#experiments` (pipeline timeline by `renderPipelineTimeline()`). See [Pipeline timeline](#pipeline-timeline-binding) for the binding per-field rules and caps. Update the matching entry's `status` whenever a phase opens/closes (same turn as the tracker row update). Allowed `status`: `pending`/`queued`/`running`/`completed`/`failed`/`skipped`/`blocked`. |
-| `methodsTried` | (post-scaffold edit) | Array of `{method, hypothesis, gate, measured, verdict, evidencePath}` rows (verdict ∈ `{pass, fail, inconclusive}`). Appended over the life of the package per the Learnings Update Protocol below. Required for success / fail. |
+| `methodsTried` | (post-scaffold edit) | Array of `{method, hypothesis, gate, measured, verdict, evidencePath}` rows (verdict ∈ `{PASS, FAIL, INCONCLUSIVE}`). Appended over the life of the package per the Learnings Update Protocol below. Required for success / fail. |
 | `terminationMessage` | (post-scaffold edit) | One sentence: why this package ended. Required for success / fail. |
 | `adoptionPath` | (post-scaffold edit) | Where the win was adopted (e.g., `CLAUDE.md#current-best`, model code path, downstream package id). Required for success. |
 | `supersededBy` / `promotedTo` / `reopenTrigger` | (post-scaffold edit) | Per-status cross-reference fields. See `data/schema.js`. |
@@ -234,7 +234,7 @@ python ~/.claude/skills/research-package/scripts/create_research_package.py \
   --status CONTEXT_LOADED \
   --contribution-spine-flag <id-from-schema.js> \
   --active-gate "..." \
-  --next-route ask_user \
+  --next-route ASK_USER \
   --last-action "scaffolded package" \
   --open-runs "none" \
   --scope index,plan,tracker,docs,_agent
@@ -343,12 +343,12 @@ Per-package `scripts/propagate_facts.py` byte-copies are no longer shipped by th
 
 | Event | Trigger surface | User ack | Inventory fields written |
 | --- | --- | --- | --- |
-| **E1. Per-experiment verdict finalized** | `results.html` result-gate row gains pass/fail/inconclusive AND artifacts verified | none | Append one `methodsTried[]` row |
-| **E2. In-progress live update** | tracker live-check, plan revision, blocker change | none | `status`, `activeGate`, `primaryMetricVsGate`, `currentBlocker`, `openRuns`, `lastAction`, `lastUpdated` |
-| **E3. Terminal status transition** | `tracker.html#chosen-route` → terminal lane move | **T1** | `category` (lane move), `status`, `terminationMessage`; freeze `methodsTried[]` |
-| **E4. Adoption** | CLAUDE.md "Current Best" edit, code merge into `models/` / `trainer/`, or downstream pkg cites the win | **T1** | `adoptionPath` |
-| **E5. Supersession** | Newer success pkg replaces an older one | **T1** | On the *old* pkg: `status = SUPERSEDED`, `supersededBy` |
-| **E6. Reopen marked** | User states a fail pkg should be revisitable | **T1** | `status = ARCHIVED_REOPENABLE`, `reopenTrigger` |
+| **`VERDICT_FINALIZED`** | `results.html` result-gate row gains PASS/FAIL/INCONCLUSIVE AND artifacts verified | none | Append one `methodsTried[]` row |
+| **`STATUS_CHANGED`** | tracker live-check, plan revision, blocker change | none | `status`, `activeGate`, `primaryMetricVsGate`, `currentBlocker`, `openRuns`, `lastAction`, `lastUpdated` |
+| **`TERMINAL_TRANSITION`** | `tracker.html#chosen-route` → terminal lane move | **T1** | `category` (lane move), `status`, `terminationMessage`; freeze `methodsTried[]` |
+| **`ADOPTION`** | CLAUDE.md "Current Best" edit, code merge into `models/` / `trainer/`, or downstream pkg cites the win | **T1** | `adoptionPath` |
+| **`SUPERSESSION`** | Newer success pkg replaces an older one | **T1** | On the *old* pkg: `status = WIN_SUPERSEDED`, `supersededBy` |
+| **`REOPEN`** | User states a fail pkg should be revisitable | **T1** | `status = ARCHIVED_CONDITIONAL`, `reopenTrigger` |
 
 Each `methodsTried` row is exactly six fields, drawn from the witnessing `results.html` row:
 
@@ -356,7 +356,7 @@ Each `methodsTried` row is exactly six fields, drawn from the witnessing `result
 { method, hypothesis, gate, measured, verdict, evidencePath }
 ```
 
-`verdict` ∈ `{pass, fail, inconclusive}`. `evidencePath` must resolve to a file or to a stable HTML anchor (`results.html#<exp-id>`). The dashboard-wide tool that drafts and validates these rows is `<root>/scripts/learnings_lint.py` (lives on the dashboard, not in each package). Subcommands:
+`verdict` ∈ `{PASS, FAIL, INCONCLUSIVE}`. `evidencePath` must resolve to a file or to a stable HTML anchor (`results.html#<exp-id>`). The dashboard-wide tool that drafts and validates these rows is `<root>/scripts/learnings_lint.py` (lives on the dashboard, not in each package). Subcommands:
 
 ```bash
 python <root>/scripts/learnings_lint.py lint-status     # schema + cross-ref lint
@@ -373,7 +373,7 @@ Per-turn closure when any event above fires: update the upstream witness (result
 
 ### Auto-applier (event manifests)
 
-`<root>/scripts/propagate_apply.py` (shipped by the `research-dashboard` skill) is the deterministic executor for events E1, E3, E4, E5, and E6. A launcher (or the agent) writes a small JSON manifest under `outputs/<pkg-id>/manifests/` with one of these event keys: `verdict_finalized` (E1) · `status_changed` (E2-style top-level status) · `adoption` (E4) · `supersession` (E5) · `reopen` (E6). The applier reads every unapplied manifest, writes the deterministic surface edits, marks the manifest `.applied`, and is idempotent on re-run. See `research-dashboard/SKILL.md` § *Event-manifest applier* for the full schema.
+`<root>/scripts/propagate_apply.py` (shipped by the `research-dashboard` skill) is the deterministic executor for events `VERDICT_FINALIZED`, `TERMINAL_TRANSITION`, `ADOPTION`, `SUPERSESSION`, and `REOPEN`. A launcher (or the agent) writes a small JSON manifest under `outputs/<pkg-id>/manifests/` with one of these event keys: `VERDICT_FINALIZED` · `STATUS_CHANGED` (STATUS_CHANGED-style top-level status) · `ADOPTION` · `SUPERSESSION` · `REOPEN`. The applier reads every unapplied manifest, writes the deterministic surface edits, marks the manifest `.applied`, and is idempotent on re-run. See `research-dashboard/SKILL.md` § *Event-manifest applier* for the full schema.
 
 For E2 (in-progress live update), `propagate_apply.py --auto-derive` scans every package on demand and fills **blank** `currentBlocker` / `nextRoute` fields based on `experiments[].status`. Non-blank fields stay untouched — they are treated as human-curated and require an explicit `state_derived` manifest to overwrite.
 
@@ -382,6 +382,6 @@ When wired to a Claude Code `Stop` hook (recipe at `research-dashboard/reference
 ## Bundled resources
 
 - `scripts/create_research_package.py` — generates a hierarchical package from this skill's templates and appends one inventory entry to the user's `data/research-packages.js`.
-- `templates/` — the 10 `string.Template` HTML files. Nine are scaffolded stage pages (the `STAGE_PAGES` keys: `index`, `plan`, `implementation`, `results`, `analysis`, `tracker`, `brainstorm`, `docs/index`, `_agent/context`); `docs/source.html` is a standalone fallback template for new per-source doc pages, not a `--scope` key. Tracker owns launch readiness + per-run live cards **and** the chosen-route panel; there is no longer a separate `launch.html`, `live.html`, or `next-action.html` template — the next-action decision is folded into `tracker.html#chosen-route`. The `analysis` template is the empty two-block scaffold (Rules + Insight) — its content discipline lives in the [`research-analysis`](../research-analysis/SKILL.md) skill.
+- `templates/` — the 10 `string.Template` HTML files. Eight are scaffolded stage pages (the `STAGE_PAGES` keys: `index`, `plan`, `implementation`, `results`, `analysis`, `tracker`, `docs/index`, `_agent/context`); `brainstorm.html` is a provenance-only template written by `create_from_scope.py` at conversion time and is not a `--scope` key; `docs/source.html` is a standalone fallback template for new per-source doc pages, not a `--scope` key. Tracker owns launch readiness + per-run live cards **and** the chosen-route panel; there is no longer a separate `launch.html`, `live.html`, or `next-action.html` template — the next-action decision is folded into `tracker.html#chosen-route`. The `analysis` template is the empty two-block scaffold (Rules + Insight) — its content discipline lives in the [`research-analysis`](../research-analysis/SKILL.md) skill.
 - `references/package-contract.md` — the 12-concept table, single-home rule, append-row recipe, and the four `data-ack` transition slots.
 - `references/results-page-pattern.md` — recommended structure for `results.html` derived from the panda-scaleup canonical example: section ordering (hypothesis → eval-banner → headline → result-gate → tracks → validity → footer), Track module pattern with `<details>` collapse hierarchy (**all `<details>` blocks closed by default — never `<details open>`**; order top-to-bottom: current-best, multi-seed, ablation, superseded, diagnostic-only), 2–4-card headline metric-strip pattern, and the rule that result-gate rows are per-planned-experiment (not per-measurement).

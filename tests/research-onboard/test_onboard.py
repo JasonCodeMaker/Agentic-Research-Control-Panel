@@ -83,7 +83,7 @@ def test_build_project_proposal_valid():
         "project/cifar10", _good_yardstick(), provenance="read:README.md,CLAUDE.md")
     assert item["level"] == "project"
     assert item["op"] == "create"
-    assert item["gate"] == "user"  # project gate per scope_ssot.REQUIRED_GATE
+    assert item["gate"] == "USER_ONLY"  # project gate per scope_ssot.REQUIRED_GATE
     assert item["proposed_yardstick"] == _good_yardstick()
     assert item["proposed_node"]["yardstick"] == _good_yardstick()
     assert item["proposed_node"]["level"] == "project"
@@ -112,7 +112,7 @@ def test_has_project_scope_true_after_commit(tmp_path):
     log = tmp_path / "transitions.jsonl"
     node = {
         "id": "project/cifar10", "level": "project", "parents": [], "version": 1,
-        "status": "active", "yardstick": _good_yardstick(), "provenance": "accepted",
+        "status": "ACTIVE", "yardstick": _good_yardstick(), "provenance": "accepted",
     }
-    scope_ssot.propose_transition(node, op="create", gate="user", log_path=log)
+    scope_ssot.propose_transition(node, op="create", gate="USER_ONLY", log_path=log)
     assert onboard.has_project_scope(log) is True

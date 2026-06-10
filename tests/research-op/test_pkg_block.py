@@ -56,8 +56,8 @@ const RESEARCH_PACKAGES = [
     category: "in-progress",
     status: "EXPERIMENT_RUNNING",
     experiments: [
-      { id: "E1", status: "completed" },
-      { id: "E2", status: "pending" },
+      { id: "E1", status: "COMPLETED" },
+      { id: "E2", status: "QUEUED" },
     ],
     methodsTried: [
       { method: "m1", verdict: "pass", evidencePath: "p1" },
@@ -125,7 +125,7 @@ def test_find_array_item_by_id():
     s, e = item
     assert arr[s:e].startswith("{")
     assert 'id: "E2"' in arr[s:e]
-    assert 'status: "pending"' in arr[s:e]
+    assert 'status: "QUEUED"' in arr[s:e]
 
 
 def test_round_trip_insert_after_method_tried_block(tmp_path, monkeypatch):
@@ -138,7 +138,7 @@ def test_round_trip_insert_after_method_tried_block(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     insert._append_to_inventory_array(
         "harness-test", "experiments",
-        {"id": "E3", "status": "pending"},
+        {"id": "E3", "status": "QUEUED"},
     )
     new_text = p.read_text()
     # E3 must land inside the experiments array, not the methodsTried array.

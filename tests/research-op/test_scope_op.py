@@ -17,7 +17,7 @@ def _run(args, cwd):
 def _direction_payload(gate):
     return {
         "id": "dir/test-pkg", "level": "direction", "parents": ["project/main"],
-        "version": 1, "status": "active",
+        "version": 1, "status": "ACTIVE",
         "yardstick": {
             "hypothesis": "h", "metric": {"name": "nDCG@10", "dir": "higher"},
             "baselines": ["xpool"], "success_predicate": "nDCG@10 >= base + 2",
@@ -29,7 +29,7 @@ def _direction_payload(gate):
 
 def test_scope_transition_legal_writes_log_and_audit(tmp_package):
     r = _run(["--pkg", "test-pkg", "--op", "scope-transition",
-              "--payload", json.dumps(_direction_payload("user+xmodel-audit"))],
+              "--payload", json.dumps(_direction_payload("USER_CROSS_MODEL_AUDIT"))],
              cwd=tmp_package)
     assert r.returncode == 0, r.stdout + r.stderr
     log = tmp_package / "outputs" / "_scope" / "transitions.jsonl"
@@ -38,12 +38,12 @@ def test_scope_transition_legal_writes_log_and_audit(tmp_package):
     assert recs[0]["node_id"] == "dir/test-pkg"
     assert recs[0]["op"] == "revise"
     audit = (tmp_package / "outputs" / "test-pkg" / "_actions.jsonl").read_text()
-    assert '"validation": "passed"' in audit
+    assert '"validation": "PASSED"' in audit
 
 
 def test_scope_transition_illegal_gate_rejected(tmp_package):
     r = _run(["--pkg", "test-pkg", "--op", "scope-transition",
-              "--payload", json.dumps(_direction_payload("agent+async-ack"))],
+              "--payload", json.dumps(_direction_payload("AGENT_DEFERRED_ACK"))],
              cwd=tmp_package)
     assert r.returncode == 2
     env = json.loads(r.stdout)
@@ -52,4 +52,4 @@ def test_scope_transition_illegal_gate_rejected(tmp_package):
     log = tmp_package / "outputs" / "_scope" / "transitions.jsonl"
     assert (not log.exists()) or log.read_text().strip() == ""  # reject-before-write
     audit = (tmp_package / "outputs" / "test-pkg" / "_actions.jsonl").read_text()
-    assert '"validation": "rejected"' in audit
+    assert '"validation": "OP_REJECTED"' in audit

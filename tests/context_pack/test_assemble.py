@@ -27,7 +27,7 @@ def _inputs(**over):
                 "id": "2026-05-01-old-idea", "category": "fail", "status": "ARCHIVED",
                 "methodsTried": [
                     {"method": "hard-negative mining", "hypothesis": "mining lifts R@1",
-                     "gate": "R@1>=48", "measured": "R@1=44", "verdict": "fail",
+                     "gate": "R@1>=48", "measured": "R@1=44", "verdict": "FAIL",
                      "evidencePath": "packages/2026-05-01-old-idea/results.html#m1"},
                 ],
             },
@@ -36,7 +36,7 @@ def _inputs(**over):
                 "adoptionPath": "models/encoder.py#L40",
                 "methodsTried": [
                     {"method": "dual-encoder", "hypothesis": "dual-encoder beats CLIP",
-                     "gate": "R@1>=48", "measured": "R@1=51", "verdict": "pass",
+                     "gate": "R@1>=48", "measured": "R@1=51", "verdict": "PASS",
                      "evidencePath": "packages/2026-04-01-win/results.html#w1"},
                 ],
             },
@@ -177,12 +177,12 @@ def test_render_json_shape():
 def test_registry_sections_papers_edges_gaps():
     inp = _inputs(
         papers_registry=[{"id": "dpr2020", "title": "Dense Passage Retrieval", "url": "http://x"}],
-        edges=[{"from": "paper:dpr2020", "to": "paper:ours", "type": "extends", "evidence": "sec 3"}],
+        edges=[{"from": "paper:dpr2020", "to": "paper:ours", "type": "EXTENDS", "evidence": "sec 3"}],
         gaps=[{"id": "G1", "summary": "no zero-shot evaluation", "status": "open"}],
     )
     md = context_pack.render_md(context_pack.assemble(inp))
     assert "Dense Passage Retrieval" in md                 # papers registry section
-    assert "extends" in md and "paper:dpr2020" in md       # relationships (typed edge)
+    assert "EXTENDS" in md and "paper:dpr2020" in md       # relationships (typed edge)
     assert "no zero-shot evaluation" in md                 # open gaps
 
 
@@ -196,11 +196,11 @@ def test_registry_sections_absent_when_empty():
 def test_cross_package_failures_groups_by_method():
     pkgs = [
         {"id": "a", "category": "fail",
-         "methodsTried": [{"method": "mining", "hypothesis": "h1", "verdict": "fail", "evidencePath": "a#1"}]},
+         "methodsTried": [{"method": "mining", "hypothesis": "h1", "verdict": "FAIL", "evidencePath": "a#1"}]},
         {"id": "b", "category": "fail",
-         "methodsTried": [{"method": "mining", "hypothesis": "h2", "verdict": "fail", "evidencePath": "b#1"}]},
+         "methodsTried": [{"method": "mining", "hypothesis": "h2", "verdict": "FAIL", "evidencePath": "b#1"}]},
         {"id": "c", "category": "in-progress",
-         "methodsTried": [{"method": "other", "hypothesis": "h3", "verdict": "fail", "evidencePath": "c#1"}]},
+         "methodsTried": [{"method": "other", "hypothesis": "h3", "verdict": "FAIL", "evidencePath": "c#1"}]},
     ]
     cf = context_pack.cross_package_failures(pkgs, min_packages=2)
     assert len(cf) == 1

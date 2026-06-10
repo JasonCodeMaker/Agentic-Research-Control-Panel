@@ -10,6 +10,6 @@ def revert_on_scope_change(tasks, transition):
         return tasks
     affected = set(transition.get("dial_revert", []))
     return [
-        {**t, "autonomy_level": "supervised", "locked": True} if t["id"] in affected else t
+        {**t, "autonomy_level": "SUPERVISED", "locked": True} if t["id"] in affected else t
         for t in tasks
     ]

@@ -94,14 +94,14 @@ def main() -> int:
             status_, files, message = evolution.run(args.op, payload, root)
         except evolution.EvolutionReject as e:
             audit.append("_selfevolve", op=args.op, target=None, event=None,
-                         state_before={}, state_after={}, validation="rejected", rule=e.rule,
+                         state_before={}, state_after={}, validation="OP_REJECTED", rule=e.rule,
                          files_touched=[], payload=payload, user_intent=None,
                          duration_ms=int((time.monotonic() - t0) * 1000))
             print(json.dumps({"rejected": True, "phase": "evolution-validate", "rule": e.rule,
                               "pkg": args.pkg, "op": args.op, "detail": e.detail}, indent=2))
             return 2
         audit.append("_selfevolve", op=args.op, target=None, event=None,
-                     state_before={}, state_after={}, validation=status_, rule=None,
+                     state_before={}, state_after={}, validation="PASSED", rule=None,
                      files_touched=files, payload=payload, user_intent=None,
                      duration_ms=int((time.monotonic() - t0) * 1000))
         print(f"{args.op} {status_}: {message}")
@@ -136,7 +136,7 @@ def main() -> int:
         except scope_ssot.RuleViolation as e:
             audit.append(args.pkg, op="scope-transition", target=node.get("id"), event=None,
                          state_before=state, state_after=state,
-                         validation="rejected", rule="scope-gate",
+                         validation="OP_REJECTED", rule="scope-gate",
                          files_touched=[], payload=payload,
                          user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
             print(json.dumps({
@@ -147,10 +147,10 @@ def main() -> int:
             return 2
         audit.append(args.pkg, op="scope-transition", target=node.get("id"), event=None,
                      state_before=state, state_after=state,
-                     validation="passed", rule=None,
+                     validation="PASSED", rule=None,
                      files_touched=[str(log_path)], payload=payload,
                      user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-        print(f"scope-transition OK node={node.get('id')} txn={record['txn_id']}")
+        print(f"scope-transition OK node={node.get('id')} txn={record['transaction_id']}")
         return 0
 
     # Registry-add path — project-level knowledge stores (papers / edges / gaps). Like
@@ -169,7 +169,7 @@ def main() -> int:
             status_, record, path = registry.add(args.target, payload)
         except registry.RegistryReject as e:
             audit.append(args.pkg, op="registry-add", target=args.target, event=None,
-                         state_before=state, state_after=state, validation="rejected", rule=e.rule,
+                         state_before=state, state_after=state, validation="OP_REJECTED", rule=e.rule,
                          files_touched=[], payload=payload, user_intent=None,
                          duration_ms=int((time.monotonic() - t0) * 1000))
             print(json.dumps({"rejected": True, "phase": "registry-validate", "rule": e.rule,
@@ -177,7 +177,7 @@ def main() -> int:
                               "detail": e.detail}, indent=2))
             return 2
         audit.append(args.pkg, op="registry-add", target=args.target, event=None,
-                     state_before=state, state_after=state, validation="passed", rule=None,
+                     state_before=state, state_after=state, validation="PASSED", rule=None,
                      files_touched=[str(path)] if status_ == "added" else [], payload=payload,
                      user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
         print(f"registry-add {status_} target={args.target} store={path}")
@@ -203,14 +203,14 @@ def main() -> int:
                      files_touched=files, payload=payload_obj,
                      user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
         print(f"event={args.event} OK files={files}")
-        return 0 if validation == "passed" else 2
+        return 0 if validation == "PASSED" else 2
 
     # Universal pre-checks (must run before state-gate so malformed inputs produce envelopes).
     rej_json = validate.rule_payload_json_valid(args.pkg, args.op, args.target, args.payload)
     if rej_json:
         audit.append(args.pkg, op=args.op, target=args.target, event=None,
                      state_before=state, state_after=state,
-                     validation="rejected", rule=rej_json.rule,
+                     validation="OP_REJECTED", rule=rej_json.rule,
                      files_touched=[], payload={"_raw": args.payload},
                      user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
         print(json.dumps(rej_json.envelope(op=args.op, target=args.target, phase="universal-check"), indent=2))
@@ -220,7 +220,7 @@ def main() -> int:
     if rej_tgt:
         audit.append(args.pkg, op=args.op, target=target, event=None,
                      state_before=state, state_after=state,
-                     validation="rejected", rule=rej_tgt.rule,
+                     validation="OP_REJECTED", rule=rej_tgt.rule,
                      files_touched=[], payload=json.loads(args.payload),
                      user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
         print(json.dumps(rej_tgt.envelope(op=args.op, target=target, phase="universal-check"), indent=2))
@@ -243,7 +243,7 @@ def main() -> int:
         }
         audit.append(args.pkg, op=args.op, target=target, event=None,
                      state_before=state, state_after=state,
-                     validation="rejected", rule="illegal-transition",
+                     validation="OP_REJECTED", rule="illegal-transition",
                      files_touched=[], payload=json.loads(args.payload),
                      user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
         print(json.dumps(envelope, indent=2))
@@ -261,7 +261,7 @@ def main() -> int:
         if rej:
             audit.append(args.pkg, op=args.op, target=target, event=None,
                          state_before=state, state_after=state,
-                         validation="rejected", rule=rej.rule,
+                         validation="OP_REJECTED", rule=rej.rule,
                          files_touched=[], payload=payload,
                          user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
             print(json.dumps(rej.envelope(op=args.op, target=target), indent=2))
@@ -272,7 +272,7 @@ def main() -> int:
     validation, files = router.dispatch(args.op, args.pkg, target, payload, state)
     audit.append(args.pkg, op=args.op, target=target, event=None,
                  state_before=state, state_after=state,
-                 validation=validation, rule=None,
+                 validation="PASSED", rule=None,
                  files_touched=files, payload=payload,
                  user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
     print(f"{args.op} OK pkg={args.pkg} target={target} files={files}")

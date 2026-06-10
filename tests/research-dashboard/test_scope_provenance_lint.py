@@ -15,7 +15,7 @@ def _direction_node():
         "level": "direction",
         "parents": ["project/main"],
         "version": 1,
-        "status": "active",
+        "status": "ACTIVE",
         "yardstick": {
             "hypothesis": "better retrieval objective improves Recall@10",
             "metric": {"name": "Recall@10", "dir": "higher"},
@@ -32,12 +32,12 @@ def _task_node(suffix="M0-baseline-validity", version=1):
         "level": "task",
         "parents": ["dir/retrieval-v2"],
         "version": version,
-        "status": "active",
+        "status": "ACTIVE",
         "yardstick": {
             "experiment": suffix,
             "config_ref": f"configs/{suffix}.yaml",
             "gate_predicate": "Recall@10 >= baseline",
-            "autonomy_level": "checkpoints",
+            "autonomy_level": "CHECKPOINTED",
         },
         "provenance": "test",
     }
@@ -46,12 +46,12 @@ def _task_node(suffix="M0-baseline-validity", version=1):
 def _scope_log(tmp_path, extra_task=False):
     log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
     direction = scope_ssot.propose_transition(
-        _direction_node(), op="create", gate="user+xmodel-audit", log_path=log)
+        _direction_node(), op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
     task = scope_ssot.propose_transition(
-        _task_node(), op="create", gate="agent+async-ack", log_path=log)
+        _task_node(), op="create", gate="AGENT_DEFERRED_ACK", log_path=log)
     if extra_task:
         scope_ssot.propose_transition(
-            _task_node("M1-main-hypothesis"), op="create", gate="agent+async-ack", log_path=log)
+            _task_node("M1-main-hypothesis"), op="create", gate="AGENT_DEFERRED_ACK", log_path=log)
     return direction, task
 
 
@@ -79,11 +79,11 @@ def _pkg(direction_rec, task_rec, parent_task=None):
         "pages": [],
         "sourceScopeNode": direction_rec["node_id"],
         "sourceScopeVersion": direction_rec["scope_version"],
-        "sourceScopeTxn": direction_rec["txn_id"],
+        "sourceScopeTxn": direction_rec["transaction_id"],
         "sourceScopeMilestones": [{
             "id": task_rec["node_id"],
             "scopeVersion": task_rec["scope_version"],
-            "txn": task_rec["txn_id"],
+            "txn": task_rec["transaction_id"],
         }],
         "experiments": [{
             "id": "P0",
@@ -91,7 +91,7 @@ def _pkg(direction_rec, task_rec, parent_task=None):
             "after": [],
             "output": "outputs/2026-06-03-retrieval-v2/P0/result.json",
             "gate": "Recall@10 >= baseline",
-            "status": "pending",
+            "status": "QUEUED",
             "parentTask": parent,
         }],
     }

@@ -35,9 +35,9 @@ def test_paper_requires_id_and_title(tmp_path):
 
 def test_add_edge_validates_type_and_dedups(tmp_path):
     root = str(tmp_path / "research_html")
-    s1, rec, _ = registry.add("edge", {"from": "paper:a", "to": "paper:b", "type": "extends"}, root=root)
-    assert s1 == "added" and rec["type"] == "extends"
-    s2, _, _ = registry.add("edge", {"from": "paper:a", "to": "paper:b", "type": "extends"}, root=root)
+    s1, rec, _ = registry.add("edge", {"from": "paper:a", "to": "paper:b", "type": "EXTENDS"}, root=root)
+    assert s1 == "added" and rec["type"] == "EXTENDS"
+    s2, _, _ = registry.add("edge", {"from": "paper:a", "to": "paper:b", "type": "EXTENDS"}, root=root)
     assert s2 == "duplicate"
     try:
         registry.add("edge", {"from": "a", "to": "b", "type": "bogus"}, root=root)
@@ -49,7 +49,7 @@ def test_add_edge_validates_type_and_dedups(tmp_path):
 def test_edge_requires_endpoints(tmp_path):
     root = str(tmp_path / "research_html")
     try:
-        registry.add("edge", {"from": "a", "type": "extends"}, root=root)
+        registry.add("edge", {"from": "a", "type": "EXTENDS"}, root=root)
         assert False
     except registry.RegistryReject as e:
         assert e.rule == "edge-endpoints-required"
@@ -90,7 +90,7 @@ def test_cli_registry_add_paper(tmp_package):
     assert store.exists() and "Dense Passage Retrieval" in store.read_text()
     # audit line recorded (project-level op still leaves a receipt)
     audit = (tmp_package / "outputs" / "test-pkg" / "_actions.jsonl").read_text()
-    assert '"op": "registry-add"' in audit and '"validation": "passed"' in audit
+    assert '"op": "registry-add"' in audit and '"validation": "PASSED"' in audit
 
 
 def test_cli_registry_add_rejects_bad_edge_type(tmp_package):
@@ -102,4 +102,4 @@ def test_cli_registry_add_rejects_bad_edge_type(tmp_package):
     # reject-before-write: no store file created
     assert not (tmp_package / "research_html" / "data" / "edges.jsonl").exists()
     audit = (tmp_package / "outputs" / "test-pkg" / "_actions.jsonl").read_text()
-    assert '"validation": "rejected"' in audit
+    assert '"validation": "OP_REJECTED"' in audit

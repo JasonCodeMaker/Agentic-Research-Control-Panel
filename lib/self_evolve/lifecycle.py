@@ -1,34 +1,35 @@
 """Rule lifecycle state machine (plan §7.1). Pure: legal-edge table + guards.
 
-`observed` is an event-derived signal group; from `candidate` onward a state belongs to
+`OBSERVED` is an event-derived signal group; from `CANDIDATE` onward a state belongs to
 an immutable entity version. A changed Rule is a new version, never an in-place mutation.
 """
 
 RULE_STATES = (
-    "observed", "candidate", "validating", "provisional", "active",
-    "superseded", "invalidated", "archived_reopenable", "rejected",
+    "OBSERVED", "CANDIDATE", "VALIDATING", "PROVISIONAL", "RULE_ACTIVE",
+    "RULE_SUPERSEDED", "INVALIDATED", "ARCHIVED_CONDITIONAL", "RULE_REJECTED",
 )
 
 # Directed legal edges (from_state -> to_state) for a Rule version.
 RULE_EDGES = frozenset({
-    ("observed", "candidate"),
-    ("candidate", "validating"),
-    ("validating", "rejected"),
-    ("validating", "provisional"),
-    ("provisional", "active"),
-    ("provisional", "invalidated"),
-    ("active", "superseded"),
-    ("active", "invalidated"),
-    ("invalidated", "archived_reopenable"),
-    ("archived_reopenable", "candidate"),
-    ("rejected", "candidate"),
+    ("OBSERVED", "CANDIDATE"),
+    ("CANDIDATE", "VALIDATING"),
+    ("VALIDATING", "RULE_REJECTED"),
+    ("VALIDATING", "PROVISIONAL"),
+    ("PROVISIONAL", "RULE_ACTIVE"),
+    ("PROVISIONAL", "INVALIDATED"),
+    ("RULE_ACTIVE", "RULE_SUPERSEDED"),
+    ("RULE_ACTIVE", "INVALIDATED"),
+    ("INVALIDATED", "ARCHIVED_CONDITIONAL"),
+    ("ARCHIVED_CONDITIONAL", "CANDIDATE"),
+    ("RULE_REJECTED", "CANDIDATE"),
 })
 
 # States whose entries may be retrieved into the Context Pack.
-RETRIEVABLE_STATES = frozenset({"active"})
+RETRIEVABLE_STATES = frozenset({"RULE_ACTIVE"})
 
-# Terminal-for-this-version states (no onward edge except re-evaluation as a new version).
-TERMINAL_STATES = frozenset({"superseded", "archived_reopenable", "rejected"})
+# Terminal-for-this-version states (no onward edge). ARCHIVED_CONDITIONAL is a quasi-terminal
+# with a conditional re-entry edge back to CANDIDATE, so it is NOT listed here.
+TERMINAL_STATES = frozenset({"RULE_SUPERSEDED", "RULE_REJECTED"})
 
 
 class IllegalTransition(Exception):

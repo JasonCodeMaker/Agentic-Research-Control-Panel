@@ -42,8 +42,8 @@ def test_syntax_node_check():
 
 def test_fold_latest_version_wins():
     recs = [
-        {"node_id": "dir/x", "node": {"id": "dir/x", "version": 1, "status": "active", "parents": []}},
-        {"node_id": "dir/x", "node": {"id": "dir/x", "version": 2, "status": "active", "parents": []}},
+        {"node_id": "dir/x", "node": {"id": "dir/x", "version": 1, "status": "ACTIVE", "parents": []}},
+        {"node_id": "dir/x", "node": {"id": "dir/x", "version": 2, "status": "ACTIVE", "parents": []}},
     ]
     proj = _run("return SI.foldTransitions(%s);" % json.dumps(recs))
     assert set(proj) == {"dir/x"}
@@ -52,12 +52,12 @@ def test_fold_latest_version_wins():
 
 def test_active_tree_built_from_parents_not_level_names():
     recs = [
-        {"node_id": "project/main", "node": {"id": "project/main", "level": "project", "status": "active", "parents": []}},
-        {"node_id": "dir/a", "node": {"id": "dir/a", "level": "direction", "status": "active", "parents": ["project/main"]}},
-        {"node_id": "dir/b", "node": {"id": "dir/b", "level": "direction", "status": "active", "parents": ["project/main"]}},
-        {"node_id": "dir/old", "node": {"id": "dir/old", "level": "direction", "status": "archived", "parents": ["project/main"]}},
-        {"node_id": "task/t1", "node": {"id": "task/t1", "level": "task", "status": "active", "parents": ["dir/a"]}},
-        {"node_id": "task/multi", "node": {"id": "task/multi", "level": "task", "status": "active", "parents": ["dir/a", "dir/b"]}},
+        {"node_id": "project/main", "node": {"id": "project/main", "level": "project", "status": "ACTIVE", "parents": []}},
+        {"node_id": "dir/a", "node": {"id": "dir/a", "level": "direction", "status": "ACTIVE", "parents": ["project/main"]}},
+        {"node_id": "dir/b", "node": {"id": "dir/b", "level": "direction", "status": "ACTIVE", "parents": ["project/main"]}},
+        {"node_id": "dir/old", "node": {"id": "dir/old", "level": "direction", "status": "ARCHIVED", "parents": ["project/main"]}},
+        {"node_id": "task/t1", "node": {"id": "task/t1", "level": "task", "status": "ACTIVE", "parents": ["dir/a"]}},
+        {"node_id": "task/multi", "node": {"id": "task/multi", "level": "task", "status": "ACTIVE", "parents": ["dir/a", "dir/b"]}},
     ]
     tree = _run("return SI.activeTree(SI.foldTransitions(%s));" % json.dumps(recs))
     # archived node excluded from the active forest
@@ -73,13 +73,13 @@ def test_active_tree_built_from_parents_not_level_names():
 
 def test_history_groups_by_node_in_file_order():
     recs = [
-        {"node_id": "dir/a", "op": "create", "txn_id": "t0", "node": {"id": "dir/a", "version": 1}},
-        {"node_id": "dir/b", "op": "create", "txn_id": "t1", "node": {"id": "dir/b", "version": 1}},
-        {"node_id": "dir/a", "op": "revise", "txn_id": "t2", "node": {"id": "dir/a", "version": 2}},
+        {"node_id": "dir/a", "op": "create", "transaction_id": "t0", "node": {"id": "dir/a", "version": 1}},
+        {"node_id": "dir/b", "op": "create", "transaction_id": "t1", "node": {"id": "dir/b", "version": 1}},
+        {"node_id": "dir/a", "op": "revise", "transaction_id": "t2", "node": {"id": "dir/a", "version": 2}},
     ]
     groups = _run("return SI.historyByNode(%s);" % json.dumps(recs))
     assert [r["op"] for r in groups["dir/a"]] == ["create", "revise"]
-    assert [r["txn_id"] for r in groups["dir/a"]] == ["t0", "t2"]
+    assert [r["transaction_id"] for r in groups["dir/a"]] == ["t0", "t2"]
     assert [r["op"] for r in groups["dir/b"]] == ["create"]
 
 
@@ -106,8 +106,8 @@ def test_parse_jsonl_reports_error_line_numbers():
 
 def test_active_predicate_only_status_active():
     recs = [
-        {"node_id": "n/keep", "node": {"id": "n/keep", "status": "active", "parents": []}},
-        {"node_id": "n/gone", "node": {"id": "n/gone", "status": "superseded", "parents": []}},
+        {"node_id": "n/keep", "node": {"id": "n/keep", "status": "ACTIVE", "parents": []}},
+        {"node_id": "n/gone", "node": {"id": "n/gone", "status": "SUPERSEDED", "parents": []}},
     ]
     tree = _run("return SI.activeTree(SI.foldTransitions(%s));" % json.dumps(recs))
     assert set(tree["active"]) == {"n/keep"}
