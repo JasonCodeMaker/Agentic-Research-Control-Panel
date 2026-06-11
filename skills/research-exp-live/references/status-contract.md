@@ -35,3 +35,16 @@ Live-check row mapping:
 | `ETA` | `eta` |
 
 The agent still owns `Agent`, `Live Action`, `Next Check`, and `Artifact Status`.
+
+Fact-backed package ownership:
+
+- `status.json` is the live-run source of truth and may be refreshed by the
+  harvester/watchdog.
+- `research_html/data/packages/<pkg>/tables/live_checks.csv` stores extracted
+  live-check snapshots for `tracker.html`.
+- `research_html/data/packages/<pkg>/tables/resource_allocation.csv` stores the
+  tracker resource-allocation projection rows.
+- The tracker CSV rows are package-surface facts. They do not replace
+  `status.json` as raw runtime truth.
+- Completed result claims and methods `PASS` rows must be backed by extracted
+  result facts, not manual tracker rows.

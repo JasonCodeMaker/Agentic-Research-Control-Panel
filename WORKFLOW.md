@@ -66,6 +66,20 @@ python skills/research-op/scripts/research_op.py --pkg <id> --event <event-name>
 
 Audit trail: every op invocation (success or reject) appends one line to `outputs/<pkg>/_actions.jsonl`.
 
+For fact-backed packages (`research_html/data/packages/<pkg>/` exists),
+repeated tracker and methods rows are facts first and HTML/registry projections
+second:
+
+- `live_checks.csv` is the canonical tracker live-check table.
+- `resource_allocation.csv` is the canonical tracker allocation table.
+- `methods_tried.csv` is the canonical methods table.
+- `research-packages.js methodsTried[]` is a generated compatibility
+  projection from `methods_tried.csv`.
+- `status.json` remains the raw live-run source. Tracker CSV rows are extracted
+  snapshots for the package surface, not the raw runtime truth.
+- Manual methods rows cannot support `PASS`; use a source-ref-backed result row
+  for PASS evidence.
+
 ## Shared Agent Return Contract
 
 Every subagent returns a compact report that gives the main agent evidence without forcing it to redo bounded work.

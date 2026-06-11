@@ -155,7 +155,7 @@ package contract:
 
 All new fields are optional; missing values render literal `unmeasured`.
 
-## Package fact layer (Phase 1)
+## Package fact layer (Phase 1/2)
 
 Result table facts for new or structurally touched result sections live under
 `research_html/data/packages/`:
@@ -164,6 +164,9 @@ Result table facts for new or structurally touched result sections live under
 research_html/data/packages/<pkg>.facts.js
 research_html/data/packages/<pkg>/tables/result_gate.csv
 research_html/data/packages/<pkg>/tables/result_table_<exp_id>.csv
+research_html/data/packages/<pkg>/tables/live_checks.csv
+research_html/data/packages/<pkg>/tables/resource_allocation.csv
+research_html/data/packages/<pkg>/tables/methods_tried.csv
 research_html/data/packages/<pkg>/extractors/<exp_id>.json
 ```
 
@@ -180,6 +183,16 @@ Rules:
   `verified_by`; they do not support `PASS` verdicts by default.
 - HTML result sections are projections. Fact-backed sections carry
   `data-source`, `data-source-row`, and `data-fact-revision` markers.
+- For fact-backed packages, `live_checks.csv` is the canonical tracker
+  live-check table and `resource_allocation.csv` is the canonical tracker
+  allocation table. `tracker.html` is rendered from those CSVs.
+- `methods_tried.csv` is the canonical methods table. `research-packages.js`
+  `methodsTried[]` is a generated compatibility projection with the six
+  dashboard fields only.
+- `status.json` remains the live-run source; tracker CSV rows are extracted
+  snapshots, not the raw runtime truth.
+- Manual methods rows cannot support `PASS`; a PASS methods row must come from
+  a source-ref-backed result CSV row.
 - `research-op --op check --scope fact-alignment` validates fact-backed result
   projections.
 
