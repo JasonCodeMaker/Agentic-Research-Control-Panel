@@ -28,8 +28,67 @@ RESULT_COLUMNS = [
     "extracted_at",
 ]
 
+LIVE_CHECK_COLUMNS = [
+    "row_id",
+    "time",
+    "exp_id",
+    "run_id",
+    "agent",
+    "run_state",
+    "last_log",
+    "progress",
+    "metrics",
+    "resource",
+    "artifacts",
+    "eta",
+    "action",
+    "next_check",
+    "source_artifact",
+    "source_mtime",
+    "extractor",
+    "extracted_at",
+]
+
+RESOURCE_ALLOCATION_COLUMNS = [
+    "row_id",
+    "exp_id",
+    "purpose",
+    "dependency",
+    "target",
+    "capacity",
+    "assigned",
+    "reason",
+    "agent",
+    "command_cwd_env",
+    "session_job",
+    "runtime_root",
+    "log_path",
+    "expected_duration",
+    "status",
+    "source_artifact",
+    "source_mtime",
+    "extractor",
+    "extracted_at",
+]
+
+METHODS_TRIED_COLUMNS = [
+    "row_id",
+    "exp_id",
+    "method",
+    "hypothesis",
+    "gate",
+    "measured",
+    "verdict",
+    "evidencePath",
+    "source_table",
+    "source_row",
+    "source_artifact",
+    "extracted_at",
+]
+
 VALID_RESULT_VALIDITY = {"VALID", "PARTIAL", "RESULT_FAIL", "UNMEASURED", "DIAGNOSTIC_ONLY", "MISSING"}
 VALID_EXPERIMENT_VERDICT = {"PASS", "FAIL", "INCONCLUSIVE", "DIAGNOSTIC", ""}
+VALID_RUN_STATES = {"QUEUED", "RUNNING", "COMPLETED", "RUN_FAILED", "RUN_HALTED", "STALE", "SKIPPED"}
 
 
 class FactError(RuntimeError):
@@ -58,6 +117,10 @@ def fact_paths(pkg: str, root: Path | str = Path(".")) -> FactPaths:
         tables_dir=package_data_dir / "tables",
         extractors_dir=package_data_dir / "extractors",
     )
+
+
+def table_csv_path(pkg: str, table_name: str, root: Path | str = Path(".")) -> Path:
+    return fact_paths(pkg, root=root).tables_dir / f"{table_name}.csv"
 
 
 def atomic_write(path: Path, text: str) -> None:
