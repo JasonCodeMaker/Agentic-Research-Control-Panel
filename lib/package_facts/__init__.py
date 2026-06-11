@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import hashlib
 import json
 import os
@@ -123,6 +124,10 @@ def table_csv_path(pkg: str, table_name: str, root: Path | str = Path(".")) -> P
     return fact_paths(pkg, root=root).tables_dir / f"{table_name}.csv"
 
 
+def is_fact_backed(pkg: str, root: Path | str = Path(".")) -> bool:
+    return fact_paths(pkg, root=root).package_data_dir.exists()
+
+
 def atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
@@ -222,3 +227,62 @@ def find_row_by_ref(tables_dir: Path, ref: str) -> dict[str, str]:
         if row.get("row_id") == row_id:
             return row
     raise FactError(f"source row not found: {ref}")
+
+
+def _source_path(pkg: str, source: str, root: Path | str = Path(".")) -> Path:
+    root = Path(root)
+    paths = fact_paths(pkg, root=root)
+    if source.startswith("tables/"):
+        return paths.package_data_dir / source
+    return root / source
+
+
+def relative_source_revision(pkg: str, source: str, root: Path | str = Path(".")) -> str:
+    path = _source_path(pkg, source, root=root)
+    if not path.exists():
+        raise FactError(f"projection source missing: {source}")
+    return file_revision(path)
+
+
+def record_page_projection(
+    pkg: str,
+    page: str,
+    sources: Iterable[str],
+    html_path: Path,
+    renderer: str,
+    root: Path | str = Path("."),
+) -> Path:
+    root = Path(root)
+    html_path = Path(html_path)
+    if not html_path.exists():
+        raise FactError(f"projection HTML missing: {html_path}")
+    facts = load_facts_js(pkg, root=root)
+    pages = facts.setdefault("projections", {}).setdefault("pages", {})
+    pages[page] = {
+        "renderer": renderer,
+        "sources": {source: relative_source_revision(pkg, source, root=root) for source in sources},
+        "htmlRevision": file_revision(html_path),
+        "renderedAt": dt.datetime.now(dt.UTC).astimezone().isoformat(timespec="seconds"),
+    }
+    return write_facts_js(pkg, facts, root=root)
+
+
+def page_projection(pkg: str, page: str, root: Path | str = Path(".")) -> dict:
+    facts = load_facts_js(pkg, root=root)
+    return ((facts.get("projections") or {}).get("pages") or {}).get(page) or {}
+
+
+def assert_page_projection_fresh(pkg: str, page: str, root: Path | str = Path(".")) -> None:
+    root = Path(root)
+    projection = page_projection(pkg, page, root=root)
+    if not projection:
+        raise FactError(f"projection metadata missing: {page}")
+    for source, expected in (projection.get("sources") or {}).items():
+        actual = relative_source_revision(pkg, source, root=root)
+        if actual != expected:
+            raise FactError(f"stale source for {page}: {source}")
+    html_path = root / "research_html" / "packages" / pkg / page
+    if not html_path.exists():
+        raise FactError(f"projection HTML missing: {page}")
+    if file_revision(html_path) != projection.get("htmlRevision"):
+        raise FactError(f"stale html for {page}: {page}")
