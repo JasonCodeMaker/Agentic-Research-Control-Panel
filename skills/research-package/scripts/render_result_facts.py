@@ -189,11 +189,28 @@ def replace_result_gate(text: str, rows_html: str) -> str:
     return pat.sub(lambda m: m.group(1) + "\n" + rows_html + "\n          " + m.group(3), text, count=1)
 
 
+def _section_content_bounds(text: str, attr: str) -> tuple[int, int] | None:
+    start = re.search(r'<section\b(?=[^>]*' + re.escape(attr) + r')[^>]*>', text, re.DOTALL)
+    if not start:
+        return None
+    depth = 0
+    for tag in re.finditer(r'</?section\b[^>]*>', text[start.start():], re.IGNORECASE | re.DOTALL):
+        absolute_start = start.start() + tag.start()
+        if tag.group(0).startswith("</"):
+            depth -= 1
+            if depth == 0:
+                return start.end(), absolute_start
+        else:
+            depth += 1
+    return None
+
+
 def replace_result_blocks(text: str, articles_html: str) -> str:
-    pat = re.compile(r'(<section[^>]*data-list="result-blocks"[^>]*>)(.*?)(</section>)', re.DOTALL)
-    if not pat.search(text):
+    bounds = _section_content_bounds(text, 'data-list="result-blocks"')
+    if not bounds:
         raise package_facts.FactError("results.html missing data-list=result-blocks section")
-    return pat.sub(lambda m: m.group(1) + "\n" + articles_html + "\n      " + m.group(3), text, count=1)
+    content_start, content_end = bounds
+    return text[:content_start] + "\n" + articles_html + "\n      " + text[content_end:]
 
 
 def bump_last_updated(text: str) -> str:

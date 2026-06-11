@@ -288,6 +288,28 @@ def test_fact_alignment_warns_for_legacy_package_without_fact_dir(tmp_path):
     assert "fact-no-projection" in result.stdout
 
 
+def test_fact_alignment_fails_scaffolded_package_without_fact_projection(tmp_path):
+    pkg = "2026-06-11-demo"
+    _write_dashboard(tmp_path, pkg, "<html><body><p>scaffolded result page</p></body></html>")
+    package_facts.write_facts_js(pkg, {
+        "schemaVersion": 1,
+        "createdByScaffold": True,
+        "experiments": ["P1"],
+        "resultTables": ["result_table_P1"],
+        "projections": {"pages": {}},
+    }, root=tmp_path)
+
+    result = subprocess.run([
+        sys.executable, str(LINT),
+        "fact-alignment",
+        "--pkg", pkg,
+        "--repo-root", str(tmp_path),
+    ], capture_output=True, text=True)
+
+    assert result.returncode == 1
+    assert "fact-projection-missing" in result.stdout
+
+
 def _write_projected_page(root: Path, pkg: str, page: str, body: str) -> Path:
     path = root / "research_html" / "packages" / pkg / page
     path.parent.mkdir(parents=True, exist_ok=True)

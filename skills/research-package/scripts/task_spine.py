@@ -30,6 +30,31 @@ def _measures(exp: dict) -> bool:
     return bool(exp.get("measures", True))
 
 
+def _has_result_table(text: str, eid: str) -> bool:
+    escaped = _esc(eid)
+    return (
+        f'data-table="result-slot-{escaped}"' in text
+        or f'data-table="result_table_{escaped}"' in text
+        or f'data-source="tables/result_table_{escaped}.csv"' in text
+    )
+
+
+def _section_content_bounds(text: str, attr: str) -> tuple[int, int] | None:
+    start = re.search(r'<section\b(?=[^>]*' + re.escape(attr) + r')[^>]*>', text, re.DOTALL)
+    if not start:
+        return None
+    depth = 0
+    for tag in re.finditer(r'</?section\b[^>]*>', text[start.start():], re.IGNORECASE | re.DOTALL):
+        absolute_start = start.start() + tag.start()
+        if tag.group(0).startswith("</"):
+            depth -= 1
+            if depth == 0:
+                return start.end(), absolute_start
+        else:
+            depth += 1
+    return None
+
+
 def _tbody_insert(text: str, table_body: str, rows: list[str]) -> str:
     if not rows:
         return text
@@ -80,7 +105,7 @@ def _derive_results(package_root: Path, experiments: list[dict]) -> Path | None:
                 '<td data-decision data-field="verdict">unmeasured</td>'
                 '<td data-field="reason">unmeasured</td></tr>'.format(eid=_esc(eid), low=_esc(eid.lower()), gate=gate)
             )
-        if f'data-table="result-slot-{_esc(eid)}"' not in text:
+        if not _has_result_table(text, eid):
             result_slots.append(
                 '\n        <article class="result-block" id="result-slot-{low}" data-result-block data-exp-id="{eid}" data-phase-id="{eid}">\n'
                 '          <h2>{eid} &mdash; result slot</h2>\n'
@@ -95,12 +120,10 @@ def _derive_results(package_root: Path, experiments: list[dict]) -> Path | None:
             )
     text = _tbody_insert(text, "result-gate", gate_rows)
     if result_slots:
-        text = re.sub(
-            r'(</section>\s*\n\s*</section>)',
-            "".join(result_slots) + r"\n      \1",
-            text,
-            count=1,
-        )
+        bounds = _section_content_bounds(text, 'data-list="result-blocks"')
+        if bounds:
+            _, content_end = bounds
+            text = text[:content_end].rstrip() + "".join(result_slots) + "\n      " + text[content_end:]
     if text != original:
         path.write_text(text, encoding="utf-8")
         return path

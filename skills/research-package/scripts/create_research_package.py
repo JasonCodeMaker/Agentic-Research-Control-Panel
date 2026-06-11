@@ -8,8 +8,14 @@ import datetime as dt
 import json
 import re
 import string
+import sys
 from pathlib import Path
 
+PIPELINE_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(PIPELINE_ROOT))
+
+from lib import package_facts  # noqa: E402
+import render_package_projection  # noqa: E402
 from task_spine import derive_task_blocks
 
 
@@ -115,6 +121,106 @@ def template_mapping(args: argparse.Namespace, package_id: str, doc_title: str =
     }
 
 
+def parse_experiments_json(raw: str) -> list[dict]:
+    if not raw:
+        return []
+    parsed = json.loads(raw)
+    if not isinstance(parsed, list):
+        raise SystemExit("--experiments must be a JSON list.")
+    return parsed
+
+
+def exp_id(exp: dict) -> str:
+    return str(exp.get("id") or "").strip()
+
+
+def exp_measures(exp: dict) -> bool:
+    return bool(exp.get("measures", True))
+
+
+def now_iso() -> str:
+    return dt.datetime.now(dt.UTC).astimezone().isoformat(timespec="seconds")
+
+
+def placeholder_result_row(exp: dict, args: argparse.Namespace, row_id: str) -> dict[str, str]:
+    source_artifact = str(exp.get("output") or args.artifact_root or "")
+    return {
+        "row_id": row_id,
+        "exp_id": exp_id(exp),
+        "metric": str(exp.get("gate") or args.primary_metric or "unmeasured"),
+        "value": "unmeasured",
+        "unit": "",
+        "split": "",
+        "baseline": str(args.baseline or "unmeasured"),
+        "verdict": "INCONCLUSIVE",
+        "validity": "UNMEASURED",
+        "source_artifact": source_artifact,
+        "source_mtime": "",
+        "extractor": "",
+        "extracted_at": "",
+    }
+
+
+def initialize_fact_layer(
+    repo_root: Path,
+    package_id: str,
+    args: argparse.Namespace,
+    experiments: list[dict],
+) -> list[Path]:
+    measurable = [exp for exp in experiments if exp_id(exp) and exp_measures(exp)]
+    if not experiments:
+        return []
+
+    paths = package_facts.fact_paths(package_id, root=repo_root)
+    result_tables = [f"result_table_{exp_id(exp)}" for exp in measurable]
+    package_facts.write_facts_js(
+        package_id,
+        {
+            "schemaVersion": 1,
+            "createdByScaffold": True,
+            "packageId": package_id,
+            "createdAt": now_iso(),
+            "experiments": [exp_id(exp) for exp in experiments if exp_id(exp)],
+            "resultTables": result_tables,
+            "projections": {"pages": {}},
+        },
+        root=repo_root,
+    )
+
+    touched: list[Path] = [paths.facts_js]
+    if measurable:
+        gate_rows = [
+            placeholder_result_row(exp, args, f"{exp_id(exp)}_gate")
+            for exp in measurable
+        ]
+        package_facts.upsert_csv_rows(paths.tables_dir / "result_gate.csv", package_facts.RESULT_COLUMNS, gate_rows)
+        touched.append(paths.tables_dir / "result_gate.csv")
+        for exp in measurable:
+            table_path = paths.tables_dir / f"result_table_{exp_id(exp)}.csv"
+            package_facts.upsert_csv_rows(
+                table_path,
+                package_facts.RESULT_COLUMNS,
+                [placeholder_result_row(exp, args, f"{exp_id(exp)}_placeholder")],
+            )
+            touched.append(table_path)
+
+    package_facts.upsert_csv_rows(paths.tables_dir / "live_checks.csv", package_facts.LIVE_CHECK_COLUMNS, [])
+    package_facts.upsert_csv_rows(paths.tables_dir / "resource_allocation.csv", package_facts.RESOURCE_ALLOCATION_COLUMNS, [])
+    package_facts.upsert_csv_rows(paths.tables_dir / "methods_tried.csv", package_facts.METHODS_TRIED_COLUMNS, [])
+    touched.extend([
+        paths.tables_dir / "live_checks.csv",
+        paths.tables_dir / "resource_allocation.csv",
+        paths.tables_dir / "methods_tried.csv",
+    ])
+
+    if measurable:
+        render_package_projection.render_results(package_id, repo_root)
+        touched.extend([repo_root / "research_html" / "packages" / package_id / "results.html", paths.facts_js])
+    render_package_projection.render_tracker(package_id, repo_root)
+    touched.extend([repo_root / "research_html" / "packages" / package_id / "tracker.html", paths.facts_js])
+    return touched
+
+
 def append_inventory(root: Path, package_id: str, args: argparse.Namespace, pages: list[str]) -> bool:
     data_path = root / "data" / "research-packages.js"
     if not data_path.exists():
@@ -154,7 +260,7 @@ def append_inventory(root: Path, package_id: str, args: argparse.Namespace, page
         "pages": page_slugs,
     }
     if args.experiments_json:
-        item["experiments"] = json.loads(args.experiments_json)
+        item["experiments"] = parse_experiments_json(args.experiments_json)
     if args.source_scope_node:
         item["sourceScopeNode"] = args.source_scope_node
         item["sourceScopeVersion"] = args.source_scope_version
@@ -257,6 +363,9 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--primary-metric is required.")
 
     pages = parse_scope(args.scope, args.category)
+    experiments = parse_experiments_json(args.experiments_json)
+    if any(exp_id(exp) and exp_measures(exp) for exp in experiments) and "results" not in pages:
+        pages.append("results")
     package_root = root / "packages" / package_id
     # Templates ship with this skill, not with the user's project tree.
     templates_dir = Path(__file__).resolve().parent.parent / "templates"
@@ -272,8 +381,9 @@ def main(argv: list[str] | None = None) -> int:
 
     inventory_updated = append_inventory(root, package_id, args, pages)
     derived = []
-    if args.experiments_json:
-        derived = derive_task_blocks(package_root, json.loads(args.experiments_json))
+    if experiments:
+        derived = derive_task_blocks(package_root, experiments)
+    fact_files = initialize_fact_layer(root.parent, package_id, args, experiments)
 
     print(f"package_id={package_id}")
     print(f"package_root={package_root}")
@@ -284,6 +394,10 @@ def main(argv: list[str] | None = None) -> int:
     if derived:
         print(f"derived_task_blocks={len(derived)}")
         for path in derived:
+            print(path)
+    if fact_files:
+        print(f"fact_files={len(fact_files)}")
+        for path in fact_files:
             print(path)
     print(f"inventory_updated={inventory_updated}")
     return 0

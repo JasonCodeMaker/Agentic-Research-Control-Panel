@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "skills" / "research-package" / "scripts"))
 
 import create_research_package  # noqa: E402
+from lib import package_facts  # noqa: E402
 
 
 def _dashboard(tmp_path):
@@ -203,8 +204,10 @@ def test_scaffold_derives_task_blocks_from_spine(tmp_path, monkeypatch):
     assert results.count('data-exp-id="P0"') >= 2
     assert results.count('data-exp-id="P1"') >= 2
     assert 'data-field="exp-id">P2<' not in results
-    assert 'data-table="result-slot-P0"' in results
-    assert 'data-table="result-slot-P1"' in results
+    assert 'data-table="result_table_P0"' in results
+    assert 'data-table="result_table_P1"' in results
+    assert 'data-source-row="result_gate:P0_gate"' in results
+    assert 'data-source-row="result_gate:P1_gate"' in results
     assert 'data-table="result-slot-P2"' not in results
     assert 'data-list="result-blocks"' in results
     assert 'data-fact-projection="results"' in results
@@ -217,6 +220,53 @@ def test_scaffold_derives_task_blocks_from_spine(tmp_path, monkeypatch):
 
     # Re-running derivation is idempotent: no duplicate rows/cards appear.
     create_research_package.derive_task_blocks(pkg, _experiments())
-    assert (pkg / "results.html").read_text(encoding="utf-8").count('data-table="result-slot-P1"') == 1
+    rerendered_results = (pkg / "results.html").read_text(encoding="utf-8")
+    assert rerendered_results.count('data-table="result_table_P1"') == 1
+    assert 'data-table="result-slot-P1"' not in rerendered_results
     assert (pkg / "implementation.html").read_text(encoding="utf-8").count('data-field="validating-exp">P1<') == 1
     assert (pkg / "tracker.html").read_text(encoding="utf-8").count('data-exp-id="P1"') == 1
+
+
+def test_scaffold_initializes_fact_layer_for_typed_spine(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    root = _dashboard(tmp_path)
+    package_id = "2026-06-11-fact-backed-spine"
+
+    rc = create_research_package.main([
+        "--root", str(root),
+        "--id", package_id,
+        "--name", "Fact Backed Spine",
+        "--category", "in-progress",
+        "--tag", "facts",
+        "--tag-meaning", "fact-backed scaffold test",
+        "--problem", "new packages must not start as legacy HTML-only records",
+        "--objective", "initialize CSV and JS package facts at scaffold time",
+        "--motivation", "future edits should use fact projection paths",
+        "--hypothesis", "fact-backed scaffolds prevent result-table drift",
+        "--primary-metric", "fact migration state",
+        "--baseline", "legacy HTML scaffold",
+        "--budget", "unmeasured",
+        "--no-change-boundary", "do not hand-edit projected result tables",
+        "--next-action", "verify fact layer",
+        "--scope", "all",
+        "--status", "CONTEXT_LOADED",
+        "--experiments", json.dumps(_experiments()),
+    ])
+
+    assert rc == 0
+    paths = package_facts.fact_paths(package_id, root=tmp_path)
+    assert paths.facts_js.exists()
+    assert (paths.tables_dir / "result_gate.csv").exists()
+    assert (paths.tables_dir / "result_table_P0.csv").exists()
+    assert (paths.tables_dir / "result_table_P1.csv").exists()
+    assert not (paths.tables_dir / "result_table_P2.csv").exists()
+    assert (paths.tables_dir / "live_checks.csv").exists()
+    assert (paths.tables_dir / "resource_allocation.csv").exists()
+    assert (paths.tables_dir / "methods_tried.csv").exists()
+
+    facts = package_facts.load_facts_js(package_id, root=tmp_path)
+    assert facts["createdByScaffold"] is True
+    assert facts["schemaVersion"] == 1
+    assert facts["experiments"] == ["P0", "P1", "P2"]
+    assert facts["resultTables"] == ["result_table_P0", "result_table_P1"]
+    assert sorted(facts["projections"]["pages"]) == ["results.html", "tracker.html"]

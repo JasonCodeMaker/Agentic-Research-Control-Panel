@@ -1396,6 +1396,11 @@ def lint_fact_alignment(data: dict, pkg_filter: str | None = None, repo_root: Pa
             continue
         paths = package_facts.fact_paths(pid, root=root)
         package_dir = root / "research_html" / "packages" / pid
+        try:
+            facts = package_facts.load_facts_js(pid, root=root)
+        except package_facts.FactError as exc:
+            facts = {}
+            rep.add(Violation(pid, "fact-js-malformed", str(exc), "error"))
         migration = audit_fact_migration.package_migration_state(pid, root)
         present_tables = ",".join(name for name, present in migration["tables"].items() if present) or "none"
         rep.notes.append(f"{pid}: migration-state={migration['state']} fact-tables={present_tables}")
@@ -1438,7 +1443,10 @@ def lint_fact_alignment(data: dict, pkg_filter: str | None = None, repo_root: Pa
                                   "error"))
 
         if not saw_projection and (package_dir / "results.html").exists():
-            rep.add(Violation(pid, "fact-no-projection", "no fact-backed result projection found", "warning"))
+            if facts.get("createdByScaffold"):
+                rep.add(Violation(pid, "fact-projection-missing", "scaffolded fact package has no projection", "error"))
+            else:
+                rep.add(Violation(pid, "fact-no-projection", "no fact-backed result projection found", "warning"))
     return rep
 
 
