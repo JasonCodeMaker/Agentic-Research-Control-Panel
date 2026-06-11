@@ -1,6 +1,6 @@
 ---
 name: research-ideate
-description: "R3 ideate — the hypothesis role. Use when the auto-research loop needs to propose hypotheses for a scoped direction. Consults a scope-conditional failed-idea banlist (scripts/banlist.py): a failed idea stays banned only while the scope that failed it holds, and is reopened when a metric revise invalidates the old failure condition (via lib/scope_ssot.propagate). Never re-proposes a still-banned idea. Project-agnostic; reads the active yardstick from the active direction node (Scope SSOT-owned intent), using the SSOT transition log only to detect a revise; gated writes route through research-op. Also use when a user asks to brainstorm, ideate, or propose hypotheses for a scoped direction."
+description: "R3 ideate — the hypothesis role. Use when research-brainstorm or an explicit scoped-direction task needs candidate hypotheses. Consults a scope-conditional failed-idea banlist (scripts/banlist.py): a failed idea stays banned only while the scope that failed it holds, and is reopened when a metric revise invalidates the old failure condition. Never re-proposes a still-banned idea. Gated writes route through research-op."
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob, Agent
 context: fork
 disable-model-invocation: false
@@ -60,9 +60,9 @@ reopen logic: `scope_ssot.propagate` only reopens an entry whose `kind == "IDEA"
 
 **Step 1 — Get the active yardstick.**
 
-The active direction **node** (with its `yardstick`) is supplied by the orchestrator (`research-auto`)
-or, standalone, recovered from the accepted Triage item's `proposed_yardstick` in
-`outputs/_scope/triage.jsonl`. Read the metric from that node:
+The active direction **node** (with its `yardstick`) is supplied by `/research-brainstorm`,
+`/research-scope`, or another caller when ideation is scoped. Standalone, recover it from the accepted
+Triage item's `proposed_yardstick` in `outputs/_scope/triage.jsonl`. Read the metric from that node:
 
 ```python
 metric = node["yardstick"]["metric"]   # what "failure" is measured against
@@ -78,8 +78,8 @@ log to read the current `scope_version` and to detect a metric revise (a record 
 
 **Step 1b — Read the Context Pack (compiled prior knowledge).**
 
-If `outputs/<pkg>/context_pack.md` exists, read it before generating candidates. The orchestrator
-(`research-auto`) compiles it; standalone, refresh it first with
+If `outputs/<pkg>/context_pack.md` exists, read it before generating candidates. The package runner
+(`/research-run`) compiles it during execution; standalone, refresh it first with
 `python3 <pipeline-root>/lib/context_pack/build.py --pkg <pkg> --if-stale`. The pack is the deterministic,
 evidence-linked digest of what the project already knows — its **Cross-package failed methods** and
 **Banned ideas** sections give you the *reasons* prior hypotheses failed (not just the ban ids the

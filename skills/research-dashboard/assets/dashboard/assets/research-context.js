@@ -29,7 +29,7 @@
       " &middot; truncated=" + esc(stamp.truncated) + "</p>";
 
     if (!sections.length) {
-      html += '<p class="context-empty">No compiled context yet. Run the auto-research loop — it ' +
+      html += '<p class="context-empty">No compiled context yet. Run the package execution loop — it ' +
         "compiles the Context Pack at context-load — to populate this view.</p>";
     } else {
       sections.forEach(function (sec) {

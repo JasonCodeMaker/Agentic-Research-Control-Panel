@@ -1,6 +1,6 @@
 ---
 name: research-lit
-description: "R2 search/read — the literature role. Use when the auto-research loop needs to find and read sources for a scoped direction. Fetch-don't-fabricate: every citation must resolve to a fetched source, enforced deterministically by lib/cite_check.unresolved_citations before any cite is written. Never invents a source it did not fetch. Project-agnostic; reads the active yardstick from the active direction node (Scope SSOT-owned intent), using the SSOT transition log only to detect a revise; gated writes route through research-op. Also use when a user directly asks to find, survey, or read related work / prior art for a scoped direction."
+description: "R2 search/read — the literature role. Use when research-brainstorm or an explicit scoped-direction task needs fetched sources, related work, prior art, baselines, or standard metrics. Fetch-don't-fabricate: every citation must resolve to a fetched source, enforced by lib/cite_check.unresolved_citations before any cite is written. Project-agnostic; reads the active yardstick from Scope SSOT when scoped; gated writes route through research-op."
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob, WebFetch, WebSearch
 context: fork
 disable-model-invocation: false
@@ -35,9 +35,9 @@ import scope_ssot, cite_check
 
 ### 1. Get the active yardstick to bound the search
 
-The active direction **node** (with its `yardstick`) is supplied by the orchestrator (`research-auto`)
-or, standalone, recovered from the accepted Triage item's `proposed_yardstick` in
-`outputs/_scope/triage.jsonl`. Read the yardstick from that node:
+The active direction **node** (with its `yardstick`) is supplied by `/research-brainstorm`,
+`/research-scope`, or another caller when the search is scoped. Standalone, recover it from the accepted
+Triage item's `proposed_yardstick` in `outputs/_scope/triage.jsonl`. Read the yardstick from that node:
 
 ```python
 yardstick = node["yardstick"]   # {hypothesis, metric, baselines, success_predicate}

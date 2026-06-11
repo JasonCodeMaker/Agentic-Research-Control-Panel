@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "research-auto" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "research-run" / "scripts"))
 import skeleton  # noqa: E402
 
 INTENT = "contrastive pretraining improves recall"

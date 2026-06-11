@@ -1,7 +1,7 @@
 """Verifier — the layered trust gate. Deterministic independence rules + a Codex jury adapter.
 
 The substantive judgment is made by a fresh, cross-family model (via mcp__codex__codex, called
-by the research-auto / research-op skill with file paths only). This lib owns the *deterministic*
+by the research-run / research-op skill with file paths only). This lib owns the *deterministic*
 half: which independence a Task's autonomy level requires, and whether a verdict is allowed to acquit.
 A judge may DRIVE review but may never ACQUIT its own work.
 """

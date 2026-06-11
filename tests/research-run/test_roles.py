@@ -8,7 +8,7 @@ Each helper emits a `{op, target, payload}` envelope that must pass both driver.
 import sys
 from pathlib import Path
 
-_SCRIPTS = Path(__file__).resolve().parents[2] / "skills" / "research-auto" / "scripts"
+_SCRIPTS = Path(__file__).resolve().parents[2] / "skills" / "research-run" / "scripts"
 sys.path.insert(0, str(_SCRIPTS))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "research-op" / "scripts"))
 import pytest  # noqa: E402

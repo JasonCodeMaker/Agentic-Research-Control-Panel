@@ -8,7 +8,7 @@ Real sub-agent dispatch slots into the same seam in later stages.
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "research-auto" / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "research-run" / "scripts"))
 import driver  # noqa: E402
 
 NODE = {

@@ -1,14 +1,14 @@
-"""Stage 0.5 front-door admission: /research-auto becomes the post-init front door — it may DISCOVER
-that Step-3 formation is missing and RUN the formation roles, but it must never ratify Triage or
-materialize a package from pending proposals. Formation capability lives in auto; commit authority
-stays with the user / Triage.
+"""Admission for /research-run: it only runs an existing scoped package.
+
+If setup, scope, task, or package materialization is missing, it returns a handoff action to the owning
+skill instead of forming scope or creating package surfaces itself.
 """
 
 import sys
 from pathlib import Path
 
 _PIPE = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(_PIPE / "skills" / "research-auto" / "scripts"))
+sys.path.insert(0, str(_PIPE / "skills" / "research-run" / "scripts"))
 sys.path.insert(0, str(_PIPE / "lib"))
 import admission  # noqa: E402
 import scope_ssot  # noqa: E402
@@ -83,55 +83,44 @@ def test_state_READY_full_and_ready(tmp_path):
 
 # ---- plan's six required tests ----
 
-def test_1_no_project_proposes_and_never_commits(tmp_path):
+def test_1_no_project_hands_off_and_never_commits(tmp_path):
     _dashboard(tmp_path)
     state = admission.detect_admission_state(tmp_path)
     actions = admission.build_admission_actions(state, {})
-    assert actions[0]["type"] == "PROPOSE_PROJECT"
+    assert actions[0]["type"] == "HANDOFF_PROJECT"
+    assert actions[0]["handoff"] in {"/research-onboard", "/research-scope"}
     assert not _log(tmp_path).exists()          # no scope-transition committed
 
 
-def test_2_no_direction_proposes_no_package(tmp_path):
+def test_2_no_direction_hands_off_no_package(tmp_path):
     _dashboard(tmp_path); _project(tmp_path)
     actions = admission.build_admission_actions(admission.detect_admission_state(tmp_path), {})
-    assert actions[0]["type"] == "PROPOSE_DIRECTION"
+    assert actions[0]["type"] == "HANDOFF_DIRECTION"
+    assert actions[0]["handoff"] == "/research-brainstorm"
     assert not any(a["type"] == "MATERIALIZE_PACKAGE" for a in actions)
     assert not (tmp_path / "research_html" / "packages").exists()
 
 
-def test_3_pending_triage_does_not_duplicate(tmp_path):
+def test_3_pending_triage_waits_instead_of_running(tmp_path):
     _dashboard(tmp_path); _project(tmp_path)
     ctx = {"pending": [{"id": "tri-1", "level": "direction"}]}
     actions = admission.build_admission_actions(admission.detect_admission_state(tmp_path), ctx)
     assert actions[0]["type"] == "AWAIT_TRIAGE_DECISION"
-    assert not any(a["type"] == "PROPOSE_DIRECTION" for a in actions)
+    assert not any(a["type"] == "HANDOFF_DIRECTION" for a in actions)
 
 
-def test_task_proposal_defaults_to_autonomous_and_surfaces_choices(tmp_path):
+def test_no_task_hands_off_to_scope_milestones(tmp_path):
     _dashboard(tmp_path); _project(tmp_path); _direction(tmp_path)
     actions = admission.build_admission_actions(admission.detect_admission_state(tmp_path), {})
-    assert actions[0]["type"] == "PROPOSE_TASK"
-    assert actions[0]["autonomy_level"] == "AUTONOMOUS"
-    assert actions[0]["proposal"]["yardstick"]["autonomy_level"] == "AUTONOMOUS"
-    assert actions[0]["autonomy_choices"] == ["SUPERVISED", "CHECKPOINTED", "DEFERRED", "AUTONOMOUS"]
+    assert actions[0]["type"] == "HANDOFF_TASK"
+    assert actions[0]["handoff"] == "/research-scope"
 
 
-def test_task_proposal_context_can_override_default_autonomy(tmp_path):
-    _dashboard(tmp_path); _project(tmp_path); _direction(tmp_path)
-    ctx = {"autonomy_level": "DEFERRED",
-           "task_proposal": {"yardstick": {"experiment": "validate"}}}
-    actions = admission.build_admission_actions(admission.detect_admission_state(tmp_path), ctx)
-    assert actions[0]["autonomy_level"] == "DEFERRED"
-    assert actions[0]["proposal"]["yardstick"]["autonomy_level"] == "DEFERRED"
-
-
-def test_task_proposal_override_updates_existing_yardstick_autonomy(tmp_path):
-    _dashboard(tmp_path); _project(tmp_path); _direction(tmp_path)
-    ctx = {"autonomy_level": "DEFERRED",
-           "task_proposal": {"yardstick": {"experiment": "validate", "autonomy_level": "SUPERVISED"}}}
-    actions = admission.build_admission_actions(admission.detect_admission_state(tmp_path), ctx)
-    assert actions[0]["autonomy_level"] == "DEFERRED"
-    assert actions[0]["proposal"]["yardstick"]["autonomy_level"] == "DEFERRED"
+def test_no_package_hands_off_to_package_materializer(tmp_path):
+    _dashboard(tmp_path); _project(tmp_path); _direction(tmp_path); _task(tmp_path)
+    actions = admission.build_admission_actions(admission.detect_admission_state(tmp_path), {})
+    assert actions[0]["type"] == "HANDOFF_PACKAGE"
+    assert actions[0]["handoff"] == "/research-package"
 
 
 def test_readiness_default_dial_is_autonomous(tmp_path):
@@ -141,28 +130,9 @@ def test_readiness_default_dial_is_autonomous(tmp_path):
     assert actions[0] == {"type": "RUN_READINESS", "dial": "AUTONOMOUS"}
 
 
-def test_invalid_autonomy_level_rejected():
-    assert admission.validate_admission_action(
-        {"type": "PROPOSE_TASK", "autonomy_level": "reckless"}) is not None
+def test_invalid_autonomy_level_rejected_for_readiness():
     assert admission.validate_admission_action(
         {"type": "RUN_READINESS", "dial": "reckless"}) is not None
-
-
-def test_autonomy_mismatch_rejected():
-    rej = admission.validate_admission_action({
-        "type": "PROPOSE_TASK",
-        "autonomy_level": "DEFERRED",
-        "proposal": {"yardstick": {"autonomy_level": "SUPERVISED"}},
-    })
-    assert rej is not None and any("mismatch" in r for r in rej["reasons"])
-
-
-def test_4_materialize_reads_committed_only():
-    committed = {"type": "MATERIALIZE_PACKAGE", "from": "committed", "sourceScopeTxn": "txn-abc"}
-    assert admission.validate_admission_action(committed) is None
-    pending = {"type": "MATERIALIZE_PACKAGE", "from": "pending"}
-    rej = admission.validate_admission_action(pending)
-    assert rej is not None and any("committed" in r for r in rej["reasons"])
 
 
 def test_5_ready_package_enters_loop(tmp_path):
@@ -183,14 +153,14 @@ def test_5_ready_package_enters_loop(tmp_path):
 
 def test_6_authority_cannot_be_smuggled():
     # a disposal decision
-    assert admission.validate_admission_action({"type": "PROPOSE_DIRECTION", "decision": "accept"}) is not None
+    assert admission.validate_admission_action({"type": "HANDOFF_DIRECTION", "decision": "accept"}) is not None
     # an SSOT commit disguised as a role mutation
-    smuggle_commit = {"type": "PROPOSE_DIRECTION",
+    smuggle_commit = {"type": "HANDOFF_DIRECTION",
                       "mutations": [{"op": "scope-transition", "target": "dir/d1", "payload": {}}]}
     rej = admission.validate_admission_action(smuggle_commit)
     assert rej is not None and any("scope-transition" in r for r in rej["reasons"])
     # a direct package write
-    smuggle_write = {"type": "PROPOSE_DIRECTION",
+    smuggle_write = {"type": "HANDOFF_DIRECTION",
                      "mutations": [{"op": "write_file", "target": "research_html/packages/p1/results.html",
                                     "payload": {}}]}
     assert admission.validate_admission_action(smuggle_write) is not None

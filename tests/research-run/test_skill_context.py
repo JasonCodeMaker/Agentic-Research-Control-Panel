@@ -1,7 +1,7 @@
-"""Fork-altitude contract: the conversational front-door / orchestration skills must run RESIDENT
+"""Fork-altitude contract: conversational front-door / orchestration skills must run RESIDENT
 (no `context: fork`) so the live session keeps loop state and never goes inert on a user-typed
 `/slash` (the "No response requested." halt). Bounded worker/mutator skills stay forked for context
-isolation (核心问题 #1). See [[auto-research-harness-first-strategy]] and the session-b07d0f85 diagnosis.
+isolation.
 """
 
 import re
@@ -11,7 +11,7 @@ _PIPE = Path(__file__).resolve().parents[2]
 _SKILLS = _PIPE / "skills"
 
 # Resident: a human converses with these / they drive a continuing loop — forking breaks continuity.
-RESIDENT = {"research-auto", "research-onboard", "research-brainstorm", "research-scope"}
+RESIDENT = {"research-run", "research-auto", "research-onboard", "research-brainstorm", "research-scope"}
 # Forked: bounded "do one task, return a result" executors — isolation is desirable.
 FORKED = {"research-op", "research-lit", "research-ideate", "research-reflect", "research-apply"}
 

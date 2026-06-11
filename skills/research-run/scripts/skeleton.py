@@ -4,14 +4,14 @@ Each role is thin/stub; what is real is the wiring — the scope write routes th
 gated writer, R5 reads the yardstick back from the SSOT node, L1 cite-exists partitions citations,
 and the terminal acquit routes through research-op's acquit gate at Supervised (T1 ack), blocked
 when the metric oracle fails. Roles split into their own skills in Stage 2b (research-scope /
-research-lit / research-ideate); the orchestrator is research-auto.
+research-lit / research-ideate); the package execution controller is research-run.
 """
 
 import json
 import sys
 from pathlib import Path
 
-_PIPE = Path(__file__).resolve().parents[3]  # scripts -> research-auto -> skills -> pipeline root
+_PIPE = Path(__file__).resolve().parents[3]  # scripts -> research-run -> skills -> pipeline root
 sys.path.insert(0, str(_PIPE / "lib"))
 sys.path.insert(0, str(_PIPE / "skills" / "research-op" / "scripts"))
 import scope_ssot  # noqa: E402

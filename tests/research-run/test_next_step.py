@@ -1,16 +1,15 @@
-"""Next-Smooth-Step contract (Issue 2). Two things must hold and be guarded against the REAL chain:
+"""Next-step contract for /research-run admission. Two things must hold against the real chain:
   1. detect_seed_direction reads the shape the generator actually emits — a populated plan-invariants
-     hypothesis in packages/<id>/plan.html (NOT a synthetic registry objectiveContract) — so it would
-     have caught the session-b07d0f85 turn-3 failure (a direction sitting in plan.html, FSM said "none").
+     hypothesis in packages/<id>/plan.html (NOT a synthetic registry objectiveContract).
   2. The FSM itself (build_admission_actions / run_front_door) BAKES the seed + rendered next_step into
-     the action at the real entry path — the smart part is not left to the agent reading SKILL prose.
+     the action at the real entry path, while still handing formation to the owning skill.
 """
 
 import sys
 from pathlib import Path
 
 _PIPE = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(_PIPE / "skills" / "research-auto" / "scripts"))
+sys.path.insert(0, str(_PIPE / "skills" / "research-run" / "scripts"))
 sys.path.insert(0, str(_PIPE / "lib"))
 import admission  # noqa: E402
 
@@ -45,10 +44,10 @@ def test_every_action_renders_a_nonempty_next_step():
         assert isinstance(step["awaits_user"], bool)
 
 
-def test_drafting_states_offer_one_tap_continue():
+def test_missing_task_hands_off_instead_of_one_tap_continue():
     step = _render("NO_TASK")
-    assert step["awaits_user"] is False
-    assert "go" in step["offer"].lower()
+    assert step["awaits_user"] is True
+    assert "/research-scope" in step["next_action"]
 
 
 def test_disposal_state_awaits_user():
@@ -102,10 +101,11 @@ def test_build_actions_bakes_seed_and_next_step_at_state_C(tmp_path):
     _scaffold_plan(tmp_path, "2026-06-08-grdr-efficiency-figures",
                    "H1: GRDR total latency <= every ANN baseline at a matched candidate budget.")
     a = admission.build_admission_actions("NO_DIRECTION", {}, root=tmp_path)[0]
-    assert a["type"] == "PROPOSE_DIRECTION"
+    assert a["type"] == "HANDOFF_DIRECTION"
     assert a["seed"]["found"] is True                          # attached by the FSM, not by prose
+    assert "/research-scope" in a["next_step"]["next_action"]
     assert "2026-06-08-grdr-efficiency-figures" in a["next_step"]["next_action"]
-    assert a["next_step"]["awaits_user"] is False
+    assert a["next_step"]["awaits_user"] is True
 
 
 def test_run_front_door_emits_next_step(tmp_path):

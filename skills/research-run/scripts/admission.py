@@ -1,9 +1,8 @@
-"""Stage 0.5 front-door admission layer — the post-init front door for /research-auto.
+"""Admission layer for /research-run.
 
-A small deterministic state machine (A-G) that runs BEFORE the experiment loop. If the project is not
-yet ready to run, it drives the Step-3 formation roles (R1-R3) up to the existing human gates, then
-stops. The boundary is strict: formation capability lives in auto, but commit authority stays with the
-user / Triage — this layer may PROPOSE through Triage, never ratify or materialize from pending state.
+A small deterministic state machine that runs before package execution. If the project is not ready to
+run, it returns a handoff to the skill that owns the missing prerequisite. It never forms scope, commits
+Scope SSOT nodes, or materializes package surfaces itself.
 """
 
 import re
@@ -25,15 +24,15 @@ STATES = (
 )
 
 ACTION_TYPES = {
-    "INIT_DASHBOARD", "PROPOSE_PROJECT", "PROPOSE_DIRECTION", "PROPOSE_TASK",
-    "MATERIALIZE_PACKAGE", "RUN_READINESS", "ENTER_AUTO_LOOP", "AWAIT_TRIAGE_DECISION",
+    "INIT_DASHBOARD", "HANDOFF_PROJECT", "HANDOFF_DIRECTION", "HANDOFF_TASK",
+    "HANDOFF_PACKAGE", "RUN_READINESS", "ENTER_RUN_LOOP", "AWAIT_TRIAGE_DECISION",
 }
 
-# State that still needs a Triage proposal -> (scope level, proposal action type).
-_PROPOSAL_STATES = {
-    "NO_PROJECT":   ("project",   "PROPOSE_PROJECT"),
-    "NO_DIRECTION": ("direction", "PROPOSE_DIRECTION"),
-    "NO_TASK":      ("task",      "PROPOSE_TASK"),
+# State that belongs to another skill -> (scope level, action type, handoff command).
+_HANDOFF_STATES = {
+    "NO_PROJECT":   ("project",   "HANDOFF_PROJECT",   "/research-onboard"),
+    "NO_DIRECTION": ("direction", "HANDOFF_DIRECTION", "/research-brainstorm"),
+    "NO_TASK":      ("task",      "HANDOFF_TASK",      "/research-scope"),
 }
 
 
@@ -58,22 +57,11 @@ def _requested_autonomy(context):
     return context.get("autonomy_level") or context.get("dial") or yardstick.get("autonomy_level") or DEFAULT_AUTONOMY_LEVEL
 
 
-def _proposal_with_autonomy(proposal, autonomy_level):
-    """Return a detached task proposal carrying the chosen/default autonomy level."""
-    if proposal is None:
-        proposal = {}
-    out = dict(proposal)
-    yardstick = dict(out.get("yardstick") or {})
-    yardstick["autonomy_level"] = autonomy_level
-    out["yardstick"] = yardstick
-    return out
-
-
 def detect_admission_state(root, *, readiness_ok=None):
     """Inspect the project and return the admission state (see the front-door state machine)."""
     root = Path(root)
     if not (root / "research_html" / "index.html").exists():
-        return "NO_DASHBOARD"  # dashboard scaffolding is an init op, not an auto-loop mutation
+        return "NO_DASHBOARD"  # dashboard scaffolding is an init op, not a run-loop mutation
     records = scope_ssot.read_log(root / "outputs" / "_scope" / "transitions.jsonl")
     nodes = scope_ssot.fold(records)
     if not _active(nodes, "project"):
@@ -90,12 +78,11 @@ def detect_admission_state(root, *, readiness_ok=None):
 
 
 def build_admission_actions(state, context=None, *, root=None):
-    """Map an admission state to the next front-door action(s). When `root` is given (the real entry
-    path) the actions are ENRICHED deterministically: at State NO_DIRECTION an on-disk drafted direction
-    is attached as `seed`, and every action carries its rendered plain-language `next_step`. The smart
-    parts are baked into the FSM here — not left to the agent reading prose — so /research-auto's actual
-    output already holds the seed + next step. With `root=None` the raw actions are returned unchanged
-    (pure/back-compat).
+    """Map an admission state to the next run action(s).
+
+    When `root` is given (the real entry path), actions are enriched with rendered `next_step` copy. At
+    NO_DIRECTION, an on-disk drafted direction can be attached as `seed` to make the handoff smoother, but
+    /research-run still does not propose or commit it.
     """
     actions = _raw_admission_actions(state, context)
     if root is None:
@@ -104,7 +91,7 @@ def build_admission_actions(state, context=None, *, root=None):
         seed = detect_seed_direction(root)
         if seed.get("found"):
             for a in actions:
-                if a.get("type") == "PROPOSE_DIRECTION":
+                if a.get("type") == "HANDOFF_DIRECTION":
                     a["seed"] = seed
     for a in actions:
         try:
@@ -119,30 +106,25 @@ def _raw_admission_actions(state, context=None):
     context = context or {}
     if state == "NO_DASHBOARD":
         return [{"type": "INIT_DASHBOARD",
-                 "message": "Run /research-dashboard first — scaffolding is an init op, not an auto mutation."}]
-    if state in _PROPOSAL_STATES:
-        level, action_type = _PROPOSAL_STATES[state]
+                 "handoff": "/research-dashboard",
+                 "message": "Run /research-dashboard first — scaffolding is an init op, not a run mutation."}]
+    if state in _HANDOFF_STATES:
+        level, action_type, handoff = _HANDOFF_STATES[state]
         if any(p.get("level") == level for p in context.get("pending", [])):
             return [{"type": "AWAIT_TRIAGE_DECISION", "level": level,
                      "pending": [p["id"] for p in context["pending"] if p.get("level") == level],
                      "message": f"A {level} proposal is already pending in Triage — waiting on your accept/reject."}]
-        if level == "task":
-            autonomy_level = _requested_autonomy(context)
-            return [{"type": action_type, "level": level, "via": "triage",
-                     "proposal": _proposal_with_autonomy(context.get("task_proposal"), autonomy_level),
-                     "autonomy_level": autonomy_level,
-                     "autonomy_choices": list(AUTONOMY_LEVELS),
-                     "message": "Default autonomy_level is AUTONOMOUS; choose SUPERVISED/CHECKPOINTED/DEFERRED/AUTONOMOUS before accepting if needed."}]
-        return [{"type": action_type, "level": level, "via": "triage",
-                 "proposal": context.get(f"{level}_proposal")}]
+        return [{"type": action_type, "level": level, "handoff": handoff,
+                 "message": f"/research-run requires an existing package; use {handoff} for the missing {level}."}]
     if state == "NO_PACKAGE":
-        return [{"type": "MATERIALIZE_PACKAGE", "from": "committed",
+        return [{"type": "HANDOFF_PACKAGE", "handoff": "/research-package",
                  "sourceScopeNode": context.get("direction_id"),
-                 "sourceScopeTxn": context.get("source_txn")}]
+                 "sourceScopeTxn": context.get("source_txn"),
+                 "message": "Committed scope exists, but package materialization belongs to /research-package."}]
     if state == "NOT_READY":
         return [{"type": "RUN_READINESS", "dial": _requested_autonomy(context)}]
     if state == "READY":
-        return [{"type": "ENTER_AUTO_LOOP"}]
+        return [{"type": "ENTER_RUN_LOOP"}]
     raise ValueError(f"unknown admission state: {state!r}")
 
 
@@ -159,12 +141,10 @@ def _hypothesis_filled(raw_html):
 
 
 def detect_seed_direction(root):
-    """Find a direction already drafted on disk but not yet committed to the SSOT — a package whose
-    plan.html carries a populated objectiveContract (the painted plan-invariants hypothesis line, the
-    real shape `create_from_scope`/`create_research_package` emit). At State C this lets the front door
-    PROPOSE that plan as the direction instead of asking the user to re-supply what plan.html already
-    holds (the session-b07d0f85 turn-3 failure). Newest package id (date-prefixed) wins; ties are
-    surfaced in `candidates` so render_next_step can offer the alternates.
+    """Find a direction already drafted on disk but not yet committed to the SSOT.
+
+    /research-run uses this only to enrich a handoff message; the actual Direction proposal still belongs
+    to /research-brainstorm or /research-scope.
     """
     pkgs_dir = Path(root) / "research_html" / "packages"
     if not pkgs_dir.exists():
@@ -185,23 +165,23 @@ def detect_seed_direction(root):
 _NEXT_STEP = {
     "INIT_DASHBOARD": (
         "No research dashboard exists here yet.",
-        "Run /research-dashboard to scaffold research_html/, then re-run /research-auto.",
+        "Run /research-dashboard to scaffold research_html/, then re-run /research-run.",
         "This one's yours to run — /research-dashboard sets up the surfaces I write to.", True),
-    "PROPOSE_PROJECT": (
+    "HANDOFF_PROJECT": (
         "No project objective is committed yet.",
-        "I'll draft a Project objective from the workspace and send it to Triage for your ratify.",
-        "Reply `go` and I'll draft + propose it; or tell me the objective and I'll use yours.", False),
-    "PROPOSE_TASK": (
-        "Direction is committed — the next move is the first milestone (a Task).",
-        "I'll draft the Task milestone (default autonomy: AUTONOMOUS) and send it to Triage for your ratify.",
-        "Reply `go` and I'll draft + propose the Task; or set the autonomy level first.", False),
-    "MATERIALIZE_PACKAGE": (
+        "Use /research-onboard for an existing repo, or /research-scope if you already know the objective.",
+        "/research-run starts after the objective, direction, task, and package exist.", True),
+    "HANDOFF_TASK": (
+        "Direction is committed, but no executable Task is committed yet.",
+        "Use /research-scope to propose and ratify validation milestones before running experiments.",
+        "/research-run will continue after the Task and package exist.", True),
+    "HANDOFF_PACKAGE": (
         "Direction and Task are committed, but no package exists yet.",
-        "I'll materialize the package from the committed scope (create_from_scope).",
-        "Reply `go` and I'll create the package surfaces.", False),
-    "ENTER_AUTO_LOOP": (
-        "Everything's ready — the experiment loop can start.",
-        "I'll enter the production loop and run the next eligible experiment.",
+        "Use /research-package to materialize the package from committed Scope state.",
+        "/research-run will continue once the package surfaces exist.", True),
+    "ENTER_RUN_LOOP": (
+        "Everything's ready — the package execution loop can start.",
+        "I'll run the next eligible package experiment and keep routing until the package is complete.",
         "Reply `go` to start the loop, or name a specific experiment to run first.", False),
 }
 
@@ -211,7 +191,7 @@ def render_next_step(action, *, root=None):
     action, and a continue/await affordance. The user-facing headline never carries a raw FSM label.
     """
     t = action.get("type")
-    if t == "PROPOSE_DIRECTION":
+    if t == "HANDOFF_DIRECTION":
         seed = action.get("seed")
         if seed is None and root is not None:
             s = detect_seed_direction(root)
@@ -219,16 +199,16 @@ def render_next_step(action, *, root=None):
         if seed and seed.get("found"):
             n = len(seed.get("candidates") or [seed["pkg"]])
             headline = f"A direction is already drafted on disk ({seed['source']}) but not yet committed."
-            next_action = (f"I'll propose the direction from {seed['source']} ({seed['pkg']}) to Triage "
-                           "for your ratify.")
-            offer = ("Reply `go` to propose it as-is, or tell me what to change first."
+            next_action = (f"Use /research-scope to propose the direction from {seed['source']} "
+                           f"({seed['pkg']}) to Triage for ratification.")
+            offer = ("Run /research-scope for that proposal, or edit the drafted plan first."
                      if n == 1 else
-                     f"Reply `go` to propose it, or name another of the {n} drafted plans to use instead.")
+                     f"Choose one of the {n} drafted plans, then run /research-scope.")
         else:
             headline = "Project is committed, but there's no active research direction yet."
-            next_action = "I'll shape a direction (search + ideate) and propose it to Triage for your ratify."
-            offer = "Reply `go` to let me draft one, or point me at a plan/brainstorm to seed it."
-        awaits_user = False
+            next_action = "Use /research-brainstorm to shape a Direction before running a package."
+            offer = "/research-run will continue after the Direction, Task, and package are committed."
+        awaits_user = True
     elif t == "RUN_READINESS":
         dial = action.get("dial", "AUTONOMOUS")
         headline = f"The package needs a readiness check before the loop can run unattended (dial: {dial})."
@@ -258,21 +238,15 @@ def validate_admission_action(action):
         reasons.append(f"unknown action type: {t!r}")
     if action.get("decision") in ("accept", "reject", "ACCEPTED", "REJECTED"):
         reasons.append("authority smuggle: a disposal decision belongs to the user, not the loop")
-    if action.get("type") in ("PROPOSE_TASK", "RUN_READINESS"):
-        level = action.get("autonomy_level") if action.get("type") == "PROPOSE_TASK" else action.get("dial")
+    if action.get("type") == "RUN_READINESS":
+        level = action.get("dial")
         if level not in AUTONOMY_LEVELS:
             reasons.append(f"invalid autonomy level: {level!r}; expected one of {list(AUTONOMY_LEVELS)}")
-        if action.get("type") == "PROPOSE_TASK":
-            proposal_level = (action.get("proposal") or {}).get("yardstick", {}).get("autonomy_level")
-            if proposal_level is not None and proposal_level != level:
-                reasons.append("autonomy mismatch: proposal yardstick must match action autonomy_level")
     for m in action.get("mutations", []):
         if isinstance(m, dict) and m.get("op") == "scope-transition":
-            reasons.append("authority smuggle: formation may only PROPOSE via Triage, never commit a scope-transition")
+            reasons.append("authority smuggle: /research-run never commits a scope-transition")
         else:
             reasons += [f"mutation: {e}" for e in driver.validate_mutation(m)]
-    if t == "MATERIALIZE_PACKAGE" and (action.get("from") == "pending" or not action.get("sourceScopeTxn")):
-        reasons.append("materialize_package must read a committed scope transition (sourceScopeTxn), not a pending proposal")
     if reasons:
         return {"rejected": True, "type": t, "reasons": reasons}
     return None
@@ -280,7 +254,7 @@ def validate_admission_action(action):
 
 def run_front_door(root, *, pkg_id=None, scope_node=None, role_sequence=None, adapters=None,
                    readiness_ok=None, context=None):
-    """Drive the front door: enter the production loop when READY, else return formation actions."""
+    """Drive the front door: enter the package run loop when READY, else return prerequisite handoffs."""
     state = detect_admission_state(root, readiness_ok=readiness_ok)
     if state == "READY":
         return {"entered": True, "state": "READY",

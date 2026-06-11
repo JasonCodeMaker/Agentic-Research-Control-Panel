@@ -69,7 +69,7 @@ compute constraints, non-goals, and current best checkpoint.
 - Keep the Trustworthy pipeline protocol sections project-agnostic; prepend local context instead of
   rewriting the universal rules.
 - If `CLAUDE.md` or `WORKFLOW.md` is absent, attach the pipeline protocols from the toolbox repo before
-  running `/research-dashboard`, `/research-onboard`, or `/research-auto`.
+  running `/research-dashboard`, `/research-onboard`, or `/research-run`.
 """
 
 

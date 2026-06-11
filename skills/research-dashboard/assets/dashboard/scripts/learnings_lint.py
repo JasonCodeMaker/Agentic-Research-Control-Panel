@@ -15,7 +15,7 @@ the bundled node helper (dump_packages.js) and runs four kinds of checks:
   draft-method    print one JSON methodsTried row drafted from a result-gate row
   draft-terminal  print the terminal field block drafted from tracker.html#chosen-route
   all             lint-status + lint-evidence + scan-events for every package
-  readiness       auto-research admission gate: per the autonomy dial's unattended
+  readiness       research-run admission gate: per the autonomy dial's unattended
                   horizon, every experiment is fanned out to plan/impl/doc/result/tracker
   alignment       task-spine structural alignment over every experiment in a package
 """
@@ -1024,7 +1024,7 @@ def cmd_draft_terminal(data: dict, pkg_id: str) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ─────────────────────────────────────────────────────────────────────────────
-# readiness — auto-research admission gate (horizon-by-dial over 5 criteria)
+# readiness — research-run admission gate (horizon-by-dial over 5 criteria)
 # ─────────────────────────────────────────────────────────────────────────────
 
 PLACEHOLDERS = {"", "unmeasured", "file:function", "tbd", "n/a", "none"}
@@ -1206,7 +1206,7 @@ def assess_readiness(pkg: dict, dial: str | None, base_dir: Path) -> Report:
 
 def lint_readiness(data: dict, dial: str | None, pkg_filter: str | None = None) -> Report:
     """CLI wrapper: assess every (filtered) package against PACKAGES_DIR."""
-    rep = Report(f"readiness — auto-research admission gate @ {dial or 'AUTONOMOUS'}")
+    rep = Report(f"readiness — research-run admission gate @ {dial or 'AUTONOMOUS'}")
     for pkg in data["packages"]:
         if pkg_filter and pkg.get("id") != pkg_filter:
             continue

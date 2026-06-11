@@ -2,7 +2,7 @@
 
 
 > A project-management layer for autonomous ML research. You attach it to a research repo, define the
-> objective, and let `/research-auto` advance the work from project setup to scoped tasks, experiments,
+> objective, form a scoped package, and let `/research-run` complete that package through experiments,
 > verified results, and project memory — with every claim gated by evidence instead of trust.
 
 This repo is the **toolbox**, not the research project itself. Its skills run from inside the ML project
@@ -10,12 +10,12 @@ you want to manage. The agent can propose and execute work; **you own the object
 ratification gates**.
 
 **Current maturity, in one sentence.** The dashboard, Scope/Triage system, trust gates, Context Pack,
-self-evolution Rule Store, `/research-auto` front door, exp-live runtime envelope, fact-backed package
-surfaces, and deterministic dispatch contract are implemented and tested; the remaining work is
-replacing tested fake role adapters with live model-dispatched scientist roles.
+self-evolution Rule Store, `/research-run` package runner, exp-live runtime envelope, fact-backed package
+surfaces, and deterministic dispatch contract are implemented and tested; `/research-auto` remains only a
+deprecated compatibility alias.
 
 **Contents** · [Why This Exists](#why-this-exists) · [Quick Start](#quick-start) ·
-[Research Lifecycle](#research-lifecycle) · [What `/research-auto` Does](#what-research-auto-does) ·
+[Research Lifecycle](#research-lifecycle) · [What `/research-run` Does](#what-research-run-does) ·
 [Trust Guarantees](#trust-guarantees) · [How It Works](#how-it-works) ·
 [Repository Layout](#repository-layout) · [Reference](#reference) · [Contributing](#contributing)
 
@@ -42,8 +42,8 @@ prose.
 
 Setup installs **two things at two scopes**:
 
-1. **The skills** — the 13 `/research-*` commands. Install them once at the **global** scope (visible in
-   every project) *or* per-repo at the **project** scope.
+1. **The skills** — the `/research-*` commands. Install them once at the **global** scope (visible in every
+   project) *or* per-repo at the **project** scope.
 2. **The protocols + dashboard** — attached **per research project** you want to manage.
 
 Natural-language paragraphs explain the intent and guardrails. `bash` blocks are exact setup commands.
@@ -83,11 +83,11 @@ for src in "$REPO"/skills/*/; do
   fi
   ln -sfn "${src%/}" "$DEST/$name"
 done
-ls -l "$DEST" | grep research                   # expect 13 research symlinks: 'l…' lines with '-> …/skills/<name>'
+ls -l "$DEST" | grep research                   # expect research symlinks: 'l…' lines with '-> …/skills/<name>'
 ```
 
 Then reload the agent (restart Claude Code, or open a new Codex session) so it discovers the skills,
-type `/research-` and confirm the 13 commands autocomplete.
+type `/research-` and confirm the commands autocomplete.
 
 When a protocol or skill body shows a script path like `skills/<name>/scripts/...` from inside a managed
 research repo, resolve it through the installed symlink directory, e.g.
@@ -151,18 +151,19 @@ test -f research_html/live.html
 Run once per project. This creates `research_html/` — the shared surface where you and the agent read the
 same compiled state (lanes, Scope projection, package links, Context Pack, and the Live Runs page).
 
-### 5 · Onboard or define the project objective, then run the loop
+### 5 · Onboard, form a package, then run it
 
-The project's **global objective** is the first thing that must be locked in: `/research-auto` refuses to
-run experiments until a Project node is ratified, so on a fresh project its very first action is to
-propose that objective and stop for you. After the dashboard exists, pick the entry point that matches
-how much project context already exists:
+The project's **global objective** is the first thing that must be locked in. `/research-run` will not run
+experiments until Project, Direction, Task, and package surfaces already exist, so use the formation
+commands first:
 
 | Entry point | Use when | What it does |
 | --- | --- | --- |
 | `/research-onboard` | **Recommended for an existing research repo.** The project already has README / configs / source / data notes / baselines, but no committed Project node. | Analyzes the workspace, writes `outputs/_scope/prior_knowledge.md`, drafts a Project objective, submits it as a pending Triage proposal, then stops for your ratification. |
-| `/research-scope` | You already know the exact Project objective and want to author it directly. | Builds a typed Project proposal for the Scope SSOT admission gate. |
-| `/research-auto` | You want the front door to choose the next legal setup/run action. | Detects dashboard / Project / Direction / Task / package readiness and returns the next proposal or run action. |
+| `/research-brainstorm` | You have a vague or partial research idea. | Shapes pre-package ideas, grounds them with literature when needed, and proposes one Direction through Triage. |
+| `/research-scope` | You already know the exact Project/Direction/Task scope or need to revise it. | Builds typed Scope proposals and validation milestones for the Scope SSOT admission gate. |
+| `/research-package` | Direction and Task are committed, but no package exists yet. | Materializes package surfaces from committed Scope state only. |
+| `/research-run` | A scoped package exists and should be executed to completion. | Runs readiness, implementation/review, launch/monitoring, artifact propagation, result verification, and terminal routing. |
 
 For an **existing project**, the normal setup path is:
 
@@ -186,11 +187,11 @@ Revise the objective / Direction to focus on …
 Use the supervised / checkpoints / async / autonomous autonomy level for this Task.
 ```
 
-Only a ratified objective is committed to the Scope SSOT (`outputs/_scope/transitions.jsonl`); the
-framework never ratifies silently or materializes a package from a pending proposal. After each accepted
-proposal, run `/research-auto` again — the same command intentionally advances one legal step at a time
-(**objective → Direction → Task → run**). `/research-package` can also be driven directly to materialize
-a package, but only from committed Scope state.
+Only ratified scope is committed to the Scope SSOT (`outputs/_scope/transitions.jsonl`); the framework
+never ratifies silently or materializes a package from a pending proposal. The normal path is:
+`/research-onboard` or `/research-scope` for Project, `/research-brainstorm` or `/research-scope` for
+Direction, `/research-scope` for Task milestones, `/research-package` for package materialization, then
+`/research-run` to complete the package.
 
 ---
 
@@ -203,10 +204,10 @@ decision, agent action, and durable output.
 | --- | --- | --- | --- |
 | **0 · Attach toolbox** | Install skills and attach protocols to the target repo. | Symlinks skills, preserves/merges protocol files, and verifies the toolbox. | The target repo now has the operating rules. |
 | **1 · Initialize workspace** | Run `/research-dashboard`, then `/research-onboard` if no Project node exists. | Scaffolds the live dashboard; for existing repos, analyzes project context into a prior-knowledge digest and Project proposal. | `research_html/`, optional `outputs/_scope/prior_knowledge.md`, dashboard lanes. |
-| **2 · Ratify project objective** | Inspect and approve/reject the `/research-onboard`, `/research-scope`, or `/research-auto` Project proposal. | Proposes a Project node through Triage; commits only after human ratification. | Accepted Project in Scope SSOT, or a rejected proposal record. |
+| **2 · Ratify project objective** | Inspect and approve/reject the `/research-onboard` or `/research-scope` Project proposal. | Proposes a Project node through Triage; commits only after human ratification. | Accepted Project in Scope SSOT, or a rejected proposal record. |
 | **3 · Form a research direction** | Approve/reject the Direction proposal in chat. | Uses literature/ideation/ranking capability to shape a Direction with a typed yardstick. | Direction node with hypothesis, metric, baselines, success predicate. |
 | **4 · Create an executable task** | Approve/reject the Task proposal; optionally lower the autonomy dial. | Proposes a Task with experiment/config/gate predicate. Default dial is `autonomous`. | Task node and, once committed, a materialized package. |
-| **5 · Execute the research loop** | Run `/research-auto`; supervise according to the dial. | Loads context, reads papers, proposes ideas, runs experiments, verifies evidence, records memory. | Runtime artifacts, audit log, verdicts, package state updates. |
+| **5 · Execute the research package** | Run `/research-run`; supervise according to the dial. | Loads context, runs readiness, implements/reviews if needed, launches and monitors experiments, propagates artifacts, verifies results, and routes the package until terminal. | Runtime artifacts, audit log, verdicts, package state updates. |
 | **6 · Decide the outcome** | Review dashboard/PACK/verdict in chat; approve terminal decisions or scope changes. | Files Triage proposals when goals should change; never edits the objective silently. | Success/fail/archive state, or a versioned Scope revision. |
 | **7 · Learn for the next cycle** | Run `/research-reflect`, then approve `/research-apply` for accepted lessons. | Mines audit logs for recurring failures and proposes rules. | Active project rules exported into the Context Pack. |
 
@@ -230,38 +231,38 @@ registry fields as compatibility inputs.
 
 ---
 
-## What `/research-auto` Does
+## What `/research-run` Does
 
-After dashboard init and Project onboarding, `/research-auto` is the command to try for continuing the
-loop. It runs a front-door admission check before attempting experiments:
+After dashboard init, Scope ratification, Task creation, and package materialization, `/research-run` is
+the command to execute the package. It runs an admission check before attempting experiments:
 
 | State | Condition | What happens |
 | --- | --- | --- |
 | **A** | Dashboard missing | Stops and tells you to run `/research-dashboard`. |
-| **B** | No committed Project | Proposes a Project objective through Triage; waits for you. |
-| **C** | Project exists, no Direction | Forms and proposes a Direction; waits for you. |
-| **D** | Direction exists, no Task | Proposes a Task with default `autonomous` dial; waits for you. |
-| **E** | Direction+Task committed, no package | Returns the materialize-package action from committed Scope only. |
+| **B** | No committed Project | Hands off to `/research-onboard` or `/research-scope`. |
+| **C** | Project exists, no Direction | Hands off to `/research-brainstorm` or `/research-scope`. |
+| **D** | Direction exists, no Task | Hands off to `/research-scope` milestone planning. |
+| **E** | Direction+Task committed, no package | Hands off to `/research-package`. |
 | **F** | Package exists, readiness incomplete | Runs readiness at the selected dial; repairs or stops before unattended work. |
-| **G** | Project+Direction+Task+package ready | Enters the production loop. |
+| **G** | Project+Direction+Task+package ready | Enters the package execution loop. |
 
 The boundary is deliberate:
 
-- `/research-auto` may **propose** Project, Direction, and Task nodes.
-- You accept or reject those proposals in chat.
-- The agent may run the mechanical Triage/Scope commands only after your explicit ratification.
-- A package may be materialized only from committed Scope state, never from a pending proposal.
+- `/research-run` does **not** propose Project, Direction, or Task nodes.
+- `/research-run` does **not** materialize packages.
+- `/research-run` completes an existing package by executing its current task spine and routing every
+  package mutation through `research-op`.
+- Scope changes discovered during execution are handed back to `/research-scope`; they are never silently
+  written by the run loop.
 
-What is live today: this front door, the A-G admission state machine, and the deterministic trust
-contract are implemented and tested. The production loop has a tested dispatch seam and gate wiring; the
-remaining maturation work is connecting live model-dispatched role adapters for the full unattended
-scientist loop.
+What is live today: this admission state machine, the deterministic dispatch contract, `research-exp-live`
+runtime envelope, and fact-backed package surfaces are implemented and tested.
 
 ### The autonomy dial
 
 The dial controls how often the agent pauses for acknowledgement. It does **not** weaken correctness gates.
-New Task proposals default to `autonomous`, but `/research-auto` surfaces all four choices before you
-accept the proposal.
+Task proposals set the dial in Scope; `/research-run` reads that dial when deciding readiness and PACK
+requirements.
 
 | Level | Agent pauses for you at | Extra expectation |
 | --- | --- | --- |
@@ -458,7 +459,8 @@ Trustworthy-Research-Pipeline/
 | `research-brainstorm` | Explicit escape hatch for pre-package idea exploration. |
 | `research-scope` | Scope SSOT and Triage admission gate. |
 | `research-package` | Package scaffold materialized from committed Scope. |
-| `research-auto` | Post-init front door plus orchestrator. |
+| `research-run` | Package execution controller; completes an existing scoped package. |
+| `research-auto` | Deprecated compatibility alias for `research-run`. |
 | `research-exp-live` | Structured launch/monitor/resume envelope for long-running experiment commands. |
 | `research-lit` | Literature/source gathering role. |
 | `research-ideate` | Idea generation and refinement role. |

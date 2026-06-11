@@ -13,7 +13,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "lib"))
-sys.path.insert(0, str(ROOT / "skills" / "research-auto" / "scripts"))
+sys.path.insert(0, str(ROOT / "skills" / "research-run" / "scripts"))
 import scope_ssot  # noqa: E402
 import skeleton  # noqa: E402
 
