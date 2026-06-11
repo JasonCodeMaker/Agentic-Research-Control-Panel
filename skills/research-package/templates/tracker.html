@@ -53,7 +53,7 @@
         </div>
       </article>
 
-      <article class="module-card live-check-card" data-card="live-check-user" id="live-check">
+      <article class="module-card live-check-card" data-card="live-check-user" data-fact-projection="tracker" id="live-check">
         <h2>Latest live check</h2>
         <p class="card-text">Top 5 rows by <code>time</code> desc; the rest collapse into <code>&lt;details class="live-check-history"&gt;</code> below. Single home for live-check data &mdash; the agent zone holds a pointer, not a duplicate table.</p>
         <table class="data-table live-check-table" data-table="live-check" data-row-cap="5">
@@ -141,7 +141,7 @@
         <p class="card-text">T1: do not move to <code>EXPERIMENT_RUNNING</code> without a recorded user ack here.</p>
       </article>
 
-      <article class="module-card" data-card="resource-allocation">
+      <article class="module-card" data-card="resource-allocation" data-fact-projection="resource-allocation">
         <h2>Resource allocation</h2>
         <table class="data-table" data-table="resource-allocation">
           <thead><tr><th>Exp ID</th><th>Purpose</th><th>Dependency</th><th>Target</th><th>Capacity</th><th>Assigned</th><th>Reason</th><th>Agent</th><th>Cmd/CWD/Env</th><th>Session/Job</th><th>Runtime root</th><th>Log path</th><th>Expected duration</th><th>Status</th></tr></thead>
