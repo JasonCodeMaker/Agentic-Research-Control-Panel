@@ -43,14 +43,54 @@ VERDICTS = {"PASS", "FAIL", "INCONCLUSIVE", "DIAGNOSTIC"}
 ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
+def _load_package_facts_module():
+    candidates = [
+        Path(__file__).resolve().parents[5],  # source tree
+        Path(__file__).resolve().parents[2],  # installed dashboard
+        Path.cwd(),
+    ]
+    for root in candidates:
+        if (root / "lib" / "package_facts").exists():
+            sys.path.insert(0, str(root))
+            from lib import package_facts
+            return package_facts
+    raise ImportError("cannot locate lib/package_facts")
+
+
+package_facts = _load_package_facts_module()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # data loading
 # ─────────────────────────────────────────────────────────────────────────────
 
-def load_data() -> dict:
+def _node_dump_script(root: Path) -> str:
+    data_dir = root / "research_html" / "data"
+    return f"""
+const fs = require('fs');
+global.window = {{}};
+global.document = {{ addEventListener: () => {{}} }};
+eval(fs.readFileSync({json.dumps(str(data_dir / "schema.js"))}, 'utf8'));
+eval(fs.readFileSync({json.dumps(str(data_dir / "research-packages.js"))}, 'utf8'));
+process.stdout.write(JSON.stringify({{
+  schema: window.RESEARCH_STATUS_SCHEMA || {{}},
+  statusFamily: window.RESEARCH_STATUS_FAMILY || {{}},
+  contributionSpine: window.RESEARCH_CONTRIBUTION_SPINE || [],
+  methodsTriedFields: window.RESEARCH_METHODS_TRIED_FIELDS || [],
+  globalProtocol: window.RESEARCH_GLOBAL_PROTOCOL || {{}},
+  categories: window.RESEARCH_CATEGORIES || [],
+  packages: window.RESEARCH_PACKAGES || [],
+}}, null, 2));
+"""
+
+
+def load_data(repo_root: Path | None = None) -> dict:
     """Run the node helper and parse its JSON dump."""
+    root = Path(repo_root) if repo_root is not None else REPO_ROOT
+    dump_script = root / "research_html" / "scripts" / "dump_packages.js"
+    cmd = ["node", str(dump_script)] if dump_script.exists() else ["node", "-e", _node_dump_script(root)]
     try:
-        out = subprocess.check_output(["node", str(DUMP_SCRIPT)], text=True)
+        out = subprocess.check_output(cmd, text=True)
     except FileNotFoundError:
         sys.exit("error: 'node' is not installed; cannot read the JS data files.")
     except subprocess.CalledProcessError as e:
@@ -1119,6 +1159,47 @@ def lint_alignment(data: dict, pkg_filter: str | None = None, terminal: bool = F
     return rep
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# fact-alignment — JS/CSV package fact projection checks
+# ─────────────────────────────────────────────────────────────────────────────
+
+DATA_SOURCE = re.compile(r'data-source\s*=\s*"([^"]+)"')
+DATA_SOURCE_ROW = re.compile(r'data-source-row\s*=\s*"([^"]+)"')
+
+
+def lint_fact_alignment(data: dict, pkg_filter: str | None = None, repo_root: Path | None = None) -> Report:
+    root = repo_root or REPO_ROOT
+    rep = Report("fact-alignment — JS/CSV fact projection")
+    packages = data.get("packages") or []
+    for pkg in packages:
+        pid = pkg.get("id", "(no-id)")
+        if pkg_filter and pid != pkg_filter:
+            continue
+        package_dir = root / "research_html" / "packages" / pid
+        results = package_dir / "results.html"
+        if not results.exists():
+            continue
+        text = results.read_text(encoding="utf-8", errors="ignore")
+        if "data-source" not in text and "data-source-row" not in text:
+            rep.add(Violation(pid, "fact-no-projection", "no fact-backed result projection found", "warning"))
+            continue
+        paths = package_facts.fact_paths(pid, root=root)
+        for source in DATA_SOURCE.findall(text):
+            source_path = paths.package_data_dir / source if source.startswith("tables/") else root / source
+            if not source_path.exists():
+                rep.add(Violation(pid, "fact-source-missing", f"data-source={source!r} does not exist", "error"))
+        for ref in DATA_SOURCE_ROW.findall(text):
+            try:
+                table_id, row_id = package_facts.split_source_ref(ref)
+                row = package_facts.find_row_by_ref(paths.tables_dir, ref)
+            except package_facts.FactError as exc:
+                rep.add(Violation(pid, "fact-source-row-missing", str(exc), "error"))
+                continue
+            if row.get("source_type") == "manual" and row.get("verdict") == "PASS":
+                rep.add(Violation(pid, "manual-pass-forbidden", f"{table_id}:{row_id} is manual but verdict=PASS", "error"))
+    return rep
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--strict", action="store_true",
@@ -1134,9 +1215,11 @@ def main() -> int:
     p.add_argument("--dial", default="AUTONOMOUS",
                    help="autonomy dial; sets the unattended horizon (default: AUTONOMOUS = whole DAG)")
     p = sub.add_parser("alignment"); p.add_argument("--pkg"); p.add_argument("--terminal", action="store_true")
+    p = sub.add_parser("fact-alignment"); p.add_argument("--pkg"); p.add_argument("--repo-root", type=Path)
     args = parser.parse_args()
 
-    data = load_data()
+    repo_root = args.repo_root if getattr(args, "cmd", "") == "fact-alignment" else None
+    data = load_data(repo_root=repo_root)
 
     def fail(report: Report) -> bool:
         return bool(report.errors()) or (args.strict and bool(report.warnings()))
@@ -1165,12 +1248,18 @@ def main() -> int:
         rep = lint_alignment(data, pkg_filter=args.pkg, terminal=args.terminal)
         print(rep.render(strict=args.strict))
         return 1 if fail(rep) else 0
+    if args.cmd == "fact-alignment":
+        rep = lint_fact_alignment(data, pkg_filter=args.pkg, repo_root=args.repo_root)
+        print(rep.render(strict=args.strict))
+        return 1 if fail(rep) else 0
     if args.cmd == "all":
         r1 = lint_status(data); print(r1.render(strict=args.strict)); print()
         r2 = lint_evidence(data); print(r2.render(strict=args.strict)); print()
         r3 = scan_events(data, pkg_filter=args.pkg); print(r3.render(strict=args.strict)); print()
         r4 = lint_alignment(data, pkg_filter=args.pkg); print(r4.render(strict=args.strict))
-        return 1 if (fail(r1) or fail(r2) or fail(r4)) else 0
+        print()
+        r5 = lint_fact_alignment(data, pkg_filter=args.pkg); print(r5.render(strict=args.strict))
+        return 1 if (fail(r1) or fail(r2) or fail(r4) or fail(r5)) else 0
 
     return 2
 
