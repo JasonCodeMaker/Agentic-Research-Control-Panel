@@ -86,8 +86,8 @@ EVENTS = {
 
     "CHECKPOINT_SAVED": [
         # Per-exp fan-out. Payload: {"exp_id": "...", "artifact": "...", "measured": "..."}.
-        ("update", "tracker-live-check-row",          _cs_update_live_check),
-        ("update", "tracker-resource-allocation-row", _cs_update_allocation),
+        ("insert", "tracker-live-check-row",          _cs_update_live_check),
+        ("insert", "tracker-resource-allocation-row", _cs_update_allocation),
         ("insert", "results-gate-row",                _cs_insert_result_gate),
         ("update", "results-verdict",                 _cs_update_verdict),
         ("update", "experiments-status",              _cs_update_exp_status),
