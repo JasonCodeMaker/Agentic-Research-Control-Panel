@@ -10,9 +10,9 @@ you want to manage. The agent can propose and execute work; **you own the object
 ratification gates**.
 
 **Current maturity, in one sentence.** The dashboard, Scope/Triage system, trust gates, Context Pack,
-self-evolution Rule Store, `/research-auto` front door, and deterministic dispatch contract are
-implemented and tested; the remaining work is replacing tested fake role adapters with live
-model-dispatched scientist roles.
+self-evolution Rule Store, `/research-auto` front door, exp-live runtime envelope, fact-backed package
+surfaces, and deterministic dispatch contract are implemented and tested; the remaining work is
+replacing tested fake role adapters with live model-dispatched scientist roles.
 
 **Contents** · [Why This Exists](#why-this-exists) · [Quick Start](#quick-start) ·
 [Research Lifecycle](#research-lifecycle) · [What `/research-auto` Does](#what-research-auto-does) ·
@@ -42,7 +42,7 @@ prose.
 
 Setup installs **two things at two scopes**:
 
-1. **The skills** — the 12 `/research-*` commands. Install them once at the **global** scope (visible in
+1. **The skills** — the 13 `/research-*` commands. Install them once at the **global** scope (visible in
    every project) *or* per-repo at the **project** scope.
 2. **The protocols + dashboard** — attached **per research project** you want to manage.
 
@@ -83,11 +83,11 @@ for src in "$REPO"/skills/*/; do
   fi
   ln -sfn "${src%/}" "$DEST/$name"
 done
-ls -l "$DEST" | grep research                   # expect 12 symlinks: 'l…' lines with '-> …/skills/<name>'
+ls -l "$DEST" | grep research                   # expect 13 research symlinks: 'l…' lines with '-> …/skills/<name>'
 ```
 
 Then reload the agent (restart Claude Code, or open a new Codex session) so it discovers the skills,
-type `/research-` and confirm the 12 commands autocomplete.
+type `/research-` and confirm the 13 commands autocomplete.
 
 When a protocol or skill body shows a script path like `skills/<name>/scripts/...` from inside a managed
 research repo, resolve it through the installed symlink directory, e.g.
@@ -97,7 +97,7 @@ Claude Code. Do not copy the toolbox into the target repo just to make relative 
 ### 2 · Verify the toolbox
 
 ```bash
-python3.13 -m pytest tests/                     # expect: 440 passed
+python3.13 -m pytest tests/                     # expect a passing suite
 ```
 
 If `python3.13` is not on `PATH`, use any Python 3.13 interpreter — e.g.
@@ -145,10 +145,11 @@ python3.13 "$PIPELINE/skills/research-dashboard/scripts/ensure_dashboard.py" --r
 node --check research_html/assets/research.js
 node --check research_html/data/research-packages.js
 test -f research_html/index.html
+test -f research_html/live.html
 ```
 
 Run once per project. This creates `research_html/` — the shared surface where you and the agent read the
-same compiled state (lanes, Scope projection, package links, Context Pack).
+same compiled state (lanes, Scope projection, package links, Context Pack, and the Live Runs page).
 
 ### 5 · Onboard or define the project objective, then run the loop
 
@@ -212,6 +213,20 @@ decision, agent action, and durable output.
 **Completion means:** one research package reaches a terminal, evidence-backed state: success, fail, or
 archive. A success is not a self-declared win; it is a package whose metric/verifier gates clear against
 the committed Scope yardstick.
+
+During day-to-day use, the runtime and fact storage appear through the same surfaces you already read:
+
+| Surface you use | What it shows | What to trust |
+| --- | --- | --- |
+| `research_html/live.html` | Open, stale, failed, and recent terminal wrapper-launched runs. | It reads runtime files first, so use it before raw tmux scrollback for routine status. |
+| Package `tracker.html` | Live checks, resource allocation, runtime roots, and log paths. | For fact-backed packages, repeated tracker rows come from `live_checks.csv` and `resource_allocation.csv`. |
+| Package `results.html` | Result gates, result tables, headline metrics, and verdict support. | Repeated result values should point back to the same CSV row id. |
+| Dashboard `methodsTried[]` | The compact method/result summary shown on package cards and lint surfaces. | For fact-backed packages, it is a compatibility projection from `methods_tried.csv`. |
+| `research-op check --scope fact-alignment` | Missing sources, stale projections, manual PASS rows, and migration state. | Treat errors here as evidence that a page or registry view no longer matches its fact source. |
+
+Legacy packages still work. A package becomes fact-backed only when
+`research_html/data/packages/<pkg>/` exists. Until then, the dashboard can continue reading old HTML and
+registry fields as compatibility inputs.
 
 ---
 
@@ -286,11 +301,72 @@ The contribution is the trust record, not just the agent loop.
 
 | Artifact | Meaning |
 | --- | --- |
-| `research_html/` | Live dashboard: lanes, context page, Scope projection, package links. |
+| `research_html/` | Live dashboard: lanes, context page, Scope projection, package links, Live Runs page. |
+| `research_html/data/research-packages.js` | Dashboard registry: package cards, status, task spine, and compatibility projections. |
+| `research_html/data/packages/<pkg>.facts.js` | Package content facts and page projection metadata for fact-backed packages. |
+| `research_html/data/packages/<pkg>/tables/*.csv` | Canonical package table facts: result gates, result tables, tracker live checks, resource allocation, and methods tried. |
 | `outputs/_scope/transitions.jsonl` | Canonical Scope SSOT transition log. |
 | `outputs/_scope/triage.jsonl` | Pending and disposed objective proposals. |
+| `outputs/_live/runs.jsonl` | Global index of wrapper-launched experiment runs. |
 | `outputs/<pkg>/` | Per-package runtime records, audit logs, Context Pack, experiment artifacts. |
+| `outputs/<pkg>/runs/<run_id>/status.json` | Raw live-run state for wrapper-launched experiments. |
 | `outputs/_selfevolve/` | Governed self-learning memory. |
+
+### Data storage architecture
+
+The fact-backed path separates raw evidence, canonical facts, and rendered pages:
+
+```text
+outputs/<pkg>/
+  runs/<run_id>/
+    status.json          # raw live-run truth for wrapper-launched runs
+    events.jsonl         # parsed metrics, progress, phases, anomalies
+    log.txt              # bounded raw log fallback
+  _actions.jsonl         # research-op audit trail
+  context_pack.md        # package memory projection
+
+outputs/_live/
+  runs.jsonl             # global run launch/terminal index
+
+research_html/data/
+  research-packages.js   # dashboard registry and compatibility projections
+  packages/
+    <pkg>.facts.js       # content facts and projection revisions
+    <pkg>/
+      tables/
+        result_gate.csv
+        result_table_<exp_id>.csv
+        live_checks.csv
+        resource_allocation.csv
+        methods_tried.csv
+      extractors/
+        <exp_id>.json
+
+research_html/packages/<pkg>/
+  results.html           # projection from result facts
+  tracker.html           # projection from tracker facts
+  index.html / plan.html / analysis.html / docs/
+```
+
+The authority order is:
+
+1. Runtime artifacts under `outputs/<pkg>/...` are raw experimental evidence.
+2. Extractors and `research-op` convert evidence or accepted user actions into JS/CSV facts.
+3. `research_html/data/packages/<pkg>.facts.js` stores repeated content facts and page projection metadata.
+4. CSV files store repeated table facts.
+5. HTML pages render those facts; for fact-backed sections, HTML is not the source of truth.
+
+`outputs/_scope/transitions.jsonl` remains the Scope SSOT, and
+`outputs/<pkg>/runs/<run_id>/status.json` remains the live-run source. The package fact layer does not
+replace either one; it stores package-surface facts derived from them.
+
+Useful commands:
+
+```bash
+python skills/research-package/scripts/render_package_projection.py --pkg <id> --page all
+python skills/research-dashboard/assets/dashboard/scripts/audit_fact_migration.py --pkg <id>
+python skills/research-op/scripts/research_op.py --pkg <id> --op check --scope fact-alignment
+```
 
 ### Skill layering and the Mutation Rule
 
@@ -360,9 +436,9 @@ Trustworthy-Research-Pipeline/
 ├── AGENTS.md        # Codex adapter for this toolbox and consuming projects
 ├── CLAUDE.md        # agent operating protocols (merged into the target research repo)
 ├── WORKFLOW.md      # the 7-step in-package controller the agent obeys
-├── skills/          # 12 composing skills — the toolbox the agent installs
-├── lib/             # 6 passive validators / stores (scope_ssot, verifier, cite_check, …)
-├── tests/           # pytest suite (440 passing)
+├── skills/          # composing skills — the toolbox the agent installs
+├── lib/             # validators, stores, runtime helpers, and fact helpers
+├── tests/           # pytest suite
 └── docs/            # design notes
 ```
 
@@ -381,6 +457,7 @@ Trustworthy-Research-Pipeline/
 | `research-scope` | Scope SSOT and Triage admission gate. |
 | `research-package` | Package scaffold materialized from committed Scope. |
 | `research-auto` | Post-init front door plus orchestrator. |
+| `research-exp-live` | Structured launch/monitor/resume envelope for long-running experiment commands. |
 | `research-lit` | Literature/source gathering role. |
 | `research-ideate` | Idea generation and refinement role. |
 | `research-analysis` | Per-package Rules + Insights page. |
@@ -396,6 +473,8 @@ Trustworthy-Research-Pipeline/
 | `lib/verifier` | Cross-model jury and independence table. |
 | `lib/cite_check` | Fetch-don't-fabricate citation gate. |
 | `lib/ranking` | Independent multi-agent ranking. |
+| `lib/exp_live` | Runtime envelope for wrapper-launched experiment commands. |
+| `lib/package_facts` | JS/CSV fact helpers and projection freshness checks. |
 | `lib/context_pack` | Deterministic project-memory projection. |
 | `lib/self_evolve` | Governed project self-learning memory. |
 
@@ -407,7 +486,7 @@ This is a research codebase; the bar is traceability and tests, not ceremony.
 
 - **Design before code.** New behavior is brainstormed and planned before any implementation.
 - **Test-Driven, always.** Every change ships with tests, and the agent should keep the full Python 3.13
-  pytest suite green (440 passing).
+  pytest suite green.
 - **One mutation surface.** Package HTML is edited only through `research-op`; direct `Edit`/`Write` on a
   package surface is a workflow violation.
 - **Surgical changes.** Touch only what the task needs and match the existing style; do not rewrite the
