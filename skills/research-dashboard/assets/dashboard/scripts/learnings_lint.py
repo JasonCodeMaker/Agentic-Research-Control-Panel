@@ -58,6 +58,7 @@ def _load_package_facts_module():
 
 
 package_facts = _load_package_facts_module()
+import audit_fact_migration  # noqa: E402
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1329,6 +1330,9 @@ def lint_fact_alignment(data: dict, pkg_filter: str | None = None, repo_root: Pa
             continue
         paths = package_facts.fact_paths(pid, root=root)
         package_dir = root / "research_html" / "packages" / pid
+        migration = audit_fact_migration.package_migration_state(pid, root)
+        present_tables = ",".join(name for name, present in migration["tables"].items() if present) or "none"
+        rep.notes.append(f"{pid}: migration-state={migration['state']} fact-tables={present_tables}")
         saw_projection = False
         for page in ("results.html", "tracker.html"):
             html_path = package_dir / page

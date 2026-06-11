@@ -70,15 +70,27 @@ For fact-backed packages (`research_html/data/packages/<pkg>/` exists),
 repeated tracker and methods rows are facts first and HTML/registry projections
 second:
 
+- HTML is a projection, not the source of truth, for repeated fact-backed
+  sections. Do not hand-edit projected sections; write JS/CSV facts and rerender.
+- `research_html/data/packages/<pkg>.facts.js` owns repeated prose-like facts
+  and page projection metadata (`projections.pages`).
 - `live_checks.csv` is the canonical tracker live-check table.
 - `resource_allocation.csv` is the canonical tracker allocation table.
+- Result CSVs are the canonical result tables and result-gate rows for
+  fact-backed result sections.
 - `methods_tried.csv` is the canonical methods table.
 - `research-packages.js methodsTried[]` is a generated compatibility
   projection from `methods_tried.csv`.
 - `status.json` remains the raw live-run source. Tracker CSV rows are extracted
   snapshots for the package surface, not the raw runtime truth.
+- Raw experiment evidence stays under `outputs/<pkg>/...`; package CSV rows cite
+  those artifacts and do not replace them.
 - Manual methods rows cannot support `PASS`; use a source-ref-backed result row
   for PASS evidence.
+- Dashboard lints parse HTML only for legacy packages. For fact-backed
+  packages they read JS/CSV facts first and reject stale HTML projections.
+- Check migration state with
+  `python skills/research-dashboard/assets/dashboard/scripts/audit_fact_migration.py --pkg <id>`.
 
 ## Shared Agent Return Contract
 

@@ -57,6 +57,7 @@ def test_fact_alignment_passes_when_source_row_exists(tmp_path):
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "errors=0" in result.stdout
+    assert "migration-state=partial" in result.stdout
 
 
 def test_fact_alignment_fails_when_source_row_is_missing(tmp_path):

@@ -155,7 +155,7 @@ package contract:
 
 All new fields are optional; missing values render literal `unmeasured`.
 
-## Package fact layer (Phase 1/2)
+## Package fact layer and projection discipline
 
 Result table facts for new or structurally touched result sections live under
 `research_html/data/packages/`:
@@ -181,8 +181,15 @@ Rules:
   scripts whenever the artifact format is machine-readable.
 - Manual CSV rows must carry `source_type=manual`, `source_note`, and
   `verified_by`; they do not support `PASS` verdicts by default.
-- HTML result sections are projections. Fact-backed sections carry
-  `data-source`, `data-source-row`, and `data-fact-revision` markers.
+- HTML is a projection for fact-backed packages. Fact-backed sections carry
+  `data-fact-projection`, `data-source`, `data-source-row`, and
+  `data-fact-revision` markers.
+- Page projection metadata lives in `<pkg>.facts.js` under
+  `projections.pages`. It records renderer name, source file revisions,
+  `htmlRevision`, and `renderedAt`.
+- Use `skills/research-package/scripts/render_package_projection.py` to render
+  result/tracker projections and refresh projection metadata. Changing a source
+  CSV or projected HTML without rerendering is lint-stale.
 - For fact-backed packages, `live_checks.csv` is the canonical tracker
   live-check table and `resource_allocation.csv` is the canonical tracker
   allocation table. `tracker.html` is rendered from those CSVs.
@@ -191,10 +198,19 @@ Rules:
   dashboard fields only.
 - `status.json` remains the live-run source; tracker CSV rows are extracted
   snapshots, not the raw runtime truth.
+- `outputs/<pkg>/...` remains the raw experiment evidence store. CSV rows cite
+  output artifacts; they do not replace logs, checkpoints, manifests, or metric
+  JSON files.
 - Manual methods rows cannot support `PASS`; a PASS methods row must come from
   a source-ref-backed result CSV row.
-- `research-op --op check --scope fact-alignment` validates fact-backed result
-  projections.
+- `learnings_lint.py fact-alignment` validates fact-backed projections and
+  reports migration state (`legacy`, `partial`, `fact-backed`, `stale`).
+- `audit_fact_migration.py` gives the same state as a standalone audit. Legacy
+  packages may still be parsed from HTML, but fact-backed packages use JS/CSV
+  read paths first.
+- `/research-op` stages related fact and projection writes before publishing
+  them. Direct fact-backed HTML updates to projected result sections are
+  rejected; update the owning facts and rerender instead.
 
 ## Resume Block painter (single source of truth)
 
