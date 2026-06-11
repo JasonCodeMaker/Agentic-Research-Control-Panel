@@ -155,6 +155,34 @@ package contract:
 
 All new fields are optional; missing values render literal `unmeasured`.
 
+## Package fact layer (Phase 1)
+
+Result table facts for new or structurally touched result sections live under
+`research_html/data/packages/`:
+
+```text
+research_html/data/packages/<pkg>.facts.js
+research_html/data/packages/<pkg>/tables/result_gate.csv
+research_html/data/packages/<pkg>/tables/result_table_<exp_id>.csv
+research_html/data/packages/<pkg>/extractors/<exp_id>.json
+```
+
+Rules:
+
+- JavaScript facts own repeated content facts such as headline references,
+  objective summaries, projection revisions, and page-level summaries.
+- CSV files own table facts. Result tables, result-gate rows, and headline
+  metric cards must reference the same CSV `row_id` when they display the same
+  value.
+- Experiment result CSVs are generated from real runtime artifacts by extractor
+  scripts whenever the artifact format is machine-readable.
+- Manual CSV rows must carry `source_type=manual`, `source_note`, and
+  `verified_by`; they do not support `PASS` verdicts by default.
+- HTML result sections are projections. Fact-backed sections carry
+  `data-source`, `data-source-row`, and `data-fact-revision` markers.
+- `research-op --op check --scope fact-alignment` validates fact-backed result
+  projections.
+
 ## Resume Block painter (single source of truth)
 
 `renderResumeBlock()` in `assets/research.js` paints the `<article

@@ -4,6 +4,13 @@ This is a **recommended layout** for `results.html`, not a binding scaffold (R13
 
 The canonical worked example is `research_html/packages/2026-05-11-panda-scaleup-zeroshot-scalability/results.html`. When this doc and the worked example disagree, the worked example is what the pattern was distilled from — update this doc rather than the package.
 
+For new or structurally touched result sections, the preferred data source is
+the Phase-1 package fact layer: CSV table facts under
+`research_html/data/packages/<pkg>/tables/` plus optional content facts in
+`research_html/data/packages/<pkg>.facts.js`. The page pattern still describes
+the browser shape, but repeated result values should be rendered from CSV rows
+and marked with `data-source-row`, not copied by hand into HTML.
+
 ## When to use which body structure
 
 The template ships with a per-experiment-card body. The Track-table body is an alternative for richer packages. Pick one:
