@@ -1192,6 +1192,24 @@ def _methods_projection_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]
     return [{field: row.get(field, "") for field in METHODS_COMPAT_FIELDS} for row in rows]
 
 
+def _required_projection_pages(paths) -> list[str]:
+    pages = []
+    if (paths.tables_dir / "result_gate.csv").exists() or list(paths.tables_dir.glob("result_table_*.csv")):
+        pages.append("results.html")
+    if (paths.tables_dir / "live_checks.csv").exists() or (paths.tables_dir / "resource_allocation.csv").exists():
+        pages.append("tracker.html")
+    return pages
+
+
+def _projection_error_code(exc: Exception) -> str:
+    text = str(exc)
+    if "stale source" in text:
+        return "projection-stale-source"
+    if "stale html" in text:
+        return "projection-stale-html"
+    return "projection-metadata-missing"
+
+
 def lint_fact_alignment(data: dict, pkg_filter: str | None = None, repo_root: Path | None = None) -> Report:
     root = repo_root or REPO_ROOT
     rep = Report("fact-alignment — JS/CSV fact projection")
@@ -1209,6 +1227,20 @@ def lint_fact_alignment(data: dict, pkg_filter: str | None = None, repo_root: Pa
                 continue
             text = html_path.read_text(encoding="utf-8", errors="ignore")
             saw_projection = _scan_fact_projection_text(rep, pid, text, paths, root) or saw_projection
+
+        if package_facts.is_fact_backed(pid, root=root):
+            for page in _required_projection_pages(paths):
+                html_path = package_dir / page
+                if not html_path.exists():
+                    rep.add(Violation(pid, "projection-page-missing", f"{page} is required by package facts", "error"))
+                    continue
+                text = html_path.read_text(encoding="utf-8", errors="ignore")
+                if "data-fact-projection" not in text:
+                    rep.add(Violation(pid, "projection-marker-missing", f"{page} lacks data-fact-projection", "error"))
+                try:
+                    package_facts.assert_page_projection_fresh(pid, page, root=root)
+                except package_facts.FactError as exc:
+                    rep.add(Violation(pid, _projection_error_code(exc), str(exc), "error"))
 
         methods_csv = paths.tables_dir / "methods_tried.csv"
         if methods_csv.exists():
