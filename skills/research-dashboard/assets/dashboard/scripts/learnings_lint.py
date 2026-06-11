@@ -481,7 +481,7 @@ def lint_evidence(data: dict) -> Report:
         for v in check_evidence(pid, "lastDecisionEvidencePath", pkg.get("lastDecisionEvidencePath") or ""):
             rep.add(v)
         # methodsTried evidence paths
-        for i, r in enumerate(pkg.get("methodsTried") or []):
+        for i, r in enumerate(methods_tried_rows(pid, pkg)):
             ep = (r or {}).get("evidencePath") or ""
             for v in check_evidence(pid, f"methodsTried[{i}].evidencePath", ep):
                 rep.add(v)
@@ -571,6 +571,107 @@ def parse_result_gate(html: str) -> list[dict]:
     return rows
 
 
+def _repo_root(repo_root: Path | None = None) -> Path:
+    return Path(repo_root) if repo_root is not None else REPO_ROOT
+
+
+def _repo_root_from_package_dir(base_dir: Path) -> Path:
+    try:
+        return Path(base_dir).resolve().parents[2]
+    except IndexError:
+        return REPO_ROOT
+
+
+def package_fact_tables(pid: str, repo_root: Path | None = None) -> dict[str, Path]:
+    paths = package_facts.fact_paths(pid, root=_repo_root(repo_root))
+    if not paths.tables_dir.exists():
+        return {}
+    return {path.stem: path for path in sorted(paths.tables_dir.glob("*.csv"))}
+
+
+def _require_csv_fields(path: Path, rows: list[dict[str, str]], required: set[str]) -> None:
+    if rows:
+        available = set(rows[0].keys())
+    else:
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        available = {field.strip().lstrip("\ufeff") for field in lines[0].split(",")} if lines else set()
+    missing = sorted(required - available)
+    if missing:
+        raise package_facts.FactError(f"malformed CSV fact table {path}: missing columns {missing}")
+
+
+def _csv_result_gate_row(row: dict[str, str]) -> dict[str, str]:
+    metric = (row.get("metric") or "").strip()
+    value = (row.get("value") or "").strip()
+    unit = (row.get("unit") or "").strip()
+    measured = ""
+    if metric and value:
+        measured = f"{metric}={value}{unit}"
+    elif value:
+        measured = f"{value}{unit}"
+    elif metric:
+        measured = metric
+    verdict = (row.get("verdict") or "").strip()
+    return {
+        "exp_id": row.get("exp_id", ""),
+        "validity_chip": row.get("validity", ""),
+        "baseline": row.get("baseline", ""),
+        "gate": metric,
+        "measured": measured,
+        "budget": row.get("budget", ""),
+        "seed": row.get("seed", ""),
+        "artifact_chip": row.get("source_artifact", ""),
+        "artifact": row.get("source_artifact", ""),
+        "verdict_chip": verdict,
+        "verdict_text": verdict,
+        "reason": row.get("reason", ""),
+    }
+
+
+def result_gate_rows(
+    pid: str,
+    html_fallback: bool = True,
+    *,
+    repo_root: Path | None = None,
+    html: str | None = None,
+) -> list[dict]:
+    tables = package_fact_tables(pid, repo_root=repo_root)
+    gate_csv = tables.get("result_gate")
+    if gate_csv is not None:
+        rows = package_facts.read_csv_rows(gate_csv)
+        _require_csv_fields(gate_csv, rows, {"row_id", "exp_id", "metric", "value", "verdict", "validity"})
+        return [_csv_result_gate_row(row) for row in rows]
+    if not html_fallback:
+        return []
+    if html is None:
+        path = _repo_root(repo_root) / "research_html" / "packages" / pid / "results.html"
+        html = path.read_text(encoding="utf-8", errors="ignore") if path.exists() else ""
+    return parse_result_gate(html)
+
+
+def methods_tried_rows(
+    pid: str,
+    registry_pkg: dict,
+    registry_fallback: bool = True,
+    *,
+    repo_root: Path | None = None,
+) -> list[dict]:
+    tables = package_fact_tables(pid, repo_root=repo_root)
+    methods_csv = tables.get("methods_tried")
+    if methods_csv is not None:
+        rows = package_facts.read_csv_rows(methods_csv)
+        _require_csv_fields(methods_csv, rows, set(METHODS_COMPAT_FIELDS))
+        return _methods_projection_rows(rows)
+    if package_facts.is_fact_backed(pid, root=_repo_root(repo_root)):
+        return []
+    if not registry_fallback:
+        return []
+    return [
+        {field: str((row or {}).get(field, "")) for field in METHODS_COMPAT_FIELDS}
+        for row in (registry_pkg.get("methodsTried") or [])
+    ]
+
+
 def pkg_dir(pkg_id: str) -> Path:
     return PACKAGES_DIR / pkg_id
 
@@ -580,10 +681,8 @@ def detect_e1(pkg: dict) -> list[dict]:
     pid = pkg["id"]
     pdir = pkg_dir(pid)
     results = pdir / "results.html"
-    if not results.exists():
-        return []
-    html = results.read_text(encoding="utf-8", errors="ignore")
-    rows = parse_result_gate(html)
+    html = results.read_text(encoding="utf-8", errors="ignore") if results.exists() else ""
+    rows = result_gate_rows(pid, html_fallback=bool(html), html=html)
     if not rows:
         return []
     # What's already represented in methodsTried. Match a row as represented when:
@@ -592,7 +691,7 @@ def detect_e1(pkg: dict) -> list[dict]:
     #   - the full exp_id appears as a substring of any methodsTried.measured (covers aggregation).
     method_texts = []
     represented_tokens = set()
-    for r in (pkg.get("methodsTried") or []):
+    for r in methods_tried_rows(pid, pkg):
         m = (r.get("method") or "")
         measured = (r.get("measured") or "")
         method_texts.append((m.lower(), measured.lower()))
@@ -970,7 +1069,12 @@ def assess_readiness(pkg: dict, dial: str | None, base_dir: Path) -> Report:
         return p.read_text(encoding="utf-8", errors="ignore") if p.exists() else ""
 
     impl_items = parse_change_items(read("implementation.html"))
-    gate_rows = parse_result_gate(read("results.html"))
+    gate_rows = result_gate_rows(
+        pid,
+        html_fallback=True,
+        repo_root=_repo_root_from_package_dir(base_dir),
+        html=read("results.html"),
+    )
     for v in check_tracker(pid, read("tracker.html")):
         rep.add(v)
 
@@ -1086,7 +1190,12 @@ def assess_alignment(pkg: dict, base_dir: Path, terminal: bool = False) -> Repor
     results_html = read("results.html")
     tracker_html = read("tracker.html")
     impl_items = parse_change_items(impl_html)
-    gate_rows = parse_result_gate(results_html)
+    gate_rows = result_gate_rows(
+        pid,
+        html_fallback=True,
+        repo_root=_repo_root_from_package_dir(base_dir),
+        html=results_html,
+    )
     gate_by_id = {r.get("exp_id"): r for r in gate_rows if r.get("exp_id")}
     all_ids = {e.get("id") for e in experiments if e.get("id")}
 
