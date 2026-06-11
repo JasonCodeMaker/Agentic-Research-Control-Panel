@@ -15,9 +15,10 @@ update `transitions.py` in the same commit.
 | I5 | tracker impl-review row | `(in-progress, IMPLEMENTATION_REVIEW / IMPLEMENTING)` | One per `change_id` |
 | I6 | results.html result-gate row | `(in-progress, EXPERIMENT_RUNNING → RESULT_ANALYSIS)` | One per planned experiment (P0, P1, …); not per measurement |
 | I7 | results.html result block (6-part canon) | `(in-progress, RESULT_ANALYSIS)` | One per result group; obeys canonical 6-part shape |
-| I8 | analysis.html rule / insight subblock | any `(in-progress, *)` after ≥ 1 finalized result-gate row | Owner skill: `research-analysis` (delegates writes to `research-op`) |
+| I8 | analysis.html insight subblock | any `(in-progress, *)` after ≥ 1 finalized result-gate row | Owner skill: `research-analysis` (delegates writes to `research-op`) |
 | I9 | `docs/<slug>.html` (new file) + paired doc card | any non-terminal cell | Group-design rule applies; card + file written atomically |
 | I11 | tracker chosen-route panel + considered-routes row | `(in-progress, NEXT_ACTION_READY)` | Per the companion spec (next-action folded into tracker) |
+| I12 | `rule` row (unified registry, `data/rules.js`) → `kind=lesson` also repaints analysis.html#rules | `level=package`: any `(in-progress, *)`; `level=project`: any cell via `--pkg _project` + non-empty `ack`; `level=universal`: **never** (write-locked mirror) | One typed row `{id, level, pkg, kind, title, text, rationale, source, origin, status, addedAt}` with level/kind pairing `universal=form|trust`, `project=constraint`, `package=binding|lesson`; `kind=lesson` needs ≥ 1 finalized result-gate row (inherits I8's constraint); retired targets `package-invariant` / `analysis-rule` reject with a pointer here |
 
 ### 4.2 Update — mutate field (default path: inventory; HTML re-paints)
 
@@ -38,6 +39,7 @@ update `transitions.py` in the same commit.
 | U11 | tracker Resume Block (painted from inventory) | any `(in-progress, *)` | No ack — painter re-derives from inventory |
 | U12 | `<time data-field="last-updated">` on any HTML | any | Auto-bumped on every meaningful Insert/Update/Delete to that file |
 | U13 | results.html result block replacement by `data-phase-id` | `(in-progress, RESULT_ANALYSIS / NEXT_ACTION_READY / EXPERIMENT_RUNNING / LIVE_ANALYSIS)` | No ack; replacement HTML must keep the canonical 6-part block anchors |
+| U14 | `rule` row fields (`title` / `text` / `rationale`) + lifecycle (`status=RETIRED` needs `retireReason`; `kind=lesson → PROMOTED` needs `promotedTo`) | `level=package`: `(in-progress, *)`; `level=project`: via `--pkg _project` + `ack` | `origin in {mirror, selfevolve}` rows are export-owned — hand edits rejected (`rule-origin-immutable`); lesson edits repaint analysis.html#rules |
 
 ### 4.3 Delete — remove row / card / section / file
 
@@ -50,6 +52,7 @@ update `transitions.py` in the same commit.
 | D5 | `docs/<slug>.html` file + paired doc card | any non-terminal cell | All of `(success, *)` and `(fail, *)` (preserve evidence) |
 | D7 | results.html result block | **forbidden everywhere** — archive via lane move, not delete | All cells |
 | D8 | inventory entry (whole package) | **forbidden via `research-op`** | All cells — archival is a lane move, not delete |
+| D9 | `rule` row (hard delete) | `level=package` in `(in-progress, CONTEXT_LOADED / IMPLEMENTING / READY_TO_LAUNCH)` only — a pre-launch correction | `level=project` (**retire instead**, `rule-no-hard-delete`), `level=universal`, and `origin in {mirror, selfevolve}` |
 
 ### 4.4 Check — read-only lint (universal)
 
@@ -61,6 +64,7 @@ update `transitions.py` in the same commit.
 | C4 | Project-wide cross-package consistency | All cells, always | `learnings_lint.py all` |
 | C5 | Task-spine structural alignment | All cells, always | `learnings_lint.py alignment --pkg <id>`; terminal lane moves use `--terminal` |
 | C6 | Schema gate for a proposed write (pre-condition for I* / U* / D*) | All cells, always | Pattern B reject-before-write hook |
+| C7 | Rules-registry consistency (row schema, id uniqueness, universal-mirror sync, paint drift) | All cells, always | `learnings_lint.py lint-rules` (also via `research-op --op check --target rule`) |
 
 ### 4.5 Structural invariants the matrix encodes
 

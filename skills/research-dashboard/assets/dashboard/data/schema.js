@@ -86,6 +86,14 @@ window.EXPERIMENT_VERDICT = ["PASS", "FAIL", "INCONCLUSIVE", "DIAGNOSTIC"];
 window.RESULT_VALIDITY = ["VALID", "PARTIAL", "RESULT_FAIL", "UNMEASURED", "DIAGNOSTIC_ONLY", "MISSING"];
 // Allowed nextRoute values (mirrors WORKFLOW.md NEXT_ROUTE; renderer reads this).
 window.NEXT_ROUTE = ["RUN_NEXT_EXPERIMENT", "FIX_IMPLEMENTATION", "REVISE_PLAN", "TERMINATE", "ASK_USER"];
+// Route semantics live with the enum (single owner); the dashboard renders this map.
+window.NEXT_ROUTE_MEANING = {
+  RUN_NEXT_EXPERIMENT: "Use when the active plan defines the next run.",
+  FIX_IMPLEMENTATION: "Use for concrete code or artifact issues.",
+  REVISE_PLAN: "Use when the executable plan changes.",
+  TERMINATE: "Use when evidence says the direction should stop or archive.",
+  ASK_USER: "Use when a user-level decision blocks progress.",
+};
 window.RESEARCH_METHODS_TRIED_FIELDS = [
   "method",
   "hypothesis",

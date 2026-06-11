@@ -48,10 +48,10 @@
         <h2>Dashboard Role</h2>
         <p>
           This page is the project overview surface. It gives the user a clear
-          picture of how research is organized, and gives the agent the global
-          operating context (purpose, evidence gates, allowed routes, hard
-          constraints, project profile, rule files) before any package is
-          opened.
+          picture of how research is organized, and renders the operating
+          context from its owners — the Scope SSOT objective, the schema.js
+          route enum, the rules registry, and the project profile — before any
+          package is opened. The dashboard stores none of that content itself.
         </p>
         <p>
           The dashboard does not own claims, gates, validity, or evidence
@@ -118,6 +118,7 @@
         </p>
         <p><a href="rules/trustworthy-research-rules.html">Open trustworthy-research-rules.html</a></p>
       </article>
+      <div id="rules-registry-root"></div>
     </section>
 
     <footer class="footer-note">
@@ -127,6 +128,8 @@
   </div>
 
   <script src="data/schema.js"></script>
+  <script src="data/scope-projection.js"></script>
+  <script src="data/rules.js"></script>
   <script src="data/research-packages.js"></script>
   <script src="data/brainstorms.js"></script>
   <script src="assets/research.js"></script>

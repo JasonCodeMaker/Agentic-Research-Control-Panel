@@ -31,6 +31,13 @@ python skills/research-op/scripts/research_op.py --pkg <id> --op registry-add --
   --payload '{"from":"paper:dpr2020","to":"paper:ours","type":"extends","evidence":"we adapt its dual-encoder"}'
 python skills/research-op/scripts/research_op.py --pkg <id> --op registry-add --target gap \
   --payload '{"id":"G1","summary":"no zero-shot benchmark for this domain"}'
+# Unified rules registry (data/rules.js) — package rules via the package path,
+# project rules via the synthetic _project context (needs a human ack), check anywhere
+python skills/research-op/scripts/research_op.py --pkg <id> --op insert --target rule \
+  --payload '{"level":"package","kind":"binding","slug":"one-notebook","title":"One notebook per figure","text":"Every figure gets its own notebook.","rationale":"reproducibility","addedAt":"2026-06-11"}'
+python skills/research-op/scripts/research_op.py --pkg _project --op insert --target rule \
+  --payload '{"level":"project","kind":"constraint","slug":"no-eval-leak","title":"No eval leakage","text":"Never train on the eval split.","rationale":"validity","addedAt":"2026-06-11","ack":"<verbatim human approval>"}'
+python skills/research-op/scripts/research_op.py --pkg _project --op check --target rule
 
 # Natural-language (user manual fixes)
 python skills/research-op/scripts/research_op.py --nl 'update: set status of 2026-05-15-panda-baselines to BLOCKED, reason: GPU contention'
@@ -63,6 +70,7 @@ Three ops live outside the `(category, status)` matrix (they are project-level, 
 - `scan-events` — read-only artifact scan (no state-gate, no validation) that lists newly-locked facts for the per-turn propagation cycle.
 - `scope-transition` — the one gated writer for the Scope SSOT, used by `research-scope` / `research-auto`. It is gated by the node **level** (project / direction / task), *not* the package state machine, and appends one transition to `outputs/_scope/transitions.jsonl`. The payload carries the node fields (`id, level, parents, version, status, yardstick, provenance`) plus the transition meta (`op, gate, trigger, cause, invalidates, reopens, dial_revert`).
 - `registry-add` — the gated writer for the project-level **knowledge registries** (`--target paper | edge | gap`), the durable cross-package stores the Context Pack reads and `context.html` surfaces. Gated by per-target reject-before-write validators (`registry.py`), not the package state machine; dedups and appends one line to `research_html/data/{papers,edges,gaps}.jsonl`. Payloads: **paper** = `{id|arxiv|source_id (≥1 required), title (required), url, pkg}`; **edge** = `{from (required), to (required), type ∈ extends|contradicts|addresses_gap|invalidates (required), evidence}`; **gap** = `{id (required), summary (required), status}`. A duplicate is a silent idempotent skip (still audited). `--pkg` is the adding context (must exist) and is recorded on the audit line.
+- `--target rule` with `--pkg _project` — the project-level half of the **unified rules registry** (`data/rules.js`). Package-level rule rows flow the normal state-gated path (`--pkg <pkg-id>`, matrix rows I12/U14/D9); project-level rows use the synthetic `_project` context and require a non-empty `payload.ack` (the distinct human action — research-apply passes its human token through). `level=universal` is write-locked everywhere (the R/T mirror); `origin ∈ {mirror, selfevolve}` rows are export-owned. `--op check --target rule` wraps `learnings_lint.py lint-rules`. Retired targets `package-invariant` / `analysis-rule` reject with a pointer to this target.
 
 ## Validate-before-write contract
 
@@ -91,6 +99,7 @@ Path: `outputs/<pkg>/_actions.jsonl`. One JSONL line per op invocation (success 
 ## Bundled resources
 
 - `scripts/research_op.py` — CLI entry.
+- `scripts/rules_store.py` — data/rules.js load/save + row validation (the registry writer the rule ops use).
 - `scripts/transitions.py` — the legality matrix as Python dicts (per-op target maps).
 - `scripts/events.py` — 5 composite events.
 - `scripts/validate.py` — Phase 2 rules.

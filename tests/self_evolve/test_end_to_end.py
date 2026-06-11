@@ -50,7 +50,12 @@ def _transition(eid, ver, frm, to, **over):
 
 def test_failure_to_active_to_contextpack(tmp_path):
     se = tmp_path / "_selfevolve"
-    learned = tmp_path / "_learned" / "rules.md"
+    root = tmp_path / "research_html"
+
+    def registry_texts():
+        text = (root / "data" / "rules.js").read_text(encoding="utf-8")
+        rows = json.loads(text[len("window.RESEARCH_RULES = "):].rstrip().rstrip(";"))
+        return [r["text"] for r in rows]
 
     # 1. observe
     st, _, _ = evolution.run("evolution-observe", _failure_event(), se)
@@ -87,9 +92,9 @@ def test_failure_to_active_to_contextpack(tmp_path):
     evolution.run("evolution-project", {}, se)
     assert evolution.run("evolution-check", {}, se)[0] == "PASSED"
 
-    # 8. derived export reaches the Context Pack
-    cb.export_learned_rules(str(se), str(learned))
-    assert rule["content"] in learned.read_text()
+    # 8. derived export reaches the rules registry (Context Pack reads it from there)
+    cb.export_learned_rules(str(se), str(root))
+    assert rule["content"] in registry_texts()
     actives = cb.load_rule_store_active(str(se))
     assert actives[0]["authority"] == "FULLY_ADMITTED"
 
@@ -99,8 +104,8 @@ def test_failure_to_active_to_contextpack(tmp_path):
                               transition_id=f"{eid}-inv", idempotency_key=f"{eid}:{ver}:INVALIDATED",
                               op="invalidate", reason="scope changed"), se)
     assert store.active_version(store.read_log(se / "rules" / "transitions.jsonl"), eid) is None
-    cb.export_learned_rules(str(se), str(learned))
-    assert learned.read_text() == ""
+    cb.export_learned_rules(str(se), str(root))
+    assert registry_texts() == []
 
 
 def test_failed_repro_rejects_admission():

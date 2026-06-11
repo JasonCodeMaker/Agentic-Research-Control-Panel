@@ -44,13 +44,14 @@ ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _load_package_facts_module():
+    parents = Path(__file__).resolve().parents
     candidates = [
-        Path(__file__).resolve().parents[5],  # source tree
-        Path(__file__).resolve().parents[2],  # installed dashboard
+        parents[5] if len(parents) > 5 else None,  # source tree
+        parents[2] if len(parents) > 2 else None,  # installed dashboard
         Path.cwd(),
     ]
     for root in candidates:
-        if (root / "lib" / "package_facts").exists():
+        if root is not None and (root / "lib" / "package_facts").exists():
             sys.path.insert(0, str(root))
             from lib import package_facts
             return package_facts
@@ -78,7 +79,6 @@ process.stdout.write(JSON.stringify({{
   statusFamily: window.RESEARCH_STATUS_FAMILY || {{}},
   contributionSpine: window.RESEARCH_CONTRIBUTION_SPINE || [],
   methodsTriedFields: window.RESEARCH_METHODS_TRIED_FIELDS || [],
-  globalProtocol: window.RESEARCH_GLOBAL_PROTOCOL || {{}},
   categories: window.RESEARCH_CATEGORIES || [],
   packages: window.RESEARCH_PACKAGES || [],
 }}, null, 2));
@@ -162,13 +162,15 @@ def field_present(v) -> bool:
     return True
 
 
-def lint_status(data: dict) -> Report:
+def lint_status(data: dict, rules: list | None = None) -> Report:
     """Schema lint per package + cross-package id/dir reconciliation."""
     rep = Report("lint-status — schema compliance")
     schema = data["schema"]
     pkgs = data["packages"]
     spine_ids = {s["id"] for s in (data.get("contributionSpine") or [])}
     pkg_ids = {p["id"] for p in pkgs}
+    if rules is None:
+        rules = [r for r in load_rules_registry(DASHBOARD_ROOT) if "_malformed" not in r]
 
     # Per-package schema lint
     for pkg in pkgs:
@@ -192,13 +194,13 @@ def lint_status(data: dict) -> Report:
                 "error",
             ))
 
-        rules = cat_schema.get("required") or {}
+        required_rules = cat_schema.get("required") or {}
         # The _all trio applies to every state except those in _all_exempt
         # (STOPPED is terminal-within-lane and only carries its own fields).
-        exempt = status in (rules.get("_all_exempt") or [])
-        required = [] if exempt else list(rules.get("_all") or [])
-        if status and rules.get(status):
-            required.extend(rules[status])
+        exempt = status in (required_rules.get("_all_exempt") or [])
+        required = [] if exempt else list(required_rules.get("_all") or [])
+        if status and required_rules.get(status):
+            required.extend(required_rules[status])
         for f in required:
             if not field_present(pkg.get(f)):
                 rep.add(Violation(pid, "missing-required", f"field {f!r} required for ({cat}, {status})", "error"))
@@ -221,26 +223,25 @@ def lint_status(data: dict) -> Report:
                 rep.add(Violation(pid, "method-row-bad-verdict",
                                   f"methodsTried[{i}] verdict={v!r} not in {sorted(VERDICTS)}", "error"))
 
-        # Binding rules (directive home) + E0 directive-propagation. A bindingRules[] entry is a user
-        # directive change ("add a rule"); the typed row must carry rule text, and adding one must have
-        # propagated to the tracker lastAction mirror + registry lastUpdated in the same turn — else the
-        # package reads as unchanged (Issue 3: a rule landed in doc prose with nothing else touched).
-        brules = pkg.get("bindingRules") or []
-        if not isinstance(brules, list):
-            rep.add(Violation(pid, "binding-rules-not-list", "bindingRules must be an array", "error"))
-            brules = []
-        for i, r in enumerate(brules):
-            if not r or not field_present((r or {}).get("rule")):
-                rep.add(Violation(pid, "binding-rule-missing-field",
-                                  f"bindingRules[{i}] missing 'rule' text", "error"))
+        # Binding rules (directive home, now registry rows) + E0 directive-propagation. A binding rule
+        # row is a user directive change ("add a rule"); its row shape is lint_rules' job, but adding one
+        # must have propagated to the tracker lastAction mirror + registry lastUpdated in the same turn —
+        # else the package reads as unchanged (Issue 3: a rule landed with nothing else touched).
+        brules = [r for r in rules
+                  if r.get("level") == "package" and r.get("pkg") == pid
+                  and r.get("kind") == "binding" and r.get("status", "ACTIVE") == "ACTIVE"]
+        for r in brules:
+            if not field_present(r.get("text")):
+                rep.add(Violation(pid, "rule-row-schema",
+                                  f"binding rule {r.get('id')} missing 'text'", "error"))
         if brules:
             if not _filled(pkg.get("lastAction")):
                 rep.add(Violation(pid, "directive-not-propagated",
-                                  "bindingRules present but lastAction is unset — a directive change must "
+                                  "binding rules present but lastAction is unset — a directive change must "
                                   "update the tracker Resume Block in the same turn", "warning"))
             if not _filled(pkg.get("lastUpdated")):
                 rep.add(Violation(pid, "directive-not-propagated",
-                                  "bindingRules present but lastUpdated is unset — a directive change must "
+                                  "binding rules present but lastUpdated is unset — a directive change must "
                                   "bump the registry timestamp in the same turn", "warning"))
 
         # Contribution spine
@@ -486,6 +487,117 @@ def lint_evidence(data: dict) -> Report:
             ep = (r or {}).get("evidencePath") or ""
             for v in check_evidence(pid, f"methodsTried[{i}].evidencePath", ep):
                 rep.add(v)
+    return rep
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# lint-rules — the unified rules registry (data/rules.js)
+# ─────────────────────────────────────────────────────────────────────────────
+
+RULES_PREFIX = "window.RESEARCH_RULES = "
+RULE_LEVELS = {"universal", "project", "package"}
+RULE_KINDS = {"form", "trust", "constraint", "binding", "lesson"}
+RULE_LEVEL_KINDS = {
+    "universal": {"form", "trust"},
+    "project": {"constraint"},
+    "package": {"binding", "lesson"},
+}
+RULE_STATUSES = {"ACTIVE", "RETIRED", "PROMOTED"}
+RULE_REQUIRED = ("id", "level", "kind", "title", "source", "origin", "status", "addedAt")
+RULE_CARD_RE = re.compile(r'data-rule="([RT]\d+)"')
+RULE_LI_RE = re.compile(r'<li\b[^>]*id=["\']rule-([^"\']+)["\']', re.IGNORECASE)
+RULE_FILES = ("html-rules.html", "trustworthy-research-rules.html")
+
+
+def load_rules_registry(root: Path) -> list:
+    """Parse data/rules.js ([] if absent; malformed sentinel row on a bad prefix)."""
+    p = Path(root) / "data" / "rules.js"
+    if not p.exists():
+        return []
+    text = p.read_text(encoding="utf-8").strip()
+    if not text.startswith(RULES_PREFIX):
+        return [{"_malformed": str(p)}]
+    try:
+        rows = json.loads(text[len(RULES_PREFIX):].rstrip(";"))
+    except json.JSONDecodeError:
+        return [{"_malformed": str(p)}]
+    return rows if isinstance(rows, list) else [{"_malformed": str(p)}]
+
+
+def painted_rule_slugs(analysis_path: Path) -> set[str]:
+    """Slugs currently painted in analysis.html's Rules block."""
+    if not analysis_path.exists():
+        return set()
+    return set(RULE_LI_RE.findall(analysis_path.read_text(encoding="utf-8")))
+
+
+def lint_rules(root: Path) -> Report:
+    """Registry lint: row schema, id uniqueness, pkg resolution, universal-mirror sync."""
+    root = Path(root)
+    rep = Report("lint-rules — unified rules registry")
+    rules = load_rules_registry(root)
+    if rules and "_malformed" in rules[0]:
+        rep.add(Violation("_registry", "rule-store-malformed",
+                          "data/rules.js must start with window.RESEARCH_RULES ="))
+        return rep
+    seen = set()
+    for r in rules:
+        rid = r.get("id", "<missing>")
+        missing = [f for f in RULE_REQUIRED if not str(r.get(f, "")).strip()]
+        if r.get("level") in {"project", "package"}:
+            missing.extend(f for f in ("text", "rationale") if not str(r.get(f, "")).strip())
+        bad_enum = (r.get("level") not in RULE_LEVELS or r.get("kind") not in RULE_KINDS
+                    or r.get("status") not in RULE_STATUSES)
+        if missing or bad_enum:
+            rep.add(Violation(rid, "rule-row-schema",
+                              f"missing={missing} level/kind/status legal={not bad_enum}"))
+            continue
+        if r["kind"] not in RULE_LEVEL_KINDS[r["level"]]:
+            rep.add(Violation(rid, "rule-kind-mismatch",
+                              f"level={r['level']} only allows kind={sorted(RULE_LEVEL_KINDS[r['level']])}"))
+        if rid in seen:
+            rep.add(Violation(rid, "rule-id-duplicate", "duplicate rule id"))
+        seen.add(rid)
+        if r["level"] == "package":
+            pkg = r.get("pkg", "")
+            if not pkg or not rid.startswith(pkg + "#"):
+                rep.add(Violation(rid, "rule-row-schema", "package rule needs pkg + <pkg>#<slug> id"))
+            elif not (root / "packages" / pkg).is_dir():
+                rep.add(Violation(rid, "rule-pkg-missing", f"packages/{pkg}/ not found",
+                                  severity="warning"))
+        if r["status"] == "RETIRED" and not str(r.get("retireReason", "")).strip():
+            rep.add(Violation(rid, "rule-row-schema", "RETIRED needs retireReason"))
+        if r["status"] == "PROMOTED" and not str(r.get("promotedTo", "")).strip():
+            rep.add(Violation(rid, "rule-row-schema", "PROMOTED needs promotedTo"))
+    active_lessons: dict[str, set[str]] = {}
+    for r in rules:
+        if (r.get("level") == "package" and r.get("kind") == "lesson"
+                and r.get("status") == "ACTIVE" and "#" in str(r.get("id", ""))):
+            active_lessons.setdefault(r.get("pkg", ""), set()).add(r["id"].split("#", 1)[1])
+    pkgs = set(active_lessons)
+    pkgs.update(p.parent.name for p in (root / "packages").glob("*/analysis.html"))
+    for pkg in sorted(p for p in pkgs if p):
+        analysis = root / "packages" / pkg / "analysis.html"
+        painted = painted_rule_slugs(analysis)
+        expected = active_lessons.get(pkg, set())
+        for slug in sorted(expected - painted):
+            rep.add(Violation(pkg, "rule-paint-drift",
+                              f"ACTIVE lesson row #rule-{slug} is not painted in packages/{pkg}/analysis.html"))
+        for slug in sorted(painted - expected):
+            rep.add(Violation(pkg, "rule-paint-drift",
+                              f"painted #rule-{slug} has no ACTIVE lesson row in data/rules.js"))
+    # Universal mirror sync against the copied rule files.
+    shipped = set()
+    for name in RULE_FILES:
+        f = root / "rules" / name
+        if f.exists():
+            shipped |= set(RULE_CARD_RE.findall(f.read_text(encoding="utf-8")))
+    mirrored = {r["id"] for r in rules if r.get("origin") == "mirror"}
+    for rid in sorted(shipped - mirrored):
+        rep.add(Violation(rid, "rule-mirror-drift",
+                          "shipped rule card not mirrored — re-run ensure_dashboard.py"))
+    for rid in sorted(mirrored - shipped):
+        rep.add(Violation(rid, "rule-mirror-drift", "mirror row has no shipped rule card"))
     return rep
 
 
@@ -1457,6 +1569,7 @@ def main() -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("lint-status")
     sub.add_parser("lint-evidence")
+    sub.add_parser("lint-rules")
     p = sub.add_parser("scan-events"); p.add_argument("--pkg")
     p = sub.add_parser("draft-method"); p.add_argument("pkg_id"); p.add_argument("anchor")
     p = sub.add_parser("draft-terminal"); p.add_argument("pkg_id")
@@ -1480,6 +1593,10 @@ def main() -> int:
         return 1 if fail(rep) else 0
     if args.cmd == "lint-evidence":
         rep = lint_evidence(data)
+        print(rep.render(strict=args.strict))
+        return 1 if fail(rep) else 0
+    if args.cmd == "lint-rules":
+        rep = lint_rules(DASHBOARD_ROOT)
         print(rep.render(strict=args.strict))
         return 1 if fail(rep) else 0
     if args.cmd == "scan-events":
@@ -1509,7 +1626,9 @@ def main() -> int:
         r4 = lint_alignment(data, pkg_filter=args.pkg); print(r4.render(strict=args.strict))
         print()
         r5 = lint_fact_alignment(data, pkg_filter=args.pkg); print(r5.render(strict=args.strict))
-        return 1 if (fail(r1) or fail(r2) or fail(r4) or fail(r5)) else 0
+        print()
+        r6 = lint_rules(DASHBOARD_ROOT); print(r6.render(strict=args.strict))
+        return 1 if (fail(r1) or fail(r2) or fail(r4) or fail(r5) or fail(r6)) else 0
 
     return 2
 

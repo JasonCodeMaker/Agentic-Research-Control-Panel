@@ -23,15 +23,21 @@ TARGETS = {
     "openRuns", "currentBlocker", "terminationMessage", "adoptionPath",
     "supersededBy", "reopenTrigger", "objectiveContract",
     "experiments-row", "experiments-status",
-    "methodsTried", "package-invariant",
+    "methodsTried", "rule",
     # HTML in-place targets (single-home, no painter)
     "tracker-live-check-row", "tracker-resource-allocation-row",
     "tracker-impl-review-row", "tracker-chosen-route",
     "results-gate-row", "results-block", "results-verdict",
-    "analysis-rule", "analysis-insight",
+    "analysis-insight",
     "doc-file", "doc-card",
     "approval-ack-slot",
     "last-updated-time",
+}
+
+# Retired targets → pointer message (Pattern-B reject with guidance, not silence).
+RETIRED_TARGETS = {
+    "package-invariant": "use --target rule (level=package, kind=binding)",
+    "analysis-rule":     "use --target rule (level=package, kind=lesson)",
 }
 
 # Insert legality: target -> set of (category, status) cells where the Insert is allowed.
@@ -59,10 +65,10 @@ INSERT_LEGAL = {
     "results-block": {
         ("in-progress", "RESULT_ANALYSIS")
     },
-    "analysis-rule": {("in-progress", s) for s in STATES["in-progress"]},
     "analysis-insight": {("in-progress", s) for s in STATES["in-progress"]},
-    # A binding directive (e.g. a figure-construction rule) may be added at any in-progress stage.
-    "package-invariant": {("in-progress", s) for s in STATES["in-progress"]},
+    # A rule row (binding directive or distilled lesson) may be added at any in-progress stage;
+    # per-kind constraints (lesson needs a finalized result) live in validate.py.
+    "rule": {("in-progress", s) for s in STATES["in-progress"]},
     "doc-file": {("in-progress", s) for s in STATES["in-progress"]},
     "doc-card": {("in-progress", s) for s in STATES["in-progress"]},
     "tracker-chosen-route": {("in-progress", "NEXT_ACTION_READY")},
@@ -99,6 +105,7 @@ UPDATE_LEGAL = {
     },
     "results-verdict":      {("in-progress", "RESULT_ANALYSIS")},
     "last-updated-time":    {(c, s) for c, statuses in STATES.items() for s in statuses},
+    "rule":                 {("in-progress", s) for s in STATES["in-progress"]},
 }
 
 # Delete legality: target -> set of cells where delete is allowed.
@@ -111,6 +118,8 @@ DELETE_LEGAL = {
     "methodsTried":              {("in-progress", s) for s in STATES["in-progress"]},
     "doc-file":                  {("in-progress", s) for s in STATES["in-progress"]},
     "doc-card":                  {("in-progress", s) for s in STATES["in-progress"]},
+    # Hard rule delete is a pre-launch correction only; landed rules retire via update.
+    "rule": {("in-progress", s) for s in ("CONTEXT_LOADED", "IMPLEMENTING", "READY_TO_LAUNCH")},
     # results-block and inventory-entry are intentionally never legal — see spec D7, D8.
 }
 

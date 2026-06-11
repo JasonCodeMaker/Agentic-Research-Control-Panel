@@ -9,6 +9,7 @@ Required root files:
 - `assets/research.css`
 - `assets/research.js`
 - `data/research-packages.js`
+- `data/rules.js` (the unified rules registry — see ownership note below)
 - `categories/brainstorm/index.html`
 - `categories/in-progress/index.html`
 - `categories/success/index.html`
@@ -18,12 +19,25 @@ Required root files:
 
 Required data globals:
 
-- `window.RESEARCH_GLOBAL_CONTEXT`
-- `window.RESEARCH_GLOBAL_PROTOCOL`
 - `window.RESEARCH_PROJECT_PROFILE`
 - `window.RESEARCH_CATEGORIES`
 - `window.RESEARCH_TAG_ROLES`
 - `window.RESEARCH_PACKAGES`
+- `window.RESEARCH_RULES` (in `data/rules.js`)
+
+`data/rules.js` ownership (three populations, one schema): rows with
+`origin="mirror"` are a write-locked projection of the shipped R/T rule files
+(rebuilt by `ensure_dashboard.py`); rows with `origin="selfevolve"` are a
+projection of the self-evolve Rule Store (rebuilt by `lib/context_pack`);
+all other rows (project / package rules) are mutated only through
+`research-op --target rule`. `learnings_lint.py lint-rules` checks schema,
+id uniqueness, and both mirror syncs.
+
+The chrome owns no protocol content: the objective panel renders from the
+Scope SSOT projection (`data/scope-projection.js`), the routes panel from
+`schema.js` (`NEXT_ROUTE` + `NEXT_ROUTE_MEANING`), and the rules section from
+`data/rules.js`. `RESEARCH_GLOBAL_CONTEXT` / `RESEARCH_GLOBAL_PROTOCOL` are
+retired — do not reintroduce protocol prose as chrome data.
 
 Every package object must include:
 
@@ -58,11 +72,16 @@ Required dashboard sections (each must carry the matching `data-section` anchor)
   claims and evidence.
 - `lanes`: the four lane summary cells produced by `renderDashboardSummary()`.
 - `packages`: the full package grid populated by `renderPackages()`.
-- `protocol`: the global-protocol panels populated by `renderGlobalContext()`.
+- `protocol`: the panels populated by `renderGlobalContext()` — objective
+  (Scope SSOT projection, with an empty-state pointing at `/research-onboard`),
+  allowed routes (schema.js), protocol link cards (WORKFLOW.md / CLAUDE.md /
+  rule files), and the tag legend. No protocol prose is stored here.
 - `profile`: a `#project-profile-root` slot for project-specific specialization.
 - `rules`: two cards with `data-card="rule-link-html"` and
   `data-card="rule-link-trust"` that link `rules/html-rules.html` and
-  `rules/trustworthy-research-rules.html` and explain the difference.
+  `rules/trustworthy-research-rules.html` and explain the difference, plus the
+  `#rules-registry-root` slot rendered from `data/rules.js` by
+  `renderRulesRegistry()` — the one surface answering "which rules bind me".
 
 Lane pages mirror the same chrome contract: the masthead carries
 `data-section="masthead"`, the package grid carries `data-section="lane"`,

@@ -1,7 +1,7 @@
 """Directive-propagation lint (Fix 3c, the E0 contract): a binding rule is a directive change, so it must
 propagate to the tracker lastAction mirror + the registry lastUpdated in the same turn — otherwise the
 package looks unchanged (the session-b07d0f85 Issue-3 symptom: rule added, tracker/registry untouched).
-Also pins the bindingRules[] typed shape (核心问题 #1).
+Binding rules now live as registry rows (data/rules.js), not bindingRules[] (核心问题 #2).
 """
 
 import sys
@@ -25,27 +25,42 @@ def _pkg(**kw):
     return p
 
 
+def _binding(**kw):
+    r = {"id": "p1#one-notebook", "level": "package", "pkg": "p1", "kind": "binding",
+         "title": "One notebook per figure", "text": "one notebook per figure",
+         "rationale": "repro", "source": "user", "origin": "user",
+         "status": "ACTIVE", "addedAt": "2026-06-09"}
+    r.update(kw)
+    return r
+
+
 def _codes(rep):
     return {v.code for v in rep.violations}
 
 
 def test_binding_rule_missing_rule_text_is_error():
-    rep = L.lint_status(_data(_pkg(bindingRules=[{"rationale": "x"}])))
-    assert "binding-rule-missing-field" in _codes(rep)
+    rep = L.lint_status(_data(_pkg()), rules=[_binding(text="")])
+    assert "rule-row-schema" in _codes(rep)
 
 
 def test_unpropagated_binding_rule_warns():
-    rep = L.lint_status(_data(_pkg(bindingRules=[{"rule": "one notebook per figure"}])))
+    rep = L.lint_status(_data(_pkg()), rules=[_binding()])
     assert "directive-not-propagated" in _codes(rep)
 
 
 def test_propagated_binding_rule_is_clean():
-    rep = L.lint_status(_data(_pkg(
-        bindingRules=[{"rule": "one notebook per figure", "addedAt": "2026-06-09"}],
-        lastAction="added figure-construction rule", lastUpdated="2026-06-09")))
+    rep = L.lint_status(_data(_pkg(lastAction="added figure-construction rule",
+                                   lastUpdated="2026-06-09")),
+                        rules=[_binding()])
     assert "directive-not-propagated" not in _codes(rep)
-    assert "binding-rule-missing-field" not in _codes(rep)
+    assert "rule-row-schema" not in _codes(rep)
 
 
 def test_no_binding_rules_no_warning():
-    assert "directive-not-propagated" not in _codes(L.lint_status(_data(_pkg())))
+    assert "directive-not-propagated" not in _codes(L.lint_status(_data(_pkg()), rules=[]))
+
+
+def test_retired_binding_rule_does_not_warn():
+    rep = L.lint_status(_data(_pkg()),
+                        rules=[_binding(status="RETIRED", retireReason="superseded")])
+    assert "directive-not-propagated" not in _codes(rep)

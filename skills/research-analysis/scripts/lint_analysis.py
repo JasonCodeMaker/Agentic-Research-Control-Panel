@@ -8,8 +8,9 @@ Checks per page:
 - `#rules` section appears before `#insight` section (no other top-level
   section between them).
 - Every rule `<li>` is either the empty placeholder or has `id="rule-<slug>"`
-  with a kebab-case slug AND contains exactly one
-  `Evidence: <a href="#insight-<slug>">…</a>` link.
+  with a kebab-case slug. The block is a paint of the unified rules registry
+  (`data/rules.js`, `kind=lesson`): painted slugs and ACTIVE lesson rows must
+  match in both directions (drift is an error).
 - Rule bodies contain no `<strong>` / `<b>` tag wrapping the rule itself.
 - Every `<details>` inside `<div class="insight-body">` has
   `id="insight-<slug>"`, exactly one `<summary>`, and at least one
@@ -17,8 +18,6 @@ Checks per page:
 - Every visualization (inline-styled block carrying a `background:#…` rule
   with bar fill or heatmap shape) is followed by a caption paragraph that
   starts with `<em>Reading:</em>`.
-- Every `#rule-<slug>` Evidence link resolves to an `#insight-<slug>` anchor
-  that exists on the same page.
 - The package's `pages` array in `data/research-packages.js` includes
   `"analysis"`.
 - The dashboard JS registers `analysis` in STAGE_PAGES and the CSS has the
@@ -30,6 +29,7 @@ Exits 0 on clean, non-zero with one violation per line on failure.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -140,11 +140,30 @@ def find_details(text: str) -> list[tuple[int, int, str]]:
     return out
 
 
+def load_registry_lessons(path: Path) -> set[str] | None:
+    """ACTIVE lesson slugs for this package from data/rules.js (None if no registry)."""
+    # analysis.html sits at <root>/packages/<pkg>/analysis.html.
+    pkg = path.resolve().parent.name
+    rules_js = path.resolve().parents[2] / "data" / "rules.js"
+    prefix = "window.RESEARCH_RULES = "
+    if not rules_js.exists():
+        return None
+    text = rules_js.read_text(encoding="utf-8").strip()
+    if not text.startswith(prefix):
+        return None
+    rows = json.loads(text[len(prefix):].rstrip(";"))
+    return {r["id"].split("#", 1)[1] for r in rows
+            if r.get("level") == "package" and r.get("pkg") == pkg
+            and r.get("kind") == "lesson" and r.get("status") == "ACTIVE"}
+
+
 def check_rules(text: str, path: Path, insight_slugs: set[str], report: LintReport) -> None:
+    """The rules block is a paint of the registry's lesson rows — check shape + registry sync."""
     lis = find_rule_lis(text)
     if not lis:
         report.add(str(path), "no <li> inside <ol class=\"rules-list\">; expect at least the empty placeholder")
         return
+    painted: set[str] = set()
     for start, _, body in lis:
         line = line_of(text, start)
         where = f"{path}:{line}"
@@ -155,23 +174,21 @@ def check_rules(text: str, path: Path, insight_slugs: set[str], report: LintRepo
             report.add(where, "rule <li> missing id=\"rule-<slug>\"")
             continue
         slug = m_id.group(1)
+        painted.add(slug)
         if not SLUG_RE.match(slug):
             report.add(where, f"rule slug {slug!r} not kebab-case")
-        evidence = re.findall(
-            r"Evidence:\s*<a\s+href=\"#insight-([a-z0-9][a-z0-9-]*)\"[^>]*>",
-            body,
-        )
-        if len(evidence) == 0:
-            report.add(where, "rule body missing Evidence: <a href=\"#insight-<slug>\"> link")
-        elif len(evidence) > 1:
-            report.add(where, f"rule body has {len(evidence)} evidence links; expected exactly 1")
-        else:
-            target = evidence[0]
-            if target not in insight_slugs:
-                report.add(where, f"rule evidence target #insight-{target} does not exist on this page")
         # No <strong> or <b> on the rule itself.
         if re.search(r"<(strong|b)\b", body, re.IGNORECASE):
             report.add(where, "rule body contains <strong>/<b>; rules must be plain prose")
+    lessons = load_registry_lessons(path)
+    if lessons is None:
+        return
+    for slug in sorted(painted - lessons):
+        report.add(str(path), f"rule-registry drift: painted #rule-{slug} has no ACTIVE lesson row "
+                              "in data/rules.js — re-run the research-op rule op to repaint")
+    for slug in sorted(lessons - painted):
+        report.add(str(path), f"rule-registry drift: ACTIVE lesson row #rule-{slug} not painted "
+                              "on this page — re-run the research-op rule op to repaint")
 
 
 def check_insights(text: str, path: Path, report: LintReport) -> set[str]:

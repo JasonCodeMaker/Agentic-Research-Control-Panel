@@ -57,12 +57,8 @@
     return window.RESEARCH_TAG_ROLES || {};
   }
 
-  function globalProtocol() {
-    return window.RESEARCH_GLOBAL_PROTOCOL || {};
-  }
-
-  function globalContext() {
-    return window.RESEARCH_GLOBAL_CONTEXT || {};
+  function rulesRegistry() {
+    return window.RESEARCH_RULES || [];
   }
 
   function projectProfile() {
@@ -174,15 +170,11 @@
 
   function renderGlobalContext() {
     var target = byId("global-context");
-    var context = globalContext();
-    if (!target || !context.objective) return;
+    if (!target) return;
     target.innerHTML = [
-      protocolHeroHtml(context),
-      protocolSectionHtml("Global Objectives", globalProtocol().objectiveCards, "protocol-objectives"),
-      protocolSectionHtml("Agent Rules", globalProtocol().agentRules, "protocol-agent-rules"),
-      protocolSectionHtml("Evidence Gates", globalProtocol().evidenceGates, "protocol-evidence-gates"),
-      routeRulesHtml(),
-      hardConstraintsHtml(),
+      objectivePanelHtml(),
+      routesPanelHtml(),
+      protocolLinksHtml(),
       tagLegendHtml(),
     ].join("");
   }
@@ -191,6 +183,38 @@
     var target = byId("project-profile-root");
     if (!target) return;
     target.innerHTML = projectProfileHtml();
+  }
+
+  function ruleRowHtml(rule) {
+    return [
+      '<article class="rule-row" data-rule-id="' + htmlEscape(rule.id) + '" data-rule-status="' + htmlEscape(rule.status) + '">',
+      "<code>" + htmlEscape(rule.id) + "</code>",
+      "<div><strong>" + htmlEscape(rule.title) + "</strong>",
+      rule.text ? "<p>" + htmlEscape(rule.text) + "</p>" : "",
+      "</div></article>",
+    ].join("");
+  }
+
+  function renderRulesRegistry() {
+    // The one surface answering "which rules bind me right now" — a pure render
+    // of data/rules.js (universal mirror + project rows + package rows).
+    var target = byId("rules-registry-root");
+    if (!target) return;
+    var rules = rulesRegistry();
+    var groups = [
+      { title: "Universal (write-locked)", open: false, match: function (r) { return r.level === "universal"; } },
+      { title: "Project rules", open: true, match: function (r) { return r.level === "project" && r.status === "ACTIVE"; } },
+      { title: "Package rules", open: true, match: function (r) { return r.level === "package" && r.status === "ACTIVE"; } },
+    ];
+    target.innerHTML = groups.map(function (group) {
+      var rows = rules.filter(group.match);
+      return [
+        '<details class="details-panel rules-group"' + (group.open ? " open" : "") + ">",
+        "<summary>" + htmlEscape(group.title) + " (" + rows.length + ")</summary>",
+        rows.length ? rows.map(ruleRowHtml).join("") : '<p class="card-text">None.</p>',
+        "</details>",
+      ].join("");
+    }).join("");
   }
 
   function renderScopeProjection() {
@@ -295,18 +319,24 @@
     ].join("");
   }
 
-  function protocolHeroHtml(context) {
-    var protocol = globalProtocol();
+  function objectivePanelHtml() {
+    // The objective is Scope SSOT-owned; the dashboard only projects it.
+    var projection = scopeProjection();
+    var project = Object.keys(projection).map(function (id) { return projection[id]; })
+      .filter(function (node) { return node && node.level === "project"; })[0];
+    if (!project) {
+      return [
+        '<section class="protocol-panel protocol-hero" data-panel="objective">',
+        '<div class="k">Objective (Scope SSOT)</div>',
+        '<p class="card-text">No committed Project node. Run <code>/research-onboard</code> to propose one.</p>',
+        "</section>",
+      ].join("");
+    }
     return [
-      '<section class="protocol-panel protocol-hero" data-panel="global-protocol">',
-      '<div class="k">Global purpose</div>',
-      "<h2>Trustworthy Auto-Research Pipeline</h2>",
-      "<p>" + htmlEscape(protocol.purpose || context.dashboardRole) + "</p>",
-      '<div class="kv-grid protocol-kv">',
-      '<div class="k">Global Objective</div><div>' + htmlEscape(context.objective) + "</div>",
-      '<div class="k">Success Rule</div><div>' + htmlEscape(context.successRule) + "</div>",
-      '<div class="k">Source Rule</div><div>' + htmlEscape(context.sourceOfTruth) + "</div>",
-      "</div>",
+      '<section class="protocol-panel protocol-hero" data-panel="objective">',
+      '<div class="k">Objective (Scope SSOT)</div>',
+      scopeProjectHtml(project),
+      '<p class="card-text"><a href="scope.html">Full scope tree →</a></p>',
       "</section>",
     ].join("");
   }
@@ -328,15 +358,6 @@
         "</div>",
       ].join("")
       : "";
-    var constraints = profile.constraints && profile.constraints.length
-      ? [
-        '<ul class="constraint-list profile-constraints">',
-        profile.constraints.map(function (constraint) {
-          return "<li>" + htmlEscape(constraint) + "</li>";
-        }).join(""),
-        "</ul>",
-      ].join("")
-      : "";
     return [
       '<section class="protocol-panel project-profile" data-panel="project-profile">',
       '<div class="k">' + htmlEscape(profile.label || "Project profile") + "</div>",
@@ -348,32 +369,14 @@
       '<div class="k">Project Source Rule</div><div>' + htmlEscape(profile.sourceOfTruth || "Replace with the project-specific source-of-truth rule.") + "</div>",
       "</div>",
       cards,
-      constraints,
       "</section>",
     ].join("");
   }
 
-  function protocolSectionHtml(title, items, panelId) {
-    if (!items || !items.length) return "";
-    return [
-      '<section class="protocol-panel" data-panel="' + htmlEscape(panelId) + '">',
-      "<h2>" + htmlEscape(title) + "</h2>",
-      '<div class="protocol-card-grid">',
-      items.map(function (item) {
-        return [
-          '<article class="protocol-card">',
-          "<h3>" + htmlEscape(item.title) + "</h3>",
-          "<p>" + htmlEscape(item.body) + "</p>",
-          "</article>",
-        ].join("");
-      }).join(""),
-      "</div>",
-      "</section>",
-    ].join("");
-  }
-
-  function routeRulesHtml() {
-    var routes = globalProtocol().routeRules || [];
+  function routesPanelHtml() {
+    // Route enum + meanings are schema.js-owned; the dashboard only renders them.
+    var meanings = window.NEXT_ROUTE_MEANING || {};
+    var routes = window.NEXT_ROUTE || [];
     if (!routes.length) return "";
     return [
       '<section class="protocol-panel" data-panel="route-rules">',
@@ -381,9 +384,9 @@
       '<div class="route-list">',
       routes.map(function (route) {
         return [
-          '<article class="route-row" data-route="' + htmlEscape(route.route) + '">',
-          "<code>" + htmlEscape(route.route) + "</code>",
-          "<p>" + htmlEscape(route.meaning) + "</p>",
+          '<article class="route-row" data-route="' + htmlEscape(route) + '">',
+          "<code>" + htmlEscape(route) + "</code>",
+          "<p>" + htmlEscape(meanings[route] || "") + "</p>",
           "</article>",
         ].join("");
       }).join(""),
@@ -392,16 +395,15 @@
     ].join("");
   }
 
-  function hardConstraintsHtml() {
-    var constraints = globalProtocol().hardConstraints || [];
-    if (!constraints.length) return "";
+  function protocolLinksHtml() {
     return [
-      '<section class="protocol-panel" data-panel="hard-constraints">',
-      "<h2>Hard Constraints</h2>",
+      '<section class="protocol-panel" data-panel="protocol-links">',
+      "<h2>Operating Protocols</h2>",
+      '<p class="card-text">The dashboard owns no protocol prose. The owners:</p>',
       '<ul class="constraint-list">',
-      constraints.map(function (constraint) {
-        return "<li>" + htmlEscape(constraint) + "</li>";
-      }).join(""),
+      '<li><code>WORKFLOW.md</code> — the seven-step controller and its evidence gates.</li>',
+      '<li><code>CLAUDE.md</code> — the five universal protocols and agent rules.</li>',
+      '<li><a href="rules/html-rules.html">html-rules.html</a> + <a href="rules/trustworthy-research-rules.html">trustworthy-research-rules.html</a> — the binding R/T rule corpus (mirrored in <code>data/rules.js</code>).</li>',
       "</ul>",
       "</section>",
     ].join("");
@@ -2018,6 +2020,7 @@
   document.addEventListener("DOMContentLoaded", function () {
     renderDashboardSummary();
     renderGlobalContext();
+    renderRulesRegistry();
     renderProjectProfile();
     renderScopeProjection();
     renderCategoryPage();

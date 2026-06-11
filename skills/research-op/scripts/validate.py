@@ -74,16 +74,205 @@ def _is_fact_backed(pkg: str) -> bool:
     return (Path("research_html") / "data" / "packages" / pkg).exists()
 
 
-def rule_package_invariant_has_rule(pkg, op, target, payload) -> Reject | None:
-    if target != "package-invariant" or op != "insert":
+RULE_KINDS_PACKAGE = {"binding", "lesson"}
+RULE_REQUIRED_PACKAGE = ("slug", "title", "text", "rationale", "addedAt")
+RULE_RESERVED_INSERT_ORIGINS = {"mirror", "selfevolve"}
+RULE_HTML_TAG_RE = re.compile(r"<[^>]+>")
+FINALIZED_VERDICT_CELL_RE = re.compile(
+    r"<t[dh]\b[^>]*>\s*(PASS|FAIL|INCONCLUSIVE|DIAGNOSTIC)\s*</t[dh]>",
+    re.IGNORECASE,
+)
+
+
+def rule_rule_universal_writelock(pkg, op, target, payload) -> Reject | None:
+    """Universal rules (R/T) ship with the dashboard skill and are immutable in-project."""
+    if target != "rule" or payload.get("level") != "universal":
         return None
-    if not (payload.get("rule") or "").strip():
+    return Reject(
+        rule="rule-universal-writelock",
+        file=None, anchor=None, field="level",
+        expected="level in {project, package}",
+        actual="level=universal",
+        suggested_fix="Universal rules (R/T) are write-locked. Edit the dashboard skill's "
+                      "assets and re-run ensure_dashboard.py instead.",
+    )
+
+
+def rule_rule_level_routable(pkg, op, target, payload) -> Reject | None:
+    """The package state-gated path only handles level=package; project goes via --pkg _project."""
+    if target != "rule" or payload.get("level") in (None, "package", "universal"):
+        return None
+    return Reject(
+        rule="rule-level-routable",
+        file=None, anchor=None, field="level",
+        expected="level=package on the package path",
+        actual=f"level={payload.get('level')}",
+        suggested_fix="Project-level rule ops use --pkg _project.",
+    )
+
+
+def rule_rule_store_parseable(pkg, op, target, payload) -> Reject | None:
+    """The registry must parse before any package-level rule mutation writes it back."""
+    if target != "rule" or op not in ("insert", "update", "delete"):
+        return None
+    import rules_store
+    try:
+        rules_store.load_rules(Path("research_html"))
+    except rules_store.RuleRowError as e:
         return Reject(
-            rule="package-invariant-has-rule",
-            file=None, anchor=None, field="rule",
-            expected="a non-empty 'rule' text (the binding directive)",
-            actual=f"rule={payload.get('rule')!r}",
-            suggested_fix="Set payload.rule to the directive text, e.g. 'one notebook per figure'.",
+            rule="rule-store-malformed",
+            file="research_html/data/rules.js", anchor=None, field=None,
+            expected="window.RESEARCH_RULES = <valid JSON array>;",
+            actual=str(e),
+            suggested_fix="Repair data/rules.js before mutating rules.",
+        )
+    return None
+
+
+def rule_rule_required_fields(pkg, op, target, payload) -> Reject | None:
+    """Insert needs the full typed row; update/delete need the rule id."""
+    if target != "rule":
+        return None
+    if op == "insert":
+        if payload.get("kind") not in RULE_KINDS_PACKAGE:
+            return Reject(
+                rule="rule-required-fields",
+                file=None, anchor=None, field="kind",
+                expected=f"kind in {sorted(RULE_KINDS_PACKAGE)}",
+                actual=f"kind={payload.get('kind')!r}",
+                suggested_fix="Package rules are kind=binding (directives) or kind=lesson (distilled).",
+            )
+        missing = [f for f in RULE_REQUIRED_PACKAGE if not str(payload.get(f, "")).strip()]
+        if missing:
+            return Reject(
+                rule="rule-required-fields",
+                file=None, anchor=None, field=missing[0],
+                expected=f"fields {RULE_REQUIRED_PACKAGE}",
+                actual=f"missing {missing}",
+                suggested_fix="Provide the full typed rule row.",
+            )
+        slug = payload["slug"]
+        if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", slug):
+            return Reject(
+                rule="rule-required-fields",
+                file=None, anchor=None, field="slug",
+                expected="kebab-case slug",
+                actual=slug,
+                suggested_fix="Use a kebab-case slug.",
+            )
+    elif op in ("update", "delete") and not str(payload.get("id", "")).strip():
+        return Reject(
+            rule="rule-required-fields",
+            file=None, anchor=None, field="id",
+            expected="payload.id",
+            actual="missing",
+            suggested_fix="Name the rule id to mutate.",
+        )
+    return None
+
+
+def rule_rule_origin_reserved(pkg, op, target, payload) -> Reject | None:
+    """Export-owned origins are created only by their exporters, never by manual inserts."""
+    if target != "rule" or op != "insert":
+        return None
+    origin = payload.get("origin", "user")
+    if origin not in RULE_RESERVED_INSERT_ORIGINS:
+        return None
+    return Reject(
+        rule="rule-origin-reserved",
+        file=None, anchor=None, field="origin",
+        expected="origin omitted or origin=user on the package write path",
+        actual=f"origin={origin}",
+        suggested_fix="Do not set origin=mirror/selfevolve; those rows are exporter-owned.",
+    )
+
+
+def rule_rule_text_plain(pkg, op, target, payload) -> Reject | None:
+    """Rules are data rows with plain prose text; HTML belongs only in renderers."""
+    if target != "rule" or op not in ("insert", "update"):
+        return None
+    if "text" not in payload or not RULE_HTML_TAG_RE.search(str(payload.get("text", ""))):
+        return None
+    return Reject(
+        rule="rule-text-plain",
+        file=None, anchor=None, field="text",
+        expected="plain natural-language prose with no HTML tags",
+        actual="HTML-like tag found",
+        suggested_fix="Remove markup from payload.text; renderers escape rule text.",
+    )
+
+
+def rule_rule_lesson_needs_result(pkg, op, target, payload) -> Reject | None:
+    """A lesson generalizes a finalized result — require ≥1 verdict chip in results.html (inherits I8)."""
+    if target != "rule" or op != "insert" or payload.get("kind") != "lesson":
+        return None
+    results = Path(f"research_html/packages/{pkg}/results.html")
+    text = results.read_text() if results.exists() else ""
+    if FINALIZED_VERDICT_CELL_RE.search(text):
+        return None
+    return Reject(
+        rule="rule-lesson-needs-result",
+        file=str(results), anchor=None, field=None,
+        expected=">=1 finalized result-gate row in results.html",
+        actual="no verdict found",
+        suggested_fix="Finalize a result first; lessons distill verdicts, not plans.",
+    )
+
+
+def rule_rule_lifecycle_fields(pkg, op, target, payload) -> Reject | None:
+    """Lifecycle moves carry their evidence: RETIRED→retireReason, PROMOTED→promotedTo."""
+    if target != "rule" or op != "update":
+        return None
+    if payload.get("status") == "RETIRED" and not str(payload.get("retireReason", "")).strip():
+        return Reject(
+            rule="rule-lifecycle-fields",
+            file=None, anchor=None, field="retireReason",
+            expected="retireReason with RETIRED",
+            actual="missing",
+            suggested_fix="State why the rule is retired.",
+        )
+    if payload.get("status") == "PROMOTED" and not str(payload.get("promotedTo", "")).strip():
+        return Reject(
+            rule="rule-lifecycle-fields",
+            file=None, anchor=None, field="promotedTo",
+            expected="promotedTo with PROMOTED",
+            actual="missing",
+            suggested_fix="Name the project rule id this promoted to.",
+        )
+    return None
+
+
+def rule_rule_origin_immutable(pkg, op, target, payload) -> Reject | None:
+    """Hand edits to export-owned rows (mirror/selfevolve) are rejected; the package
+    path may only mutate package-level rows."""
+    if target != "rule" or op not in ("update", "delete"):
+        return None
+    rules_js = Path("research_html/data/rules.js")
+    if not rules_js.exists():
+        return None
+    text = rules_js.read_text(encoding="utf-8").strip()
+    prefix = "window.RESEARCH_RULES = "
+    if not text.startswith(prefix):
+        return None
+    rows = json.loads(text[len(prefix):].rstrip(";"))
+    row = next((r for r in rows if r.get("id") == payload.get("id")), None)
+    if row is None:
+        return None
+    if row.get("origin") in ("mirror", "selfevolve"):
+        return Reject(
+            rule="rule-origin-immutable",
+            file=str(rules_js), anchor=None, field="origin",
+            expected="origin in {user, apply, migration}",
+            actual=f"origin={row.get('origin')}",
+            suggested_fix="Mirror/selfevolve rows are regenerated by their exporters.",
+        )
+    if row.get("level") != "package":
+        return Reject(
+            rule="rule-level-routable",
+            file=str(rules_js), anchor=None, field="level",
+            expected="a package-level rule id on the package path",
+            actual=f"level={row.get('level')}",
+            suggested_fix="Project-level rule ops use --pkg _project.",
         )
     return None
 
@@ -798,44 +987,20 @@ def rule_verdict_mechanical(pkg, op, target, payload, state) -> Reject | None:
 # Add more rules as they are needed; the spec § 6.2 catalogue grows here.
 
 
-# ---- Analysis-rule rules ----
-
-def rule_analysis_rule_slug_kebab(pkg, op, target, payload) -> Reject | None:
-    if target != "analysis-rule" or op != "insert":
-        return None
-    slug = payload.get("slug", "")
-    if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", slug):
-        return Reject(
-            rule="analysis-rule-slug-kebab",
-            file=None, anchor=None, field="slug",
-            expected="kebab-case slug (lowercase, hyphens, no underscores)",
-            actual=repr(slug),
-            suggested_fix="Lowercase the slug, replace spaces/underscores with hyphens.",
-        )
-    return None
-
-
-def rule_analysis_rule_no_bold(pkg, op, target, payload) -> Reject | None:
-    if target != "analysis-rule" or op != "insert":
-        return None
-    prose = payload.get("prose", "")
-    if "<strong>" in prose or "<b>" in prose:
-        return Reject(
-            rule="analysis-rule-no-bold",
-            file=None, anchor=None, field="prose",
-            expected="rule prose with no <strong> or <b>",
-            actual="bold tag found in prose",
-            suggested_fix="Remove the <strong>/<b> wrappers; rules are plain sentences (inline <em> for sub-clauses is fine).",
-        )
-    return None
-
-
 # ---- Dispatcher ----
 
 # Each entry: (rule_fn, needs_state_arg).
 _RULES: list[tuple[Callable, bool]] = [
     (rule_fact_backed_projection_write,      False),
-    (rule_package_invariant_has_rule,        False),
+    (rule_rule_universal_writelock,          False),
+    (rule_rule_level_routable,               False),
+    (rule_rule_store_parseable,              False),
+    (rule_rule_required_fields,              False),
+    (rule_rule_origin_reserved,              False),
+    (rule_rule_text_plain,                   False),
+    (rule_rule_lesson_needs_result,          False),
+    (rule_rule_lifecycle_fields,             False),
+    (rule_rule_origin_immutable,             False),
     (rule_methodstried_six_fields,           False),
     (rule_methodstried_verdict_enum,         False),
     (rule_methodstried_manual_pass_forbidden, False),
@@ -863,8 +1028,6 @@ _RULES: list[tuple[Callable, bool]] = [
     (rule_experiments_delete_no_authored_blocks, True),
     (rule_methodstried_terminal_frozen,      True),
     (rule_verdict_mechanical,                True),
-    (rule_analysis_rule_slug_kebab,          False),
-    (rule_analysis_rule_no_bold,             False),
 ]
 
 

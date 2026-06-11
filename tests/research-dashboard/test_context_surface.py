@@ -33,6 +33,13 @@ def test_context_html_wires_data_and_renderer(tmp_path):
     assert 'id="context-root"' in html
 
 
+def test_context_footer_names_current_upstream_stores(tmp_path):
+    html = (_scaffold(tmp_path) / "context.html").read_text(encoding="utf-8")
+    assert "data/rules.js" in html
+    assert "outputs/_learned/rules.md" not in html
+    assert "analysis.html</code> Rules" not in html
+
+
 def test_default_context_core_is_empty_valid_json(tmp_path):
     txt = (_scaffold(tmp_path) / "data" / "context-core.js").read_text(encoding="utf-8")
     assert txt.startswith("window.RESEARCH_CONTEXT_CORE")

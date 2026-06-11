@@ -1,6 +1,7 @@
 """Insert handlers for each target in the I-table (spec § 4.1)."""
 
 import csv
+import html
 import io
 import json
 import re
@@ -267,11 +268,43 @@ def insert_experiments_row(pkg: str, payload: dict) -> list[str]:
     return files
 
 
-def insert_package_invariant(pkg: str, payload: dict) -> list[str]:
-    """Append a binding directive {rule, rationale, addedAt} to the package's bindingRules[] — the typed,
-    audited home for a user-added rule (e.g. one-notebook-per-figure)."""
-    entry = {k: payload[k] for k in ("rule", "rationale", "addedAt") if k in payload}
-    return [_append_to_inventory_array(pkg, "bindingRules", entry)]
+def repaint_analysis_rules(pkg: str) -> list[str]:
+    """Regenerate the <ol class="rules-list"> in analysis.html from the registry's lesson rows."""
+    import rules_store
+    path = Path(f"research_html/packages/{pkg}/analysis.html")
+    if not path.exists():
+        return []
+    rows = [r for r in rules_store.load_rules(Path("research_html"))
+            if r.get("pkg") == pkg and r.get("kind") == "lesson" and r.get("status") == "ACTIVE"]
+    items = "".join(
+        f'\n          <li class="card-text" id="rule-{html.escape(r["id"].split("#", 1)[1], quote=True)}">'
+        f'{html.escape(str(r["text"]), quote=False)}</li>'
+        for r in rows) or '\n          <li><em>No rules recorded yet.</em></li>'
+    text = path.read_text()
+    new = re.sub(r'(<ol[^>]*class="rules-list"[^>]*>)[\s\S]*?(</ol>)',
+                 rf"\1{items}\n  \2", text, count=1)
+    path.write_text(new)
+    _bump_last_updated(path)
+    return [str(path)]
+
+
+def insert_rule(pkg: str, payload: dict) -> list[str]:
+    """Append one typed rule row to data/rules.js; lesson rows also repaint analysis.html."""
+    import rules_store
+    root = Path("research_html")
+    rows = rules_store.load_rules(root)
+    row = {"id": f"{pkg}#{payload['slug']}", "level": "package", "pkg": pkg,
+           "kind": payload["kind"], "title": payload["title"], "text": payload["text"],
+           "rationale": payload["rationale"], "source": payload.get("source", "user directive"),
+           "origin": payload.get("origin", "user"), "status": "ACTIVE",
+           "addedAt": payload["addedAt"]}
+    if any(r["id"] == row["id"] for r in rows):
+        raise SystemExit(f"rule id exists: {row['id']} (update it instead)")
+    rows.append(row)
+    files = [str(rules_store.save_rules(root, rows))]
+    if row["kind"] == "lesson":
+        files += repaint_analysis_rules(pkg)
+    return files
 
 
 def insert_tracker_live_check_row(pkg: str, payload: dict) -> list[str]:
@@ -475,32 +508,6 @@ def insert_results_block(pkg: str, payload: dict) -> list[str]:
     return [str(path)]
 
 
-def insert_analysis_rule(pkg: str, payload: dict) -> list[str]:
-    """Append a rule <li> into <ol class="rules-list"> in analysis.html."""
-    path = Path(f"research_html/packages/{pkg}/analysis.html")
-    text = path.read_text()
-    slug = payload.get("slug", "")
-    prose = payload.get("prose", "")
-    evidence_slug = payload.get("evidence_slug", "")
-    li_html = (
-        f'<li class="card-text" id="rule-{slug}">'
-        f'{prose} Evidence: <a href="#insight-{evidence_slug}">see insight</a>.'
-        f'</li>'
-    )
-    # Strip the placeholder if present.
-    text = re.sub(
-        r'<li[^>]*><em>No rules recorded yet\.</em></li>\s*',
-        '', text,
-    )
-    new = re.sub(
-        r'(<ol[^>]*class="rules-list"[^>]*>)',
-        rf"\1\n          {li_html}", text, count=1,
-    )
-    path.write_text(new)
-    _bump_last_updated(path)
-    return [str(path)]
-
-
 def insert_analysis_insight(pkg: str, payload: dict) -> list[str]:
     """Append an insight <details> subblock into <div class="insight-body"> in analysis.html."""
     path = Path(f"research_html/packages/{pkg}/analysis.html")
@@ -608,13 +615,12 @@ def insert_tracker_chosen_route(pkg: str, payload: dict) -> list[str]:
 _DISPATCH = {
     "methodsTried":                    insert_methodstried,
     "experiments-row":                 insert_experiments_row,
-    "package-invariant":               insert_package_invariant,
+    "rule":                            insert_rule,
     "tracker-live-check-row":          insert_tracker_live_check_row,
     "tracker-resource-allocation-row": insert_tracker_resource_allocation_row,
     "tracker-impl-review-row":         insert_tracker_impl_review_row,
     "results-gate-row":                insert_results_gate_row,
     "results-block":                   insert_results_block,
-    "analysis-rule":                   insert_analysis_rule,
     "analysis-insight":                insert_analysis_insight,
     "doc-file":                        insert_doc_file,
     "doc-card":                        insert_doc_card,

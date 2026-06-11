@@ -11,13 +11,15 @@ global.document = { addEventListener: () => {} };
 
 eval(fs.readFileSync(path.join(root, 'data/schema.js'), 'utf8'));
 eval(fs.readFileSync(path.join(root, 'data/research-packages.js'), 'utf8'));
+const rulesJs = path.join(root, 'data/rules.js');
+if (fs.existsSync(rulesJs)) eval(fs.readFileSync(rulesJs, 'utf8'));
 
 process.stdout.write(JSON.stringify({
   schema: window.RESEARCH_STATUS_SCHEMA,
   statusFamily: window.RESEARCH_STATUS_FAMILY,
   contributionSpine: window.RESEARCH_CONTRIBUTION_SPINE,
   methodsTriedFields: window.RESEARCH_METHODS_TRIED_FIELDS,
-  globalProtocol: window.RESEARCH_GLOBAL_PROTOCOL,
   categories: window.RESEARCH_CATEGORIES,
   packages: window.RESEARCH_PACKAGES,
+  rules: window.RESEARCH_RULES || [],
 }, null, 2));

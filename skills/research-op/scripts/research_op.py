@@ -107,6 +107,108 @@ def main() -> int:
         print(f"{args.op} {status_}: {message}")
         return 0
 
+    # Unified-rules path (cross-package levels). level=package flows the normal
+    # state-gated path below; level=project (and check) use the synthetic _project
+    # context like _selfevolve, because there is no package (category, status) cell.
+    if args.target == "rule" and (args.pkg == "_project" or args.op == "check"):
+        import subprocess  # noqa: E402
+        import rules_store  # noqa: E402
+        allowed_rule_ops = {"check", "insert", "update", "delete"}
+        try:
+            payload = json.loads(args.payload)
+        except json.JSONDecodeError as e:
+            print(json.dumps({"rejected": True, "phase": "rules-validate",
+                              "rule": "payload-json-valid", "pkg": args.pkg, "op": args.op,
+                              "detail": str(e)}, indent=2))
+            return 2
+
+        def _reject(rule, detail):
+            audit.append(args.pkg, op=args.op, target="rule", event=None,
+                         state_before={}, state_after={}, validation="OP_REJECTED", rule=rule,
+                         files_touched=[], payload=payload, user_intent=None,
+                         duration_ms=int((time.monotonic() - t0) * 1000))
+            print(json.dumps({"rejected": True, "phase": "rules-validate", "rule": rule,
+                              "pkg": args.pkg, "op": args.op, "target": "rule",
+                              "detail": detail, "suggested_fix": detail}, indent=2))
+            return 2
+
+        if args.op not in allowed_rule_ops:
+            return _reject("rule-op-supported",
+                           "Rule ops support only check, insert, update, and delete.")
+        if args.op == "check":
+            r = subprocess.run(["python3", "research_html/scripts/learnings_lint.py",
+                                "lint-rules"], capture_output=True, text=True)
+            print(r.stdout, end="")
+            return 0 if r.returncode == 0 else 2
+        if payload.get("level") == "universal":
+            return _reject("rule-universal-writelock",
+                           "Universal rules (R/T) are write-locked; edit the dashboard skill assets.")
+        if args.op == "insert" and payload.get("level") != "project":
+            return _reject("rule-level-routable",
+                           "Use --pkg <package-id> for level=package rule ops.")
+        if args.op == "insert" and payload.get("kind", "constraint") != "constraint":
+            return _reject("rule-kind-mismatch", "Project rules must use kind=constraint.")
+        if not str(payload.get("ack", "")).strip():
+            return _reject("rule-project-needs-ack",
+                           "Landing a project rule requires a distinct human action (payload.ack).")
+        if args.op == "insert" and payload.get("origin", "user") in ("mirror", "selfevolve"):
+            return _reject("rule-origin-reserved",
+                           "Do not set origin=mirror/selfevolve; those rows are exporter-owned.")
+        if args.op in ("insert", "update") and re.search(r"<[^>]+>", str(payload.get("text", ""))):
+            return _reject("rule-text-plain",
+                           "Rule text must be plain natural-language prose with no HTML tags.")
+        root = Path("research_html")
+        try:
+            rows = rules_store.load_rules(root)
+        except rules_store.RuleRowError as e:
+            return _reject("rule-store-malformed", str(e))
+        if args.op == "insert":
+            for f in ("slug", "title", "text", "rationale", "addedAt"):
+                if not str(payload.get(f, "")).strip():
+                    return _reject("rule-required-fields", f"missing {f}")
+            if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", payload["slug"]):
+                return _reject("rule-required-fields", "slug must be kebab-case")
+            row = {"id": f"PRJ-{payload['slug']}", "level": "project",
+                   "kind": payload.get("kind", "constraint"), "title": payload["title"],
+                   "text": payload["text"], "rationale": payload["rationale"],
+                   "source": payload.get("source", "user directive"),
+                   "origin": payload.get("origin", "user"), "status": "ACTIVE",
+                   "addedAt": payload["addedAt"]}
+            if any(r_["id"] == row["id"] for r_ in rows):
+                return _reject("rule-required-fields", f"rule id exists: {row['id']}")
+            rows.append(row)
+        elif args.op in ("update", "delete"):
+            rid = payload.get("id", "")
+            row = next((r_ for r_ in rows if r_["id"] == rid), None)
+            if row is None:
+                return _reject("rule-required-fields", f"unknown rule id: {rid}")
+            if row.get("origin") in ("mirror", "selfevolve"):
+                return _reject("rule-origin-immutable",
+                               "export-owned row; regenerate via its exporter")
+            if row.get("level") != "project":
+                return _reject("rule-level-routable",
+                               "Use --pkg <package-id> for level=package rule ops.")
+            if args.op == "delete":
+                return _reject("rule-no-hard-delete",
+                               "Project rules retire (update status=RETIRED).")
+            if payload.get("status") == "RETIRED" and not str(payload.get("retireReason", "")).strip():
+                return _reject("rule-lifecycle-fields", "RETIRED needs retireReason")
+            if payload.get("status") == "PROMOTED" and not str(payload.get("promotedTo", "")).strip():
+                return _reject("rule-lifecycle-fields", "PROMOTED needs promotedTo")
+            for f in ("title", "text", "rationale", "status", "retireReason", "promotedTo"):
+                if f in payload:
+                    row[f] = payload[f]
+        try:
+            path = rules_store.save_rules(root, rows)
+        except rules_store.RuleRowError as e:
+            return _reject("rule-row-schema", str(e))
+        audit.append(args.pkg, op=args.op, target="rule", event=None,
+                     state_before={}, state_after={}, validation="PASSED", rule=None,
+                     files_touched=[str(path)], payload=payload, user_intent=None,
+                     duration_ms=int((time.monotonic() - t0) * 1000))
+        print(f"{args.op} OK pkg={args.pkg} target=rule files=['{path}']")
+        return 0
+
     state = _read_inventory(args.pkg)
 
     # Scan-events path (read-only, no state-gate, no validation).
@@ -215,6 +317,22 @@ def main() -> int:
                      user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
         print(json.dumps(rej_json.envelope(op=args.op, target=args.target, phase="universal-check"), indent=2))
         return 2
+    if args.target in transitions.RETIRED_TARGETS:
+        envelope = {
+            "rejected": True, "phase": "universal-check", "rule": "retired-target",
+            "pkg": args.pkg, "op": args.op, "target": args.target,
+            "expected": "a live target from references/matrix.md",
+            "actual": f"retired target {args.target}",
+            "suggested_fix": transitions.RETIRED_TARGETS[args.target],
+        }
+        audit.append(args.pkg, op=args.op, target=args.target, event=None,
+                     state_before=state, state_after=state,
+                     validation="OP_REJECTED", rule="retired-target",
+                     files_touched=[], payload=json.loads(args.payload),
+                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
+        print(json.dumps(envelope, indent=2))
+        return 2
+
     target = args.target if args.op != "check" else None
     rej_tgt = validate.rule_target_known(args.pkg, args.op, target, json.loads(args.payload), transitions.TARGETS)
     if rej_tgt:

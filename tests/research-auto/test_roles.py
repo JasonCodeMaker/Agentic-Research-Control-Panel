@@ -171,6 +171,5 @@ def test_apply_refuses_without_human_token(tmp_path):
     pdir = tmp_path / "pending" / "p1"
     pdir.mkdir(parents=True)
     (pdir / "proposal.json").write_text('{"suggested_diff": "rule x", "status": "pending"}', encoding="utf-8")
-    rules = tmp_path / "rules.md"; rules.write_text("", encoding="utf-8")
     with pytest.raises(PermissionError):
-        roles.land_proposal(pdir, human_token="", jury_verdict="SOUND", rules_path=rules)
+        roles.land_proposal(pdir, human_token="", jury_verdict="SOUND")

@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import shutil
 from pathlib import Path
 
@@ -16,46 +18,11 @@ HELPER_SCRIPTS = ("render_scope_projection.py",)
 # data/research-packages.js stays inline so every new project gets a clean
 # minimal inventory — bundling the live file would leak the source project's
 # package list into every fresh scaffold.
-DATA_JS = """window.RESEARCH_GLOBAL_CONTEXT = {
-  objective: "Create trustworthy research progress with explicit hypotheses, measurable claim gates, verified evidence, and one clear next route.",
-  dashboardRole: "The dashboard is the reusable research-system protocol and routing surface.",
-  successRule: "Success means the package outcome has been adopted into the active method, pipeline, paper, product, or decision record.",
-  sourceOfTruth: "Package pages must preserve exact paths, commands, decisions, artifacts, and evidence anchors.",
-};
-
-window.RESEARCH_GLOBAL_PROTOCOL = {
-  purpose: "Run a trustworthy auto-research pipeline by tying every package to verified evidence and explicit claim gates.",
-  objectiveCards: [
-    { title: "Project Objective", body: "Every project must define the system-level objective." },
-    { title: "Optimization Target", body: "Separate primary evidence from diagnostic evidence and resource-side effects." },
-    { title: "Claim Boundary", body: "A claim needs a gate, baseline, budget, repeat status, artifacts, and evaluation protocol." },
-  ],
-  agentRules: [
-    { title: "Build Context First", body: "Read the invocation, project profile, package state, active plan, results, and docs before work." },
-    { title: "Runtime Truth Wins", body: "Validate live runs, logs, outputs, summaries, and artifact roots before changing state." },
-    { title: "Consult Learnings Before New Directions", body: "Open research_html/learnings.html before proposing a new direction, refinement, or experiment idea, and before converting a brainstorm idea into a package. It is the cross-package index of structured methodsTried rows for every adopted win and archived failure; reading it first prevents re-deriving a method that already has a recorded verdict." },
-  ],
-  evidenceGates: [
-    { title: "Before Implementation", body: "Ground work in active plan clauses, verified anchors, boundaries, and checks." },
-    { title: "Before Launch", body: "Do not launch if purpose, config, command, artifacts, owner, resources, or stop gates are unclear." },
-    { title: "Before Results", body: "Record metrics only after artifacts match experiment id, config, and protocol." },
-    { title: "Before Success", body: "Move to Success only after adoption into active project state." },
-  ],
-  routeRules: [
-    { route: "RUN_NEXT_EXPERIMENT", meaning: "Use when the active plan defines the next run." },
-    { route: "FIX_IMPLEMENTATION", meaning: "Use for concrete code or artifact issues." },
-    { route: "REVISE_PLAN", meaning: "Use when the executable plan changes." },
-    { route: "TERMINATE", meaning: "Use when evidence says the direction should stop or archive." },
-    { route: "ASK_USER", meaning: "Use when a user-level decision blocks progress." },
-  ],
-  hardConstraints: [
-    "Do not infer missing metrics, baselines, paths, commands, or ownership.",
-    "Do not promote diagnostic-only evidence as claim support.",
-    "Do not compare mismatched budgets, datasets, seeds, or protocols without labeling the comparison diagnostic.",
-  ],
-};
-
-window.RESEARCH_PROJECT_PROFILE = {};
+#
+# The chrome owns no protocol content (核心问题 #1): the objective renders from
+# the Scope SSOT projection, routes from schema.js (NEXT_ROUTE + meanings), and
+# binding rules from data/rules.js — each fact has exactly one owning module.
+DATA_JS = """window.RESEARCH_PROJECT_PROFILE = {};
 
 window.RESEARCH_CATEGORIES = [
   { id: "brainstorm", title: "Brainstorm", summary: "Pre-package ideas (not packages, not in the SSOT). Convert one or more into a Direction + package.", href: "categories/brainstorm/" },
@@ -105,6 +72,44 @@ BRAINSTORMS_JS = "window.BRAINSTORMS = [];\n"
 # inline-empty; regenerated with real cross-package knowledge by lib/context_pack/build.py.
 CONTEXT_CORE_JS = 'window.RESEARCH_CONTEXT_CORE = {"stamp": {}, "sections": []};\n'
 
+RULES_PREFIX = "window.RESEARCH_RULES = "
+RULE_CARD_RE = re.compile(
+    r'data-rule="([RT]\d+)"[^>]*data-kind="([^"]+)"[\s\S]*?<h3 class="title">([^<]+)</h3>')
+RULE_FILE_KIND = {"html-rules.html": "form", "trustworthy-research-rules.html": "trust"}
+
+
+def mirror_universal_rules(root: Path) -> list[dict]:
+    """Parse data-rule cards out of <root>/rules/*.html into write-locked mirror rows."""
+    rows = []
+    for name, kind in RULE_FILE_KIND.items():
+        f = root / "rules" / name
+        if not f.exists():
+            continue
+        for rid, _card_kind, title in RULE_CARD_RE.findall(f.read_text(encoding="utf-8")):
+            rows.append({"id": rid, "level": "universal", "kind": kind,
+                         "title": title.strip(), "source": f"rules/{name}#{rid}",
+                         "origin": "mirror", "status": "ACTIVE", "addedAt": "bundled"})
+    return rows
+
+
+def write_rules_store(root: Path) -> list[Path]:
+    """Create/refresh data/rules.js: rebuild the universal mirror, keep all other rows."""
+    dst = root / "data" / "rules.js"
+    existing = []
+    if dst.exists():
+        text = dst.read_text(encoding="utf-8").strip()
+        if not text.startswith(RULES_PREFIX):
+            raise ValueError(f"Refusing to overwrite malformed rules registry: {dst}")
+        existing = json.loads(text[len(RULES_PREFIX):].rstrip(";"))
+    kept = [r for r in existing if r.get("origin") != "mirror"]
+    rows = mirror_universal_rules(root) + kept
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    new_text = RULES_PREFIX + json.dumps(rows, indent=2, ensure_ascii=False) + ";\n"
+    if dst.exists() and dst.read_text(encoding="utf-8") == new_text:
+        return []
+    dst.write_text(new_text, encoding="utf-8")
+    return [dst]
+
 
 def write_if_missing(path: Path, source: Path | None, text: str | None, force: bool) -> bool:
     """Copy/write a file when it does not already exist (or when force is set)."""
@@ -119,8 +124,14 @@ def write_if_missing(path: Path, source: Path | None, text: str | None, force: b
     return True
 
 
-def copy_bundled_chrome(root: Path, force: bool) -> list[Path]:
-    """Mirror every file under assets/dashboard/ into <root>/."""
+# data/ files that hold project state — never overwritten by --refresh-chrome.
+USER_DATA = {"data/research-packages.js", "data/brainstorms.js", "data/context-core.js",
+             "data/scope-projection.json", "data/scope-projection.js", "data/rules.js"}
+
+
+def copy_bundled_chrome(root: Path, force: bool, refresh: bool = False) -> list[Path]:
+    """Mirror every file under assets/dashboard/ into <root>/. With refresh,
+    chrome files are overwritten but USER_DATA stores are never touched."""
     written: list[Path] = []
     if not DASHBOARD_BUNDLE.is_dir():
         raise FileNotFoundError(f"Missing dashboard bundle: {DASHBOARD_BUNDLE}")
@@ -128,8 +139,11 @@ def copy_bundled_chrome(root: Path, force: bool) -> list[Path]:
         if not src.is_file():
             continue
         rel = src.relative_to(DASHBOARD_BUNDLE)
+        if "__pycache__" in rel.parts or rel.suffix == ".pyc":
+            continue
         dst = root / rel
-        if write_if_missing(dst, src, None, force):
+        overwrite = force or (refresh and rel.as_posix() not in USER_DATA)
+        if write_if_missing(dst, src, None, overwrite):
             written.append(dst)
     return written
 
@@ -223,15 +237,16 @@ def ensure_live_nav(root: Path) -> list[Path]:
     return [index]
 
 
-def ensure_dashboard(root: Path, force: bool) -> list[Path]:
+def ensure_dashboard(root: Path, force: bool, refresh: bool = False) -> list[Path]:
     written: list[Path] = []
-    written.extend(copy_bundled_chrome(root, force))
+    written.extend(copy_bundled_chrome(root, force, refresh))
     written.extend(write_data_js(root, force))
     written.extend(write_brainstorms_store(root, force))
     written.extend(write_context_core_store(root, force))
     written.extend(write_scope_projection_defaults(root, force))
-    written.extend(copy_helper_scripts(root, force))
-    written.extend(copy_rule_files(root, force))
+    written.extend(copy_helper_scripts(root, force or refresh))
+    written.extend(copy_rule_files(root, force or refresh))
+    written.extend(write_rules_store(root))
     written.extend(ensure_live_nav(root))
     return written
 
@@ -240,10 +255,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default="research_html", help="dashboard root directory")
     parser.add_argument("--force", action="store_true", help="overwrite existing dashboard files")
+    parser.add_argument("--refresh-chrome", action="store_true",
+                        help="overwrite chrome files (index, assets, scripts, rules, schema) "
+                             "but never the data/ user stores — the safe upgrade path")
     args = parser.parse_args()
 
     root = Path(args.root)
-    written = ensure_dashboard(root, args.force)
+    written = ensure_dashboard(root, args.force, args.refresh_chrome)
     print(f"dashboard_root={root}")
     print(f"files_written={len(written)}")
     for path in written:

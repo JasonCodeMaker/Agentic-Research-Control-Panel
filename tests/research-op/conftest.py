@@ -10,6 +10,7 @@ def tmp_package(tmp_path, monkeypatch):
     root = tmp_path / "research_html"
     (root / "packages" / "test-pkg").mkdir(parents=True)
     (root / "packages" / "test-pkg" / "index.html").write_text("<html></html>")
+    (root / "packages" / "test-pkg" / "results.html").write_text("<html></html>")
     (root / "data").mkdir()
     (root / "data" / "research-packages.js").write_text(
         "const RESEARCH_PACKAGES = [\n"

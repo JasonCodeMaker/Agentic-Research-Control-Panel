@@ -1,5 +1,6 @@
 """Stage-3: a staged self-learning proposal can only land via a distinct human action + a clearing
-jury verdict. The proposer (research-reflect) is never the applier (research-apply)."""
+jury verdict. The proposer (research-reflect) is never the applier (research-apply). Landing goes
+through research-op --target rule (the single rule entry), into data/rules.js."""
 
 import json
 import sys
@@ -21,24 +22,35 @@ def _staged(tmp_path):
     return d
 
 
-def test_proposal_cannot_land_without_human_action(tmp_path):
-    rules = tmp_path / "project-rules.md"
-    rules.write_text("# rules\n", encoding="utf-8")
+def _project(tmp_path, monkeypatch):
+    (tmp_path / "research_html" / "data").mkdir(parents=True)
+    (tmp_path / "research_html" / "data" / "rules.js").write_text("window.RESEARCH_RULES = [];\n")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("RESEARCH_RUNTIME_ROOT", str(tmp_path / "outputs"))
+
+
+def _rules(tmp_path):
+    text = (tmp_path / "research_html" / "data" / "rules.js").read_text()
+    return json.loads(text[len("window.RESEARCH_RULES = "):].rstrip().rstrip(";"))
+
+
+def test_proposal_cannot_land_without_human_action(tmp_path, monkeypatch):
+    _project(tmp_path, monkeypatch)
     with pytest.raises(PermissionError):
-        apply.apply(_staged(tmp_path), human_token=None, jury_verdict="SOUND", rules_path=rules)
-    assert rules.read_text() == "# rules\n"  # nothing landed
+        apply.apply(_staged(tmp_path), human_token=None, jury_verdict="SOUND")
+    assert _rules(tmp_path) == []  # nothing landed
 
 
-def test_unsound_jury_blocks_landing(tmp_path):
-    rules = tmp_path / "project-rules.md"
-    rules.write_text("# rules\n", encoding="utf-8")
+def test_unsound_jury_blocks_landing(tmp_path, monkeypatch):
+    _project(tmp_path, monkeypatch)
     with pytest.raises(ValueError):
-        apply.apply(_staged(tmp_path), human_token="user-ack", jury_verdict="UNSOUND", rules_path=rules)
-    assert rules.read_text() == "# rules\n"
+        apply.apply(_staged(tmp_path), human_token="user-ack", jury_verdict="UNSOUND")
+    assert _rules(tmp_path) == []
 
 
-def test_human_action_plus_sound_jury_lands(tmp_path):
-    rules = tmp_path / "project-rules.md"
-    rules.write_text("# rules\n", encoding="utf-8")
-    apply.apply(_staged(tmp_path), human_token="user-ack", jury_verdict="SOUND", rules_path=rules)
-    assert "cap retries at 3" in rules.read_text()
+def test_human_action_plus_sound_jury_lands(tmp_path, monkeypatch):
+    _project(tmp_path, monkeypatch)
+    apply.apply(_staged(tmp_path), human_token="user-ack", jury_verdict="SOUND")
+    rows = _rules(tmp_path)
+    assert rows and rows[0]["level"] == "project" and rows[0]["origin"] == "apply"
+    assert "cap retries at 3" in rows[0]["text"]

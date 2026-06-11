@@ -385,19 +385,27 @@ def test_verdict_mechanical_skips_complex_predicate(tmp_path, monkeypatch):
     assert rej is None  # Stop-Gate handles complex predicates, not us.
 
 
-# ---- analysis-rule-slug-kebab ----
+# ---- rule target (unified registry) ----
 
-def test_analysis_rule_slug_kebab_passes_valid():
-    rej = validate.rule_analysis_rule_slug_kebab("pkg", "insert", "analysis-rule", {"slug": "my-rule-1"})
+def _rule_payload(**kw):
+    p = {"level": "package", "pkg": "pkg", "kind": "binding", "slug": "my-rule-1",
+         "title": "t", "text": "x", "rationale": "r", "addedAt": "2026-06-11"}
+    p.update(kw)
+    return p
+
+
+def test_rule_slug_kebab_passes_valid():
+    rej = validate.rule_rule_required_fields("pkg", "insert", "rule", _rule_payload())
     assert rej is None
 
 
-def test_analysis_rule_slug_kebab_rejects_invalid():
+def test_rule_slug_kebab_rejects_invalid():
     for bad in ("MyRule", "my_rule", "my rule", ""):
-        rej = validate.rule_analysis_rule_slug_kebab("pkg", "insert", "analysis-rule", {"slug": bad})
+        rej = validate.rule_rule_required_fields("pkg", "insert", "rule", _rule_payload(slug=bad))
         assert rej is not None, f"expected reject for {bad!r}"
 
 
-def test_analysis_rule_no_bold_rejects_strong():
-    rej = validate.rule_analysis_rule_no_bold("pkg", "insert", "analysis-rule", {"prose": "<strong>bad</strong>"})
-    assert rej is not None
+def test_rule_universal_writelock_rejects_every_op():
+    for op in ("insert", "update", "delete"):
+        rej = validate.rule_rule_universal_writelock("pkg", op, "rule", {"level": "universal"})
+        assert rej is not None and rej.rule == "rule-universal-writelock"

@@ -24,7 +24,9 @@ def test_dashboard_scaffold_installs_scope_projection_files(tmp_path):
 
     index = (root / "index.html").read_text(encoding="utf-8")
     assert 'data-section="scope"' not in index          # inline projection section removed
-    assert 'src="data/scope-projection.js"' not in index  # its orphaned data include removed
+    # The include is consumed again: the #protocol objective panel projects the
+    # SSOT Project node (chrome de-dup — the dashboard owns no objective prose).
+    assert 'src="data/scope-projection.js"' in index
     assert 'href="scope.html"' in index                 # dashboard links to the live Scope Tree
 
 
@@ -37,3 +39,18 @@ def test_dashboard_scaffold_installs_empty_brainstorms_store(tmp_path):
     assert (root / "data" / "brainstorms.js").read_text(encoding="utf-8").strip() == (
         "window.BRAINSTORMS = [];"
     )
+
+
+def test_chrome_copy_skips_python_cache_files(tmp_path, monkeypatch):
+    bundle = tmp_path / "bundle"
+    (bundle / "scripts" / "__pycache__").mkdir(parents=True)
+    (bundle / "scripts" / "tool.py").write_text("print('ok')\n")
+    (bundle / "scripts" / "__pycache__" / "tool.cpython-313.pyc").write_bytes(b"cache")
+    monkeypatch.setattr(ensure_dashboard, "DASHBOARD_BUNDLE", bundle)
+
+    root = tmp_path / "research_html"
+    written = ensure_dashboard.copy_bundled_chrome(root, force=False)
+
+    written_rel = {p.relative_to(root).as_posix() for p in written}
+    assert "scripts/tool.py" in written_rel
+    assert not (root / "scripts" / "__pycache__").exists()

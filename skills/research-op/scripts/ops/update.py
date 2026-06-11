@@ -341,6 +341,24 @@ def update_last_updated_time(pkg: str, payload: dict) -> list[str]:
     return [str(path)]
 
 
+def update_rule(pkg: str, payload: dict) -> list[str]:
+    """Apply whitelisted field changes to one registry rule row; repaint lessons."""
+    import rules_store
+    from ops.insert import repaint_analysis_rules
+    root = Path("research_html")
+    rows = rules_store.load_rules(root)
+    row = next((r for r in rows if r.get("id") == payload.get("id")), None)
+    if row is None:
+        raise SystemExit(f"unknown rule id: {payload.get('id')}")
+    for f in ("title", "text", "rationale", "status", "retireReason", "promotedTo"):
+        if f in payload:
+            row[f] = payload[f]
+    files = [str(rules_store.save_rules(root, rows))]
+    if row.get("kind") == "lesson":
+        files += repaint_analysis_rules(pkg)
+    return files
+
+
 _DISPATCH = {
     "status":               update_status,
     "activeGate":           lambda p, pl: update_simple_field(p, pl, "activeGate"),
@@ -361,6 +379,7 @@ _DISPATCH = {
     "results-block":        update_results_block,
     "results-verdict":      update_results_verdict,
     "last-updated-time":    update_last_updated_time,
+    "rule":                 update_rule,
 }
 
 

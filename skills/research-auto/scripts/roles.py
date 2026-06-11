@@ -131,7 +131,6 @@ def run_reflection(*, actions, transitions, cross_failures):
     return findings
 
 
-def land_proposal(proposal_dir, *, human_token, jury_verdict, rules_path):
+def land_proposal(proposal_dir, *, human_token, jury_verdict):
     """Human-gated applier: land a staged proposal — refuses without a human action + a sound verdict."""
-    return apply_mod.apply(proposal_dir, human_token=human_token,
-                           jury_verdict=jury_verdict, rules_path=rules_path)
+    return apply_mod.apply(proposal_dir, human_token=human_token, jury_verdict=jury_verdict)

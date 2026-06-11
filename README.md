@@ -303,6 +303,7 @@ The contribution is the trust record, not just the agent loop.
 | --- | --- |
 | `research_html/` | Live dashboard: lanes, context page, Scope projection, package links, Live Runs page. |
 | `research_html/data/research-packages.js` | Dashboard registry: package cards, status, task spine, and compatibility projections. |
+| `research_html/data/rules.js` | Unified rules registry: every binding rule as one typed row (`universal` R/T mirror · `project` · `package`); mutated only via `research-op --target rule`. |
 | `research_html/data/packages/<pkg>.facts.js` | Package content facts and page projection metadata for fact-backed packages. |
 | `research_html/data/packages/<pkg>/tables/*.csv` | Canonical package table facts: result gates, result tables, tracker live checks, resource allocation, and methods tried. |
 | `outputs/_scope/transitions.jsonl` | Canonical Scope SSOT transition log. |
@@ -330,6 +331,7 @@ outputs/_live/
 
 research_html/data/
   research-packages.js   # dashboard registry and compatibility projections
+  rules.js               # unified rules registry (universal mirror + project + package rows)
   packages/
     <pkg>.facts.js       # content facts and projection revisions
     <pkg>/

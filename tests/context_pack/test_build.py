@@ -37,12 +37,12 @@ _PACKAGES_JS = '''window.RESEARCH_PACKAGES = [
 ];
 '''
 
-_ANALYSIS_HTML = '''<!doctype html><body data-page="analysis" data-package-id="2026-05-01-old">
-<section id="rules"><ol class="rules-list" data-list="rules">
-<li class="card-text" id="rule-mining-temperature">Hard-negative mining diverges without
-temperature scaling above 0.1. Evidence: <a href="#insight-temp">temp study</a>.</li>
-</ol></section></body></html>
-'''
+def _append_registry_rows(root, rows):
+    """Append rows to the scaffolded data/rules.js (keeps the universal mirror)."""
+    rules_js = root / "data" / "rules.js"
+    prefix = "window.RESEARCH_RULES = "
+    existing = json.loads(rules_js.read_text(encoding="utf-8")[len(prefix):].rstrip().rstrip(";"))
+    rules_js.write_text(prefix + json.dumps(existing + rows) + ";\n", encoding="utf-8")
 
 
 def _setup(tmp_path):
@@ -50,7 +50,6 @@ def _setup(tmp_path):
     ensure_dashboard.ensure_dashboard(root, force=False)
     (root / "data" / "research-packages.js").write_text(_PACKAGES_JS, encoding="utf-8")
     (root / "packages" / "2026-05-01-old").mkdir(parents=True, exist_ok=True)
-    (root / "packages" / "2026-05-01-old" / "analysis.html").write_text(_ANALYSIS_HTML, encoding="utf-8")
 
     # direction node + scope log
     log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
@@ -63,10 +62,18 @@ def _setup(tmp_path):
     }
     scope_ssot.propose_transition(node, op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
 
-    # learned rules + active-pkg overlay stores
-    learned = tmp_path / "outputs" / "_learned" / "rules.md"
-    learned.parent.mkdir(parents=True, exist_ok=True)
-    learned.write_text("# Learned\n- Always reproduce the baseline before claiming a lift.\n", encoding="utf-8")
+    # learned project rule + package lesson rows in the unified registry
+    _append_registry_rows(root, [
+        {"id": "PRJ-reproduce-baseline", "level": "project", "kind": "constraint",
+         "title": "Reproduce the baseline", "text": "Always reproduce the baseline before claiming a lift.",
+         "rationale": "validity", "source": "user", "origin": "user",
+         "status": "ACTIVE", "addedAt": "2026-06-04"},
+        {"id": "2026-05-01-old#mining-temperature", "level": "package", "pkg": "2026-05-01-old",
+         "kind": "lesson", "title": "Mining needs temperature scaling",
+         "text": "Hard-negative mining diverges without temperature scaling above 0.1.",
+         "rationale": "insight-temp", "source": "analysis", "origin": "user",
+         "status": "ACTIVE", "addedAt": "2026-06-04"},
+    ])
     banl = tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "ideate" / "banlist.json"
     banl.parent.mkdir(parents=True, exist_ok=True)
     banl.write_text(json.dumps([{"id": "hyp-1", "kind": "idea",
@@ -77,16 +84,15 @@ def _setup(tmp_path):
     src.write_text(json.dumps({"src-001": {"source_id": "src-001", "title": "Dense Passage Retrieval",
                                            "url": "https://arxiv.org/abs/2004.04906",
                                            "excerpt": "DPR uses dual encoders."}}), encoding="utf-8")
-    return root, log, learned
+    return root, log
 
 
 def test_build_writes_full_pack_and_durable_core(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    root, log, learned = _setup(tmp_path)
+    root, log = _setup(tmp_path)
 
     build.build("research_html", "2026-06-03-retrieval-v2",
-                transitions_path=str(log), learned_path=str(learned),
-                generated_at="2026-06-04T00:00:00Z")
+                transitions_path=str(log), generated_at="2026-06-04T00:00:00Z")
 
     md = (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.md").read_text(encoding="utf-8")
     pj = json.loads((tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").read_text(encoding="utf-8"))
@@ -95,7 +101,7 @@ def test_build_writes_full_pack_and_durable_core(tmp_path, monkeypatch):
     # full pack carries everything: direction + cross-package failures + overlay
     assert "Contrastive retrieval improves zero-shot Recall@1" in md
     assert "hard-negative mining" in md                                  # cross-package failure
-    assert "temperature scaling" in md                                   # analysis rule parsed from HTML
+    assert "temperature scaling" in md                                   # package lesson row from the registry
     assert "Always reproduce the baseline" in md                         # learned rule
     assert "cross-encoder" in md                                         # banlist overlay
     assert "Dense Passage Retrieval" in md                               # papers overlay
@@ -111,7 +117,7 @@ def test_build_writes_full_pack_and_durable_core(tmp_path, monkeypatch):
 
 def test_build_surfaces_knowledge_registries(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    root, log, learned = _setup(tmp_path)
+    root, log = _setup(tmp_path)
     data = root / "data"
     (data / "papers.jsonl").write_text(
         json.dumps({"id": "dpr2020", "title": "Dense Passage Retrieval", "url": "http://x"}) + "\n",
@@ -124,7 +130,7 @@ def test_build_surfaces_knowledge_registries(tmp_path, monkeypatch):
         encoding="utf-8")
 
     build.build("research_html", "2026-06-03-retrieval-v2", transitions_path=str(log),
-                learned_path=str(learned), generated_at="2026-06-04T00:00:00Z")
+                generated_at="2026-06-04T00:00:00Z")
 
     md = (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.md").read_text(encoding="utf-8")
     core_js = (root / "data" / "context-core.js").read_text(encoding="utf-8")
@@ -142,10 +148,9 @@ def test_build_degrades_gracefully_without_optional_stores(tmp_path, monkeypatch
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text("", encoding="utf-8")  # no direction
 
-    # no _learned, no analysis.html, no banlist, no sources — must still build
+    # no project/package rule rows, no banlist, no sources — must still build
     build.build("research_html", "2026-06-03-retrieval-v2",
-                transitions_path=str(log), learned_path="outputs/_learned/rules.md",
-                generated_at="2026-06-04T00:00:00Z")
+                transitions_path=str(log), generated_at="2026-06-04T00:00:00Z")
 
     md = (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.md").read_text(encoding="utf-8")
     assert "hard-negative mining" in md          # cross-package failure still compiled from packages
@@ -154,22 +159,21 @@ def test_build_degrades_gracefully_without_optional_stores(tmp_path, monkeypatch
 
 def test_cli_main(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    root, log, learned = _setup(tmp_path)
-    rc = build.main(["--pkg", "2026-06-03-retrieval-v2", "--transitions", str(log),
-                     "--learned", str(learned)])
+    root, log = _setup(tmp_path)
+    rc = build.main(["--pkg", "2026-06-03-retrieval-v2", "--transitions", str(log)])
     assert rc == 0
     assert (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").exists()
 
 
 def test_ensure_fresh_rebuilds_only_when_scope_advanced(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    root, log, learned = _setup(tmp_path)
+    root, log = _setup(tmp_path)
     build.build("research_html", "2026-06-03-retrieval-v2", transitions_path=str(log),
-                learned_path=str(learned), generated_at="t0")
+                generated_at="t0")
 
     # fresh (scope unchanged) → no rebuild, artifact untouched
     assert build.ensure_fresh("research_html", "2026-06-03-retrieval-v2", transitions_path=str(log),
-                              learned_path=str(learned), generated_at="t1") is False
+                              generated_at="t1") is False
     pj = json.loads((tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").read_text())
     assert pj["stamp"]["generated_at"] == "t0"
 
@@ -178,28 +182,28 @@ def test_ensure_fresh_rebuilds_only_when_scope_advanced(tmp_path, monkeypatch):
     node["version"] = 4
     scope_ssot.propose_transition(node, op="revise", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
     assert build.ensure_fresh("research_html", "2026-06-03-retrieval-v2", transitions_path=str(log),
-                              learned_path=str(learned), generated_at="t2") is True
+                              generated_at="t2") is True
     pj2 = json.loads((tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").read_text())
     assert pj2["stamp"]["scope_version"] == 4 and pj2["stamp"]["generated_at"] == "t2"
 
 
 def test_cli_if_stale_builds_then_skips(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    root, log, learned = _setup(tmp_path)
+    root, log = _setup(tmp_path)
     assert build.main(["--pkg", "2026-06-03-retrieval-v2", "--transitions", str(log),
-                       "--learned", str(learned), "--if-stale"]) == 0
+                       "--if-stale"]) == 0
     assert "rebuilt" in capsys.readouterr().out
     # second call: already fresh, no rebuild
     assert build.main(["--pkg", "2026-06-03-retrieval-v2", "--transitions", str(log),
-                       "--learned", str(learned), "--if-stale"]) == 0
+                       "--if-stale"]) == 0
     assert "already fresh" in capsys.readouterr().out
 
 
 def test_ensure_fresh_builds_when_pack_missing(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    root, log, learned = _setup(tmp_path)
+    root, log = _setup(tmp_path)
     assert build.ensure_fresh("research_html", "2026-06-03-retrieval-v2", transitions_path=str(log),
-                              learned_path=str(learned), generated_at="t0") is True
+                              generated_at="t0") is True
     assert (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").exists()
 
 
@@ -207,9 +211,9 @@ def test_build_py_runs_as_script(tmp_path, monkeypatch):
     """The SKILL prose invokes `python lib/context_pack/build.py` — it must self-bootstrap sys.path."""
     import subprocess as sp
     monkeypatch.chdir(tmp_path)
-    root, log, learned = _setup(tmp_path)
+    root, log = _setup(tmp_path)
     rc = sp.run([sys.executable, str(ROOT / "lib" / "context_pack" / "build.py"),
-                 "--pkg", "2026-06-03-retrieval-v2", "--transitions", str(log),
-                 "--learned", str(learned)], capture_output=True, text=True)
+                 "--pkg", "2026-06-03-retrieval-v2", "--transitions", str(log)],
+                capture_output=True, text=True)
     assert rc.returncode == 0, rc.stderr
     assert (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.md").exists()

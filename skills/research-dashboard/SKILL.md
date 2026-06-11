@@ -23,6 +23,8 @@ Authority order, highest first:
 
 This skill installs the rule files into `<root>/rules/` so any project gets them. Do not modify the rule files inside the user's project; if they need to change, update the skill's `assets/` instead.
 
+The scaffold also creates `<root>/data/rules.js` — the **unified rules registry** (one typed row per rule, levels `universal | project | package`). Universal rows are a write-locked mirror of the two rule files above, rebuilt by `ensure_dashboard.py` on every run; project/package rows are mutated only through `research-op --target rule`. The dashboard renders protocol content from its owners (Scope SSOT objective, `schema.js` routes, the rules registry) — it owns none.
+
 ## Output classification
 
 Every text output this skill emits — intermediate progress lines, the final report, and HTML page content — classifies content by audience:
@@ -63,10 +65,10 @@ Both-audience content is written once, inline, without the blockquote or `<detai
    node --check <root>/data/research-packages.js
    ```
 
-   Then grep for the seven required content `data-section` anchors (the index also carries `masthead` and `nav` chrome anchors, which the check ignores) and the two rule-file links in `<root>/index.html`:
+   Then grep for the six required content `data-section` anchors (the index also carries `masthead` and `nav` chrome anchors, which the check ignores) and the two rule-file links in `<root>/index.html`:
 
    ```bash
-   grep -E 'data-section="(snapshot|lanes|scope|packages|protocol|profile|rules)"' <root>/index.html
+   grep -E 'data-section="(snapshot|lanes|packages|protocol|profile|rules)"' <root>/index.html
    grep -E 'rules/html-rules.html|rules/trustworthy-research-rules.html' <root>/index.html
    ```
 
@@ -82,7 +84,7 @@ Both-audience content is written once, inline, without the blockquote or `<detai
    matching file in this skill's `assets/dashboard/`. If the anchor grep returns nothing, `index.html`
    was not written — re-run step 3 with `--force`.
 
-5. **Keep the dashboard project-agnostic.** Project objective, success rule, and cautions belong in `window.RESEARCH_PROJECT_PROFILE` inside `<root>/data/research-packages.js`. Project / Direction / Milestone intent belongs in the Scope SSOT and is rendered into `<root>/data/scope-projection.json/js`; do not hand-edit those projection files. Do not edit the universal protocol cards in the same file; those are shared chrome.
+5. **Keep the dashboard project-agnostic.** Project profile prose belongs in `window.RESEARCH_PROJECT_PROFILE` inside `<root>/data/research-packages.js`; project-level *constraints* are registry rows (`data/rules.js`, `level=project`), landed via `research-op --target rule`. Project / Direction / Milestone intent belongs in the Scope SSOT and is rendered into `<root>/data/scope-projection.json/js`; do not hand-edit those projection files or the registry's `origin=mirror|selfevolve` rows.
 
 6. **Check for a committed objective, then recommend the next step.** The dashboard is chrome; a project still needs a ratified objective in the Scope SSOT before any package work. Check whether a Project node is already committed:
 
@@ -127,9 +129,10 @@ The dashboard-wide consistency tool is `<root>/scripts/learnings_lint.py` (Pytho
 ```bash
 python <root>/scripts/learnings_lint.py lint-status     # schema + cross-ref lint
 python <root>/scripts/learnings_lint.py lint-evidence   # evidencePath resolution
+python <root>/scripts/learnings_lint.py lint-rules      # rules-registry schema + mirror sync
 python <root>/scripts/learnings_lint.py scan-events     # 3 draft writers (VERDICT_FINALIZED/TERMINAL_TRANSITION/ADOPTION)
 python <root>/scripts/learnings_lint.py alignment       # task-spine structural lint
-python <root>/scripts/learnings_lint.py all             # status + evidence + scan + alignment
+python <root>/scripts/learnings_lint.py all             # status + evidence + scan + alignment + rules
 ```
 
 The Stop Gate of any learnings-relevant turn requires `learnings_lint.py all` to exit 0. For Scope-materialized packages, `lint-status` also checks that `sourceScopeNode`, `sourceScopeMilestones`, and `experiments[].parentTask` still point to active Scope SSOT nodes; `alignment` checks each typed task's result/implementation/docs/tracker thread.

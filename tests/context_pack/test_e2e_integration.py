@@ -56,9 +56,14 @@ def test_full_wiki_integration(tmp_path, monkeypatch):
          "status": "ACTIVE", "yardstick": {"hypothesis": "active hypothesis", "metric": {"name": "R@1"},
                                            "baselines": ["b"], "success_predicate": "R@1>=48"}},
         op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
-    learned = tmp_path / "outputs" / "_learned" / "rules.md"
-    learned.parent.mkdir(parents=True, exist_ok=True)
-    learned.write_text("- reproduce the baseline first\n", encoding="utf-8")
+    # Land a project rule through the real single entry (research-op rule target).
+    assert _op(tmp_path, "--pkg", "_project", "--op", "insert", "--target", "rule",
+               "--payload", json.dumps({"level": "project", "kind": "constraint",
+                                        "slug": "reproduce-baseline-first",
+                                        "title": "Reproduce the baseline first",
+                                        "text": "reproduce the baseline first",
+                                        "rationale": "validity", "addedAt": "2026-06-04",
+                                        "ack": "approved in test"})).returncode == 0
 
     # Phase 4/5/6: real mutation surface — research-op writes the durable registries
     assert _op(tmp_path, "--pkg", "2026-06-03-active", "--op", "registry-add", "--target", "paper",
@@ -75,7 +80,7 @@ def test_full_wiki_integration(tmp_path, monkeypatch):
 
     # Phase 0/1: build the Context Pack + durable core
     build.build("research_html", "2026-06-03-active", transitions_path=str(log),
-                learned_path=str(learned), generated_at="2026-06-04T00:00:00Z")
+                generated_at="2026-06-04T00:00:00Z")
     md = (tmp_path / "outputs" / "2026-06-03-active" / "context_pack.md").read_text(encoding="utf-8")
     for needle in ("active hypothesis", "reproduce the baseline first", "mining",
                    "Dense Passage Retrieval", "EXTENDS", "no zero-shot eval"):

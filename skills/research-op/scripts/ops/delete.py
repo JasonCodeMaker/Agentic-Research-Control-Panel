@@ -118,6 +118,22 @@ def delete_doc_file(pkg: str, payload: dict) -> list[str]:
     return [str(doc_path)] + card_files
 
 
+def delete_rule(pkg: str, payload: dict) -> list[str]:
+    """Hard-remove a pre-launch package rule row from the registry; repaint lessons."""
+    import rules_store
+    from ops.insert import repaint_analysis_rules
+    root = Path("research_html")
+    rows = rules_store.load_rules(root)
+    row = next((r for r in rows if r.get("id") == payload.get("id")), None)
+    if row is None:
+        raise SystemExit(f"unknown rule id: {payload.get('id')}")
+    rows.remove(row)
+    files = [str(rules_store.save_rules(root, rows))]
+    if row.get("kind") == "lesson":
+        files += repaint_analysis_rules(pkg)
+    return files
+
+
 _DISPATCH = {
     "experiments-row":        delete_experiments_row,
     "tracker-live-check-row": delete_tracker_live_check_row,
@@ -125,6 +141,7 @@ _DISPATCH = {
     "methodsTried":           delete_methodstried,
     "doc-file":               delete_doc_file,
     "doc-card":               delete_doc_card,
+    "rule":                   delete_rule,
 }
 
 
