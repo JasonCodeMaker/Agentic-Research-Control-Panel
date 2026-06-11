@@ -1,9 +1,12 @@
 """Insert handlers for each target in the I-table (spec § 4.1)."""
 
+import csv
+import io
 import json
 import re
-import subprocess
+import shutil
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -12,13 +15,11 @@ from . import _pkg_block
 PIPELINE_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(PIPELINE_ROOT))
 sys.path.insert(0, str(PIPELINE_ROOT / "skills" / "research-package" / "scripts"))
+from fact_transaction import FactTransaction  # noqa: E402
 from lib import package_facts  # noqa: E402
+from render_tracker_facts import render as render_tracker_facts  # noqa: E402
+from sync_methods_tried_projection import sync_methods_tried_projection  # noqa: E402
 from task_spine import derive_task_blocks  # noqa: E402
-
-RENDER_TRACKER = PIPELINE_ROOT / "skills" / "research-package" / "scripts" / "render_tracker_facts.py"
-APPEND_METHODS = PIPELINE_ROOT / "skills" / "research-package" / "scripts" / "append_methods_tried_fact.py"
-SYNC_METHODS = PIPELINE_ROOT / "skills" / "research-package" / "scripts" / "sync_methods_tried_projection.py"
-
 
 def _bump_last_updated(path: Path) -> None:
     """Update the <time data-field='last-updated'> on a touched HTML file."""
@@ -70,14 +71,104 @@ def _is_fact_backed(pkg: str) -> bool:
     return (Path("research_html") / "data" / "packages" / pkg).exists()
 
 
-def _run_script(script: Path, *args: str) -> None:
-    result = subprocess.run(
-        [sys.executable, str(script), *args],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise SystemExit(result.stderr or result.stdout)
+def _csv_text_after_upsert(path: Path, columns: list[str], rows: list[dict]) -> str:
+    existing = package_facts.read_csv_rows(path)
+    by_id = {str(row.get("row_id", "")): row for row in existing if row.get("row_id")}
+    order = [str(row.get("row_id")) for row in existing if row.get("row_id")]
+    for raw in rows:
+        row_id = str(raw.get("row_id", "")).strip()
+        if not row_id:
+            raise package_facts.FactError("CSV fact row requires non-empty row_id")
+        row = {col: str(raw.get(col, "")) for col in columns}
+        row["row_id"] = row_id
+        if row_id not in by_id:
+            order.append(row_id)
+        by_id[row_id] = row
+
+    out = io.StringIO()
+    writer = csv.DictWriter(out, fieldnames=columns, extrasaction="ignore")
+    writer.writeheader()
+    for row_id in order:
+        writer.writerow({col: by_id[row_id].get(col, "") for col in columns})
+    return out.getvalue()
+
+
+def _copy_if_exists(src: Path, dest: Path) -> None:
+    if src.exists():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+
+
+def _render_tracker_candidate(pkg: str, csv_path: Path, csv_text: str) -> str:
+    root = Path(".")
+    tracker_rel = Path("research_html") / "packages" / pkg / "tracker.html"
+    live_paths = package_facts.fact_paths(pkg)
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_root = Path(tmp)
+        tmp_paths = package_facts.fact_paths(pkg, root=tmp_root)
+        _copy_if_exists(root / tracker_rel, tmp_root / tracker_rel)
+        _copy_if_exists(live_paths.tables_dir / "live_checks.csv", tmp_paths.tables_dir / "live_checks.csv")
+        _copy_if_exists(
+            live_paths.tables_dir / "resource_allocation.csv",
+            tmp_paths.tables_dir / "resource_allocation.csv",
+        )
+        target_csv = tmp_root / csv_path
+        target_csv.parent.mkdir(parents=True, exist_ok=True)
+        target_csv.write_text(csv_text, encoding="utf-8")
+        render_tracker_facts(pkg, tmp_root)
+        return (tmp_root / tracker_rel).read_text(encoding="utf-8")
+
+
+def _commit_fact_projection(files: dict[Path, str]) -> None:
+    tx = FactTransaction()
+    try:
+        for path, text in files.items():
+            tx.stage_text(path, text)
+        tx.commit()
+    finally:
+        tx.cleanup()
+
+
+def _measured(source_row: dict[str, str]) -> str:
+    return f"{source_row.get('metric', '')}={source_row.get('value', '')}{source_row.get('unit', '')}"
+
+
+def _build_methods_row(pkg: str, payload: dict) -> dict[str, str]:
+    paths = package_facts.fact_paths(pkg)
+    source_row = package_facts.find_row_by_ref(paths.tables_dir, payload["source_ref"])
+    source_table, source_row_id = package_facts.split_source_ref(payload["source_ref"])
+    exp_id = str(payload.get("exp_id") or source_row.get("exp_id") or "")
+    if not exp_id:
+        raise SystemExit("fact-backed methodsTried source_ref requires exp_id")
+    verdict = source_row.get("verdict") or "INCONCLUSIVE"
+    if source_row.get("source_type", "").lower() == "manual" and verdict == "PASS":
+        raise package_facts.FactError("manual PASS source rows cannot be appended to methods_tried.csv")
+    return {
+        "row_id": str(payload.get("row_id") or payload["source_ref"]),
+        "exp_id": exp_id,
+        "method": str(payload["method"]),
+        "hypothesis": str(payload["hypothesis"]),
+        "gate": str(payload["gate"]),
+        "measured": _measured(source_row),
+        "verdict": verdict,
+        "evidencePath": source_row.get("source_artifact", ""),
+        "source_table": source_table,
+        "source_row": source_row_id,
+        "source_artifact": source_row.get("source_artifact", ""),
+        "extracted_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+
+
+def _sync_methods_candidate(pkg: str, csv_path: Path, csv_text: str) -> str:
+    registry_rel = Path("research_html") / "data" / "research-packages.js"
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_root = Path(tmp)
+        _copy_if_exists(Path(registry_rel), tmp_root / registry_rel)
+        tmp_csv = tmp_root / csv_path
+        tmp_csv.parent.mkdir(parents=True, exist_ok=True)
+        tmp_csv.write_text(csv_text, encoding="utf-8")
+        sync_methods_tried_projection(pkg, tmp_root)
+        return (tmp_root / registry_rel).read_text(encoding="utf-8")
 
 
 def _tracker_row_id(payload: dict) -> str:
@@ -97,24 +188,16 @@ def _tracker_files(pkg: str, csv_path: Path) -> list[str]:
 def insert_methodstried(pkg: str, payload: dict) -> list[str]:
     if _is_fact_backed(pkg) and payload.get("source_ref"):
         paths = package_facts.fact_paths(pkg)
-        source_row = package_facts.find_row_by_ref(paths.tables_dir, payload["source_ref"])
-        exp_id = str(payload.get("exp_id") or source_row.get("exp_id") or "")
-        if not exp_id:
-            raise SystemExit("fact-backed methodsTried source_ref requires exp_id")
-        args = [
-            "--repo-root", ".",
-            "--pkg", pkg,
-            "--exp-id", exp_id,
-            "--source-ref", str(payload["source_ref"]),
-            "--method", str(payload["method"]),
-            "--hypothesis", str(payload["hypothesis"]),
-            "--gate", str(payload["gate"]),
-        ]
-        if payload.get("row_id"):
-            args.extend(["--row-id", str(payload["row_id"])])
-        _run_script(APPEND_METHODS, *args)
-        _run_script(SYNC_METHODS, "--repo-root", ".", "--pkg", pkg)
-        return [str(paths.tables_dir / "methods_tried.csv"), "research_html/data/research-packages.js"]
+        csv_path = paths.tables_dir / "methods_tried.csv"
+        csv_text = _csv_text_after_upsert(
+            csv_path,
+            package_facts.METHODS_TRIED_COLUMNS,
+            [_build_methods_row(pkg, payload)],
+        )
+        registry_text = _sync_methods_candidate(pkg, csv_path, csv_text)
+        registry_path = Path("research_html") / "data" / "research-packages.js"
+        _commit_fact_projection({csv_path: csv_text, registry_path: registry_text})
+        return [str(csv_path), str(registry_path)]
     return [_append_to_inventory_array(pkg, "methodsTried", payload)]
 
 
@@ -136,8 +219,10 @@ def insert_tracker_live_check_row(pkg: str, payload: dict) -> list[str]:
         csv_path = package_facts.table_csv_path(pkg, "live_checks")
         row = {col: str(payload.get(col, "")) for col in package_facts.LIVE_CHECK_COLUMNS}
         row["row_id"] = _tracker_row_id(payload)
-        package_facts.upsert_csv_rows(csv_path, package_facts.LIVE_CHECK_COLUMNS, [row])
-        _run_script(RENDER_TRACKER, "--repo-root", ".", "--pkg", pkg)
+        csv_text = _csv_text_after_upsert(csv_path, package_facts.LIVE_CHECK_COLUMNS, [row])
+        tracker_text = _render_tracker_candidate(pkg, csv_path, csv_text)
+        tracker_path = Path("research_html") / "packages" / pkg / "tracker.html"
+        _commit_fact_projection({csv_path: csv_text, tracker_path: tracker_text})
         return _tracker_files(pkg, csv_path)
 
     path = Path(f"research_html/packages/{pkg}/tracker.html")
@@ -174,8 +259,10 @@ def insert_tracker_resource_allocation_row(pkg: str, payload: dict) -> list[str]
         csv_path = package_facts.table_csv_path(pkg, "resource_allocation")
         row = {col: str(payload.get(col, "")) for col in package_facts.RESOURCE_ALLOCATION_COLUMNS}
         row["row_id"] = _tracker_row_id(payload)
-        package_facts.upsert_csv_rows(csv_path, package_facts.RESOURCE_ALLOCATION_COLUMNS, [row])
-        _run_script(RENDER_TRACKER, "--repo-root", ".", "--pkg", pkg)
+        csv_text = _csv_text_after_upsert(csv_path, package_facts.RESOURCE_ALLOCATION_COLUMNS, [row])
+        tracker_text = _render_tracker_candidate(pkg, csv_path, csv_text)
+        tracker_path = Path("research_html") / "packages" / pkg / "tracker.html"
+        _commit_fact_projection({csv_path: csv_text, tracker_path: tracker_text})
         return _tracker_files(pkg, csv_path)
 
     path = Path(f"research_html/packages/{pkg}/tracker.html")

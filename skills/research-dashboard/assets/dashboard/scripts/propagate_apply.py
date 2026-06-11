@@ -45,6 +45,10 @@ import sys
 import time
 from pathlib import Path
 
+PIPELINE_ROOT = Path(__file__).resolve().parents[5]
+sys.path.insert(0, str(PIPELINE_ROOT / "skills" / "research-op" / "scripts"))
+from fact_transaction import FactTransaction  # noqa: E402
+
 
 PKG_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}-[A-Za-z0-9_-]+$")
 JS_STR = r'"(?:[^"\\]|\\.)*"'
@@ -532,9 +536,14 @@ def apply_one(manifest_path: Path, repo_root: Path, write: bool) -> dict:
             new_texts[rel] = after
 
     if write:
-        for rel, after in new_texts.items():
-            (repo_root / rel).write_text(after)
-        Path(str(manifest_path) + ".applied").touch()
+        tx = FactTransaction()
+        try:
+            for rel, after in new_texts.items():
+                tx.stage_text(repo_root / rel, after)
+            tx.stage_bytes(Path(str(manifest_path) + ".applied"), b"")
+            tx.commit()
+        finally:
+            tx.cleanup()
 
     return {"manifest": str(manifest_path), "pkg": pkg_id, "event": event, "diffs": diffs}
 

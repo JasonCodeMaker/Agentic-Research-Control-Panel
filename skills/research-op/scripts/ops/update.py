@@ -13,6 +13,17 @@ sys.path.insert(0, str(PIPELINE_ROOT / "skills" / "research-package" / "scripts"
 from task_spine import derive_task_blocks  # noqa: E402
 
 
+def _is_fact_backed(pkg: str) -> bool:
+    return (Path("research_html") / "data" / "packages" / pkg).exists()
+
+
+def _reject_fact_backed_projection_update(pkg: str, target: str) -> None:
+    if _is_fact_backed(pkg):
+        raise SystemExit(
+            f"fact-backed package {pkg} must update {target} through CSV facts and projection renderers"
+        )
+
+
 def _set_last_updated_time(text: str, iso: str) -> str:
     """Set or repair the page's last-updated footer time."""
     new, n = re.subn(
@@ -205,6 +216,7 @@ def update_ack_slot(pkg: str, payload: dict) -> list[str]:
 
 def update_results_gate_row(pkg: str, payload: dict) -> list[str]:
     """Update selected cells in a result-gate row identified by data-exp-id."""
+    _reject_fact_backed_projection_update(pkg, "results-gate-row")
     exp_id = payload["exp_id"]
     cells = payload["cells"]
     path = Path(f"research_html/packages/{pkg}/results.html")
@@ -257,6 +269,7 @@ def update_results_gate_row(pkg: str, payload: dict) -> list[str]:
 
 def update_results_verdict(pkg: str, payload: dict) -> list[str]:
     """Update the verdict cell for a result-gate row identified by data-exp-id."""
+    _reject_fact_backed_projection_update(pkg, "results-verdict")
     exp_id = payload["exp_id"]
     verdict = payload["to"]
     path = Path(f"research_html/packages/{pkg}/results.html")
@@ -297,6 +310,7 @@ def update_results_verdict(pkg: str, payload: dict) -> list[str]:
 
 def update_results_block(pkg: str, payload: dict) -> list[str]:
     """Replace a result block article identified by data-phase-id."""
+    _reject_fact_backed_projection_update(pkg, "results-block")
     phase_id = payload["phase_id"]
     replacement = payload["html"]
     path = Path(f"research_html/packages/{pkg}/results.html")
