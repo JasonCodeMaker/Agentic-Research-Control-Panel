@@ -1,4 +1,5 @@
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -53,6 +54,118 @@ def _experiments():
             "complex": False,
         },
     ]
+
+
+def _assert_opening_tag_has(html, tag, *attrs):
+    for match in re.finditer(rf"<{tag}\b[^>]*>", html):
+        opening_tag = match.group(0)
+        if all(attr in opening_tag for attr in attrs):
+            return
+    raise AssertionError(f"missing <{tag}> with attrs: {attrs}")
+
+
+def _table_body_selectors(html):
+    return re.findall(r'data-table-body="([^"]+)"', html)
+
+
+def test_scaffold_marks_page_projection_surfaces_and_preserves_table_body_selectors(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    root = _dashboard(tmp_path)
+    package_id = "2026-06-11-projection-markers"
+
+    rc = create_research_package.main([
+        "--root", str(root),
+        "--id", package_id,
+        "--name", "Projection Markers",
+        "--category", "in-progress",
+        "--tag", "facts",
+        "--tag-meaning", "fact projection test",
+        "--problem", "new packages lack projection anchors",
+        "--objective", "mark projection surfaces at scaffold time",
+        "--motivation", "lint can find fact-backed sections",
+        "--hypothesis", "stable markers prevent projection drift",
+        "--primary-metric", "projection-marker coverage",
+        "--baseline", "manual markers",
+        "--budget", "unmeasured",
+        "--no-change-boundary", "do not rename table body selectors",
+        "--next-action", "verify scaffold",
+        "--scope", "all",
+        "--status", "CONTEXT_LOADED",
+    ])
+
+    assert rc == 0
+    pkg = root / "packages" / package_id
+    pages = {
+        "index.html": (pkg / "index.html").read_text(encoding="utf-8"),
+        "plan.html": (pkg / "plan.html").read_text(encoding="utf-8"),
+        "tracker.html": (pkg / "tracker.html").read_text(encoding="utf-8"),
+        "results.html": (pkg / "results.html").read_text(encoding="utf-8"),
+        "analysis.html": (pkg / "analysis.html").read_text(encoding="utf-8"),
+    }
+
+    for filename, page_id in [
+        ("index.html", "overview"),
+        ("plan.html", "plan"),
+        ("tracker.html", "tracker"),
+        ("results.html", "results"),
+        ("analysis.html", "analysis"),
+    ]:
+        _assert_opening_tag_has(
+            pages[filename],
+            "body",
+            f'data-page="{page_id}"',
+            f'data-package-id="{package_id}"',
+        )
+
+    _assert_opening_tag_has(
+        pages["index.html"],
+        "section",
+        'data-section="user-zone"',
+        'data-fact-projection="overview"',
+    )
+    _assert_opening_tag_has(
+        pages["plan.html"],
+        "section",
+        'data-section="pipeline-timeline"',
+        'data-fact-projection="plan"',
+    )
+    _assert_opening_tag_has(
+        pages["tracker.html"],
+        "section",
+        'data-section="user-zone"',
+        'data-fact-projection="tracker"',
+    )
+    _assert_opening_tag_has(
+        pages["results.html"],
+        "section",
+        'data-list="result-blocks"',
+        'data-fact-projection="results"',
+    )
+    _assert_opening_tag_has(
+        pages["analysis.html"],
+        "section",
+        'data-section="rules"',
+        'data-fact-projection="analysis"',
+    )
+    _assert_opening_tag_has(
+        pages["analysis.html"],
+        "section",
+        'data-section="insight"',
+        'data-fact-projection="analysis"',
+    )
+
+    implementation = (pkg / "implementation.html").read_text(encoding="utf-8")
+    assert _table_body_selectors(pages["tracker.html"]) == [
+        "live-check",
+        "live-check-history",
+        "considered-routes",
+        "resource-allocation",
+    ]
+    assert _table_body_selectors(pages["results.html"]) == [
+        "result-block-main",
+        "result-gate",
+    ]
+    assert _table_body_selectors(implementation) == ["test-rule-catalog"]
 
 
 def test_scaffold_derives_task_blocks_from_spine(tmp_path, monkeypatch):
