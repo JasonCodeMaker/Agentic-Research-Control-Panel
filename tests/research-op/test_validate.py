@@ -27,6 +27,21 @@ def test_methodstried_six_fields_rejects_extra():
     assert "notes" in rej.actual
 
 
+def test_methodstried_source_ref_payload_requires_author_fields_only():
+    p = {"source_ref": "result_table_P1:current_best", "method": "m", "hypothesis": "h", "gate": "g"}
+    assert validate.rule_methodstried_six_fields("pkg", "insert", "methodsTried", p) is None
+
+
+def test_fact_backed_manual_pass_without_source_ref_is_rejected(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "research_html" / "data" / "packages" / "pkg").mkdir(parents=True)
+    p = {"method": "m", "hypothesis": "h", "gate": "g",
+         "measured": "0.85", "verdict": "PASS", "evidencePath": "x"}
+    rej = validate.rule_methodstried_manual_pass_forbidden("pkg", "insert", "methodsTried", p)
+    assert rej is not None
+    assert rej.rule == "manual-pass-forbidden"
+
+
 def test_verdict_enum_accepts_pass_fail_inconclusive():
     for v in ("PASS", "FAIL", "INCONCLUSIVE"):
         p = {"verdict": v}

@@ -63,7 +63,12 @@ def rule_payload_json_valid(pkg: str, op: str, target: str | None, payload_raw: 
 # ---- Per-target rules ----
 
 _METHODSTRIED_FIELDS = {"method", "hypothesis", "gate", "measured", "verdict", "evidencePath"}
+_METHODSTRIED_SOURCE_REF_FIELDS = {"method", "hypothesis", "gate"}
 _VERDICT_ALLOWED    = {"PASS", "FAIL", "INCONCLUSIVE"}
+
+
+def _is_fact_backed(pkg: str) -> bool:
+    return (Path("research_html") / "data" / "packages" / pkg).exists()
 
 
 def rule_package_invariant_has_rule(pkg, op, target, payload) -> Reject | None:
@@ -83,6 +88,17 @@ def rule_package_invariant_has_rule(pkg, op, target, payload) -> Reject | None:
 def rule_methodstried_six_fields(pkg, op, target, payload) -> Reject | None:
     if target != "methodsTried" or op != "insert":
         return None
+    if payload.get("source_ref"):
+        missing = _METHODSTRIED_SOURCE_REF_FIELDS - set(payload.keys())
+        if missing:
+            return Reject(
+                rule="methodstried-source-ref-fields",
+                file=None, anchor=None, field="payload",
+                expected=f"keys include {sorted(_METHODSTRIED_SOURCE_REF_FIELDS)} when source_ref is present",
+                actual=f"missing={sorted(missing)}",
+                suggested_fix="Set source_ref plus method, hypothesis, and gate; measured/verdict/evidencePath come from the source row.",
+            )
+        return None
     keys = set(payload.keys())
     missing = _METHODSTRIED_FIELDS - keys
     extra   = keys - _METHODSTRIED_FIELDS
@@ -100,6 +116,8 @@ def rule_methodstried_six_fields(pkg, op, target, payload) -> Reject | None:
 def rule_methodstried_verdict_enum(pkg, op, target, payload) -> Reject | None:
     if target != "methodsTried" or op != "insert":
         return None
+    if payload.get("source_ref") and "verdict" not in payload:
+        return None
     v = payload.get("verdict")
     if v not in _VERDICT_ALLOWED:
         return Reject(
@@ -114,6 +132,8 @@ def rule_methodstried_verdict_enum(pkg, op, target, payload) -> Reject | None:
 
 def rule_methodstried_evidence_resolves(pkg, op, target, payload) -> Reject | None:
     if target != "methodsTried" or op != "insert":
+        return None
+    if payload.get("source_ref"):
         return None
     ep = payload.get("evidencePath", "")
     if "#" in ep:  # HTML anchor
@@ -145,6 +165,22 @@ def rule_methodstried_evidence_resolves(pkg, op, target, payload) -> Reject | No
             expected="file exists on disk",
             actual=f"{ep} not found",
             suggested_fix="Verify the file path is correct and the artifact landed before recording the row.",
+        )
+    return None
+
+
+def rule_methodstried_manual_pass_forbidden(pkg, op, target, payload) -> Reject | None:
+    if target != "methodsTried" or op != "insert":
+        return None
+    if payload.get("source_ref"):
+        return None
+    if _is_fact_backed(pkg) and payload.get("verdict") == "PASS":
+        return Reject(
+            rule="manual-pass-forbidden",
+            file=None, anchor=None, field="verdict",
+            expected="source_ref-backed PASS for fact-backed packages",
+            actual="manual methodsTried verdict=PASS",
+            suggested_fix="Provide source_ref to a result CSV row or record the manual row as INCONCLUSIVE.",
         )
     return None
 
@@ -777,6 +813,7 @@ _RULES: list[tuple[Callable, bool]] = [
     (rule_package_invariant_has_rule,        False),
     (rule_methodstried_six_fields,           False),
     (rule_methodstried_verdict_enum,         False),
+    (rule_methodstried_manual_pass_forbidden, False),
     (rule_methodstried_evidence_resolves,    False),
     (rule_result_gate_ten_cols,              False),
     (rule_result_gate_validity_enum,         False),

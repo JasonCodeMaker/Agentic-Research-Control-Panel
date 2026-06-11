@@ -2,6 +2,7 @@
 
 import json
 import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -9,8 +10,14 @@ from pathlib import Path
 from . import _pkg_block
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PIPELINE_ROOT))
 sys.path.insert(0, str(PIPELINE_ROOT / "skills" / "research-package" / "scripts"))
+from lib import package_facts  # noqa: E402
 from task_spine import derive_task_blocks  # noqa: E402
+
+RENDER_TRACKER = PIPELINE_ROOT / "skills" / "research-package" / "scripts" / "render_tracker_facts.py"
+APPEND_METHODS = PIPELINE_ROOT / "skills" / "research-package" / "scripts" / "append_methods_tried_fact.py"
+SYNC_METHODS = PIPELINE_ROOT / "skills" / "research-package" / "scripts" / "sync_methods_tried_projection.py"
 
 
 def _bump_last_updated(path: Path) -> None:
@@ -59,7 +66,55 @@ def _append_to_inventory_array(pkg: str, array_field: str, entry: dict) -> str:
     return str(p)
 
 
+def _is_fact_backed(pkg: str) -> bool:
+    return (Path("research_html") / "data" / "packages" / pkg).exists()
+
+
+def _run_script(script: Path, *args: str) -> None:
+    result = subprocess.run(
+        [sys.executable, str(script), *args],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise SystemExit(result.stderr or result.stdout)
+
+
+def _tracker_row_id(payload: dict) -> str:
+    if payload.get("row_id"):
+        return str(payload["row_id"])
+    exp_id = str(payload.get("exp_id", "")).strip()
+    suffix = str(payload.get("run_id") or payload.get("time") or "latest").strip()
+    if not exp_id:
+        raise SystemExit("fact-backed tracker row requires exp_id")
+    return f"{exp_id}:{suffix}"
+
+
+def _tracker_files(pkg: str, csv_path: Path) -> list[str]:
+    return [str(csv_path), f"research_html/packages/{pkg}/tracker.html"]
+
+
 def insert_methodstried(pkg: str, payload: dict) -> list[str]:
+    if _is_fact_backed(pkg) and payload.get("source_ref"):
+        paths = package_facts.fact_paths(pkg)
+        source_row = package_facts.find_row_by_ref(paths.tables_dir, payload["source_ref"])
+        exp_id = str(payload.get("exp_id") or source_row.get("exp_id") or "")
+        if not exp_id:
+            raise SystemExit("fact-backed methodsTried source_ref requires exp_id")
+        args = [
+            "--repo-root", ".",
+            "--pkg", pkg,
+            "--exp-id", exp_id,
+            "--source-ref", str(payload["source_ref"]),
+            "--method", str(payload["method"]),
+            "--hypothesis", str(payload["hypothesis"]),
+            "--gate", str(payload["gate"]),
+        ]
+        if payload.get("row_id"):
+            args.extend(["--row-id", str(payload["row_id"])])
+        _run_script(APPEND_METHODS, *args)
+        _run_script(SYNC_METHODS, "--repo-root", ".", "--pkg", pkg)
+        return [str(paths.tables_dir / "methods_tried.csv"), "research_html/data/research-packages.js"]
     return [_append_to_inventory_array(pkg, "methodsTried", payload)]
 
 
@@ -77,6 +132,14 @@ def insert_package_invariant(pkg: str, payload: dict) -> list[str]:
 
 
 def insert_tracker_live_check_row(pkg: str, payload: dict) -> list[str]:
+    if _is_fact_backed(pkg):
+        csv_path = package_facts.table_csv_path(pkg, "live_checks")
+        row = {col: str(payload.get(col, "")) for col in package_facts.LIVE_CHECK_COLUMNS}
+        row["row_id"] = _tracker_row_id(payload)
+        package_facts.upsert_csv_rows(csv_path, package_facts.LIVE_CHECK_COLUMNS, [row])
+        _run_script(RENDER_TRACKER, "--repo-root", ".", "--pkg", pkg)
+        return _tracker_files(pkg, csv_path)
+
     path = Path(f"research_html/packages/{pkg}/tracker.html")
     text = path.read_text()
     # Append into <tbody data-table-body="live-check">.
@@ -107,6 +170,14 @@ def insert_tracker_live_check_row(pkg: str, payload: dict) -> list[str]:
 
 def insert_tracker_resource_allocation_row(pkg: str, payload: dict) -> list[str]:
     """Append a <tr> into <tbody data-table-body="resource-allocation"> in tracker.html."""
+    if _is_fact_backed(pkg):
+        csv_path = package_facts.table_csv_path(pkg, "resource_allocation")
+        row = {col: str(payload.get(col, "")) for col in package_facts.RESOURCE_ALLOCATION_COLUMNS}
+        row["row_id"] = _tracker_row_id(payload)
+        package_facts.upsert_csv_rows(csv_path, package_facts.RESOURCE_ALLOCATION_COLUMNS, [row])
+        _run_script(RENDER_TRACKER, "--repo-root", ".", "--pkg", pkg)
+        return _tracker_files(pkg, csv_path)
+
     path = Path(f"research_html/packages/{pkg}/tracker.html")
     text = path.read_text()
     cols = (
