@@ -93,6 +93,8 @@ def test_scaffold_derives_task_blocks_from_spine(tmp_path, monkeypatch):
     assert 'data-table="result-slot-P0"' in results
     assert 'data-table="result-slot-P1"' in results
     assert 'data-table="result-slot-P2"' not in results
+    assert 'data-list="result-blocks"' in results
+    assert 'data-fact-projection="results"' in results
     assert 'data-exp-id="P1"' in implementation
     assert 'data-field="validating-exp">P1<' in implementation
     assert '<h3 id="p1" data-exp-id="P1">P1</h3>' in docs
@@ -105,4 +107,3 @@ def test_scaffold_derives_task_blocks_from_spine(tmp_path, monkeypatch):
     assert (pkg / "results.html").read_text(encoding="utf-8").count('data-table="result-slot-P1"') == 1
     assert (pkg / "implementation.html").read_text(encoding="utf-8").count('data-field="validating-exp">P1<') == 1
     assert (pkg / "tracker.html").read_text(encoding="utf-8").count('data-exp-id="P1"') == 1
-
