@@ -1,8 +1,8 @@
 # AGENTS.md - Trustworthy Research Pipeline for Codex
 
 This file is the Codex-facing operating contract for the Trustworthy Research Pipeline. It translates
-the shared protocol in `CLAUDE.md` and the package controller in `WORKFLOW.md` into actions Codex can
-take inside this toolbox repo or inside a target research project.
+the shared protocol in `CLAUDE.md` and the executable package controller in `workflow.ts` into
+actions Codex can take inside this toolbox repo or inside a target research project.
 
 Do not treat this file as a weaker copy of `CLAUDE.md`. `CLAUDE.md` remains the durable shared research
 contract; this file is the thin Codex bootloader that tells Codex where to start, which skill owns the
@@ -13,10 +13,10 @@ task, which source-of-truth layer to load, and when to stop for user ratificatio
 Before acting, classify the current working directory:
 
 - **Toolbox repo**: this repository, whose git root is the directory containing this file, `README.md`,
-  `CLAUDE.md`, `WORKFLOW.md`, `skills/`, `lib/`, and `tests/`. The parent workspace is not the repo.
+  `CLAUDE.md`, `workflow.ts`, `skills/`, `lib/`, and `tests/`. The parent workspace is not the repo.
 - **Target research project**: a consuming ML/research repo where the pipeline has been attached. It may
-  contain copied or merged `AGENTS.md`, `CLAUDE.md`, `WORKFLOW.md`, `research_html/`, `outputs/_scope/`,
-  and project source/config/data files.
+  contain copied or merged `AGENTS.md`, `CLAUDE.md`, `research_html/`, `outputs/_scope/`, and project
+  source/config/data files.
 
 If the user asks to change the pipeline implementation or protocol, work in the toolbox repo. If the
 user asks to run research, initialize a project, inspect experiments, or update package state, work in
@@ -28,8 +28,8 @@ For any non-trivial target-project task, read only the relevant files in this or
 
 1. User request and any active project-specific section at the top of `AGENTS.md` or `CLAUDE.md`.
 2. `CLAUDE.md` for the project-level operating contract and project-specific guardrails.
-3. `WORKFLOW.md` before any research-package implementation, launch, monitoring, result analysis, or
-   package state transition.
+3. `workflow.ts` contract output before any research-package implementation, launch, monitoring,
+   result analysis, or package state transition.
 4. The relevant skill body under `$HOME/.codex/skills/<skill-name>/SKILL.md`, or `skills/<skill-name>/`
    when editing this toolbox.
 5. The smallest live authority set for the task: Scope for intent, package pages for plans/verdicts,
@@ -54,7 +54,7 @@ When setting up a target research repo for Codex:
 
 1. Install toolbox skills by symlinking `skills/research-*` into `$HOME/.codex/skills`; do not copy skill
    directories.
-2. Copy or merge `AGENTS.md`, `CLAUDE.md`, and `WORKFLOW.md` into the target repo root.
+2. Copy or merge `AGENTS.md` and `CLAUDE.md` into the target repo root.
 3. If the target already has `AGENTS.md` or `CLAUDE.md`, merge the pipeline protocol without overwriting
    existing user/project instructions.
 4. Prepend target-specific context above the reusable protocol sections:
@@ -75,7 +75,7 @@ In a target research project, do not assume this toolbox source tree is vendored
 
 - Resolve `skills/<name>/scripts/...` through the installed Codex skill first:
   `$HOME/.codex/skills/<name>/scripts/...`.
-- If a command in `CLAUDE.md`, `WORKFLOW.md`, or a skill body uses a relative `skills/...` path, adapt it
+- If a command in `CLAUDE.md`, `workflow.ts`, or a skill body uses a relative `skills/...` path, adapt it
   to the installed skill path when running from the target project.
 - When editing this toolbox repo itself, use the local `skills/<name>/...` path and run the toolbox tests.
 
@@ -95,7 +95,7 @@ artifacts as evidence authority; repair through the appropriate gated operation 
 
 ## Research Package Operation Contract
 
-For package work, Codex is the decision owner described by `WORKFLOW.md`:
+For package work, Codex is the decision owner governed by `workflow.ts`:
 
 - Read the package Resume Block, active plan, project rules, results, and relevant runtime artifacts before
   acting.
@@ -111,9 +111,11 @@ For package work, Codex is the decision owner described by `WORKFLOW.md`:
 - For long-running experiment commands, use the project live-run skill (`research-exp-live`) when
   available: launch through its wrapper and read routine run state from structured runtime artifacts
   (`status.json`), not raw scrollback; raw logs are bounded debug fallback.
+- Generate the next package run ticket with:
+  `node <pipeline-root>/workflow.ts next --json '<snapshot>'` or `--input <snapshot.json>`.
 
 Do not declare a win from chat memory. Claims need metric gates, evidence paths, and the package/result
-surface required by `CLAUDE.md` and `WORKFLOW.md`.
+surface required by `CLAUDE.md` and the `workflow.ts` ticket.
 
 ## Toolbox Maintenance Contract
 

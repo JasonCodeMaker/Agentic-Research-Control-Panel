@@ -13,7 +13,7 @@ byte hits disk. Rule ids are the values that appear in the rejection envelope's
 <!-- planned, not yet implemented: methodstried-source-row-exists — the upstream results.html row at evidencePath exists with a verdict already finalized -->
 
 ### Insert: results.html result-gate row (I6)
-- `result-gate-ten-cols`: all 10 columns from WORKFLOW.md required schema are present.
+- `result-gate-ten-cols`: all 10 columns from `workflow.ts` required schema are present.
 - `result-gate-validity-enum`: `Validity ∈ {VALID, PARTIAL, RESULT_FAIL, UNMEASURED}`.
 - `result-gate-pass-triple-check` *(planned, not yet implemented)* (only if `verdict=pass`): the P5 triple-check passes — hypothesis string-eq frozen contract; metric/dataset/protocol/dedup/cutoff string-eq frozen contract; evidence file's manifest names the canonical eval split.
 
@@ -52,7 +52,7 @@ These fire in addition to the lane-crossing rules above whenever the destination
 - `doc-group-rationale-present`: parent section in `docs/index.html` carries `data-doc-group-rationale`.
 
 ### Insert: tracker-live-check-row (I3)
-- `live-check-twelve-cols`: all 12 columns from WORKFLOW.md required schema are present.
+- `live-check-twelve-cols`: all 12 columns from `workflow.ts` required schema are present.
 - `live-check-time-local`: `Time` field is local wall-clock (no `Z`, no `+00:00` offset).
 
 ### Delete: methodsTried row (D4)

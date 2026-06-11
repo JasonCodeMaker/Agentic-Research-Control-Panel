@@ -4,7 +4,7 @@ This file is the agent operating context for any project that adopts the Trustwo
 
 ## What this pipeline produces
 
-A trustworthy research record where every claim is gated by an explicit metric, every metric is backed by a verified artifact, every direction has one declared next route, and every adopted win or archived failure leaves a structured `methodsTried` trace the next session can learn from. The skills bundled with this repo install the HTML surfaces, Scope/Triage gates, orchestration, and mutation tooling that enforce this. `WORKFLOW.md` is the seven-step controller the agent follows inside any package.
+A trustworthy research record where every claim is gated by an explicit metric, every metric is backed by a verified artifact, every direction has one declared next route, and every adopted win or archived failure leaves a structured `methodsTried` trace the next session can learn from. The skills bundled with this repo install the HTML surfaces, Scope/Triage gates, orchestration, and mutation tooling that enforce this. `workflow.ts` is the executable package controller the agent follows inside any package.
 
 `research_html/` is the shared context surface, not the authority by itself. For research-affecting tasks,
 load the narrow owning layer: `outputs/_scope/transitions.jsonl` for intent, package pages for
@@ -17,11 +17,18 @@ their owning skill says otherwise.
 
 The protocols form a stack — each one constrains the layers above it.
 
-### 1. Research Workflow (`WORKFLOW.md` at the repo root)
+### 1. Research Workflow (`workflow.ts` in the toolbox repo)
 
-The seven-step controller for any package: how to load context, when to dispatch a sub-agent, what to emit on the 10-minute live cycle, when to schedule re-entry, when to stop. `WORKFLOW.md` is the operating protocol for any `@WORKFLOW.md` invocation; it overrides general harness defaults (do not spawn agents unless asked, end-of-turn summary style, etc.) inside a research session.
+The executable controller for any package: legal states, run ticket generation, adaptive live monitoring, open-run stop gates, and multi-experiment routing. Call it from a consuming project through the installed toolbox path:
 
-Strictly follow `WORKFLOW.md`: when it says dispatch a sub-agent, dispatch; when it says emit a 10-minute status line, emit it; when it says schedule re-entry, schedule.
+```bash
+node <pipeline-root>/workflow.ts next --json '<snapshot>'
+node <pipeline-root>/workflow.ts schema
+```
+
+Strictly follow the returned ticket: apply its `requiredMutations` through `research-op`, emit each
+`perRun[].statusLine`, and do not end a turn unless `stopGate.ok` is true or the ticket records the
+smallest blocking user decision.
 
 ### 2. Research Output Contract
 

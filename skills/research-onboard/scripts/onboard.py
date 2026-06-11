@@ -63,12 +63,13 @@ compute constraints, non-goals, and current best checkpoint.
 ## Trustworthy Pipeline Protocols
 
 - Read `CLAUDE.md` for the full project operating contract.
-- Read `WORKFLOW.md` before any research-package implementation, launch, monitoring, or analysis work.
+- Use the toolbox `workflow.ts` ticket before any research-package implementation, launch, monitoring,
+  or analysis work.
 - When a protocol or skill body shows `skills/<name>/scripts/...`, resolve it through the installed
   Codex symlink first, e.g. `$HOME/.codex/skills/<name>/scripts/...`.
 - Keep the Trustworthy pipeline protocol sections project-agnostic; prepend local context instead of
   rewriting the universal rules.
-- If `CLAUDE.md` or `WORKFLOW.md` is absent, attach the pipeline protocols from the toolbox repo before
+- If `CLAUDE.md` is absent, attach the pipeline protocol from the toolbox repo before
   running `/research-dashboard`, `/research-onboard`, or `/research-run`.
 """
 

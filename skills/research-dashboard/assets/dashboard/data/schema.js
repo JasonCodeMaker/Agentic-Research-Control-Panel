@@ -15,20 +15,20 @@
 window.RESEARCH_STATUS_SCHEMA = {
   "in-progress": {
     // STOPPED and DECISION_ADJUDICATION are terminal-within-lane / transient
-    // active states named in WORKFLOW.md; they live here too so a stopped or
+    // active states named in workflow.ts; they live here too so a stopped or
     // adjudicating package is expressible without a schema violation.
     // NEXT_ACTION_READY is transient (a routing handoff, never yielded at).
     states: [
       "CONTEXT_LOADED",
       "IMPLEMENTING",
       "IMPLEMENTATION_REVIEW",
+      "DECISION_ADJUDICATION",
       "READY_TO_LAUNCH",
       "EXPERIMENT_RUNNING",
       "LIVE_ANALYSIS",
       "RESULT_ANALYSIS",
       "NEXT_ACTION_READY",
       "BLOCKED",
-      "DECISION_ADJUDICATION",
       "STOPPED",
     ],
     description: "Active packages. Must declare the active gate, primary metric vs gate, and next route at all times (STOPPED is terminal-within-lane and is exempt from that trio).",
@@ -84,7 +84,7 @@ window.EXPERIMENT_VERDICT = ["PASS", "FAIL", "INCONCLUSIVE", "DIAGNOSTIC"];
 // Result-gate Validity column (orthogonal to the Verdict column above): has the
 // result row been properly verified and artifact-backed?
 window.RESULT_VALIDITY = ["VALID", "PARTIAL", "RESULT_FAIL", "UNMEASURED", "DIAGNOSTIC_ONLY", "MISSING"];
-// Allowed nextRoute values (mirrors WORKFLOW.md NEXT_ROUTE; renderer reads this).
+// Allowed nextRoute values (mirrors workflow.ts NEXT_ROUTE; renderer reads this).
 window.NEXT_ROUTE = ["RUN_NEXT_EXPERIMENT", "FIX_IMPLEMENTATION", "REVISE_PLAN", "TERMINATE", "ASK_USER"];
 // Route semantics live with the enum (single owner); the dashboard renders this map.
 window.NEXT_ROUTE_MEANING = {

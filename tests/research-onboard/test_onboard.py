@@ -63,7 +63,7 @@ def test_agents_stub_written_when_absent(tmp_path):
     assert onboard.write_project_agents_stub(tmp_path) is True
     text = (tmp_path / "AGENTS.md").read_text()
     assert "CLAUDE.md" in text
-    assert "WORKFLOW.md" in text
+    assert "workflow.ts" in text
 
 
 def test_agents_stub_no_clobber(tmp_path):

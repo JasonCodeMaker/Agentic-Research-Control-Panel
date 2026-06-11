@@ -17,7 +17,7 @@ The single mutation surface for existing research packages. Replaces direct Edit
 Two shapes — structured (autonomous) and natural-language (user).
 
 ```bash
-# Structured (agent + WORKFLOW.md + scan-events callers)
+# Structured (agent + workflow.ts + scan-events callers)
 python skills/research-op/scripts/research_op.py --pkg <id> --op insert --target methodsTried --payload '{...}'
 python skills/research-op/scripts/research_op.py --pkg <id> --event CHAIN_DONE --payload '{"artifact": "..."}'
 python skills/research-op/scripts/research_op.py --pkg <id> --op check --scope all

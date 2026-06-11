@@ -25,6 +25,20 @@ def test_research_run_skill_is_the_package_completion_entrypoint():
     assert "complete the package" in text
 
 
+def test_research_run_documents_workflow_ticket_and_loop_discipline():
+    _, text = _frontmatter(ROOT / "skills" / "research-run" / "SKILL.md")
+    for token in (
+        "workflowState",
+        "requiredMutations",
+        "stopGate",
+        "perRun",
+        "Resume Block",
+        "cross-stage to-do",
+        "Shared agent return",
+    ):
+        assert token in text
+
+
 def test_research_auto_is_only_a_compatibility_alias():
     fm, text = _frontmatter(ROOT / "skills" / "research-auto" / "SKILL.md")
     assert re.search(r"^name:\s*research-auto\s*$", fm, re.M)

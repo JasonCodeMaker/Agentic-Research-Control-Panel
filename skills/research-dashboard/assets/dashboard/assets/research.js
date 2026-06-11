@@ -401,7 +401,7 @@
       "<h2>Operating Protocols</h2>",
       '<p class="card-text">The dashboard owns no protocol prose. The owners:</p>',
       '<ul class="constraint-list">',
-      '<li><code>WORKFLOW.md</code> — the seven-step controller and its evidence gates.</li>',
+      '<li><code>workflow.ts</code> — the executable controller and evidence gates.</li>',
       '<li><code>CLAUDE.md</code> — the five universal protocols and agent rules.</li>',
       '<li><a href="rules/html-rules.html">html-rules.html</a> + <a href="rules/trustworthy-research-rules.html">trustworthy-research-rules.html</a> — the binding R/T rule corpus (mirrored in <code>data/rules.js</code>).</li>',
       "</ul>",

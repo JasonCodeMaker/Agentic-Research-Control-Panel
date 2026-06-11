@@ -4,7 +4,7 @@ A research package is a hierarchical, link-driven HTML surface. Each page
 contains only highly relevant content for one decision; pages link to each
 other so an agent opens exactly what the next decision needs (context-pollution
 control). Trust rules `T1-T24` in `rules/trustworthy-research-rules.html` and
-the seven-step controller in `WORKFLOW.md` are binding for every package page.
+the executable controller in `workflow.ts` are binding for every package page.
 HTML form rules `R1-R18` in `rules/html-rules.html` apply to every file.
 
 ## Per-page audience model (canon)
@@ -97,7 +97,7 @@ Rules:
 | 5 | Results (verdicts) | `results.html` | result gate table; per-exp result cards with validity, baseline reference, plan gate, observed metric paired with artifact path + last-modified + checkpoint + git commit, supported / unsupported claims, protocol-match verdict; per-validity counts (chips, never aggregated); inline visualizations | T5, T9, T10, T13, T23, R3, R16 |
 | 5b | Deep analysis (why + rules) | `analysis.html` | two blocks in fixed order: **Rules** (numbered `<ol class="rules-list">` painted from `data/rules.js` rows where `level=package`, `kind=lesson`, `status=ACTIVE`; each painted `<li id="rule-<slug>">` is plain prose) and **Insight** (`<div class="insight-body">` of collapsible `<details id="insight-<slug>">` cards with narrative paragraphs and inline-styled visualizations + captions). Rules/insights are manual editorial decisions, but rule storage and repainting go through `research-op --target rule`. See [`research-analysis`](../../research-analysis/SKILL.md). | (this skill) |
 | 6 | Chosen route + considered routes (panel) | `tracker.html#chosen-route` (agent zone; folded in from the retired `next-action.html` per page-7 canon) | chosen route from the allowed set; considered-and-rejected routes table with one-sentence reason each; cited evidence path | T24 |
-| 7 | Tracker (execution state, single home) | `tracker.html` | User zone: To-do checklist (strict checkbox form), **Exp directory atlas** (phase-grouped path index per exp), **Latest live check** (top-5 truncation + collapsed `<details class="live-check-history">`). Agent zone: Resume Block (seven WORKFLOW.md fields), **Chosen route panel** (T24+T1, see row 6), **Launch readiness card** (T21 fields, T16 no-change affirmation, T1 launch ack), Resource allocation table, **Per-run cards** (T22+T15), impl-review **pointer card** (single line linking to `implementation.html#changes` / `#adjudication`). | T15, T17, T21, T22, T24, R3, WORKFLOW.md "Tracker Hygiene" + Required Tables |
+| 7 | Tracker (execution state, single home) | `tracker.html` | User zone: To-do checklist (strict checkbox form), **Exp directory atlas** (phase-grouped path index per exp), **Latest live check** (top-5 truncation + collapsed `<details class="live-check-history">`). Agent zone: Resume Block fields, **Chosen route panel** (T24+T1, see row 6), **Launch readiness card** (T21 fields, T16 no-change affirmation, T1 launch ack), Resource allocation table, **Per-run cards** (T22+T15), impl-review **pointer card** (single line linking to `implementation.html#changes` / `#adjudication`). | T15, T17, T21, T22, T24, R3, `workflow.ts` tracker hygiene + required tables |
 | 8 | Source docs | `docs/index.html` + `docs/<slug>.html` | one HTML per source (method-design, metric-contract, dataset-contract, runtime-contract, code-anchors, audits, reviews, references); each carries last-updated and one-line summary on the index. Per-phase launcher commands (when documented in HTML rather than inline in scripts) live in `docs/launchers.md`. | R8, R3, T17 |
 | 9 | Continuity pointer (slim) | `_agent/context.html` | canonical source path, canonical runtime root, minimum context loading order, verification rules before result edits. **No fields duplicated from `index.html`**; references identity by `data-*` selectors | R6, T7 |
 | 10 | Brainstorm provenance (optional) | `brainstorm.html` (written at conversion only) | a frozen record of the pre-package brainstorm idea(s) this package was converted from (`source_brainstorms`); read-only, no live research-op mutation target | — |
@@ -147,7 +147,7 @@ package contract:
 - `workflowState`, `activeGate`, `primaryMetricVsGate`, `lastDecision`,
   `lastDecisionEvidencePath`, `nextRoute`, `currentBlocker` &mdash; the six T2
   fields plus an evidence-path hint.
-- `lastAction`, `openRuns` &mdash; WORKFLOW.md Resume Block fields, painted
+- `lastAction`, `openRuns` &mdash; workflow ticket Resume Block fields, painted
   by `renderResumeBlock()` into `tracker.html`.
 - `lastUpdated` &mdash; ISO date; toggles `data-stale` on pages that predate it.
 - `pages` &mdash; array of stage-page slugs actually present on disk. Drives
@@ -246,7 +246,7 @@ remain author-controlled): `Active plan` link, `Next action` link,
 
 ## Append-row recipe for ledger tables
 
-Each WORKFLOW.md ledger table on the package surface exposes a stable
+Each workflow ledger table on the package surface exposes a stable
 `data-table-body` selector inside its `<tbody>`. Tables and selectors:
 
 | Table | Page | Selector |

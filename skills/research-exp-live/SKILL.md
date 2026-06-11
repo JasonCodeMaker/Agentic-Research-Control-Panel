@@ -9,12 +9,13 @@ description: "Use when launching, monitoring, resuming, or stopping long-running
 
 Track long-running research commands through a workflow-owned run envelope, not through repeated raw scrollback reading. The local source of truth is the run directory under `outputs/<pkg>/runs/<run_id>/`; the user-facing overview is `research_html/live.html`.
 
-This skill governs wrapper-launched runs only. Unwrapped runs stay on the default `WORKFLOW.md` 10-minute live loop.
+This skill governs wrapper-launched runs only. Unwrapped runs stay on the default `workflow.ts`
+`<=600s` live-loop deadline.
 
 ## Authority
 
 1. User invocation and active package plan.
-2. `WORKFLOW.md` lifecycle, run status enum, live-check row, stop gate, and fact propagation.
+2. `workflow.ts` lifecycle, run status enum, live-check row, stop gate, and fact propagation.
 3. This skill for exp-live launch, startup health, adaptive cadence, typed evidence, and open-runs stop checks.
 4. Runtime files under `outputs/<pkg>/runs/<run_id>/`.
 
@@ -47,7 +48,7 @@ Two more optional flags feed the adaptive protocol:
 - `--expected-duration minutes|hours|days` — the coarse duration class for the cadence evidence ladder. Scheduling input only; package surfaces still record `est_time=unknown` until the 30-minute measured rule clears.
 - `--gpu-sample` — sample `nvidia-smi` for the run's GPUs on each watchdog tick so the live-check `Resource Use` column fills from `status.json.resource`. Off by default; without it `resource` is `null` and the column renders `unmeasured`.
 
-Record the allocation row exactly as `WORKFLOW.md` requires:
+Record the allocation row exactly as the `workflow.ts` ticket requires:
 
 - `Session/Job`: tmux session
 - `Runtime Root`: `outputs/<pkg>/runs/<run_id>/`
@@ -74,7 +75,7 @@ If `health.state=ERROR`, or the run exits inside the startup window, run:
 python3 lib/exp_live/report.py --run outputs/<pkg>/runs/<run_id> --tail 50
 ```
 
-Then route by `WORKFLOW.md`: repair, fix implementation, ask, or block. Launch provenance may be recorded immediately, but you must not report startup-confirmed, healthy, or running normally until this gate passes.
+Then route by the `workflow.ts` ticket: repair, fix implementation, ask, or block. Launch provenance may be recorded immediately, but you must not report startup-confirmed, healthy, or running normally until this gate passes.
 
 ## Adaptive Cadence
 
@@ -123,7 +124,7 @@ At every wrapper-run check:
    - `ETA` = `eta`
 3. Derive and record `Next Check` from the adaptive cadence above.
 4. Run `scan-events` for the package and fan out every emitted artifact event through `research-op`. Artifact propagation follows this same adaptive cadence; do not create a second fixed artifact-scan loop for wrapper-launched runs.
-5. Emit one compact `WORKFLOW.md` section 5 line per open run. Its `progress=`, `performance=`, and `est_time=` segments must equal the values read from `status.json`.
+5. Emit one compact `perRun[].statusLine` per open run. Its `progress=`, `performance=`, and `est_time=` segments must equal the values read from `status.json`.
 6. Arm re-entry at or before `Next Check`.
 
 Ending a turn with an open wrapper run and no re-entry at or before `Next Check` is a workflow violation.
@@ -148,7 +149,7 @@ Purpose: P2 verified completion. A wrapper-launched run is finished iff `status.
 
 The terminal snapshot must include `exit_code` and `ended_at`. Elapsed time, quiet logs, ETA expiry, and expected artifacts are not completion evidence.
 
-Immediately before recording completed facts, re-read `status.json`. Then proceed through the usual `WORKFLOW.md` surfaces: final live-check row, result recording through research-op, `scan-events` propagation, and bounded post-mortem on failure.
+Immediately before recording completed facts, re-read `status.json`. Then proceed through the usual ticket surfaces: final live-check row, result recording through research-op, `scan-events` propagation, and bounded post-mortem on failure.
 
 ## Open-runs Stop Gate
 
@@ -200,7 +201,7 @@ status=RUN_FAILED health=ERROR reasons=["Traceback", "exit_code=1"] first_output
 Decision: startup gate REFUSED — do not report launched/healthy/running normally
 python3 lib/exp_live/report.py --run outputs/<pkg>/runs/<run_id> --tail 50
   -> tail shows ImportError in dataloader
-Route: FIX_IMPLEMENTATION (WORKFLOW step 2); record the failed run as evidence;
+Route: FIX_IMPLEMENTATION; record the failed run as evidence;
 relaunch later with --retry-of <run_id>
 ```
 

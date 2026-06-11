@@ -19,7 +19,7 @@ Authority order, highest first:
 1. The user's invocation prompt and any explicit `--<flag>` overrides.
 2. Trust rules `T1–T24` in `<root>/rules/trustworthy-research-rules.html` (per-stage page contracts `T18–T24`, plus T2/T8/T16/T17 cross-cutting).
 3. Form rules `R1–R18` in `<root>/rules/html-rules.html`.
-4. The seven-step controller in the user's `WORKFLOW.md` if one exists at the repo root.
+4. The executable controller in the toolbox `workflow.ts`.
 5. [references/package-contract.md](references/package-contract.md) — the 12-concept table and per-page card contract.
 
 ## Output classification
@@ -103,7 +103,7 @@ Every package object on the dashboard surfaces these fields. If a field is unkno
 | `direction` | `--direction` | One-sentence research direction (optional; create_from_scope sets it from the Direction hypothesis). |
 | `activeGate` | `--active-gate` | The plan/spec gate that owns the next decision. Required for in-progress. |
 | `primaryMetricVsGate` | `--primary-metric-vs-gate` | One-line "metric=value vs gate" string for the dashboard card. Required for in-progress. |
-| `lastDecision` | `--last-decision` | One sentence per WORKFLOW.md "Decision" line. |
+| `lastDecision` | `--last-decision` | One sentence per workflow ticket decision. |
 | `lastDecisionEvidencePath` | `--last-decision-evidence-path` | Artifact path under runtime root that backs `lastDecision`. Verified by `lint-evidence`. |
 | `nextRoute` | `--next-route` | One of `RUN_NEXT_EXPERIMENT`, `FIX_IMPLEMENTATION`, `REVISE_PLAN`, `TERMINATE`, `ASK_USER`. Required for in-progress. |
 | `currentBlocker` | `--current-blocker` | One sentence; `unmeasured` if none. Required when status is `BLOCKED`. |

@@ -53,7 +53,7 @@ Natural-language paragraphs explain the intent and guardrails. `bash` blocks are
 
 - **Python 3.13** on `PATH`. The skills' helper scripts target it and use only the standard library —
   there is nothing to `pip install`. `pytest` is needed only to run the verification suite in step 2.
-- **Node.js** for dashboard JavaScript syntax checks.
+- **Node.js 22+** for dashboard JavaScript syntax checks and direct execution of `workflow.ts`.
 - An agent that loads skills from a directory: **Claude Code** (`~/.claude/skills/`) or
   **Codex** (`~/.codex/skills/`, with `AGENTS.md` at the project root).
 
@@ -106,8 +106,9 @@ If `python3.13` is not on `PATH`, use any Python 3.13 interpreter — e.g.
 ### 3 · Attach the pipeline to a research project
 
 The skills are now callable, but each managed project also needs the operating **protocols**
-(`AGENTS.md` for Codex, `CLAUDE.md` for Claude Code / shared protocol text, and `WORKFLOW.md`) at its
-repo root, with your project context prepended above the universal sections.
+(`AGENTS.md` for Codex and `CLAUDE.md` for Claude Code / shared protocol text) at its repo root, with
+your project context prepended above the universal sections. The package controller stays in the toolbox
+as executable TypeScript (`workflow.ts`) and is called through the installed skills.
 
 ```bash
 cd /path/to/your-research-project
@@ -116,7 +117,6 @@ mkdir -p outputs/_scope outputs/_selfevolve
 
 test -f AGENTS.md || cp "$PIPELINE/AGENTS.md" AGENTS.md
 test -f CLAUDE.md  || cp "$PIPELINE/CLAUDE.md"  CLAUDE.md
-test -f WORKFLOW.md || cp "$PIPELINE/WORKFLOW.md" WORKFLOW.md
 ```
 
 If any file already exists, keep it and merge the framework protocols instead of overwriting. `AGENTS.md`
@@ -438,7 +438,7 @@ Trustworthy-Research-Pipeline/
 ├── README.md        ← you are here
 ├── AGENTS.md        # Codex adapter for this toolbox and consuming projects
 ├── CLAUDE.md        # agent operating protocols (merged into the target research repo)
-├── WORKFLOW.md      # the 7-step in-package controller the agent obeys
+├── workflow.ts  # executable in-package controller and run-ticket CLI
 ├── skills/          # composing skills — the toolbox the agent installs
 ├── lib/             # validators, stores, runtime helpers, and fact helpers
 ├── tests/           # pytest suite
@@ -494,7 +494,7 @@ This is a research codebase; the bar is traceability and tests, not ceremony.
 - **One mutation surface.** Package HTML is edited only through `research-op`; direct `Edit`/`Write` on a
   package surface is a workflow violation.
 - **Surgical changes.** Touch only what the task needs and match the existing style; do not rewrite the
-  project-agnostic protocol bodies in `AGENTS.md` / `CLAUDE.md` / `WORKFLOW.md` — prepend, don't replace.
+  project-agnostic protocol bodies in `AGENTS.md` / `CLAUDE.md` — prepend, don't replace.
 
 The full operating contract is in [`CLAUDE.md`](CLAUDE.md).
 

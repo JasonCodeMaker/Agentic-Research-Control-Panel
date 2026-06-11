@@ -114,7 +114,7 @@ A cross-package dead-end finding looks like `{"kind": "CROSS_PACKAGE_DEAD_END", 
 
 The learnable corpus is **project-level rules only** — never the universal protocols, skills, or
 validators. A proposal's `suggested_diff` must target project-level config (e.g. a rule in the
-project's `CLAUDE.md` preamble), not the pipeline's own SKILL.md or WORKFLOW.md bodies.
+project's `CLAUDE.md` preamble), not the pipeline's own SKILL.md or `workflow.ts` bodies.
 
 ## Done condition
 

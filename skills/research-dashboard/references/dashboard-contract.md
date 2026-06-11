@@ -74,7 +74,7 @@ Required dashboard sections (each must carry the matching `data-section` anchor)
 - `packages`: the full package grid populated by `renderPackages()`.
 - `protocol`: the panels populated by `renderGlobalContext()` — objective
   (Scope SSOT projection, with an empty-state pointing at `/research-onboard`),
-  allowed routes (schema.js), protocol link cards (WORKFLOW.md / CLAUDE.md /
+  allowed routes (schema.js), protocol link cards (workflow.ts / CLAUDE.md /
   rule files), and the tag legend. No protocol prose is stored here.
 - `profile`: a `#project-profile-root` slot for project-specific specialization.
 - `rules`: two cards with `data-card="rule-link-html"` and

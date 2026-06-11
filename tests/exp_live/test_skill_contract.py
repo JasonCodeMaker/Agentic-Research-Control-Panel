@@ -3,7 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SKILL = ROOT / "skills" / "research-exp-live" / "SKILL.md"
-WORKFLOW = ROOT / "WORKFLOW.md"
+CONTROLLER_TS = ROOT / "workflow.ts"
 CLAUDE = ROOT / "CLAUDE.md"
 
 
@@ -28,11 +28,11 @@ def test_research_exp_live_skill_carries_adaptive_tracking_protocol():
 
 
 def test_protocol_hooks_preserve_workflow_and_add_wrapper_exception():
-    workflow = WORKFLOW.read_text(encoding="utf-8")
+    workflow = CONTROLLER_TS.read_text(encoding="utf-8")
     claude = CLAUDE.read_text(encoding="utf-8")
 
     assert "use the project live-run skill when available" in claude
     assert "structured runtime artifacts, not ad hoc raw scrollback parsing" in claude
-    assert "wrapper-launched runs then follow that skill's adaptive tracking protocol" in workflow
-    assert "Unwrapped runs retain the `<=600s` default" in workflow
-    assert "open-runs check returns empty" in workflow
+    assert "cadenceMillis" in workflow
+    assert "heartbeatTimeoutSeconds" in workflow
+    assert "buildStopGate" in workflow

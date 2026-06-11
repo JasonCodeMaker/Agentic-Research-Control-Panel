@@ -1146,7 +1146,7 @@ def check_result_row(pid: str, e: dict, rows: list[dict]) -> list[Violation]:
 
 
 TODO_LIST = re.compile(r'data-field\s*=\s*"todo-list"[^>]*>(.*?)</ul>', re.DOTALL)
-# The ledger tables the tracker template actually ships. WORKFLOW.md also names an
+# The ledger tables the tracker template actually ships. workflow.ts also names an
 # implementation-review table as required, but the scaffold does not yet ship it, so
 # it is not gated here (tracked as a template-compliance follow-up).
 LEDGERS = ("resource-allocation", "live-check")
