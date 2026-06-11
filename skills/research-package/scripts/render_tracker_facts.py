@@ -7,6 +7,7 @@ import argparse
 import html
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[3]
@@ -60,6 +61,24 @@ def _mark_table(text: str, data_table: str, source: str, revision: str) -> str:
         return tag + match.group(2)
 
     return pat.sub(repl, text, count=1)
+
+
+def bump_last_updated(text: str) -> str:
+    today = date.today().isoformat()
+    new, n = re.subn(
+        r'(<time[^>]*data-field="last-updated"[^>]*datetime=")[^"]*("[^>]*>)[^<]*(</time>)',
+        rf"\g<1>{today}\g<2>{today}\g<3>",
+        text,
+        count=1,
+    )
+    if n:
+        return new
+    return re.sub(
+        r'(<time[^>]*data-field="last-updated"[^>]*>)[^<]*(</time>)',
+        rf"\g<1>{today}\g<2>",
+        text,
+        count=1,
+    )
 
 
 def _live_row(row: dict[str, str]) -> str:
@@ -135,6 +154,7 @@ def render(pkg: str, root: Path) -> Path:
         revision = package_facts.file_revision(resource_path)
         text = _replace_tbody(text, "resource-allocation", "\n".join(_resource_row(row) for row in resource_rows))
         text = _mark_table(text, "resource-allocation", "tables/resource_allocation.csv", revision)
+    text = bump_last_updated(text)
     tracker_path.write_text(text, encoding="utf-8")
     return tracker_path
 

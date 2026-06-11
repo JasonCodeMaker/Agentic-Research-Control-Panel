@@ -214,6 +214,65 @@ def test_fact_alignment_fails_when_methods_projection_is_stale(tmp_path):
     assert "methods-projection-stale" in result.stdout
 
 
+def test_fact_alignment_fails_when_duplicate_display_values_use_different_row_ids(tmp_path):
+    pkg = "2026-06-11-demo"
+    _write_dashboard(tmp_path, pkg, '''
+<html><body>
+<article data-source="tables/result_table_P1.csv" data-fact-revision="sha256:x">
+  <span data-source-row="result_table_P1:best">42.1</span>
+  <span data-source-row="result_table_P1:copied">42.1</span>
+</article>
+</body></html>
+''')
+    paths = package_facts.fact_paths(pkg, root=tmp_path)
+    package_facts.upsert_csv_rows(paths.tables_dir / "result_table_P1.csv", package_facts.RESULT_COLUMNS, [
+        {"row_id": "best", "exp_id": "P1", "metric": "Recall@1", "value": "42.1", "validity": "VALID"},
+        {"row_id": "copied", "exp_id": "P1", "metric": "Recall@1", "value": "42.1", "validity": "VALID"},
+    ])
+
+    result = subprocess.run([
+        sys.executable, str(LINT),
+        "fact-alignment",
+        "--pkg", pkg,
+        "--repo-root", str(tmp_path),
+    ], capture_output=True, text=True)
+
+    assert result.returncode == 1
+    assert "fact-duplicate-display-row-mismatch" in result.stdout
+
+
+def test_fact_alignment_fails_when_result_table_lacks_extractor_manifest(tmp_path):
+    pkg = "2026-06-11-demo"
+    _write_dashboard(tmp_path, pkg, '''
+<html><body>
+<article data-source="tables/result_table_P1.csv" data-fact-revision="sha256:x">
+  <span data-source-row="result_table_P1:best">42.1</span>
+</article>
+</body></html>
+''')
+    paths = package_facts.fact_paths(pkg, root=tmp_path)
+    package_facts.upsert_csv_rows(paths.tables_dir / "result_table_P1.csv", package_facts.RESULT_COLUMNS, [
+        {
+            "row_id": "best",
+            "exp_id": "P1",
+            "metric": "Recall@1",
+            "value": "42.1",
+            "validity": "VALID",
+            "extractor": "extract_result_table.py",
+        }
+    ])
+
+    result = subprocess.run([
+        sys.executable, str(LINT),
+        "fact-alignment",
+        "--pkg", pkg,
+        "--repo-root", str(tmp_path),
+    ], capture_output=True, text=True)
+
+    assert result.returncode == 1
+    assert "extractor-manifest-missing" in result.stdout
+
+
 def test_fact_alignment_warns_for_legacy_package_without_fact_dir(tmp_path):
     pkg = "2026-06-11-demo"
     _write_dashboard(tmp_path, pkg, "<html><body><p>legacy html</p></body></html>")

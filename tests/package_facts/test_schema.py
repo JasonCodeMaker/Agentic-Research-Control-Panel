@@ -51,6 +51,20 @@ def test_upsert_requires_row_id(tmp_path):
         ])
 
 
+def test_upsert_rejects_lowercase_result_validity(tmp_path):
+    with pytest.raises(package_facts.FactError, match="validity"):
+        package_facts.upsert_csv_rows(tmp_path / "table.csv", package_facts.RESULT_COLUMNS, [
+            {"row_id": "best", "exp_id": "P1", "metric": "Recall@1", "value": "42.0", "validity": "valid"},
+        ])
+
+
+def test_upsert_rejects_unknown_experiment_verdict(tmp_path):
+    with pytest.raises(package_facts.FactError, match="verdict"):
+        package_facts.upsert_csv_rows(tmp_path / "table.csv", package_facts.RESULT_COLUMNS, [
+            {"row_id": "best", "exp_id": "P1", "metric": "Recall@1", "value": "42.0", "verdict": "MAYBE"},
+        ])
+
+
 def test_source_ref_and_revision(tmp_path):
     path = tmp_path / "table.csv"
     path.write_text("row_id,value\nbest,42.0\n", encoding="utf-8")

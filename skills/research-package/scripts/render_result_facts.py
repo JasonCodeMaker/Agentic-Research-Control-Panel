@@ -20,6 +20,41 @@ def esc(value) -> str:
     return html.escape(str(value or ""), quote=True)
 
 
+def _read_valid_result_rows(path: Path) -> list[dict[str, str]]:
+    rows = package_facts.read_csv_rows(path)
+    for index, row in enumerate(rows):
+        if None in row:
+            raise package_facts.FactError(f"malformed CSV row {index + 1} in {path}")
+        if not row.get("row_id"):
+            raise package_facts.FactError(f"CSV row {index + 1} in {path} has no row_id")
+        for col in package_facts.RESULT_COLUMNS:
+            row.setdefault(col, "")
+        package_facts.validate_csv_fact_row(package_facts.RESULT_COLUMNS, row)
+    return rows
+
+
+def _set_attr(tag: str, name: str, value: str) -> str:
+    tag = re.sub(r"\s+" + re.escape(name) + r'="[^"]*"', "", tag)
+    return tag + f' {name}="{esc(value)}"'
+
+
+def mark_result_gate_table(text: str, source: str, revision: str) -> str:
+    pat = re.compile(
+        r'(<table\b(?=[^>]*data-table="result-gate")[^>]*)(>)',
+        re.DOTALL,
+    )
+    if not pat.search(text):
+        raise package_facts.FactError("results.html missing result-gate table")
+
+    def repl(match: re.Match) -> str:
+        tag = _set_attr(match.group(1), "data-fact-projection", "results")
+        tag = _set_attr(tag, "data-source", source)
+        tag = _set_attr(tag, "data-fact-revision", revision)
+        return tag + match.group(2)
+
+    return pat.sub(repl, text, count=1)
+
+
 def render_gate_rows(rows: list[dict]) -> str:
     out = []
     for row in rows:
@@ -54,6 +89,61 @@ def render_gate_rows(rows: list[dict]) -> str:
     return "\n".join(out)
 
 
+def _headline_fact_ref(pkg: str, root: Path) -> str:
+    facts = package_facts.load_facts_js(pkg, root=root)
+    return str((((facts.get("pages") or {}).get("results") or {}).get("headlineFact") or "")).strip()
+
+
+def render_headline_card(ref: str, row: dict[str, str]) -> str:
+    metric = row.get("metric") or "metric"
+    value = f"{row.get('value', '')}{row.get('unit', '')}"
+    baseline = row.get("baseline") or "unmeasured"
+    verdict = row.get("verdict") or "INCONCLUSIVE"
+    artifact = row.get("source_artifact") or "unmeasured"
+    return """      <section data-section="headline" id="headline" aria-label="Headline result" data-fact-projection="results">
+        <article class="module-card" data-card="headline" data-source-row="{ref}">
+          <h2>Headline result</h2>
+          <div class="metric-strip">
+            <div class="metric-card">
+              <div class="k">{metric}</div>
+              <div class="v" data-field="headline-new" data-source-row="{ref}">{value}</div>
+              <p class="card-text">Current best from <code>{artifact}</code>.</p>
+            </div>
+            <div class="metric-card">
+              <div class="k">Baseline</div>
+              <div class="v" data-field="headline-baseline" data-source-row="{ref}">{baseline}</div>
+              <p class="card-text">Reference value for the same row id.</p>
+            </div>
+            <div class="metric-card">
+              <div class="k">Verdict</div>
+              <div class="v" data-field="headline-verdict" data-source-row="{ref}">{verdict}</div>
+              <p class="card-text">Rendered from the headline CSV row.</p>
+            </div>
+          </div>
+        </article>
+      </section>""".format(
+        ref=esc(ref),
+        metric=esc(metric),
+        value=esc(value),
+        baseline=esc(baseline),
+        verdict=esc(verdict),
+        artifact=esc(artifact),
+    )
+
+
+def replace_or_insert_headline(text: str, headline_html: str) -> str:
+    pat = re.compile(
+        r'\s*<section\b(?=[^>]*data-section="headline")[^>]*>.*?</section>',
+        re.DOTALL,
+    )
+    if pat.search(text):
+        return pat.sub("\n" + headline_html, text, count=1)
+    marker = re.search(r'\s*<section\b[^>]*data-list="result-blocks"[^>]*>', text, re.DOTALL)
+    if marker:
+        return text[:marker.start()] + "\n" + headline_html + text[marker.start():]
+    return text.replace("</body>", headline_html + "\n</body>", 1)
+
+
 def render_result_article(table_path: Path, rows: list[dict]) -> str:
     table_id = table_path.stem
     revision = package_facts.file_revision(table_path)
@@ -73,7 +163,7 @@ def render_result_article(table_path: Path, rows: list[dict]) -> str:
             )
         )
     exp_id = rows[0].get("exp_id", table_id.replace("result_table_", "")) if rows else table_id
-    return """        <article class="result-block" id="result-slot-{low}" data-result-block data-exp-id="{exp}" data-phase-id="{exp}" data-source="tables/{name}" data-fact-revision="{revision}">
+    return """        <article class="result-block" id="result-slot-{low}" data-result-block data-fact-projection="results" data-exp-id="{exp}" data-phase-id="{exp}" data-source="tables/{name}" data-fact-revision="{revision}">
           <h2>{exp} &mdash; fact-backed result table</h2>
           <p class="block-summary">Rendered from <code>tables/{name}</code>.</p>
           <table class="data-table block-main-table" data-table="{table_id}" data-exp-id="{exp}">
@@ -121,12 +211,18 @@ def render(pkg: str, root: Path) -> Path:
     results_path = root / "research_html" / "packages" / pkg / "results.html"
     if not results_path.exists():
         raise package_facts.FactError(f"missing results.html for {pkg}")
-    gate_rows = package_facts.read_csv_rows(paths.tables_dir / "result_gate.csv")
+    gate_path = paths.tables_dir / "result_gate.csv"
+    gate_rows = _read_valid_result_rows(gate_path) if gate_path.exists() else []
     table_paths = sorted(paths.tables_dir.glob("result_table_*.csv"))
-    articles = [render_result_article(p, package_facts.read_csv_rows(p)) for p in table_paths]
+    articles = [render_result_article(p, _read_valid_result_rows(p)) for p in table_paths]
     text = results_path.read_text(encoding="utf-8")
+    headline_ref = _headline_fact_ref(pkg, root)
+    if headline_ref:
+        headline_row = package_facts.find_row_by_ref(paths.tables_dir, headline_ref)
+        text = replace_or_insert_headline(text, render_headline_card(headline_ref, headline_row))
     if gate_rows:
         text = replace_result_gate(text, render_gate_rows(gate_rows))
+        text = mark_result_gate_table(text, "tables/result_gate.csv", package_facts.file_revision(gate_path))
     if articles:
         text = replace_result_blocks(text, "\n".join(articles))
     text = bump_last_updated(text)

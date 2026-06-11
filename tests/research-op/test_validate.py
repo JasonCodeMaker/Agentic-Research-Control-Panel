@@ -104,15 +104,31 @@ def test_result_gate_ten_cols_rejects_missing():
 # ---- result-gate-validity-enum ----
 
 def test_result_gate_validity_enum_accepts_valid():
-    for v in ("VALID", "PARTIAL", "RESULT_FAIL", "UNMEASURED"):
+    for v in ("VALID", "PARTIAL", "RESULT_FAIL", "UNMEASURED", "DIAGNOSTIC_ONLY", "MISSING"):
         p = {"validity": v}
         assert validate.rule_result_gate_validity_enum("pkg", "insert", "results-gate-row", p) is None
 
 
 def test_result_gate_validity_enum_rejects_invalid():
-    rej = validate.rule_result_gate_validity_enum("pkg", "insert", "results-gate-row", {"validity": "unknown"})
-    assert rej is not None
-    assert rej.rule == "result-gate-validity-enum"
+    for value in ("unknown", "valid"):
+        rej = validate.rule_result_gate_validity_enum("pkg", "insert", "results-gate-row", {"validity": value})
+        assert rej is not None
+        assert rej.rule == "result-gate-validity-enum"
+
+
+def test_fact_backed_projection_writes_reject_before_dispatch(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "research_html" / "data" / "packages" / "pkg").mkdir(parents=True)
+
+    for op, target in (
+        ("insert", "results-block"),
+        ("update", "results-gate-row"),
+        ("update", "results-verdict"),
+        ("update", "results-block"),
+    ):
+        rej = validate.validate("pkg", op, target, {"html": "<article></article>"}, {"category": "in-progress", "status": "RESULT_ANALYSIS"})
+        assert rej is not None
+        assert rej.rule == "fact-backed-projection-write"
 
 
 # ---- result-block-six-parts ----

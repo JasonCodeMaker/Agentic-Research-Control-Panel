@@ -1275,10 +1275,22 @@ def lint_alignment(data: dict, pkg_filter: str | None = None, terminal: bool = F
 
 DATA_SOURCE = re.compile(r'data-source\s*=\s*"([^"]+)"')
 DATA_SOURCE_ROW = re.compile(r'data-source-row\s*=\s*"([^"]+)"')
+DATA_SOURCE_ROW_ELEMENT = re.compile(
+    r'<(?P<tag>[a-zA-Z][\w:-]*)\b(?=[^>]*data-source-row\s*=\s*"(?P<ref>[^"]+)")[^>]*>'
+    r'(?P<body>.*?)</(?P=tag)>',
+    re.DOTALL,
+)
 METHODS_COMPAT_FIELDS = ["method", "hypothesis", "gate", "measured", "verdict", "evidencePath"]
 
 
-def _scan_fact_projection_text(rep: Report, pid: str, text: str, paths, root: Path) -> bool:
+def _scan_fact_projection_text(
+    rep: Report,
+    pid: str,
+    text: str,
+    paths,
+    root: Path,
+    display_rows: dict[str, set[str]],
+) -> bool:
     has_projection = "data-source" in text or "data-source-row" in text
     if not has_projection:
         return False
@@ -1295,6 +1307,15 @@ def _scan_fact_projection_text(rep: Report, pid: str, text: str, paths, root: Pa
             continue
         if row.get("source_type") == "manual" and row.get("verdict") == "PASS":
             rep.add(Violation(pid, "manual-pass-forbidden", f"{table_id}:{row_id} is manual but verdict=PASS", "error"))
+    for match in DATA_SOURCE_ROW_ELEMENT.finditer(text):
+        display = strip_html(match.group("body"))
+        if not _filled(display):
+            continue
+        try:
+            _, row_id = package_facts.split_source_ref(match.group("ref"))
+        except package_facts.FactError:
+            continue
+        display_rows.setdefault(display, set()).add(row_id)
     return True
 
 
@@ -1320,6 +1341,51 @@ def _projection_error_code(exc: Exception) -> str:
     return "projection-metadata-missing"
 
 
+def _check_duplicate_display_rows(rep: Report, pid: str, display_rows: dict[str, set[str]]) -> None:
+    for display, row_ids in sorted(display_rows.items()):
+        if len(row_ids) <= 1:
+            continue
+        rep.add(Violation(
+            pid,
+            "fact-duplicate-display-row-mismatch",
+            f"display {display!r} references multiple row ids: {sorted(row_ids)}",
+            "error",
+        ))
+
+
+def _result_table_requires_manifest(path: Path) -> bool:
+    return any((row.get("extractor") or "").strip() for row in package_facts.read_csv_rows(path))
+
+
+def _check_result_table_manifests(rep: Report, pid: str, paths, root: Path) -> None:
+    for table_path in sorted(paths.tables_dir.glob("result_table_*.csv")):
+        if not _result_table_requires_manifest(table_path):
+            continue
+        exp_id = table_path.stem.removeprefix("result_table_")
+        manifest = paths.extractors_dir / f"{exp_id}.json"
+        expected_csv = str(table_path.relative_to(root))
+        if not manifest.exists():
+            rep.add(Violation(
+                pid,
+                "extractor-manifest-missing",
+                f"{table_path.relative_to(root)} has extractor rows but {manifest.relative_to(root)} is missing",
+                "error",
+            ))
+            continue
+        try:
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            rep.add(Violation(pid, "extractor-manifest-malformed", f"{manifest.relative_to(root)}: {exc}", "error"))
+            continue
+        if payload.get("output_csv") != expected_csv:
+            rep.add(Violation(
+                pid,
+                "extractor-manifest-output-mismatch",
+                f"{manifest.relative_to(root)} output_csv={payload.get('output_csv')!r}, expected {expected_csv!r}",
+                "error",
+            ))
+
+
 def lint_fact_alignment(data: dict, pkg_filter: str | None = None, repo_root: Path | None = None) -> Report:
     root = repo_root or REPO_ROOT
     rep = Report("fact-alignment — JS/CSV fact projection")
@@ -1334,14 +1400,17 @@ def lint_fact_alignment(data: dict, pkg_filter: str | None = None, repo_root: Pa
         present_tables = ",".join(name for name, present in migration["tables"].items() if present) or "none"
         rep.notes.append(f"{pid}: migration-state={migration['state']} fact-tables={present_tables}")
         saw_projection = False
+        display_rows: dict[str, set[str]] = {}
         for page in ("results.html", "tracker.html"):
             html_path = package_dir / page
             if not html_path.exists():
                 continue
             text = html_path.read_text(encoding="utf-8", errors="ignore")
-            saw_projection = _scan_fact_projection_text(rep, pid, text, paths, root) or saw_projection
+            saw_projection = _scan_fact_projection_text(rep, pid, text, paths, root, display_rows) or saw_projection
+        _check_duplicate_display_rows(rep, pid, display_rows)
 
         if package_facts.is_fact_backed(pid, root=root):
+            _check_result_table_manifests(rep, pid, paths, root)
             for page in _required_projection_pages(paths):
                 html_path = package_dir / page
                 if not html_path.exists():

@@ -25,7 +25,7 @@ def _write_inventory(root: Path, pkg: str, status: str) -> None:
     data.mkdir(parents=True, exist_ok=True)
     (data / "research-packages.js").write_text(
         "window.RESEARCH_PACKAGES = [\n"
-        f"  {{ id: '{pkg}', category: 'in-progress', status: '{status}', methodsTried: [] }},\n"
+        f"  {{ id: '{pkg}', category: 'in-progress', status: '{status}', methodsTried: [], experiments: [{{ id: 'P1', status: 'RUNNING' }}] }},\n"
         "];\n",
         encoding="utf-8",
     )
@@ -48,6 +48,24 @@ def _write_tracker(root: Path, pkg: str) -> None:
 
 def _fact_back(root: Path, pkg: str) -> None:
     (root / "research_html" / "data" / "packages" / pkg).mkdir(parents=True, exist_ok=True)
+
+
+def _write_results(root: Path, pkg: str) -> None:
+    path = root / "research_html" / "packages" / pkg / "results.html"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        """<html><body>
+<section data-section="user-zone" id="user-zone">
+  <section class="result-blocks" data-list="result-blocks" id="result-blocks"></section>
+</section>
+<table data-table="result-gate" data-fact-projection="results">
+  <tbody data-table-body="result-gate"></tbody>
+</table>
+<time data-field="last-updated" datetime="2026-06-01">2026-06-01</time>
+</body></html>
+""",
+        encoding="utf-8",
+    )
 
 
 def _rows(path: Path) -> list[dict[str, str]]:
@@ -179,3 +197,67 @@ def test_fact_backed_methodstried_insert_uses_source_ref_and_syncs_projection(tm
     files = _last_action(tmp_path, pkg)["files_touched"]
     assert str(methods_csv) in files or str(methods_csv.relative_to(tmp_path)) in files
     assert "research_html/data/research-packages.js" in files
+
+
+def test_fact_backed_checkpoint_saved_event_writes_result_facts_and_completes(tmp_path):
+    pkg = "test-pkg"
+    _write_inventory(tmp_path, pkg, "RESULT_ANALYSIS")
+    _write_tracker(tmp_path, pkg)
+    _write_results(tmp_path, pkg)
+    _fact_back(tmp_path, pkg)
+
+    result = _run([
+        "--pkg", pkg,
+        "--event", "CHECKPOINT_SAVED",
+        "--payload", json.dumps({
+            "exp_id": "P1",
+            "artifact": "outputs/test-pkg/runs/r1/checkpoint.pt",
+            "measured": "Recall@1=42.1",
+        }),
+    ], cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    result_gate = tmp_path / "research_html" / "data" / "packages" / pkg / "tables" / "result_gate.csv"
+    rows = _rows(result_gate)
+    assert rows[0]["row_id"] == "P1_gate"
+    assert rows[0]["metric"] == "Recall@1"
+    assert rows[0]["value"] == "42.1"
+    assert rows[0]["source_artifact"] == "outputs/test-pkg/runs/r1/checkpoint.pt"
+    results = (tmp_path / "research_html" / "packages" / pkg / "results.html").read_text(encoding="utf-8")
+    assert 'data-source-row="result_gate:P1_gate"' in results
+    assert "update:results-verdict" not in result.stdout
+    assert _last_action(tmp_path, pkg)["validation"] == "PASSED"
+
+
+def test_fact_backed_results_gate_insert_accepts_canonical_fact_validity_enum(tmp_path):
+    pkg = "test-pkg"
+    _write_inventory(tmp_path, pkg, "RESULT_ANALYSIS")
+    _write_results(tmp_path, pkg)
+    _fact_back(tmp_path, pkg)
+
+    result = _run([
+        "--pkg", pkg,
+        "--op", "insert",
+        "--target", "results-gate-row",
+        "--payload", json.dumps({
+            "row_id": "P1_diag",
+            "exp_id": "P1",
+            "validity": "DIAGNOSTIC_ONLY",
+            "baseline": "40.0",
+            "plan_gate": "Recall@1",
+            "observed_metric": "Recall@1=39.0",
+            "budget_use": "1 GPU hour",
+            "seed_status": "seed 1",
+            "artifact_completeness": "ok",
+            "verdict": "INCONCLUSIVE",
+            "reason": "diagnostic pass",
+            "source_artifact": "outputs/test-pkg/runs/r1/summary.json",
+        }),
+    ], cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr + result.stdout
+    result_gate = tmp_path / "research_html" / "data" / "packages" / pkg / "tables" / "result_gate.csv"
+    assert _rows(result_gate)[0]["validity"] == "DIAGNOSTIC_ONLY"
+    assert 'data-source-row="result_gate:P1_diag"' in (
+        tmp_path / "research_html" / "packages" / pkg / "results.html"
+    ).read_text(encoding="utf-8")

@@ -165,9 +165,13 @@ def test_fact_backed_result_gate_update_rejects_direct_projected_html_edit(tmp_p
     ], cwd=tmp_path)
 
     assert result.returncode != 0
-    assert "must update results-gate-row through CSV facts" in result.stderr + result.stdout
+    assert '"rule": "fact-backed-projection-write"' in result.stderr + result.stdout
     assert results.read_text(encoding="utf-8") == before
-    assert not _actions_log(tmp_path, pkg).exists()
+    log = _actions_log(tmp_path, pkg)
+    assert log.exists()
+    entry = json.loads(log.read_text(encoding="utf-8").splitlines()[-1])
+    assert entry["validation"] == "OP_REJECTED"
+    assert entry["rule"] == "fact-backed-projection-write"
 
 
 def _load_propagate_apply():

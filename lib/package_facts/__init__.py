@@ -171,12 +171,28 @@ def read_csv_rows(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def validate_csv_fact_row(columns: list[str], row: dict[str, str]) -> None:
+    if "validity" in columns:
+        validity = str(row.get("validity", "")).strip()
+        if validity and validity not in VALID_RESULT_VALIDITY:
+            raise FactError(
+                f"invalid validity {validity!r}; expected one of {sorted(VALID_RESULT_VALIDITY)}"
+            )
+    if "verdict" in columns:
+        verdict = str(row.get("verdict", "")).strip()
+        if verdict and verdict not in VALID_EXPERIMENT_VERDICT:
+            raise FactError(
+                f"invalid verdict {verdict!r}; expected one of {sorted(VALID_EXPERIMENT_VERDICT)}"
+            )
+
+
 def _normalize_row(columns: list[str], row: dict) -> dict[str, str]:
     row_id = str(row.get("row_id", "")).strip()
     if not row_id:
         raise FactError("CSV fact row requires non-empty row_id")
     normalized = {col: str(row.get(col, "")) for col in columns}
     normalized["row_id"] = row_id
+    validate_csv_fact_row(columns, normalized)
     return normalized
 
 

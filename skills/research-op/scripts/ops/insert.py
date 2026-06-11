@@ -17,6 +17,7 @@ sys.path.insert(0, str(PIPELINE_ROOT))
 sys.path.insert(0, str(PIPELINE_ROOT / "skills" / "research-package" / "scripts"))
 from fact_transaction import FactTransaction  # noqa: E402
 from lib import package_facts  # noqa: E402
+from render_result_facts import render as render_result_facts  # noqa: E402
 from render_tracker_facts import render as render_tracker_facts  # noqa: E402
 from sync_methods_tried_projection import sync_methods_tried_projection  # noqa: E402
 from task_spine import derive_task_blocks  # noqa: E402
@@ -81,6 +82,7 @@ def _csv_text_after_upsert(path: Path, columns: list[str], rows: list[dict]) -> 
             raise package_facts.FactError("CSV fact row requires non-empty row_id")
         row = {col: str(raw.get(col, "")) for col in columns}
         row["row_id"] = row_id
+        package_facts.validate_csv_fact_row(columns, row)
         if row_id not in by_id:
             order.append(row_id)
         by_id[row_id] = row
@@ -99,14 +101,33 @@ def _copy_if_exists(src: Path, dest: Path) -> None:
         shutil.copy2(src, dest)
 
 
-def _render_tracker_candidate(pkg: str, csv_path: Path, csv_text: str) -> str:
+def _tracker_sources(paths: package_facts.FactPaths) -> list[str]:
+    sources = []
+    if (paths.tables_dir / "live_checks.csv").exists():
+        sources.append("tables/live_checks.csv")
+    if (paths.tables_dir / "resource_allocation.csv").exists():
+        sources.append("tables/resource_allocation.csv")
+    return sources
+
+
+def _results_sources(paths: package_facts.FactPaths) -> list[str]:
+    sources = []
+    if (paths.tables_dir / "result_gate.csv").exists():
+        sources.append("tables/result_gate.csv")
+    sources.extend(f"tables/{path.name}" for path in sorted(paths.tables_dir.glob("result_table_*.csv")))
+    return sources
+
+
+def _render_tracker_projection_candidate(pkg: str, csv_path: Path, csv_text: str) -> tuple[str, str]:
     root = Path(".")
     tracker_rel = Path("research_html") / "packages" / pkg / "tracker.html"
     live_paths = package_facts.fact_paths(pkg)
+    facts_rel = live_paths.facts_js
     with tempfile.TemporaryDirectory() as tmp:
         tmp_root = Path(tmp)
         tmp_paths = package_facts.fact_paths(pkg, root=tmp_root)
         _copy_if_exists(root / tracker_rel, tmp_root / tracker_rel)
+        _copy_if_exists(live_paths.facts_js, tmp_root / facts_rel)
         _copy_if_exists(live_paths.tables_dir / "live_checks.csv", tmp_paths.tables_dir / "live_checks.csv")
         _copy_if_exists(
             live_paths.tables_dir / "resource_allocation.csv",
@@ -116,7 +137,45 @@ def _render_tracker_candidate(pkg: str, csv_path: Path, csv_text: str) -> str:
         target_csv.parent.mkdir(parents=True, exist_ok=True)
         target_csv.write_text(csv_text, encoding="utf-8")
         render_tracker_facts(pkg, tmp_root)
-        return (tmp_root / tracker_rel).read_text(encoding="utf-8")
+        tracker_path = tmp_root / tracker_rel
+        package_facts.record_page_projection(
+            pkg,
+            "tracker.html",
+            _tracker_sources(tmp_paths),
+            tracker_path,
+            "render_tracker_facts.py",
+            root=tmp_root,
+        )
+        return tracker_path.read_text(encoding="utf-8"), (tmp_root / facts_rel).read_text(encoding="utf-8")
+
+
+def _render_results_projection_candidate(pkg: str, csv_path: Path, csv_text: str) -> tuple[str, str]:
+    root = Path(".")
+    results_rel = Path("research_html") / "packages" / pkg / "results.html"
+    live_paths = package_facts.fact_paths(pkg)
+    facts_rel = live_paths.facts_js
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_root = Path(tmp)
+        tmp_paths = package_facts.fact_paths(pkg, root=tmp_root)
+        _copy_if_exists(root / results_rel, tmp_root / results_rel)
+        _copy_if_exists(live_paths.facts_js, tmp_root / facts_rel)
+        _copy_if_exists(live_paths.tables_dir / "result_gate.csv", tmp_paths.tables_dir / "result_gate.csv")
+        for table_path in live_paths.tables_dir.glob("result_table_*.csv"):
+            _copy_if_exists(table_path, tmp_paths.tables_dir / table_path.name)
+        target_csv = tmp_root / csv_path
+        target_csv.parent.mkdir(parents=True, exist_ok=True)
+        target_csv.write_text(csv_text, encoding="utf-8")
+        render_result_facts(pkg, tmp_root)
+        results_path = tmp_root / results_rel
+        package_facts.record_page_projection(
+            pkg,
+            "results.html",
+            _results_sources(tmp_paths),
+            results_path,
+            "render_result_facts.py",
+            root=tmp_root,
+        )
+        return results_path.read_text(encoding="utf-8"), (tmp_root / facts_rel).read_text(encoding="utf-8")
 
 
 def _commit_fact_projection(files: dict[Path, str]) -> None:
@@ -181,8 +240,9 @@ def _tracker_row_id(payload: dict) -> str:
     return f"{exp_id}:{suffix}"
 
 
-def _tracker_files(pkg: str, csv_path: Path) -> list[str]:
-    return [str(csv_path), f"research_html/packages/{pkg}/tracker.html"]
+def _projection_files(pkg: str, csv_path: Path, page: str) -> list[str]:
+    paths = package_facts.fact_paths(pkg)
+    return [str(csv_path), f"research_html/packages/{pkg}/{page}", str(paths.facts_js)]
 
 
 def insert_methodstried(pkg: str, payload: dict) -> list[str]:
@@ -220,10 +280,10 @@ def insert_tracker_live_check_row(pkg: str, payload: dict) -> list[str]:
         row = {col: str(payload.get(col, "")) for col in package_facts.LIVE_CHECK_COLUMNS}
         row["row_id"] = _tracker_row_id(payload)
         csv_text = _csv_text_after_upsert(csv_path, package_facts.LIVE_CHECK_COLUMNS, [row])
-        tracker_text = _render_tracker_candidate(pkg, csv_path, csv_text)
+        tracker_text, facts_text = _render_tracker_projection_candidate(pkg, csv_path, csv_text)
         tracker_path = Path("research_html") / "packages" / pkg / "tracker.html"
-        _commit_fact_projection({csv_path: csv_text, tracker_path: tracker_text})
-        return _tracker_files(pkg, csv_path)
+        _commit_fact_projection({csv_path: csv_text, tracker_path: tracker_text, package_facts.fact_paths(pkg).facts_js: facts_text})
+        return _projection_files(pkg, csv_path, "tracker.html")
 
     path = Path(f"research_html/packages/{pkg}/tracker.html")
     text = path.read_text()
@@ -260,10 +320,10 @@ def insert_tracker_resource_allocation_row(pkg: str, payload: dict) -> list[str]
         row = {col: str(payload.get(col, "")) for col in package_facts.RESOURCE_ALLOCATION_COLUMNS}
         row["row_id"] = _tracker_row_id(payload)
         csv_text = _csv_text_after_upsert(csv_path, package_facts.RESOURCE_ALLOCATION_COLUMNS, [row])
-        tracker_text = _render_tracker_candidate(pkg, csv_path, csv_text)
+        tracker_text, facts_text = _render_tracker_projection_candidate(pkg, csv_path, csv_text)
         tracker_path = Path("research_html") / "packages" / pkg / "tracker.html"
-        _commit_fact_projection({csv_path: csv_text, tracker_path: tracker_text})
-        return _tracker_files(pkg, csv_path)
+        _commit_fact_projection({csv_path: csv_text, tracker_path: tracker_text, package_facts.fact_paths(pkg).facts_js: facts_text})
+        return _projection_files(pkg, csv_path, "tracker.html")
 
     path = Path(f"research_html/packages/{pkg}/tracker.html")
     text = path.read_text()
@@ -310,8 +370,61 @@ def insert_tracker_impl_review_row(pkg: str, payload: dict) -> list[str]:
     return [str(path)]
 
 
+def _split_observed_metric(text: str) -> tuple[str, str, str]:
+    raw = str(text or "").strip()
+    if "=" not in raw:
+        return raw, "", ""
+    metric, value_unit = raw.split("=", 1)
+    value_unit = value_unit.strip()
+    m = re.fullmatch(r"([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*([^0-9.\s].*)?", value_unit)
+    if m:
+        return metric.strip(), m.group(1), (m.group(2) or "").strip()
+    return metric.strip(), value_unit, ""
+
+
+def _source_mtime(source_artifact: str) -> str:
+    if not source_artifact:
+        return ""
+    path = Path(source_artifact)
+    if not path.exists():
+        return ""
+    return datetime.fromtimestamp(path.stat().st_mtime).astimezone().isoformat(timespec="seconds")
+
+
+def _build_result_gate_fact_row(payload: dict) -> dict[str, str]:
+    exp_id = str(payload.get("exp_id", "")).strip()
+    if not exp_id:
+        raise package_facts.FactError("fact-backed result-gate row requires exp_id")
+    metric, value, unit = _split_observed_metric(payload.get("observed_metric", ""))
+    source_artifact = str(payload.get("source_artifact") or payload.get("artifact") or "")
+    return {
+        "row_id": str(payload.get("row_id") or f"{exp_id}_gate"),
+        "exp_id": exp_id,
+        "metric": str(payload.get("metric") or metric or payload.get("plan_gate") or ""),
+        "value": str(payload.get("value") or value),
+        "unit": str(payload.get("unit") or unit),
+        "split": str(payload.get("split") or payload.get("seed_status") or ""),
+        "baseline": str(payload.get("baseline") or ""),
+        "verdict": str(payload.get("verdict") or "INCONCLUSIVE"),
+        "validity": str(payload.get("validity") or "UNMEASURED"),
+        "source_artifact": source_artifact,
+        "source_mtime": str(payload.get("source_mtime") or _source_mtime(source_artifact)),
+        "extractor": str(payload.get("extractor") or "research-op"),
+        "extracted_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+
+
 def insert_results_gate_row(pkg: str, payload: dict) -> list[str]:
     """Append a <tr> into <tbody data-table-body="result-gate"> in results.html."""
+    if _is_fact_backed(pkg):
+        csv_path = package_facts.table_csv_path(pkg, "result_gate")
+        row = _build_result_gate_fact_row(payload)
+        csv_text = _csv_text_after_upsert(csv_path, package_facts.RESULT_COLUMNS, [row])
+        results_text, facts_text = _render_results_projection_candidate(pkg, csv_path, csv_text)
+        results_path = Path("research_html") / "packages" / pkg / "results.html"
+        _commit_fact_projection({csv_path: csv_text, results_path: results_text, package_facts.fact_paths(pkg).facts_js: facts_text})
+        return _projection_files(pkg, csv_path, "results.html")
+
     path = Path(f"research_html/packages/{pkg}/results.html")
     text = path.read_text()
     cols = (

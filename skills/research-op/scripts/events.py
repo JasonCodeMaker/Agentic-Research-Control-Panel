@@ -6,6 +6,13 @@ whole event reports rejected (no rollback — the agent is expected to fix and r
 from the cursor).
 """
 
+import sys
+from pathlib import Path
+
+PIPELINE_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(PIPELINE_ROOT))
+from lib import package_facts  # noqa: E402
+
 # Canonical artifact event names (SCREAMING_SNAKE).
 EVENT_NAMES = ("CHECKPOINT_SAVED", "CANDIDATE_SUBMITTED", "SENTINEL_WRITE", "PHASE_MARKER", "CHAIN_DONE")
 
@@ -47,10 +54,12 @@ def _cs_update_allocation(payload: dict) -> dict:
 
 
 def _cs_insert_result_gate(payload: dict) -> dict:
-    return {"exp_id": payload["exp_id"], "validity": "VALID", "baseline": "unmeasured",
+    exp_id = payload["exp_id"]
+    return {"row_id": f"{exp_id}_gate", "exp_id": exp_id, "validity": "VALID", "baseline": "unmeasured",
             "plan_gate": "unmeasured", "observed_metric": payload.get("measured", "unmeasured"),
             "budget_use": "unmeasured", "seed_status": "unmeasured",
-            "artifact_completeness": "ok", "verdict": "PASS", "reason": "checkpoint saved"}
+            "artifact_completeness": "ok", "verdict": "PASS", "reason": "checkpoint saved",
+            "source_artifact": payload.get("artifact", ""), "extractor": "research-op:CHECKPOINT_SAVED"}
 
 
 def _cs_update_verdict(payload: dict) -> dict:
@@ -103,13 +112,31 @@ EVENTS = {
 }
 
 
+def _is_fact_backed(pkg: str) -> bool:
+    return package_facts.is_fact_backed(pkg)
+
+
+def _event_spec(event: str, pkg: str):
+    spec = EVENTS.get(event)
+    if event != "CHECKPOINT_SAVED" or spec is None or not _is_fact_backed(pkg):
+        return spec
+    return [
+        (op, target, mapper)
+        for op, target, mapper in spec
+        if not (
+            (op == "update" and target == "results-verdict")
+            or (op == "update" and target == "last-updated-time")
+        )
+    ]
+
+
 def fanout(event: str, pkg: str, payload: dict, dispatch_fn) -> tuple[str, list[str]]:
     """Run every sub-op for `event`. If any rejects, abort and return ('REJECTED', files_touched_so_far).
 
     Note: true atomicity requires snapshot-and-rollback. For MVP we accept "stop on first
     reject and surface reject; the agent retries from cursor."
     """
-    spec = EVENTS.get(event)
+    spec = _event_spec(event, pkg)
     if spec is None:
         raise SystemExit(f"unknown composite event: {event}")
     files: list[str] = []

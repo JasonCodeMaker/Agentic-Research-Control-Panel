@@ -12,9 +12,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
+PIPELINE_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(PIPELINE_ROOT))
+sys.path.insert(0, str(PIPELINE_ROOT / "lib"))
 import verifier  # noqa: E402
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skills" / "research-package" / "scripts"))
+from lib import package_facts  # noqa: E402
+sys.path.insert(0, str(PIPELINE_ROOT / "skills" / "research-package" / "scripts"))
 import task_spine  # noqa: E402
 
 
@@ -193,7 +196,7 @@ _RESULT_GATE_FIELDS = {
     "exp_id", "validity", "baseline", "plan_gate", "observed_metric",
     "budget_use", "seed_status", "artifact_completeness", "verdict", "reason",
 }
-_VALIDITY_ALLOWED = {"VALID", "PARTIAL", "RESULT_FAIL", "UNMEASURED"}
+_VALIDITY_ALLOWED = package_facts.VALID_RESULT_VALIDITY
 _OBJECTIVE_CONTRACT_FIELDS = {"hypothesisOneLine", "metric", "baseline", "budget", "successPredicate"}
 _RESULT_GATE_UPDATE_FIELDS = {
     "validity", "baseline", "plan-gate", "observed-metric", "budget-use",
@@ -218,7 +221,7 @@ def rule_result_gate_ten_cols(pkg, op, target, payload) -> Reject | None:
 
 
 def rule_result_gate_validity_enum(pkg, op, target, payload) -> Reject | None:
-    """validity must be one of {ok, partial, fail, unmeasured}."""
+    """validity must use the canonical fact-layer RESULT_VALIDITY enum."""
     if target != "results-gate-row" or op != "insert":
         return None
     v = payload.get("validity")
@@ -228,9 +231,30 @@ def rule_result_gate_validity_enum(pkg, op, target, payload) -> Reject | None:
             file=None, anchor=None, field="validity",
             expected=f"one of {sorted(_VALIDITY_ALLOWED)}",
             actual=repr(v),
-            suggested_fix="Set validity to VALID / PARTIAL / RESULT_FAIL / UNMEASURED.",
+            suggested_fix=f"Set validity to one of {sorted(_VALIDITY_ALLOWED)}.",
         )
     return None
+
+
+def rule_fact_backed_projection_write(pkg, op, target, payload) -> Reject | None:
+    if not _is_fact_backed(pkg):
+        return None
+    if (op, target) not in {
+        ("insert", "results-block"),
+        ("update", "results-gate-row"),
+        ("update", "results-verdict"),
+        ("update", "results-block"),
+    }:
+        return None
+    return Reject(
+        rule="fact-backed-projection-write",
+        file=None,
+        anchor=None,
+        field="target",
+        expected="CSV/JS fact write followed by projection renderer",
+        actual=f"{op}:{target}",
+        suggested_fix="Update package facts and re-render the projection instead of mutating results.html directly.",
+    )
 
 
 def rule_experiments_update_payload(pkg, op, target, payload) -> Reject | None:
@@ -810,6 +834,7 @@ def rule_analysis_rule_no_bold(pkg, op, target, payload) -> Reject | None:
 
 # Each entry: (rule_fn, needs_state_arg).
 _RULES: list[tuple[Callable, bool]] = [
+    (rule_fact_backed_projection_write,      False),
     (rule_package_invariant_has_rule,        False),
     (rule_methodstried_six_fields,           False),
     (rule_methodstried_verdict_enum,         False),

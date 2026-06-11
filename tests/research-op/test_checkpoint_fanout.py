@@ -56,3 +56,35 @@ def test_checkpoint_saved_fanout_inserts_tracker_rows_and_preserves_mapping():
         "artifact": "var/research/run/P1/checkpoint.pt",
         "measured": "Recall@1=0.42",
     }
+
+
+def test_checkpoint_saved_fanout_skips_legacy_verdict_update_for_fact_backed_packages(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    pkg = "fact-pkg"
+    (tmp_path / "research_html" / "data" / "packages" / pkg).mkdir(parents=True)
+    calls = []
+
+    def dispatch(op, pkg, target, payload):
+        calls.append((op, target, payload))
+        return "PASSED", [f"{op}:{target}"]
+
+    validation, files = events.fanout(
+        "CHECKPOINT_SAVED",
+        pkg,
+        {
+            "exp_id": "P1",
+            "artifact": "var/research/run/P1/checkpoint.pt",
+            "measured": "Recall@1=0.42",
+        },
+        dispatch,
+    )
+
+    assert validation == "PASSED"
+    assert "insert:results-gate-row" in files
+    assert ("update", "results-verdict") not in [(op, target) for op, target, _ in calls]
+    assert [target for _, target, _ in calls] == [
+        "tracker-live-check-row",
+        "tracker-resource-allocation-row",
+        "results-gate-row",
+        "experiments-status",
+    ]
