@@ -1165,6 +1165,31 @@ def lint_alignment(data: dict, pkg_filter: str | None = None, terminal: bool = F
 
 DATA_SOURCE = re.compile(r'data-source\s*=\s*"([^"]+)"')
 DATA_SOURCE_ROW = re.compile(r'data-source-row\s*=\s*"([^"]+)"')
+METHODS_COMPAT_FIELDS = ["method", "hypothesis", "gate", "measured", "verdict", "evidencePath"]
+
+
+def _scan_fact_projection_text(rep: Report, pid: str, text: str, paths, root: Path) -> bool:
+    has_projection = "data-source" in text or "data-source-row" in text
+    if not has_projection:
+        return False
+    for source in DATA_SOURCE.findall(text):
+        source_path = paths.package_data_dir / source if source.startswith("tables/") else root / source
+        if not source_path.exists():
+            rep.add(Violation(pid, "fact-source-missing", f"data-source={source!r} does not exist", "error"))
+    for ref in DATA_SOURCE_ROW.findall(text):
+        try:
+            table_id, row_id = package_facts.split_source_ref(ref)
+            row = package_facts.find_row_by_ref(paths.tables_dir, ref)
+        except package_facts.FactError as exc:
+            rep.add(Violation(pid, "fact-source-row-missing", str(exc), "error"))
+            continue
+        if row.get("source_type") == "manual" and row.get("verdict") == "PASS":
+            rep.add(Violation(pid, "manual-pass-forbidden", f"{table_id}:{row_id} is manual but verdict=PASS", "error"))
+    return True
+
+
+def _methods_projection_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    return [{field: row.get(field, "") for field in METHODS_COMPAT_FIELDS} for row in rows]
 
 
 def lint_fact_alignment(data: dict, pkg_filter: str | None = None, repo_root: Path | None = None) -> Report:
@@ -1175,28 +1200,31 @@ def lint_fact_alignment(data: dict, pkg_filter: str | None = None, repo_root: Pa
         pid = pkg.get("id", "(no-id)")
         if pkg_filter and pid != pkg_filter:
             continue
-        package_dir = root / "research_html" / "packages" / pid
-        results = package_dir / "results.html"
-        if not results.exists():
-            continue
-        text = results.read_text(encoding="utf-8", errors="ignore")
-        if "data-source" not in text and "data-source-row" not in text:
-            rep.add(Violation(pid, "fact-no-projection", "no fact-backed result projection found", "warning"))
-            continue
         paths = package_facts.fact_paths(pid, root=root)
-        for source in DATA_SOURCE.findall(text):
-            source_path = paths.package_data_dir / source if source.startswith("tables/") else root / source
-            if not source_path.exists():
-                rep.add(Violation(pid, "fact-source-missing", f"data-source={source!r} does not exist", "error"))
-        for ref in DATA_SOURCE_ROW.findall(text):
-            try:
-                table_id, row_id = package_facts.split_source_ref(ref)
-                row = package_facts.find_row_by_ref(paths.tables_dir, ref)
-            except package_facts.FactError as exc:
-                rep.add(Violation(pid, "fact-source-row-missing", str(exc), "error"))
+        package_dir = root / "research_html" / "packages" / pid
+        saw_projection = False
+        for page in ("results.html", "tracker.html"):
+            html_path = package_dir / page
+            if not html_path.exists():
                 continue
-            if row.get("source_type") == "manual" and row.get("verdict") == "PASS":
-                rep.add(Violation(pid, "manual-pass-forbidden", f"{table_id}:{row_id} is manual but verdict=PASS", "error"))
+            text = html_path.read_text(encoding="utf-8", errors="ignore")
+            saw_projection = _scan_fact_projection_text(rep, pid, text, paths, root) or saw_projection
+
+        methods_csv = paths.tables_dir / "methods_tried.csv"
+        if methods_csv.exists():
+            saw_projection = True
+            csv_rows = _methods_projection_rows(package_facts.read_csv_rows(methods_csv))
+            registry_rows = [
+                {field: str((row or {}).get(field, "")) for field in METHODS_COMPAT_FIELDS}
+                for row in (pkg.get("methodsTried") or [])
+            ]
+            if csv_rows != registry_rows:
+                rep.add(Violation(pid, "methods-projection-stale",
+                                  "research-packages.js methodsTried[] differs from methods_tried.csv",
+                                  "error"))
+
+        if not saw_projection and (package_dir / "results.html").exists():
+            rep.add(Violation(pid, "fact-no-projection", "no fact-backed result projection found", "warning"))
     return rep
 
 
