@@ -148,7 +148,9 @@ Every action rendered with `root` carries `next_step` fields (`headline`, `next_
 6. **Implement/review if required.** Follow the ticket route and preserve the distinct implementer/reviewer
    boundary. Status changes such as `READY_TO_LAUNCH` go through `research-op`.
 
-7. **Launch or monitor.** For long-running commands, use `research-exp-live`:
+7. **Launch or monitor.** When `outputs/_resources/servers.json` exists, derive the launch target
+   through `research-resource` (probe → recommend → allocate) and cite its `alloc_id` in the tracker
+   resource-allocation row. For long-running commands, use `research-exp-live`:
 
    ```bash
    python3 lib/exp_live/launch.py --pkg <id> --exp <P1> --tmux-session <name> -- bash <command>

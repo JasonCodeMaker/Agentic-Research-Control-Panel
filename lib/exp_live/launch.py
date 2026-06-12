@@ -131,6 +131,8 @@ def launch_run(
     log_adapter: str = "auto",
     gpu_sample: bool = False,
     use_tmux: bool = True,
+    server: str = "local",
+    alloc_id: str | None = None,
     now: Callable[[], float] = time.time,
 ) -> LaunchResult:
     if not command:
@@ -166,6 +168,8 @@ def launch_run(
         "log_adapter": log_adapter,
         "transport": "local-tmux",
         "heartbeat_timeout": heartbeat_timeout,
+        "server": server,
+        "alloc_id": alloc_id,
     }
     run_dir.mkdir(parents=True, exist_ok=False)
     _write_meta(meta_path, meta)
@@ -250,6 +254,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--expected-duration", choices=["minutes", "hours", "days"],
                         help="coarse duration class for cadence scheduling only — never recorded as est_time")
     parser.add_argument("--gpu-sample", action="store_true")
+    parser.add_argument("--server", default="local",
+                        help="resource-registry server name this run executes on")
+    parser.add_argument("--alloc",
+                        help="alloc_id from lib/resource_alloc binding this run to its allocation")
     parser.add_argument("--foreground", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -277,6 +285,8 @@ def main(argv: list[str] | None = None) -> int:
         log_adapter=args.log_adapter,
         gpu_sample=args.gpu_sample,
         use_tmux=not args.foreground,
+        server=args.server,
+        alloc_id=args.alloc,
     )
     print(f"run_id={result.run_id}")
     print(f"run_dir={result.run_dir}")

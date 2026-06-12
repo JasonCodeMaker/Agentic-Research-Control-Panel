@@ -174,6 +174,7 @@ Terminal transitions (any status change that crosses a lane boundary) require us
   `research_html` pages for in-context learning, not as mutation targets or final proof.
 - **Runtime truth wins.** Validate live runs, logs, outputs, summaries, and artifact roots before changing state. Recalled content is unverified (T3).
 - **Use live-run artifacts.** For long-running experiment commands, use the project live-run skill when available. Routine live state comes from structured runtime artifacts, not ad hoc raw scrollback parsing; raw logs are bounded debug fallback.
+- **Use the resource registry.** When a project resource registry (`outputs/_resources/servers.json`) exists, server connection/capacity facts and experiment placement come from it and its allocation ledger via the resource skill — not from recalled prose; occupancy claims cite ledger entries.
 - **Consult Learnings before new directions.** Open `research_html/learnings.html` before proposing a new direction, refinement, or experiment idea, and before converting a brainstorm idea into a package.
 - **Surgical changes.** Touch only what the task requires. Match existing style. Do not refactor adjacent code.
 - **No A0 reproduction by default.** Trust the recorded checkpoint and `AGENTS.md` / `CLAUDE.md` unless the user explicitly asks to revalidate the anchor.
