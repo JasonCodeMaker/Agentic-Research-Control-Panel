@@ -129,7 +129,7 @@ section above the framework protocols:
 - compute constraints and available machines;
 - non-goals, safety constraints, or reviewer concerns.
 
-### 4 · Initialize the shared dashboard
+### 4 · Initialize and deploy the shared dashboard
 
 Run:
 
@@ -151,6 +151,44 @@ test -f research_html/live.html
 
 Run once per project. This creates `research_html/` — the shared surface where you and the agent read the
 same compiled state (lanes, Scope projection, package links, Context Pack, and the Live Runs page).
+
+**Deploy it — serve the dashboard, don't file-watch it.** `research_html/` is plain static files plus a
+small read-only server (`scripts/serve_dashboard.py`, scaffolded by this step). View it **through that
+server**, not a live-reload preview extension (VSCode Live Preview / Live Server): a file-watcher reloads
+the whole page every time the agent writes, losing your scroll position. The bundled server injects no
+reload — every surface refreshes its data in place on a ~3 s poll.
+
+**1. Start the server** — from the project root. It runs on the workstation, bound to localhost:
+
+```bash
+python research_html/scripts/serve_dashboard.py ensure \
+  --host 127.0.0.1 --port 8904 --max-port 8904 --json
+```
+
+It prints a JSON line with `url` and `live_url`. `ensure` reuses an already-healthy server (safe to
+re-run) and launches it in a background `tmux` session that outlives the command. Passing equal
+`--port`/`--max-port` pins the port to `8904`, so a forwarded URL stays stable across restarts.
+
+**2. Open it in your browser:**
+
+- **Local** (browser on the same machine as the server): open
+  `http://127.0.0.1:8904/research_html/index.html`.
+- **Remote workstation over SSH** (the common case): the server stays on the workstation; forward the
+  port to your machine, then open that same URL locally.
+  - **VSCode Remote-SSH** forwards `8904` automatically — just open the URL (check the **Ports** panel if
+    it does not appear).
+  - **Plain terminal:** run `ssh -L 8904:127.0.0.1:8904 <user>@<workstation>` in a separate shell, then
+    open `http://127.0.0.1:8904/research_html/index.html`.
+
+**3. Check or repair it anytime:**
+
+```bash
+python research_html/scripts/serve_dashboard.py status --json   # health of the recorded server
+python research_html/scripts/serve_dashboard.py ensure --json   # start, or reuse a healthy one
+```
+
+Leave the tab open while the agent works: the dashboard, lanes, learnings, context, scope, and Live Runs
+pages all update in place — no manual refresh, no full-page reload.
 
 ### 5 · Onboard, form a package, then run it
 
@@ -194,6 +232,55 @@ never ratifies silently or materializes a package from a pending proposal. The n
 `/research-onboard` or `/research-scope` for Project, `/research-brainstorm` or `/research-scope` for
 Direction, `/research-scope` for Task milestones, `/research-package` for package materialization, then
 `/research-run` to complete the package.
+
+### 6 · (Optional) Enable the turn-end automation hook
+
+Fact propagation and the dashboard-server keepalive can run automatically at the **end of every turn** —
+no model tokens, no manual `ensure`. Both agents fire the same two scripts; only where you register them
+differs. Both pass the event as JSON on **stdin** and honor `"decision":"block"`, so the scripts under
+`.../hooks/` are shared — copy them from
+[`stop-fact-propagation-hook.md`](skills/research-dashboard/references/stop-fact-propagation-hook.md)
+(the `Stop` script renders the Scope projection, runs `propagate_apply.py`, lints, and re-ensures the
+server; the `PostToolUse` script logs touched files), then `chmod +x` them.
+
+**Claude Code** — add to `.claude/settings.json` (paths use `$CLAUDE_PROJECT_DIR`):
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      { "matcher": "Write|Edit",
+        "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/log_touched_file.sh", "timeout": 5 }] }
+    ],
+    "Stop": [
+      { "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop_fact_propagation.sh", "timeout": 120 }] }
+    ]
+  }
+}
+```
+
+**Codex** — add to `<repo>/.codex/config.toml` (Codex lifecycle hooks; project-local hooks load once the
+`.codex/` layer is trusted). Put the same scripts under `.codex/hooks/` and point `command` at an absolute
+path or one Codex resolves from the project root:
+
+```toml
+[[hooks.PostToolUse]]
+matcher = "^(Write|Edit)$"
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = ".codex/hooks/log_touched_file.sh"
+timeout = 5
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = ".codex/hooks/stop_fact_propagation.sh"
+timeout = 120
+```
+
+> Codex's `PostToolUse` payload field names can differ from Claude Code's. If touched-file detection
+> misses, adjust the `jq` paths in `log_touched_file.sh` per Codex's hooks input-field reference — the
+> `Stop` step (propagation + server keepalive) does not depend on those fields.
 
 ---
 
@@ -374,18 +461,10 @@ data files assign `window.X = …`, so re-eval is safe) and invokes every repain
 position and text selection survive while the agent writes. `live.html` uses the same model with its own
 runtime poller against `/api/live`.
 
-**Serve the dashboard, do not file-watch it.** View the dashboard through the bundled server, not a
-live-reload preview extension — a file-watching previewer reloads the whole page on every write, which is
-exactly what this model avoids:
-
-```bash
-# on the workstation, from the project root
-python research_html/scripts/serve_dashboard.py ensure \
-  --host 127.0.0.1 --port 8904 --max-port 8904 --json
-# open the printed live_url. Over SSH, forward the port first:
-#   ssh -L 8904:127.0.0.1:8904 <user>@<workstation>
-# (VSCode Remote-SSH auto-forwards 8904; the explicit tunnel is the fallback).
-```
+**Serve the dashboard, do not file-watch it.** View the dashboard through the bundled
+`serve_dashboard.py` server, not a live-reload preview extension — a file-watching previewer reloads the
+whole page on every write, which is exactly what this model avoids. See **Quick Start step 4** for the
+serve command and the local / SSH-forward access paths.
 
 Useful commands:
 

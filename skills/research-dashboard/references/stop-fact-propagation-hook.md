@@ -9,6 +9,7 @@ This is the recommended wiring for any project that uses the `research-dashboard
 - `<root>/scripts/propagate_apply.py` exists (installed by `ensure_dashboard.py`).
 - `<root>/scripts/learnings_lint.py` exists.
 - `<root>/scripts/render_scope_projection.py` exists (installed by `ensure_dashboard.py`).
+- `<root>/scripts/serve_dashboard.py` exists (installed by `ensure_dashboard.py`); used for the server keepalive.
 - `.claude/settings.json` declares the hook (see "Settings entry" below).
 - `jq` is on PATH (used to build the hook's JSON output).
 
@@ -64,11 +65,13 @@ exit 0
 #!/usr/bin/env bash
 # Stop hook: at every Stop,
 #   1) render/check Scope SSOT projection when outputs/_scope changed
-#   2) for each touched research package, run its propagate_facts.py (reporter)
-#   3) run propagate_apply.py --auto-derive --write (executor) globally
-#   4) run learnings_lint.py all (validator)
+#   2) ensure the live-run dashboard server is healthy (auto-restart if down)
+#   3) for each touched research package, run its propagate_facts.py (reporter)
+#   4) run propagate_apply.py --auto-derive --write (executor) globally
+#   5) run learnings_lint.py all (validator)
 # Blocks the Stop iff a touched package has un-propagated artifacts. Lint and
 # apply errors surface as informational/blocking context per their severity.
+# The server keepalive is best-effort and never blocks the Stop.
 
 INPUT=$(cat)
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // "unknown"')
@@ -82,6 +85,16 @@ fi
 if ! grep -qE 'research_html/packages/|research_html/data/research-packages\.js|outputs/' "$TOUCH_LOG"; then
     rm -f "$TOUCH_LOG"
     exit 0
+fi
+
+# Server keepalive: dashboard data changed this turn, so make sure the live-run
+# server is up to serve it. `ensure` reuses a healthy server and otherwise starts
+# a fresh background instance — i.e. it auto-restarts a dead one. Best-effort and
+# fully non-blocking; a server hiccup must never fail the Stop hook.
+SERVE_SCRIPT="$REPO_ROOT/research_html/scripts/serve_dashboard.py"
+if [ -f "$SERVE_SCRIPT" ]; then
+    (cd "$REPO_ROOT" && python research_html/scripts/serve_dashboard.py ensure \
+        --host 127.0.0.1 --port 8904 --max-port 8904 --json >/dev/null 2>&1) || true
 fi
 
 PKG_RE='[0-9]{4}-[0-9]{2}-[0-9]{2}-[A-Za-z0-9_-]+'
@@ -199,3 +212,4 @@ The recipe above uses only the allowed top-level keys.
 - Scope transition commits automatically refresh `research_html/data/scope-projection.json` and its JS companion used by the dashboard homepage.
 - `--auto-derive` scans every package and fills **blank** `currentBlocker` / `nextRoute` fields based on `experiments[].status`. Non-blank fields are treated as human-curated and never overwritten passively.
 - Lint runs after the apply, so any schema violation introduced by an event manifest is caught in the same turn it lands.
+- The live-run dashboard server is re-ensured on every turn that touches dashboard data: if it died, `ensure` brings a fresh instance back up (auto-restart), so the pages the user is viewing stay reachable — no manual restart, no model tokens.

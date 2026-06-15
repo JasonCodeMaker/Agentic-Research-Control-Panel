@@ -72,17 +72,22 @@ Both-audience content is written once, inline, without the blockquote or `<detai
    grep -E 'rules/html-rules.html|rules/trustworthy-research-rules.html' <root>/index.html
    ```
 
-   For the autonomous live-run view, verify the local dashboard server script is
-   present and syntactically valid:
+   For the autonomous live-run view, verify the server script is valid, then
+   **deploy the dashboard server** so the user can open it immediately:
 
    ```bash
    python -m py_compile <root>/scripts/serve_dashboard.py
-   python <root>/scripts/serve_dashboard.py status --json || true
+   python <root>/scripts/serve_dashboard.py ensure \
+     --host 127.0.0.1 --port 8904 --max-port 8904 --json
    ```
 
-   `status` may report missing/unhealthy before any server has been started; that
-   is not a scaffold failure. The script must exist so `research-exp-live`
-   can call `ensure --json` before future tracked launches.
+   `ensure` is idempotent: it reuses an already-healthy server and otherwise starts
+   a fresh background instance, so re-running it — here at init, at every Stop (see
+   [`references/stop-fact-propagation-hook.md`](references/stop-fact-propagation-hook.md)),
+   or before a tracked `research-exp-live` launch — doubles as an **auto-restart**.
+   Surface the printed `url`/`live_url`; over SSH the user reaches it via VSCode
+   Remote-SSH port forwarding or `ssh -L 8904:127.0.0.1:8904`. If `ensure` cannot
+   bind, report it — the scaffold itself still succeeded.
 
    If the project has a committed Scope SSOT transition log, render and check the dashboard projection:
 

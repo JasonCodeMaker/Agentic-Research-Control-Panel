@@ -156,3 +156,21 @@ def test_skill_documents_ssh_viewer():
     skill = (REPO / "skills/research-dashboard/SKILL.md").read_text(encoding="utf-8")
     assert "serve_dashboard.py" in skill
     assert "ssh -L" in skill, "SKILL.md must document the SSH port-forward access path"
+
+
+def test_skill_deploys_server_at_init():
+    skill = (REPO / "skills/research-dashboard/SKILL.md").read_text(encoding="utf-8")
+    assert "serve_dashboard.py ensure" in skill
+    # Init DEPLOYS the server now; it no longer merely runs a tolerated status check.
+    assert "status --json || true" not in skill, "init should deploy via ensure, not status||true"
+
+
+def test_stop_hook_reensures_server():
+    hook = (REPO / "skills/research-dashboard/references/stop-fact-propagation-hook.md").read_text(encoding="utf-8")
+    assert "serve_dashboard.py ensure" in hook, "Stop hook recipe must re-ensure the dashboard server each turn"
+
+
+def test_readme_documents_hook_for_both_agents():
+    readme = (REPO / "README.md").read_text(encoding="utf-8")
+    assert ".claude/settings.json" in readme, "README must show the Claude Code hook registration"
+    assert "[[hooks.Stop]]" in readme, "README must show the Codex lifecycle-hook registration"
