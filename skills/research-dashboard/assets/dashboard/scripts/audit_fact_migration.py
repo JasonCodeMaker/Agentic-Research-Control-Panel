@@ -9,11 +9,41 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 
-PIPELINE_ROOT = Path(__file__).resolve().parents[5]
-sys.path.insert(0, str(PIPELINE_ROOT))
-from lib import package_facts  # noqa: E402
+def _load_package_facts_module():
+    parents = Path(__file__).resolve().parents
+    candidates = [
+        parents[5] if len(parents) > 5 else None,  # source tree
+        parents[2] if len(parents) > 2 else None,  # installed dashboard
+        Path.cwd(),
+    ]
+    for root in candidates:
+        if root is not None and (root / "lib" / "package_facts").exists():
+            sys.path.insert(0, str(root))
+            from lib import package_facts
+            return package_facts
+
+    class _PackageFactsFallback:
+        @staticmethod
+        def fact_paths(pkg: str, root: Path | str = Path(".")):
+            root = Path(root)
+            base = root / "research_html" / "data" / "packages"
+            package_data_dir = base / pkg
+            return SimpleNamespace(
+                root=root,
+                pkg=pkg,
+                package_data_dir=package_data_dir,
+                facts_js=base / f"{pkg}.facts.js",
+                tables_dir=package_data_dir / "tables",
+                extractors_dir=package_data_dir / "extractors",
+            )
+
+    return _PackageFactsFallback
+
+
+package_facts = _load_package_facts_module()
 
 
 STATES = ("legacy", "partial", "fact-backed", "stale")

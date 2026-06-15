@@ -909,41 +909,43 @@ def detect_e3(pkg: dict) -> dict | None:
             "category": suggested_cat or "(decide)",
             "status": suggested_status or "(decide)",
             "terminationMessage": (reason[:180] + "…") if len(reason) > 180 else reason or "(distill from tracker.html#chosen-route reason)",
-            "adoptionPath": "(fill if adopting — CLAUDE.md#current-best or downstream pkg id)" if suggested_cat == "success" else None,
+            "adoptionPath": "(fill if adopting — AGENTS.md#current-best, CLAUDE.md#current-best, or downstream pkg id)" if suggested_cat == "success" else None,
         },
         "user_ack_required": True,
     }
 
 
 def detect_e4(pkg: dict) -> dict | None:
-    """E4 adoption_pending: CLAUDE.md or model code newly cites the package."""
+    """E4 adoption_pending: AGENTS.md, CLAUDE.md, or model code newly cites the package."""
     pid = pkg["id"]
     if (pkg.get("category") or "").lower() != "success":
         return None
     if field_present(pkg.get("adoptionPath")):
         return None  # already filled
-    # Scan CLAUDE.md for the pkg id or any of its checkpoint slugs.
-    claude = REPO_ROOT / "CLAUDE.md"
-    if not claude.exists():
+    # Scan agent context files for the pkg id or any of its checkpoint slugs.
+    context_files = [p for p in (REPO_ROOT / "AGENTS.md", REPO_ROOT / "CLAUDE.md") if p.exists()]
+    if not context_files:
         return None
-    text = claude.read_text(encoding="utf-8", errors="ignore")
     hits = []
-    if pid in text:
-        hits.append("CLAUDE.md")
-    # Also try the tag (often the checkpoint slug)
-    for r in pkg.get("methodsTried") or []:
-        method = r.get("method") or ""
-        # Pull a slug-like token (letters/digits/_)
-        m = re.search(r"([a-z][a-z0-9_]{6,})", method)
-        if m and m.group(1) in text:
-            hits.append(f"CLAUDE.md (mentions {m.group(1)!r})")
+    for context_file in context_files:
+        text = context_file.read_text(encoding="utf-8", errors="ignore")
+        label = context_file.name
+        if pid in text:
+            hits.append(label)
+        # Also try the tag (often the checkpoint slug)
+        for r in pkg.get("methodsTried") or []:
+            method = r.get("method") or ""
+            # Pull a slug-like token (letters/digits/_)
+            m = re.search(r"([a-z][a-z0-9_]{6,})", method)
+            if m and m.group(1) in text:
+                hits.append(f"{label} (mentions {m.group(1)!r})")
     if not hits:
         return None
     return {
         "event": "E4 adoption_pending",
         "hits": hits,
         "draft": {
-            "adoptionPath": "CLAUDE.md#current-best  (cite the exact subsection)",
+            "adoptionPath": "AGENTS.md#current-best  (or CLAUDE.md#current-best; cite the exact subsection)",
         },
         "user_ack_required": True,
     }

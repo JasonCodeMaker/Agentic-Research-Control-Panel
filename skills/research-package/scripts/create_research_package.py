@@ -361,6 +361,8 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("--hypothesis is required.")
     if not args.primary_metric:
         raise SystemExit("--primary-metric is required.")
+    if not args.primary_metric_vs_gate:
+        args.primary_metric_vs_gate = args.primary_metric
 
     pages = parse_scope(args.scope, args.category)
     experiments = parse_experiments_json(args.experiments_json)

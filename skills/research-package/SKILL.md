@@ -113,7 +113,7 @@ Every package object on the dashboard surfaces these fields. If a field is unkno
 | `experiments` | `--experiments <json>` at scaffold time, then `/research-op insert/update --target experiments-row` | Typed task spine array `[{id, label?, purpose, after, output, gate, status, measures, requiresCode, complex, runLink?, docsAnchor?}]` painted onto both `index.html#plan-status` (status chips by `renderPlanStatus()`) and `plan.html#experiments` (pipeline timeline by `renderPipelineTimeline()`). `measures` defaults true for new tasks; infra/setup tasks set `measures: false`. See [Pipeline timeline](#pipeline-timeline-binding) for caps. The scaffolders and research-op derive result slots, result-gate rows, change-card stubs, docs/pipeline blocks, and tracker to-dos from this spine. Update the matching entry's `status` whenever a phase opens/closes (same turn as the tracker row update). Allowed `status`: `pending`/`queued`/`running`/`completed`/`failed`/`skipped`/`blocked`. |
 | `methodsTried` | (post-scaffold edit) | Array of `{method, hypothesis, gate, measured, verdict, evidencePath}` rows (verdict ∈ `{PASS, FAIL, INCONCLUSIVE}`). Appended over the life of the package per the Learnings Update Protocol below. Required for success / fail. |
 | `terminationMessage` | (post-scaffold edit) | One sentence: why this package ended. Required for success / fail. |
-| `adoptionPath` | (post-scaffold edit) | Where the win was adopted (e.g., `CLAUDE.md#current-best`, model code path, downstream package id). Required for success. |
+| `adoptionPath` | (post-scaffold edit) | Where the win was adopted (e.g., `AGENTS.md#current-best`, `CLAUDE.md#current-best`, model code path, downstream package id). Required for success. |
 | `supersededBy` / `promotedTo` / `reopenTrigger` | (post-scaffold edit) | Per-status cross-reference fields. See `data/schema.js`. |
 
 ## Scope-selection heuristic
@@ -370,7 +370,7 @@ Per-package `scripts/propagate_facts.py` byte-copies are no longer shipped by th
 | **`VERDICT_FINALIZED`** | `results.html` result-gate row gains PASS/FAIL/INCONCLUSIVE AND artifacts verified | none | Append one `methodsTried[]` row |
 | **`STATUS_CHANGED`** | tracker live-check, plan revision, blocker change | none | `status`, `activeGate`, `primaryMetricVsGate`, `currentBlocker`, `openRuns`, `lastAction`, `lastUpdated` |
 | **`TERMINAL_TRANSITION`** | `tracker.html#chosen-route` → terminal lane move | **T1** | `category` (lane move), `status`, `terminationMessage`; freeze `methodsTried[]` |
-| **`ADOPTION`** | CLAUDE.md "Current Best" edit, code merge into `models/` / `trainer/`, or downstream pkg cites the win | **T1** | `adoptionPath` |
+| **`ADOPTION`** | `AGENTS.md` / `CLAUDE.md` "Current Best" edit, code merge into `models/` / `trainer/`, or downstream pkg cites the win | **T1** | `adoptionPath` |
 | **`SUPERSESSION`** | Newer success pkg replaces an older one | **T1** | On the *old* pkg: `status = WIN_SUPERSEDED`, `supersededBy` |
 | **`REOPEN`** | User states a fail pkg should be revisitable | **T1** | `status = ARCHIVED_CONDITIONAL`, `reopenTrigger` |
 
