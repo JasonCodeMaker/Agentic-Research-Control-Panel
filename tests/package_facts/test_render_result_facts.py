@@ -1,3 +1,4 @@
+import datetime
 import subprocess
 import sys
 from pathlib import Path
@@ -81,7 +82,9 @@ def test_renders_result_gate_and_fact_backed_result_section(tmp_path):
     assert 'data-source-row="result_gate:P1_gate"' in text
     assert "Recall@1" in text
     assert "42.1" in text
-    assert 'datetime="2026-06-11"' in text
+    # Renderer stamps the last-updated footer with today's date.
+    today = datetime.date.today().isoformat()
+    assert f'datetime="{today}"' in text
 
 
 def test_renders_headline_card_from_js_headline_fact(tmp_path):

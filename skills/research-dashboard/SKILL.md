@@ -187,9 +187,35 @@ A companion helper `<root>/scripts/emit_verdict_manifest.py` parses a trainer ch
 
 For zero-prompt auto-apply at every Stop, wire the Claude Code Stop hook documented in [`references/stop-fact-propagation-hook.md`](references/stop-fact-propagation-hook.md). That hook also renders/checks `scope-projection.json/js` when `outputs/_scope/` changes.
 
+## Viewing the dashboard (served, not file-watched)
+
+The dashboard is meant to be read through its own HTTP server, never through a live-reload preview
+extension. A file-watching previewer reloads the entire page whenever the agent writes a data file;
+`serve_dashboard.py` injects no reload, and every surface self-refreshes in place via `assets/live-data.js`
+(a 3 s `fetch`+hash+diff poll that re-evaluates only changed `data/*.js` files and re-invokes the renderers
+registered on `window.__researchRenderers`).
+
+Start (or reuse) the server on the workstation and reach it over SSH:
+
+    python research_html/scripts/serve_dashboard.py ensure \
+      --host 127.0.0.1 --port 8904 --max-port 8904 --json
+
+Passing equal `--port`/`--max-port` pins the port so the SSH forward is stable. The server binds localhost
+on the workstation; access it from your machine via VSCode Remote-SSH automatic port forwarding, or an
+explicit tunnel:
+
+    ssh -L 8904:127.0.0.1:8904 <user>@<workstation>
+
+Then open `http://127.0.0.1:8904/research_html/index.html`.
+
+**Upgrading an already-scaffolded project:** `live-data.js` is a new file and is written by a normal
+`ensure_dashboard.py` run. The edited chrome HTML templates are existing files, so re-scaffold them
+explicitly (use the skill's refresh path; do **not** blanket `--force`, which can overwrite
+`data/research-packages.js`).
+
 ## Bundled resources
 
-- `scripts/ensure_dashboard.py` — idempotent scaffold. Mirrors this skill's entire `assets/dashboard/` tree into `<root>/` — `index.html`, `learnings.html`, `live.html`, `module.html`, `package-template.html`, the four `categories/<lane>/index.html` lane pages, `assets/research.css` + `assets/research.js`, `data/schema.js`, `scripts/*`, and `templates/module-library.html` — writes empty `data/scope-projection.json/js`, installs `scripts/render_scope_projection.py`, and copies the rule files. The agent does not manage these chrome files individually; they are installed and refreshed automatically.
+- `scripts/ensure_dashboard.py` — idempotent scaffold. Mirrors this skill's entire `assets/dashboard/` tree into `<root>/` — `index.html`, `learnings.html`, `live.html`, `module.html`, `package-template.html`, the four `categories/<lane>/index.html` lane pages, `assets/research.css` + `assets/research.js` + `assets/live-data.js`, `data/schema.js`, `scripts/*`, and `templates/module-library.html` — writes empty `data/scope-projection.json/js`, installs `scripts/render_scope_projection.py`, and copies the rule files. The agent does not manage these chrome files individually; they are installed and refreshed automatically.
 - `references/dashboard-contract.md` — required dashboard sections, anchors, and rule citations.
 - `references/stop-fact-propagation-hook.md` — Claude Code `Stop` hook recipe that wires `propagate_apply.py --auto-derive --write` + `learnings_lint.py all` at every turn end.
 - `assets/html-rules.html`, `assets/trustworthy-research-rules.html` — the binding rule files copied into every project's `<root>/rules/` so package surfaces can link them with no further setup.

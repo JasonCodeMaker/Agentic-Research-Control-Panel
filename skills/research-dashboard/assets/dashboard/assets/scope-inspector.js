@@ -610,6 +610,12 @@
     document.addEventListener("keydown", onKey);
     setTab(state.tab);
     refresh();
+    if (typeof window !== "undefined") {
+      window.__researchRenderers = window.__researchRenderers || [];
+      if (window.__researchRenderers.indexOf(refresh) === -1) {
+        window.__researchRenderers.push(refresh);
+      }
+    }
     setInterval(refresh, POLL_MS);
   }
 

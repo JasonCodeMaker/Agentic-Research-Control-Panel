@@ -365,6 +365,28 @@ The authority order is:
 `outputs/<pkg>/runs/<run_id>/status.json` remains the live-run source. The package fact layer does not
 replace either one; it stores package-surface facts derived from them.
 
+**How surfaces refresh (one model for every page).** HTML surfaces are static shells that never get
+rewritten during a run. Each shell declares its data files with the `<script src="data/*.js">` tags it
+already has; the shared `research_html/assets/live-data.js` poller re-fetches those files every 3 s with
+`{cache:'no-store'}`, hashes each response, and only when a file's content changed re-evaluates it (the
+data files assign `window.X = …`, so re-eval is safe) and invokes every repaint function registered on
+`window.__researchRenderers`. Updates are in-place DOM repaints — never full-page reloads — so scroll
+position and text selection survive while the agent writes. `live.html` uses the same model with its own
+runtime poller against `/api/live`.
+
+**Serve the dashboard, do not file-watch it.** View the dashboard through the bundled server, not a
+live-reload preview extension — a file-watching previewer reloads the whole page on every write, which is
+exactly what this model avoids:
+
+```bash
+# on the workstation, from the project root
+python research_html/scripts/serve_dashboard.py ensure \
+  --host 127.0.0.1 --port 8904 --max-port 8904 --json
+# open the printed live_url. Over SSH, forward the port first:
+#   ssh -L 8904:127.0.0.1:8904 <user>@<workstation>
+# (VSCode Remote-SSH auto-forwards 8904; the explicit tunnel is the fallback).
+```
+
 Useful commands:
 
 ```bash

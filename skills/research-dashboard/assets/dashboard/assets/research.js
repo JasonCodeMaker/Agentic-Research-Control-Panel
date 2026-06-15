@@ -2017,7 +2017,7 @@
     }).join("");
   }
 
-  document.addEventListener("DOMContentLoaded", function () {
+  function renderAll() {
     renderDashboardSummary();
     renderGlobalContext();
     renderRulesRegistry();
@@ -2052,5 +2052,9 @@
     renderDocsIndex();
     setupCopyButtons();
     enhanceSortableTables();
-  });
+  }
+
+  window.__researchRenderers = window.__researchRenderers || [];
+  window.__researchRenderers.push(renderAll);
+  document.addEventListener("DOMContentLoaded", renderAll);
 })();

@@ -43,6 +43,8 @@
     root.innerHTML = html;
   }
 
+  window.__researchRenderers = window.__researchRenderers || [];
+  window.__researchRenderers.push(render);
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", render);
   } else {
