@@ -81,6 +81,16 @@ export type RunSnapshot = {
   endedAt?: string | number | null;
 };
 
+export type DashboardServerSnapshot = {
+  ok?: boolean;
+  repairRequired?: boolean;
+  repair_required?: boolean;
+  status?: string | null;
+  error?: string | null;
+  liveUrl?: string | null;
+  live_url?: string | null;
+};
+
 export type ResearchOpEnvelope = {
   op: "insert" | "update" | "delete" | "check" | "scan-events";
   target:
@@ -104,6 +114,7 @@ export type WorkflowSnapshot = {
   scanEvents?: Array<Record<string, unknown>>;
   experiments?: ExperimentSnapshot[];
   openRuns?: RunSnapshot[];
+  dashboardServer?: DashboardServerSnapshot | null;
   armedReentries?: Record<string, string | number | null | undefined>;
   readiness?: "PASS" | "BLOCKED" | "NOT_RUN" | string;
 };
@@ -154,6 +165,13 @@ export type RunTicket = {
   perRun: PerRunTicket[];
   requiredMutations: ResearchOpEnvelope[];
   stopGate: StopGateReport;
+  dashboardServer: {
+    ok: boolean;
+    repairRequired: boolean;
+    liveUrl: string | null;
+    warning: string | null;
+    requiredAction: "NONE" | "ENSURE_DASHBOARD_SERVER";
+  };
   nextAction: NextAction;
   artifactsSeen: Array<Record<string, unknown>>;
   blocker: string | null;
@@ -190,6 +208,7 @@ export function evaluateWorkflow(snapshot: WorkflowSnapshot): RunTicket {
   const terminal = perRun.filter((run) => run.terminal);
   const scanEvents = snapshot.scanEvents || [];
   const stopGate = buildStopGate(perRun, snapshot.armedReentries || {}, scanEvents);
+  const dashboardServer = evaluateDashboardServer(snapshot.dashboardServer || null);
   const nextQueued = findNextQueuedExperiment(snapshot.experiments || []);
 
   let workflowState: WorkflowState;
@@ -266,9 +285,31 @@ export function evaluateWorkflow(snapshot: WorkflowSnapshot): RunTicket {
     perRun,
     requiredMutations,
     stopGate,
+    dashboardServer,
     nextAction,
     artifactsSeen: scanEvents,
     blocker,
+  };
+}
+
+function evaluateDashboardServer(snapshot: DashboardServerSnapshot | null): RunTicket["dashboardServer"] {
+  if (!snapshot) {
+    return {
+      ok: false,
+      repairRequired: true,
+      liveUrl: null,
+      warning: "dashboard server state is missing",
+      requiredAction: "ENSURE_DASHBOARD_SERVER",
+    };
+  }
+  const repairRequired = Boolean(snapshot.repairRequired ?? snapshot.repair_required);
+  const ok = Boolean(snapshot.ok) && !repairRequired;
+  return {
+    ok,
+    repairRequired: !ok,
+    liveUrl: snapshot.liveUrl ?? snapshot.live_url ?? null,
+    warning: ok ? null : String(snapshot.error || snapshot.status || "dashboard server unhealthy"),
+    requiredAction: ok ? "NONE" : "ENSURE_DASHBOARD_SERVER",
   };
 }
 

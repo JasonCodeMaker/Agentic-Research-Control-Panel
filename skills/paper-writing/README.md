@@ -142,10 +142,11 @@ Use the generalized ML/DL workflow, not a systems-specific workflow unless the e
 What the agent should do:
 
 - read `paper_context.md` and `claim_evidence_map.md`;
-- create `drafts/paper_plan.md`;
+- create `context/paper_plan.md`;
 - use the introduction-twice workflow;
 - assign evidence-bearing claims to evaluation, final introduction, and abstract;
-- identify required figures/tables.
+- identify required figures/tables;
+- create or update `context/global_structure.md` only after the plan when the project needs a human-agent paper-level writing skeleton.
 
 What you should receive:
 
@@ -153,6 +154,7 @@ What you should receive:
 - per-section purpose;
 - claim-to-section mapping;
 - missing figure/table checklist;
+- optional global structure skeleton for reader journey and section roles;
 - recommendation for whether to use a venue adapter.
 
 Next prompt:
@@ -549,7 +551,8 @@ Expected result:
 | `context/paper_context.md` | Locked paper context used by the agent. |
 | `context/claim_evidence_map.md` | Claim support status and allowed wording. |
 | `context/gap_report.md` | Missing venue/baseline/result/evidence issues. |
-| `drafts/paper_plan.md` | Section order and claim assignment. |
+| `context/paper_plan.md` | Section order and claim assignment. |
+| `context/global_structure.md` | Human-agent paper-level skeleton derived after the plan; narrative only, not a fact source. |
 | `adapter/dynamic_paper_adapter.md` | Project/venue writing rules. |
 | `adapter/adapter_review.md` | Human gate status for adapter use. |
 | `inputs/corpus_conversion/readability_report.md` | Whether corpus conversion is usable. |

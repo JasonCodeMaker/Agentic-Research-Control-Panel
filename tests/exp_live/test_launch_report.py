@@ -24,6 +24,7 @@ def test_launch_run_foreground_creates_run_artifacts_and_global_index(tmp_path):
         outputs_root=outputs_root,
         tmux_session="test-p2",
         use_tmux=False,
+        ensure_dashboard=False,
         now=lambda: 1765430000.0,
     )
 
@@ -145,6 +146,7 @@ def test_launch_precheck_rejects_duplicate_session_before_any_write(tmp_path, mo
             outputs_root=tmp_path / "outputs",
             tmux_session="dup",
             use_tmux=True,
+            ensure_dashboard=False,
         )
     except RuntimeError as exc:
         assert "dup" in str(exc)
@@ -170,6 +172,7 @@ def test_launch_tmux_failure_writes_paired_terminal_line(tmp_path, monkeypatch):
             command=["echo", "x"],
             outputs_root=tmp_path / "outputs",
             use_tmux=True,
+            ensure_dashboard=False,
         )
     except subprocess.CalledProcessError:
         pass
@@ -197,6 +200,7 @@ def test_meta_records_expected_duration_and_log_adapter_and_status_pids(tmp_path
         use_tmux=False,
         expected_duration="hours",
         log_adapter="auto",
+        ensure_dashboard=False,
     )
     meta = json.loads((result.run_dir / "meta.json").read_text(encoding="utf-8"))
     assert meta["expected_duration_class"] == "hours"
@@ -206,6 +210,34 @@ def test_meta_records_expected_duration_and_log_adapter_and_status_pids(tmp_path
     assert isinstance(status["pid"], int)
     assert isinstance(status["harvester_pid"], int)
     assert status["heartbeat_timeout"] == 600
+
+
+def test_launch_records_best_effort_dashboard_server_state(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_ensure(*, repo_root, outputs_root, port=None):
+        calls.append({"repo_root": repo_root, "outputs_root": outputs_root, "port": port})
+        return {
+            "ok": True,
+            "live_url": "http://127.0.0.1:8904/research_html/live.html",
+            "api_base": "http://127.0.0.1:8904/api",
+        }
+
+    monkeypatch.setattr(launch, "_ensure_dashboard_server", fake_ensure)
+    result = launch.launch_run(
+        pkg="pkg-a",
+        exp_id="P7",
+        command=[sys.executable, "-c", "print('ok', flush=True)"],
+        outputs_root=tmp_path / "outputs",
+        use_tmux=False,
+        dashboard_port=8911,
+    )
+
+    assert calls
+    assert calls[0]["port"] == 8911
+    assert result.dashboard_server["ok"] is True
+    meta = json.loads((result.run_dir / "meta.json").read_text(encoding="utf-8"))
+    assert meta["dashboard_server"]["live_url"].endswith("/research_html/live.html")
 
 
 def test_report_open_derives_stale_from_frozen_running_status(tmp_path):

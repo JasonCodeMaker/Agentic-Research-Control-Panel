@@ -88,6 +88,36 @@ test("blocks stop gate when an open run lacks reentry or scan-events has pending
   assert.match(ticket.stopGate.blockers.join("\n"), /P1-r1 has no armed re-entry/);
 });
 
+test("surfaces dashboard server repair without blocking live monitoring", () => {
+  const ticket = evaluateWorkflow({
+    ...baseSnapshot,
+    dashboardServer: {
+      ok: false,
+      repair_required: true,
+      error: "port unavailable",
+    },
+    openRuns: [
+      {
+        runId: "P1-r1",
+        expId: "P1",
+        status: "RUNNING",
+        health: "OK",
+        runtimeRoot: "outputs/2026-06-11-demo/runs/P1-r1",
+        heartbeatTimeoutSeconds: 600,
+      },
+    ],
+    armedReentries: {
+      "P1-r1": "2026-06-11T00:10:00.000Z",
+    },
+  });
+
+  assert.equal(ticket.workflowState, "LIVE_ANALYSIS");
+  assert.equal(ticket.nextAction.kind, "MONITOR_RUNS");
+  assert.equal(ticket.stopGate.ok, true);
+  assert.equal(ticket.dashboardServer.requiredAction, "ENSURE_DASHBOARD_SERVER");
+  assert.match(ticket.dashboardServer.warning || "", /port unavailable/);
+});
+
 test("keeps monitoring other experiments while routing terminal runs to result evidence", () => {
   const ticket = evaluateWorkflow({
     ...baseSnapshot,

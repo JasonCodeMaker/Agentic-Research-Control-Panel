@@ -32,6 +32,7 @@ def test_research_run_documents_workflow_ticket_and_loop_discipline():
         "requiredMutations",
         "stopGate",
         "perRun",
+        "dashboardServer.requiredAction=ENSURE_DASHBOARD_SERVER",
         "Resume Block",
         "cross-stage to-do",
         "Shared agent return",
@@ -39,9 +40,16 @@ def test_research_run_documents_workflow_ticket_and_loop_discipline():
         assert token in text
 
 
-def test_research_auto_is_only_a_compatibility_alias():
+def test_research_auto_is_the_campaign_conductor_layered_on_run():
     fm, text = _frontmatter(ROOT / "skills" / "research-auto" / "SKILL.md")
     assert re.search(r"^name:\s*research-auto\s*$", fm, re.M)
-    assert "/research-run" in fm
-    assert "compatibility alias" in text
-    assert "scripts/admission.py" not in text
+    assert "campaign" in fm
+    assert "deprecated" not in fm.lower()
+    assert "compatibility alias" not in text
+    assert "/research-run" in text                    # delegates single-package execution
+    assert "scripts/conductor.py" in text             # deterministic routing + ledger home
+    desc = re.search(r'^description:\s*"([^"]+)"\s*$', fm, re.M).group(1)
+    assert desc.startswith("Use when")
+    assert len(desc) < 220
+    assert "Never disposes Triage" not in fm
+    assert "never disposes Triage" in text            # authority boundary stays in the body

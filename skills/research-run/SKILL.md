@@ -156,9 +156,11 @@ Every action rendered with `root` carries `next_step` fields (`headline`, `next_
    python3 lib/exp_live/launch.py --pkg <id> --exp <P1> --tmux-session <name> -- bash <command>
    ```
 
-   Then monitor from `outputs/<pkg>/runs/<run_id>/status.json`; do not use raw tmux scrollback for routine
-   status. For unwrapped one-shot commands, include the run in the `workflow.ts` snapshot and use the
-   ticket's default `<=600s` stop-gate deadline.
+   The launcher best-effort ensures the local dashboard server. If the `workflow.ts` ticket reports
+   `dashboardServer.requiredAction=ENSURE_DASHBOARD_SERVER`, repair it through `research-exp-live` while
+   continuing run monitoring. Then monitor from `outputs/<pkg>/runs/<run_id>/status.json`; do not use raw
+   tmux scrollback for routine status. For unwrapped one-shot commands, include the run in the
+   `workflow.ts` snapshot and use the ticket's default `<=600s` stop-gate deadline.
 
 8. **Propagate artifacts.** On every live check and at completion:
 
@@ -266,5 +268,6 @@ recorded before terminal status is applied.
 ## Fixtures and Compatibility
 
 `scripts/skeleton.py` remains an L1 fixture for old trust-wiring tests. It is not the user-facing run
-procedure. `/research-auto` is retained only as a compatibility alias that points users to
-`/research-run`.
+procedure. `/research-auto` is the direction-level campaign conductor layered above this skill: it
+delegates each package execution tick to `/research-run` and owns only the cross-package cycle
+(ideate → design → run → harvest) toward the Direction gate.

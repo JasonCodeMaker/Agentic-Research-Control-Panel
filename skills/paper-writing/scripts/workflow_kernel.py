@@ -68,7 +68,7 @@ def load_profile_text(profile: str) -> str:
 
 
 def build_plan(paper_id: str, root: Path | None = None, profile: str | None = None) -> dict:
-    """Emit paper_plan.md from context + the active profile; no corpus required."""
+    """Emit context/paper_plan.md from context + the active profile; no corpus required."""
     home = common.project_dir(paper_id, root)
     spec = common.load_yaml(home / "paper.yaml")
     paper = spec.get("paper", {}) or {}
@@ -104,8 +104,9 @@ def build_plan(paper_id: str, root: Path | None = None, profile: str | None = No
         "- Introduction is written twice: Draft-0 sets evaluation guardrails; Final is rewritten after results.",
     ]
     plan_text = "\n".join(lines) + "\n"
-    common.write_text(home / "drafts" / "paper_plan.md", plan_text)
-    return {"profile": profile, "sections": list(SECTION_ORDER), "plan_path": str(home / "drafts" / "paper_plan.md")}
+    plan_path = home / "context" / "paper_plan.md"
+    common.write_text(plan_path, plan_text)
+    return {"profile": profile, "sections": list(SECTION_ORDER), "plan_path": str(plan_path)}
 
 
 def main() -> None:

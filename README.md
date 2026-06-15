@@ -11,8 +11,9 @@ ratification gates**.
 
 **Current maturity, in one sentence.** The dashboard, Scope/Triage system, trust gates, Context Pack,
 self-evolution Rule Store, `/research-run` package runner, exp-live runtime envelope, fact-backed package
-surfaces, and deterministic dispatch contract are implemented and tested; `/research-auto` remains only a
-deprecated compatibility alias.
+surfaces, and deterministic dispatch contract are implemented and tested; `/research-auto` is the
+direction-level campaign conductor that composes them — given a Direction and a gate, it cycles
+brainstorm → design → run until the gate clears or an honest stop fires.
 
 **Contents** · [Why This Exists](#why-this-exists) · [Quick Start](#quick-start) ·
 [Research Lifecycle](#research-lifecycle) · [What `/research-run` Does](#what-research-run-does) ·
@@ -164,6 +165,7 @@ commands first:
 | `/research-scope` | You already know the exact Project/Direction/Task scope or need to revise it. | Builds typed Scope proposals and validation milestones for the Scope SSOT admission gate. |
 | `/research-package` | Direction and Task are committed, but no package exists yet. | Materializes package surfaces from committed Scope state only. |
 | `/research-run` | A scoped package exists and should be executed to completion. | Runs readiness, implementation/review, launch/monitoring, artifact propagation, result verification, and terminal routing. |
+| `/research-auto` | You have a Direction and a measurable gate and want the loop driven end-to-end. | Campaign conductor: forms/awaits the Direction charter, then cycles ideate → design → `/research-run` → harvest until the gate clears, the cycle budget runs out, or a human decision is needed. |
 
 For an **existing project**, the normal setup path is:
 
@@ -460,7 +462,7 @@ Trustworthy-Research-Pipeline/
 | `research-scope` | Scope SSOT and Triage admission gate. |
 | `research-package` | Package scaffold materialized from committed Scope. |
 | `research-run` | Package execution controller; completes an existing scoped package. |
-| `research-auto` | Deprecated compatibility alias for `research-run`. |
+| `research-auto` | Direction-campaign conductor; cycles the other skills until the Direction gate clears. |
 | `research-exp-live` | Structured launch/monitor/resume envelope for long-running experiment commands. |
 | `research-lit` | Literature/source gathering role. |
 | `research-ideate` | Idea generation and refinement role. |

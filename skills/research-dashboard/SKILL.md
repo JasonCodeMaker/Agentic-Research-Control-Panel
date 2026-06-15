@@ -72,6 +72,18 @@ Both-audience content is written once, inline, without the blockquote or `<detai
    grep -E 'rules/html-rules.html|rules/trustworthy-research-rules.html' <root>/index.html
    ```
 
+   For the autonomous live-run view, verify the local dashboard server script is
+   present and syntactically valid:
+
+   ```bash
+   python -m py_compile <root>/scripts/serve_dashboard.py
+   python <root>/scripts/serve_dashboard.py status --json || true
+   ```
+
+   `status` may report missing/unhealthy before any server has been started; that
+   is not a scaffold failure. The script must exist so `research-exp-live`
+   can call `ensure --json` before future tracked launches.
+
    If the project has a committed Scope SSOT transition log, render and check the dashboard projection:
 
    ```bash
@@ -177,12 +189,13 @@ For zero-prompt auto-apply at every Stop, wire the Claude Code Stop hook documen
 
 ## Bundled resources
 
-- `scripts/ensure_dashboard.py` — idempotent scaffold. Mirrors this skill's entire `assets/dashboard/` tree into `<root>/` — `index.html`, `learnings.html`, `module.html`, `package-template.html`, the four `categories/<lane>/index.html` lane pages, `assets/research.css` + `assets/research.js`, `data/schema.js`, `scripts/*`, and `templates/module-library.html` — writes empty `data/scope-projection.json/js`, installs `scripts/render_scope_projection.py`, and copies the rule files. The agent does not manage these chrome files individually; they are installed and refreshed automatically.
+- `scripts/ensure_dashboard.py` — idempotent scaffold. Mirrors this skill's entire `assets/dashboard/` tree into `<root>/` — `index.html`, `learnings.html`, `live.html`, `module.html`, `package-template.html`, the four `categories/<lane>/index.html` lane pages, `assets/research.css` + `assets/research.js`, `data/schema.js`, `scripts/*`, and `templates/module-library.html` — writes empty `data/scope-projection.json/js`, installs `scripts/render_scope_projection.py`, and copies the rule files. The agent does not manage these chrome files individually; they are installed and refreshed automatically.
 - `references/dashboard-contract.md` — required dashboard sections, anchors, and rule citations.
 - `references/stop-fact-propagation-hook.md` — Claude Code `Stop` hook recipe that wires `propagate_apply.py --auto-derive --write` + `learnings_lint.py all` at every turn end.
 - `assets/html-rules.html`, `assets/trustworthy-research-rules.html` — the binding rule files copied into every project's `<root>/rules/` so package surfaces can link them with no further setup.
 - `assets/dashboard/data/schema.js` — the `(category, status)` state machine and required-field rules; copied to `<root>/data/schema.js`.
 - `assets/dashboard/learnings.html` — cross-package learnings view (derived; do not edit directly).
+- `assets/dashboard/live.html` + `assets/dashboard/scripts/serve_dashboard.py` — API-first live-run view and local read-only API server. The server serves static `research_html/` and exposes `/api/live/*` by reading `outputs/_live/runs.jsonl` and `status.json`; volatile runtime writes stay out of the static page reload path.
 - `assets/dashboard/scripts/learnings_lint.py` + `dump_packages.js` — the dashboard-wide lint and draft tool, including Scope/package provenance drift checks.
 - `scripts/render_scope_projection.py` — renders/checks `research_html/data/scope-projection.json` and the JS companion consumed by the dashboard homepage.
 - `assets/dashboard/scripts/propagate_apply.py` — event-manifest executor (`verdict_finalized`, `status_changed`, `adoption`, `supersession`, `reopen`, `state_derived`) with `--auto-derive` drift scanner.

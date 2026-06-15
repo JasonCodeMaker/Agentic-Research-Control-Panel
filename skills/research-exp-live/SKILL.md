@@ -24,6 +24,9 @@ Scheduler-neutral / re-entry-tool-neutral: this skill states the evidence, deadl
 ## Pre-flight
 
 - `research_html/live.html` exists. It is scaffolded by `/research-dashboard`; this skill only requires it.
+- `research_html/scripts/serve_dashboard.py` exists for API-first live views. `launch.py`
+  will best-effort start or reuse it; if it is missing or unhealthy, the run may
+  still launch, but the dashboard state must record `repair_required`.
 - The package exists in `research_html/data/research-packages.js`.
 - The target `--exp` exists in that package's `experiments[]` task spine.
 - The command is a long-running experiment, training run, evaluation sweep, feature extraction, index build, preprocessing job, or print-only script. If the active plan explicitly marks it as an untracked one-shot, document that exception and use the unwrapped fallback loop.
@@ -47,6 +50,17 @@ Two more optional flags feed the adaptive protocol:
 
 - `--expected-duration minutes|hours|days` — the coarse duration class for the cadence evidence ladder. Scheduling input only; package surfaces still record `est_time=unknown` until the 30-minute measured rule clears.
 - `--gpu-sample` — sample `nvidia-smi` for the run's GPUs on each watchdog tick so the live-check `Resource Use` column fills from `status.json.resource`. Off by default; without it `resource` is `null` and the column renders `unmeasured`.
+
+The wrapper also ensures the local dashboard server before launch:
+
+```bash
+python research_html/scripts/serve_dashboard.py ensure --json
+```
+
+This is a best-effort observation hook, not a launch gate. Success is recorded
+in `meta.json.dashboard_server` and printed as `dashboard_live_url=...`. Failure
+is recorded as `repair_required` and printed as `dashboard_server_warning=...`;
+continue the experiment launch and repair the dashboard server separately.
 
 Record the allocation row exactly as the `workflow.ts` ticket requires:
 
@@ -127,6 +141,11 @@ At every wrapper-run check:
 5. Emit one compact `perRun[].statusLine` per open run. Its `progress=`, `performance=`, and `est_time=` segments must equal the values read from `status.json`.
 6. Arm re-entry at or before `Next Check`.
 
+If `outputs/_live/dashboard_server.json` reports `repair_required`, attempt one
+autonomous `python research_html/scripts/serve_dashboard.py ensure --json`
+repair, or dispatch a bounded dashboard-server repair worker when available.
+Dashboard repair must not pause run monitoring or artifact propagation.
+
 Ending a turn with an open wrapper run and no re-entry at or before `Next Check` is a workflow violation.
 
 ## STALE, Anomalies, and Failures
@@ -162,6 +181,11 @@ python3 lib/exp_live/report.py --open
 If it lists non-terminal runs, every listed run must have an armed re-entry at or before its recorded `Next Check`. Otherwise the stop is refused. After terminal lines land and `report.py --open` returns an empty list, the wrapper-run part of the stop gate is clear.
 
 On resume, reconcile the tracker Resume Block `Open Runs` against `report.py --open` and each listed run's `status.json` before trusting tracker state.
+
+Also check `python research_html/scripts/serve_dashboard.py status --json` when
+`research_html/scripts/serve_dashboard.py` exists. If it is unhealthy, run
+`ensure --json` once and keep monitoring via `status.json` regardless of UI
+health.
 
 ## Worked Example
 

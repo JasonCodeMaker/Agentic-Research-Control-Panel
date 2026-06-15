@@ -13,10 +13,10 @@
       <div class="eyebrow">runtime evidence</div>
       <h1>Live <em>Runs</em></h1>
       <p class="lead">
-        A read-only view over structured experiment runtime artifacts. Serve from
-        the project root with <code>python -m http.server</code>; this page reads
-        <code>../outputs/_live/runs.jsonl</code> and each run's
-        <code>status.json</code>.
+        A read-only view over structured experiment runtime artifacts. The
+        autonomous dashboard server reads <code>outputs/_live/runs.jsonl</code>
+        and each run's <code>status.json</code> through <code>/api/live</code>,
+        keeping volatile runtime writes outside the static page reload path.
       </p>
       <div class="toolbar" data-card="live-toolbar">
         <a class="pill" href="index.html">Dashboard</a>
@@ -69,15 +69,16 @@
     </section>
 
     <footer class="footer-note" data-field="fetch-help">
-      Cannot fetch runtime files? Start the server from the repository root:
-      <code>python -m http.server 8904</code>, then open
-      <code>http://localhost:8904/research_html/live.html</code>.
+      Cannot fetch live state? Start or repair the autonomous server from the
+      repository root: <code>python research_html/scripts/serve_dashboard.py ensure --json</code>,
+      then open <code>http://127.0.0.1:8904/research_html/live.html</code>.
     </footer>
   </div>
 
   <script src="data/research-packages.js"></script>
   <script>
   (function () {
+    var API_RUNS_URL = "/api/live/runs?include_status=1";
     var RUNS_URL = "../outputs/_live/runs.jsonl";
     var POLL_MS = 3000;
     var TERMINAL = { COMPLETED: true, RUN_FAILED: true, RUN_HALTED: true, SKIPPED: true };
@@ -288,7 +289,6 @@
       }).length);
       setCount("queued-count", runs.filter(function (run) { return run.view === "QUEUED"; }).length);
       setCount("last-refresh", new Date().toLocaleTimeString());
-      setCount("poll-state", "ok");
 
       setHtml("open-run-list", open.length ? open.map(cardHtml).join("") : empty("No live runs yet."));
       setHtml("attention-list", attention.length ? attention.map(cardHtml).join("") : empty("No STALE or RUN_FAILED runs."));
@@ -322,8 +322,8 @@
       });
     }
 
-    function poll() {
-      fetch(RUNS_URL, { cache: "no-store" })
+    function fetchFileRuns() {
+      return fetch(RUNS_URL, { cache: "no-store" })
         .then(function (res) {
           if (res.status === 404) return "";
           if (!res.ok) throw new Error("status " + res.status);
@@ -337,6 +337,34 @@
           // Fetch status.json only for open + recently-terminal runs; old terminal
           // runs are filtered on index fields alone so history growth stays free.
           return Promise.all(foldRuns(parsed.records).filter(shouldFetch).map(fetchStatus));
+        })
+        .then(function (runs) {
+          setCount("poll-state", "file fallback");
+          return runs;
+        });
+    }
+
+    function fetchApiRuns() {
+      return fetch(API_RUNS_URL, { cache: "no-store" })
+        .then(function (res) {
+          if (!res.ok) throw new Error("status " + res.status);
+          return res.json();
+        })
+        .then(function (payload) {
+          if (!payload || payload.ok !== true || !Array.isArray(payload.runs)) {
+            throw new Error("invalid live API response");
+          }
+          setCount("poll-state", "api");
+          return payload.runs;
+        });
+    }
+
+    function poll() {
+      fetchApiRuns()
+        .catch(function (apiErr) {
+          return fetchFileRuns().catch(function (fileErr) {
+            throw new Error("api " + (apiErr.message || String(apiErr)) + "; file " + (fileErr.message || String(fileErr)));
+          });
         })
         .then(render)
         .catch(function (err) {

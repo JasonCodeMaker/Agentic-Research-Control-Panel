@@ -20,6 +20,9 @@ def test_research_exp_live_skill_carries_adaptive_tracking_protocol():
         "Scheduler-neutral",
         "must not report startup-confirmed",
         "Next Check",
+        "serve_dashboard.py ensure --json",
+        "repair_required",
+        "Dashboard repair must not pause run monitoring",
     ):
         assert phrase in text
 
@@ -35,4 +38,6 @@ def test_protocol_hooks_preserve_workflow_and_add_wrapper_exception():
     assert "structured runtime artifacts, not ad hoc raw scrollback parsing" in claude
     assert "cadenceMillis" in workflow
     assert "heartbeatTimeoutSeconds" in workflow
+    assert "DashboardServerSnapshot" in workflow
+    assert "ENSURE_DASHBOARD_SERVER" in workflow
     assert "buildStopGate" in workflow

@@ -40,6 +40,9 @@ Fact-backed package ownership:
 
 - `status.json` is the live-run source of truth and may be refreshed by the
   harvester/watchdog.
+- `outputs/_live/dashboard_server.json` is dashboard-server health/provenance
+  only. It may contain `repair_required`, but it never replaces `status.json`
+  or blocks experiment launch/completion truth.
 - `research_html/data/packages/<pkg>/tables/live_checks.csv` stores extracted
   live-check snapshots for `tracker.html`.
 - `research_html/data/packages/<pkg>/tables/resource_allocation.csv` stores the

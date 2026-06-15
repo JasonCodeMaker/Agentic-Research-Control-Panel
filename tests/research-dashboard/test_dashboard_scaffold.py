@@ -1,4 +1,5 @@
 import sys
+import py_compile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -39,6 +40,17 @@ def test_dashboard_scaffold_installs_empty_brainstorms_store(tmp_path):
     assert (root / "data" / "brainstorms.js").read_text(encoding="utf-8").strip() == (
         "window.BRAINSTORMS = [];"
     )
+
+
+def test_dashboard_scaffold_installs_live_api_server_script(tmp_path):
+    root = tmp_path / "research_html"
+    written = ensure_dashboard.ensure_dashboard(root, force=False)
+
+    written_rel = {p.relative_to(root).as_posix() for p in written}
+    server = root / "scripts" / "serve_dashboard.py"
+    assert "scripts/serve_dashboard.py" in written_rel
+    assert server.exists()
+    py_compile.compile(str(server), doraise=True)
 
 
 def test_chrome_copy_skips_python_cache_files(tmp_path, monkeypatch):

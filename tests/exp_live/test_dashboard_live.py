@@ -1,4 +1,6 @@
 import sys
+import importlib.util
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -9,6 +11,15 @@ import ensure_dashboard  # noqa: E402
 
 LIVE_HTML = ROOT / "skills" / "research-dashboard" / "assets" / "dashboard" / "live.html"
 INDEX_HTML = ROOT / "skills" / "research-dashboard" / "assets" / "dashboard" / "index.html"
+SERVE_DASHBOARD = ROOT / "skills" / "research-dashboard" / "assets" / "dashboard" / "scripts" / "serve_dashboard.py"
+
+
+def _load_serve_dashboard():
+    spec = importlib.util.spec_from_file_location("serve_dashboard_under_test", SERVE_DASHBOARD)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_dashboard_scaffold_installs_global_live_page(tmp_path):
@@ -17,7 +28,9 @@ def test_dashboard_scaffold_installs_global_live_page(tmp_path):
     written_rel = {p.relative_to(root).as_posix() for p in written}
 
     assert "live.html" in written_rel
+    assert "scripts/serve_dashboard.py" in written_rel
     assert (root / "live.html").exists()
+    assert (root / "scripts" / "serve_dashboard.py").exists()
     assert 'href="live.html"' in (root / "index.html").read_text(encoding="utf-8")
 
 
@@ -26,12 +39,14 @@ def test_live_page_reads_runtime_files_and_is_read_only():
     index = INDEX_HTML.read_text(encoding="utf-8")
 
     assert 'data-page="live"' in html
+    assert "/api/live/runs?include_status=1" in html
     assert "../outputs/_live/runs.jsonl" in html
     assert "status.json" in html
     assert "data/research-packages.js" in html
     assert "No live runs yet." in html
     assert "Cannot fetch" in html
-    assert "python -m http.server" in html
+    assert "serve_dashboard.py ensure --json" in html
+    assert "file fallback" in html
     assert 'data-field="run-state"' in html
     assert 'data-field="latest-metrics"' in html
     assert 'data-field="next-check-source"' in html
@@ -63,7 +78,52 @@ def test_live_page_scopes_fetches_and_derives_stale_client_side():
     assert "heartbeat_timeout" in html
     assert "24 * 3600" in html
     assert "shouldFetch" in html
+    assert "fetchApiRuns" in html
+    assert "fetchFileRuns" in html
     assert "lastHtml" in html  # F8: repaint only on change
+
+
+def test_dashboard_server_folds_index_and_attaches_status(tmp_path):
+    module = _load_serve_dashboard()
+    outputs = tmp_path / "outputs"
+    run_dir = outputs / "pkg-a" / "runs" / "P1-r1"
+    run_dir.mkdir(parents=True)
+    (outputs / "_live").mkdir(parents=True)
+    (run_dir / "status.json").write_text(
+        json.dumps({
+            "run_id": "P1-r1",
+            "pkg": "pkg-a",
+            "exp_id": "P1",
+            "status": "RUNNING",
+            "latest_metrics": {"loss": 0.2},
+        }),
+        encoding="utf-8",
+    )
+    (outputs / "_live" / "runs.jsonl").write_text(
+        json.dumps({
+            "op": "launched",
+            "run_id": "P1-r1",
+            "pkg": "pkg-a",
+            "exp_id": "P1",
+            "dir": str(run_dir),
+            "started_at": 1.0,
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    runs, errors = module.fold_index(outputs)
+    assert errors == []
+    assert runs[0]["run_id"] == "P1-r1"
+    attached = module.attach_status(tmp_path, outputs, runs[0])
+    assert attached["status"]["latest_metrics"]["loss"] == 0.2
+
+
+def test_dashboard_server_rejects_status_paths_outside_outputs(tmp_path):
+    module = _load_serve_dashboard()
+    outputs = tmp_path / "outputs"
+    outputs.mkdir()
+    run = {"run_id": "bad", "dir": str(tmp_path / "elsewhere")}
+    assert module.safe_run_dir(tmp_path, outputs, run) is None
 
 
 def test_ensure_dashboard_repairs_missing_live_nav_on_existing_index(tmp_path):

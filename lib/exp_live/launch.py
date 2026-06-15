@@ -28,6 +28,7 @@ class LaunchResult:
     run_dir: Path
     meta_path: Path
     live_index: Path
+    dashboard_server: dict | None = None
 
 
 def _utc_stamp(ts: float) -> str:
@@ -71,6 +72,63 @@ def _tmux_session_exists(session: str) -> bool:
     except FileNotFoundError:
         return False
     return result.returncode == 0
+
+
+def _ensure_dashboard_server(
+    *,
+    repo_root: Path,
+    outputs_root: Path,
+    port: int | None = None,
+) -> dict:
+    """Best-effort dashboard server ensure.
+
+    The dashboard is an observation surface. Launch truth remains the local run
+    envelope, so this helper records repair_required state instead of raising.
+    """
+    script = repo_root / "research_html" / "scripts" / "serve_dashboard.py"
+    if not script.exists():
+        return {
+            "ok": False,
+            "status": "missing",
+            "error": f"dashboard server script not found: {script}",
+            "repair_required": True,
+        }
+    cmd = [
+        sys.executable,
+        str(script),
+        "--repo-root",
+        str(repo_root),
+        "--outputs-root",
+        str(outputs_root.resolve()),
+        "ensure",
+        "--json",
+    ]
+    if port is not None:
+        cmd.extend(["--port", str(port)])
+    try:
+        result = subprocess.run(cmd, cwd=str(repo_root), capture_output=True, text=True, timeout=8)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": "error",
+            "error": f"dashboard ensure failed: {exc}",
+            "repair_required": True,
+        }
+    try:
+        payload = json.loads(result.stdout.strip().splitlines()[-1])
+    except (IndexError, json.JSONDecodeError):
+        payload = {
+            "ok": False,
+            "status": "error",
+            "error": (result.stderr or result.stdout or "dashboard ensure produced no JSON").strip(),
+            "repair_required": True,
+        }
+    if result.returncode != 0:
+        payload["ok"] = False
+        payload.setdefault("status", "error")
+        payload.setdefault("error", (result.stderr or result.stdout or "dashboard ensure failed").strip())
+        payload["repair_required"] = True
+    return payload
 
 
 def _write_meta(path: Path, meta: dict) -> None:
@@ -133,6 +191,8 @@ def launch_run(
     use_tmux: bool = True,
     server: str = "local",
     alloc_id: str | None = None,
+    ensure_dashboard: bool = True,
+    dashboard_port: int | None = None,
     now: Callable[[], float] = time.time,
 ) -> LaunchResult:
     if not command:
@@ -149,6 +209,12 @@ def launch_run(
         raise RuntimeError(
             f"tmux session already exists: {session!r} — pick another --tmux-session or kill it first"
         )
+    repo_root = Path(__file__).resolve().parents[2]
+    dashboard_server = (
+        _ensure_dashboard_server(repo_root=repo_root, outputs_root=outputs_root, port=dashboard_port)
+        if ensure_dashboard
+        else {"ok": False, "status": "disabled"}
+    )
     env = dict(os.environ)
     meta = {
         "run_id": run_id,
@@ -170,6 +236,7 @@ def launch_run(
         "heartbeat_timeout": heartbeat_timeout,
         "server": server,
         "alloc_id": alloc_id,
+        "dashboard_server": dashboard_server,
     }
     run_dir.mkdir(parents=True, exist_ok=False)
     _write_meta(meta_path, meta)
@@ -229,7 +296,13 @@ def launch_run(
             "ended_at": ended_at,
         })
         raise
-    return LaunchResult(run_id=run_id, run_dir=run_dir, meta_path=meta_path, live_index=live_index)
+    return LaunchResult(
+        run_id=run_id,
+        run_dir=run_dir,
+        meta_path=meta_path,
+        live_index=live_index,
+        dashboard_server=dashboard_server,
+    )
 
 
 def _command_after_separator(command: list[str]) -> list[str]:
@@ -258,6 +331,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="resource-registry server name this run executes on")
     parser.add_argument("--alloc",
                         help="alloc_id from lib/resource_alloc binding this run to its allocation")
+    parser.add_argument("--dashboard-port", type=int, help="preferred local dashboard server port")
+    parser.add_argument("--no-dashboard-server", action="store_true", help="skip best-effort dashboard server ensure")
     parser.add_argument("--foreground", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
@@ -287,10 +362,16 @@ def main(argv: list[str] | None = None) -> int:
         use_tmux=not args.foreground,
         server=args.server,
         alloc_id=args.alloc,
+        ensure_dashboard=not args.no_dashboard_server,
+        dashboard_port=args.dashboard_port,
     )
     print(f"run_id={result.run_id}")
     print(f"run_dir={result.run_dir}")
     print(f"live_index={result.live_index}")
+    if result.dashboard_server and result.dashboard_server.get("ok"):
+        print(f"dashboard_live_url={result.dashboard_server.get('live_url')}")
+    elif result.dashboard_server:
+        print(f"dashboard_server_warning={result.dashboard_server.get('error') or result.dashboard_server.get('status')}")
     return 0
 
 

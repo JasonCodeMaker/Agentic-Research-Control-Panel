@@ -54,9 +54,12 @@ def test_ml_dl_profile_drives_plan_without_corpus(tmp_root):
                   {"inputs/results/main_table.md": "Recall@5 = 47.3 on MSR-VTT [vaswani2017]"})
     bpc.build_context("demo", root=tmp_root)
     result = wk.build_plan("demo", root=tmp_root)  # no adapter, no corpus
-    plan = common.read_text(tmp_root / "projects" / "demo" / "drafts" / "paper_plan.md")
+    plan_path = tmp_root / "projects" / "demo" / "context" / "paper_plan.md"
+    plan = common.read_text(plan_path)
     # plan follows kernel section order and assigns the main claim
     assert "Draft-0 Introduction" in plan or "introduction_first_pass" in plan
     assert "EventRetr improves Recall@5" in plan  # claim mapped into the plan
     assert result["profile"] == "ml_conference"   # NeurIPS -> ml_conference
     assert "ml_conference" in plan or "ml_dl_general" in plan
+    assert result["plan_path"] == str(plan_path)
+    assert not (tmp_root / "projects" / "demo" / "drafts" / "paper_plan.md").exists()
