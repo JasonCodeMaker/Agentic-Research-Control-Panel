@@ -1,8 +1,7 @@
-"""End-to-end: the whole wiki-integration composes — Phases 0-6 together.
+"""End-to-end: the whole wiki-integration composes.
 
-real research-op registry writes → build (Context Pack + durable core) → reflect cross-package
-dead-end → context.html render. Proves the mutation surface, the assembler, the self-learning
-detector, and the human surface all line up on the same data.
+real research-op registry writes → build (Context Pack + durable core) → context.html render.
+Proves the mutation surface, the assembler, and the human surface all line up on the same data.
 """
 import json
 import shutil
@@ -23,7 +22,6 @@ import scope_ssot  # noqa: E402
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node required")
 
 OP = ROOT / "skills" / "research-op" / "scripts" / "research_op.py"
-REFLECT = ROOT / "skills" / "research-reflect" / "scripts" / "reflect.py"
 RENDER = ROOT / "skills" / "research-dashboard" / "assets" / "dashboard" / "assets" / "research-context.js"
 
 _PACKAGES_JS = '''window.RESEARCH_PACKAGES = [
@@ -85,16 +83,6 @@ def test_full_wiki_integration(tmp_path, monkeypatch):
     for needle in ("active hypothesis", "reproduce the baseline first", "mining",
                    "Dense Passage Retrieval", "EXTENDS", "no zero-shot eval"):
         assert needle in md, needle
-
-    # Phase 3: reflect reads the pack's facts → cross-package dead-end (mining failed in 2 packages)
-    pending = tmp_path / "outputs" / "2026-06-03-active" / "pending"
-    r = subprocess.run([sys.executable, str(REFLECT), "--context-pack",
-                        str(tmp_path / "outputs" / "2026-06-03-active" / "context_pack.json"),
-                        "--pending-dir", str(pending), "--threshold", "2"],
-                       capture_output=True, text=True)
-    assert r.returncode == 0, r.stderr
-    out = json.loads(r.stdout)
-    assert any(f["kind"] == "CROSS_PACKAGE_DEAD_END" and f["method"] == "mining" for f in out["findings"])
 
     # Phase 2: the human surface renders the same durable core
     core_js = root / "data" / "context-core.js"

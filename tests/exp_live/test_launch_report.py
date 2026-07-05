@@ -54,6 +54,27 @@ def test_launch_run_foreground_creates_run_artifacts_and_global_index(tmp_path):
     assert index_lines[1]["final_status"] == "COMPLETED"
 
 
+def test_launched_index_line_records_command_and_retry_of(tmp_path):
+    # The live page disambiguates open runs by config (the launched command) and
+    # auto-clears a fixed failure by reading retry_of, so both must reach runs.jsonl.
+    outputs_root = tmp_path / "outputs"
+    launch.launch_run(
+        pkg="pkg-a",
+        exp_id="P2",
+        command=[sys.executable, "-c", "print('ok', flush=True)"],
+        outputs_root=outputs_root,
+        use_tmux=False,
+        ensure_dashboard=False,
+        retry_of="P2-20251211-000000",
+        now=lambda: 1765430000.0,
+    )
+
+    launched = _lines(outputs_root / "_live" / "runs.jsonl")[0]
+    assert launched["op"] == "launched"
+    assert launched["command"][:2] == [sys.executable, "-c"]
+    assert launched["retry_of"] == "P2-20251211-000000"
+
+
 def test_launch_run_rejects_commands_without_separator(tmp_path):
     try:
         launch.main(["--pkg", "pkg", "--exp", "P1", "--outputs-root", str(tmp_path / "outputs")])

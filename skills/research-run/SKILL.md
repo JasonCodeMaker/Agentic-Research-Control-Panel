@@ -45,7 +45,6 @@ and stops instead of proposing scope or creating package surfaces itself.
 | Executable workflow controller | `workflow.ts` |
 | Admission / execution preflight | `skills/research-run/scripts/admission.py` |
 | Dispatch driver | `skills/research-run/scripts/driver.py` |
-| Gate helper wiring | `skills/research-run/scripts/roles.py` |
 | L1 fixture only | `skills/research-run/scripts/skeleton.py` |
 | Autonomy dial | `skills/research-run/scripts/dial.py` |
 | PACK continuity | `skills/research-run/scripts/pack.py` |

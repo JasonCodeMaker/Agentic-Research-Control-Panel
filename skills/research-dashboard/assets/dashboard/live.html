@@ -27,9 +27,9 @@
     </header>
 
     <nav class="dashboard-nav" data-section="nav" aria-label="Live run sections">
-      <a href="#live-root">Open runs</a>
-      <a href="#attention-rail">Attention</a>
-      <a href="#terminal-runs">Terminal runs</a>
+      <a href="#live-root">Now running</a>
+      <a href="#attention-rail">Needs attention</a>
+      <a href="#terminal-runs">Recent terminal</a>
     </nav>
 
     <section class="live-strip" data-section="live-health-strip" aria-live="polite">
@@ -41,25 +41,30 @@
       <div class="summary-cell" data-field="poll-state"><div class="k">Poll</div><div class="v">starting</div></div>
     </section>
 
-    <section id="attention-rail" data-section="attention-rail" aria-label="Runs requiring attention">
-      <h2>Attention</h2>
-      <div class="live-grid" data-field="attention-list">
-        <div class="empty-state">No STALE or RUN_FAILED runs.</div>
-      </div>
-    </section>
-
     <section id="live-root" data-section="open-runs" aria-label="Open live runs">
-      <h2>Open runs</h2>
+      <h2>Now running</h2>
       <p class="lead" data-field="next-check-source">
         Next Check is recorded by the agent in tracker rows; this page renders measured run state only.
+        Each card is keyed by its launched <strong>config</strong> so you can tell open runs apart.
       </p>
       <div class="live-grid" data-field="open-run-list">
         <div class="empty-state">No live runs yet.</div>
       </div>
     </section>
 
+    <section id="attention-rail" data-section="attention-rail" aria-label="Runs requiring attention">
+      <h2>Needs attention</h2>
+      <p class="lead">
+        Stale or failed runs. A failure relaunched with <code>--retry-of</code> is treated as fixed
+        and clears from this rail automatically.
+      </p>
+      <div class="live-grid" data-field="attention-list">
+        <div class="empty-state">No runs need attention.</div>
+      </div>
+    </section>
+
     <section id="terminal-runs" data-section="terminal-runs" aria-label="Recent terminal runs">
-      <h2>Recent terminal runs</h2>
+      <h2>Recent terminal</h2>
       <details class="details-panel">
         <summary>Terminal runs from the last 7 days</summary>
         <div class="live-grid" data-field="terminal-run-list">
@@ -80,6 +85,7 @@
   (function () {
     var API_RUNS_URL = "/api/live/runs?include_status=1";
     var RUNS_URL = "../outputs/_live/runs.jsonl";
+    var ACK_URL = "../outputs/_live/acknowledged.json";
     var POLL_MS = 3000;
     var TERMINAL = { COMPLETED: true, RUN_FAILED: true, RUN_HALTED: true, SKIPPED: true };
 
@@ -190,11 +196,6 @@
       return Math.floor(hours / 24) + " d ago";
     }
 
-    function clockText(epochSeconds) {
-      if (!epochSeconds) return "unmeasured";
-      return new Date(epochSeconds * 1000).toLocaleString();
-    }
-
     function progressText(status) {
       var progress = status.progress || {};
       var parts = [];
@@ -231,6 +232,28 @@
       return "";
     }
 
+    function configText(run) {
+      var cmd = run.command;
+      if (Array.isArray(cmd) && cmd.length) return cmd.join(" ");
+      if (typeof cmd === "string") return cmd;
+      return "";
+    }
+
+    function healthLine(status) {
+      var health = status.health || {};
+      var state = health.state || "unmeasured";
+      var reason = (health.reasons && health.reasons[0]) || "";
+      if (reason.length > 64) reason = reason.slice(0, 63) + "…";
+      return { state: state, reason: reason };
+    }
+
+    function healthClass(state) {
+      if (state === "OK") return "ok";
+      if (state === "WARN") return "warn";
+      if (state === "ERROR") return "err";
+      return "";
+    }
+
     function cardHtml(run) {
       var status = run.status || {};
       var pkg = packageById(status.pkg || run.pkg);
@@ -238,24 +261,60 @@
       var exp = experimentFor(pkg, expId);
       var state = run.view || status.status || run.final_status || "RUNNING";
       var pct = status.progress && status.progress.pct != null ? Math.max(0, Math.min(100, status.progress.pct)) : 0;
+      var cfg = configText(run);
+      var health = healthLine(status);
       return [
-        '<article class="live-card" data-run-id="' + escapeHtml(run.run_id) + '" data-status="' + escapeHtml(state) + '">',
+        '<article class="live-card run-card" data-run-id="' + escapeHtml(run.run_id) + '" data-status="' + escapeHtml(state) + '">',
         '<div class="live-card-head">',
-        '<span class="status ' + statusClass(state) + '" data-field="run-state">' + escapeHtml(state) + '</span>',
-        '<h3>' + escapeHtml(expId + " — " + (exp.purpose || exp.label || pkg.name || run.pkg || run.run_id)) + '</h3>',
+        '<div class="run-ident">',
+        '<span class="run-id">' + escapeHtml(expId) + '</span>',
+        '<h3 class="run-title">' + escapeHtml(exp.label || exp.purpose || pkg.name || run.pkg || run.run_id) + '</h3>',
         '</div>',
-        '<p class="card-text"><strong>pkg:</strong> ' + escapeHtml(status.pkg || run.pkg || "unmeasured") + '</p>',
+        '<span class="status ' + statusClass(state) + '" data-field="run-state">' + escapeHtml(state) + '</span>',
+        '</div>',
+        (exp.purpose && exp.label) ? ('<p class="run-purpose">' + escapeHtml(exp.purpose) + '</p>') : '',
+        '<p class="run-config" data-field="config" title="' + escapeHtml(cfg) + '"><span class="kv-key">config</span> ' + escapeHtml(cfg || "unmeasured") + '</p>',
         '<div class="progress-meter" aria-label="Progress"><span style="width:' + pct + '%"></span></div>',
-        '<p class="card-text" data-field="progress">' + escapeHtml(progressText(status)) + '</p>',
-        '<p class="card-text" data-field="latest-metrics">' + escapeHtml(metricText(status)) + '</p>',
-        '<p class="card-text"><strong>gate:</strong> ' + escapeHtml(exp.gate || pkg.primaryMetricVsGate || "unmeasured") + '</p>',
-        '<p class="card-text"><strong>last output:</strong> ' + escapeHtml(ageText(status.last_output_at)) + ' · <strong>resource:</strong> ' + escapeHtml(resourceText(status)) + '</p>',
-        '<p class="card-text"><strong>ETA:</strong> ' + escapeHtml(status.eta || "unknown") + ' · <strong>started:</strong> ' + escapeHtml(clockText(status.started_at || run.started_at)) + '</p>',
-        '<p class="card-text"><strong>health:</strong> ' + escapeHtml((status.health && status.health.state) || "unmeasured") + ' ' + escapeHtml((status.health && status.health.reasons || []).join("; ")) + '</p>',
+        '<p class="run-progress" data-field="progress">' + escapeHtml(progressText(status)) + '</p>',
+        '<dl class="run-kv">',
+        '<div><dt>metrics</dt><dd data-field="latest-metrics">' + escapeHtml(metricText(status)) + '</dd></div>',
+        '<div><dt>health</dt><dd><span class="health-tag ' + healthClass(health.state) + '">' + escapeHtml(health.state) + '</span>' + (health.reason ? ' ' + escapeHtml(health.reason) : '') + '</dd></div>',
+        '<div><dt>pkg</dt><dd>' + escapeHtml(status.pkg || run.pkg || "unmeasured") + '</dd></div>',
+        '</dl>',
+        '<p class="card-meta-line"><strong>updated</strong> ' + escapeHtml(ageText(status.last_output_at)) + ' · <strong>resource</strong> ' + escapeHtml(resourceText(status)) + ' · <strong>eta</strong> ' + escapeHtml(status.eta || "unknown") + '</p>',
         '<div class="toolbar live-card-links">',
         '<a class="pill" href="' + escapeHtml(logUrl(run)) + '">log</a>',
-        '<a class="pill" href="' + escapeHtml(statusUrl(run)) + '">status</a>',
+        '<a class="pill" href="' + escapeHtml(statusUrl(run)) + '">raw json</a>',
         '<a class="pill" href="' + escapeHtml(trackerHref(pkg)) + '">tracker row</a>',
+        '</div>',
+        '</article>',
+      ].join("");
+    }
+
+    function compactHtml(run) {
+      var status = run.status || {};
+      var pkg = packageById(status.pkg || run.pkg);
+      var expId = status.exp_id || run.exp_id || "unmeasured";
+      var exp = experimentFor(pkg, expId);
+      var state = run.view || status.status || run.final_status || "RUNNING";
+      var health = healthLine(status);
+      var reason = health.reason || (state === "STALE" ? "no recent output" : "");
+      var ref = status.ended_at || run.ended_at || status.last_output_at;
+      var note = run.supersededBy
+        ? '<p class="run-note">superseded by ' + escapeHtml(run.supersededBy) + '</p>'
+        : (run.acknowledged ? '<p class="run-note">acknowledged</p>' : '');
+      return [
+        '<article class="live-card compact-card" data-run-id="' + escapeHtml(run.run_id) + '" data-status="' + escapeHtml(state) + '">',
+        '<div class="live-card-head">',
+        '<span class="status ' + statusClass(state) + '" data-field="run-state">' + escapeHtml(state) + '</span>',
+        '<span class="run-age">' + escapeHtml(ageText(ref)) + '</span>',
+        '</div>',
+        '<h3 class="run-title">' + escapeHtml(expId + " — " + (exp.label || exp.purpose || pkg.name || run.pkg || run.run_id)) + '</h3>',
+        reason ? ('<p class="run-reason">' + escapeHtml(reason) + '</p>') : '',
+        note,
+        '<div class="toolbar live-card-links">',
+        '<a class="pill" href="' + escapeHtml(logUrl(run)) + '">log</a>',
+        '<a class="pill" href="' + escapeHtml(statusUrl(run)) + '">raw json</a>',
         '</div>',
         '</article>',
       ].join("");
@@ -270,29 +329,52 @@
       if (target) target.querySelector(".v").textContent = value;
     }
 
+    function alarmCell(field) {
+      var cell = byField(field);
+      if (!cell) return;
+      var count = parseInt(cell.querySelector(".v").textContent, 10) || 0;
+      cell.classList.toggle("alarm", count > 0);
+    }
+
     function terminalRecent(run) {
       var ended = (run.status && run.status.ended_at) || run.ended_at;
       return ended && (Date.now() / 1000 - ended) <= 7 * 24 * 3600;
     }
 
-    function render(runs) {
+    function render(runs, acked) {
+      acked = acked || {};
       runs.forEach(function (run) { run.view = deriveState(run); });
+      // A failure clears from the attention rail and the alarm counts when it is
+      // either relaunched with --retry-of (superseded) or explicitly acknowledged
+      // (kept in terminal history). Both are data-driven; the page never writes.
+      var retried = {};
+      runs.forEach(function (run) { if (run.retry_of) retried[run.retry_of] = run.run_id; });
+      runs.forEach(function (run) {
+        run.supersededBy = retried[run.run_id] || null;
+        run.acknowledged = !!acked[run.run_id];
+      });
+      function cleared(run) { return !!(run.supersededBy || run.acknowledged); }
+
       var open = runs.filter(function (run) { return !TERMINAL[run.view]; });
       var terminal = runs.filter(function (run) { return TERMINAL[run.view] && terminalRecent(run); });
       var attention = runs.filter(function (run) {
+        if (cleared(run)) return false;
         return run.view === "STALE" || (run.view === "RUN_FAILED" && terminalRecent(run));
       });
+
       setCount("running-count", runs.filter(function (run) { return run.view === "RUNNING"; }).length);
-      setCount("stale-count", runs.filter(function (run) { return run.view === "STALE"; }).length);
+      setCount("stale-count", runs.filter(function (run) { return run.view === "STALE" && !cleared(run); }).length);
       setCount("failed-count", runs.filter(function (run) {
-        return run.view === "RUN_FAILED" && failedRecent(run);
+        return run.view === "RUN_FAILED" && failedRecent(run) && !cleared(run);
       }).length);
       setCount("queued-count", runs.filter(function (run) { return run.view === "QUEUED"; }).length);
       setCount("last-refresh", new Date().toLocaleTimeString());
+      alarmCell("stale-count");
+      alarmCell("failed-count");
 
       setHtml("open-run-list", open.length ? open.map(cardHtml).join("") : empty("No live runs yet."));
-      setHtml("attention-list", attention.length ? attention.map(cardHtml).join("") : empty("No STALE or RUN_FAILED runs."));
-      setHtml("terminal-run-list", terminal.length ? terminal.map(cardHtml).join("") : empty("No terminal runs in the last 7 days."));
+      setHtml("attention-list", attention.length ? attention.map(compactHtml).join("") : empty("No runs need attention."));
+      setHtml("terminal-run-list", terminal.length ? terminal.map(compactHtml).join("") : empty("No terminal runs in the last 7 days."));
     }
 
     function renderError(message) {
@@ -359,14 +441,32 @@
         });
     }
 
+    function fetchAcks() {
+      return fetch(ACK_URL, { cache: "no-store" })
+        .then(function (res) {
+          if (res.status === 404) return [];
+          if (!res.ok) throw new Error("status " + res.status);
+          return res.json();
+        })
+        .then(function (data) {
+          var ids = Array.isArray(data) ? data : (data && data.run_ids) || [];
+          var set = {};
+          ids.forEach(function (id) { set[id] = true; });
+          return set;
+        })
+        .catch(function () { return {}; });
+    }
+
     function poll() {
-      fetchApiRuns()
-        .catch(function (apiErr) {
+      Promise.all([
+        fetchApiRuns().catch(function (apiErr) {
           return fetchFileRuns().catch(function (fileErr) {
             throw new Error("api " + (apiErr.message || String(apiErr)) + "; file " + (fileErr.message || String(fileErr)));
           });
-        })
-        .then(render)
+        }),
+        fetchAcks()
+      ])
+        .then(function (results) { render(results[0], results[1]); })
         .catch(function (err) {
           renderError(err.message || String(err));
         });

@@ -64,8 +64,7 @@ def test_renderer_renders_sections(tmp_path):
     root = _scaffold(tmp_path)
     (root / "data" / "context-core.js").write_text(
         "window.RESEARCH_CONTEXT_CORE = " + json.dumps({
-            "stamp": {"scope_version": 3, "generated_at": "t0", "truncated": False,
-                      "injection_findings": []},
+            "stamp": {"scope_version": 3, "generated_at": "t0", "truncated": False},
             "sections": [{"key": "rules", "title": "Learned Rules (constraints)",
                           "protected": True, "lines": ["- reproduce the baseline first"]}],
         }) + ";\n", encoding="utf-8")
@@ -87,31 +86,3 @@ def test_renderer_renders_sections(tmp_path):
     out = subprocess.check_output(["node", "-e", script], text=True)
     assert "Learned Rules (constraints)" in out
     assert "reproduce the baseline first" in out
-
-
-@pytest.mark.skipif(shutil.which("node") is None, reason="node required to execute the renderer")
-def test_renderer_shows_injection_banner(tmp_path):
-    root = _scaffold(tmp_path)
-    (root / "data" / "context-core.js").write_text(
-        "window.RESEARCH_CONTEXT_CORE = " + json.dumps({
-            "stamp": {"scope_version": 1, "generated_at": "t0", "truncated": False,
-                      "injection_findings": ["ignore-previous-instructions"]},
-            "sections": [],
-        }) + ";\n", encoding="utf-8")
-    script = f'''
-      global.window = {{}};
-      var captured = "";
-      global.document = {{
-        readyState: "complete",
-        getElementById: function (id) {{
-          return id === "context-root" ? {{ set innerHTML(v) {{ captured = v; }} }} : null;
-        }},
-        addEventListener: function () {{}},
-      }};
-      const fs = require("fs");
-      eval(fs.readFileSync({json.dumps(str(root / "data" / "context-core.js"))}, "utf8"));
-      eval(fs.readFileSync({json.dumps(str(root / "assets" / "research-context.js"))}, "utf8"));
-      process.stdout.write(captured);
-    '''
-    out = subprocess.check_output(["node", "-e", script], text=True)
-    assert "DATA" in out and "injection" in out.lower()

@@ -71,7 +71,7 @@ These fire in addition to the lane-crossing rules above whenever the destination
 - `rule-store-malformed`: `data/rules.js` must parse as
   `window.RESEARCH_RULES = <valid JSON array>;` before any rule mutation writes it back.
 - `rule-project-needs-ack` (`_project` path): landing/changing a project rule requires a non-empty
-  `payload.ack` — the distinct human action (research-apply passes its human token through).
+  `payload.ack` — the distinct human action supplied by the governed caller.
 - `rule-required-fields`: insert needs `kind ∈ {binding, lesson}` (package) and the full typed row
   (`slug` kebab-case, `title`, `text`, `rationale`, `addedAt`); update/delete need `payload.id`.
 - `rule-origin-reserved`: manual inserts may not set `origin=mirror` or `origin=selfevolve`;

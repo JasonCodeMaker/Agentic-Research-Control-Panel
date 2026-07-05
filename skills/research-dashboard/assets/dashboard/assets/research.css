@@ -271,10 +271,20 @@ h1 em {
 
 .live-card {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   border: 1.5px solid var(--g300);
   border-radius: 8px;
   background: var(--paper);
   padding: 18px;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.live-card:hover {
+  border-color: var(--slate);
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-2px);
 }
 
 .live-card-head {
@@ -292,6 +302,165 @@ h1 em {
   line-height: 1.35;
 }
 
+/* live run card hierarchy */
+.run-ident { min-width: 0; }
+
+.run-id {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--clay-text);
+}
+
+.run-title {
+  margin: 2px 0 0;
+  font-family: var(--sans);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--slate);
+}
+
+.run-purpose {
+  margin: 0;
+  color: var(--g600);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.run-config {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--g200);
+  border-radius: 6px;
+  background: var(--g100);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--g700);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.run-config .kv-key {
+  flex: none;
+  color: var(--g500);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.run-progress {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--g600);
+}
+
+.run-kv {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.run-kv > div {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+.run-kv dt {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--g500);
+}
+
+.run-kv dd {
+  margin: 0;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--g700);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.card-meta-line {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--g600);
+}
+
+.card-meta-line strong {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--g500);
+}
+
+.health-tag {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--g300);
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--g700);
+}
+
+.health-tag.ok { border-color: var(--olive-text); background: var(--sage); color: var(--olive-text); }
+.health-tag.warn { border-color: var(--gold-dark); background: #f5ecd6; color: var(--gold-dark); }
+.health-tag.err { border-color: var(--clay-dark); background: var(--rose); color: var(--clay-dark); }
+
+/* compact attention / terminal card */
+.compact-card {
+  gap: 8px;
+  border-left-width: 3px;
+}
+
+.compact-card[data-status="RUN_FAILED"],
+.compact-card[data-status="RUN_HALTED"] { border-left-color: var(--clay); }
+.compact-card[data-status="STALE"] { border-left-color: var(--gold); }
+.compact-card[data-status="COMPLETED"] { border-left-color: var(--olive); }
+.compact-card[data-status="SKIPPED"] { border-left-color: var(--g400); }
+
+.run-age {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--g500);
+}
+
+.run-reason {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--clay-dark);
+}
+
+.run-note {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--olive-text);
+}
+
+.summary-cell.alarm {
+  border-color: var(--clay-dark);
+  background: var(--rose);
+}
+
 .progress-meter {
   height: 8px;
   overflow: hidden;
@@ -307,7 +476,8 @@ h1 em {
 }
 
 .live-card-links {
-  margin-top: 14px;
+  margin-top: auto;
+  padding-top: 2px;
 }
 
 body[data-page="live"] .details-panel {

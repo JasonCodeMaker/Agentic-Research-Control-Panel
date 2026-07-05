@@ -247,6 +247,8 @@ def launch_run(
         "exp_id": exp_id,
         "dir": str(run_dir),
         "started_at": started_at,
+        "command": command,
+        "retry_of": retry_of,
     })
 
     metrics_regexes = list(metrics_regexes or [])

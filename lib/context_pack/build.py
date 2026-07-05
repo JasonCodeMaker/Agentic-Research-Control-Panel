@@ -3,7 +3,7 @@
 Reads the pipeline's existing stores (read-only) and writes two artifacts:
   outputs/<pkg>/context_pack.{md,json}   — full per-direction pack (agent working context)
   research_html/data/context-core.js     — durable, direction-independent project core
-                                            (drives the human surface + cross-package reflect)
+                                            (drives the human surface)
 
 research-packages.js is read through the canonical node dumper; every other source
 degrades gracefully (missing → that section is simply absent from the pack).
@@ -93,16 +93,6 @@ def load_analysis_rules(root: str) -> list:
     return out
 
 
-def _load_json(path: Path, default):
-    if not path.exists():
-        return default
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return default
-    return data if isinstance(data, type(default)) else default
-
-
 def load_registry(root: str, name: str) -> list:
     """Read a project-level knowledge registry JSONL (papers/edges/gaps). [] if absent."""
     path = Path(root) / "data" / name
@@ -186,14 +176,6 @@ def export_learned_rules(selfevolve_root: str, root: str) -> int:
     return len(rules)
 
 
-def load_banlist(pkg_id: str) -> list:
-    return _load_json(Path("outputs") / pkg_id / "ideate" / "banlist.json", [])
-
-
-def load_sources(pkg_id: str) -> dict:
-    return _load_json(Path("outputs") / pkg_id / "lit" / "sources.json", {})
-
-
 def resolve_direction(packages: list, pkg_id: str, transitions_path: str):
     """Active direction node + its scope_version for a package (None, 0 if unresolved)."""
     node_id = next((p.get("sourceScopeNode") for p in packages if p.get("id") == pkg_id), None)
@@ -233,16 +215,15 @@ def build(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/tra
     full = assemble({
         "direction_node": direction_node, "active_pkg": pkg_id, "scope_version": scope_version,
         "generated_at": generated_at, "packages": packages, "learned_rules": learned_rules,
-        "analysis_rules": analysis_rules, "banlist": load_banlist(pkg_id),
-        "papers": load_sources(pkg_id),
+        "analysis_rules": analysis_rules,
         "papers_registry": papers_registry, "edges": edges, "gaps": gaps,
     }, budget_chars=budget_chars)
 
-    # Durable core: direction-independent cross-package knowledge only (no per-direction overlay).
+    # Durable core: direction-independent cross-package knowledge only.
     core = assemble({
         "direction_node": None, "active_pkg": None, "scope_version": scope_version,
         "generated_at": generated_at, "packages": packages, "learned_rules": learned_rules,
-        "analysis_rules": analysis_rules, "banlist": [], "papers": {},
+        "analysis_rules": analysis_rules,
         "papers_registry": papers_registry, "edges": edges, "gaps": gaps,
     }, budget_chars=budget_chars)
 

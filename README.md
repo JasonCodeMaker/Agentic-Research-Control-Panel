@@ -294,11 +294,11 @@ decision, agent action, and durable output.
 | **0 · Attach toolbox** | Install skills and attach protocols to the target repo. | Symlinks skills, preserves/merges protocol files, and verifies the toolbox. | The target repo now has the operating rules. |
 | **1 · Initialize workspace** | Run `/research-dashboard`, then `/research-onboard` if no Project node exists. | Scaffolds the live dashboard; for existing repos, analyzes project context into a prior-knowledge digest and Project proposal. | `research_html/`, optional `outputs/_scope/prior_knowledge.md`, dashboard lanes. |
 | **2 · Ratify project objective** | Inspect and approve/reject the `/research-onboard` or `/research-scope` Project proposal. | Proposes a Project node through Triage; commits only after human ratification. | Accepted Project in Scope SSOT, or a rejected proposal record. |
-| **3 · Form a research direction** | Approve/reject the Direction proposal in chat. | Uses literature/ideation/ranking capability to shape a Direction with a typed yardstick. | Direction node with hypothesis, metric, baselines, success predicate. |
+| **3 · Form a research direction** | Approve/reject the Direction proposal in chat. | Uses brainstorm, evidence checks, and ranking to shape a Direction with a typed yardstick. | Direction node with hypothesis, metric, baselines, success predicate. |
 | **4 · Create an executable task** | Approve/reject the Task proposal; optionally lower the autonomy dial. | Proposes a Task with experiment/config/gate predicate. Default dial is `autonomous`. | Task node and, once committed, a materialized package. |
 | **5 · Execute the research package** | Run `/research-run`; supervise according to the dial. | Loads context, runs readiness, implements/reviews if needed, launches and monitors experiments, propagates artifacts, verifies results, and routes the package until terminal. | Runtime artifacts, audit log, verdicts, package state updates. |
 | **6 · Decide the outcome** | Review dashboard/PACK/verdict in chat; approve terminal decisions or scope changes. | Files Triage proposals when goals should change; never edits the objective silently. | Success/fail/archive state, or a versioned Scope revision. |
-| **7 · Learn for the next cycle** | Run `/research-reflect`, then approve `/research-apply` for accepted lessons. | Mines audit logs for recurring failures and proposes rules. | Active project rules exported into the Context Pack. |
+| **7 · Learn for the next cycle** | Promote accepted lessons through the governed Rule Store path. | Keeps durable rules under explicit authority and exports active rules into project context. | Active project rules exported into the Context Pack. |
 
 **Completion means:** one research package reaches a terminal, evidence-backed state: success, fail, or
 archive. A success is not a self-declared win; it is a package whose metric/verifier gates clear against
@@ -373,13 +373,14 @@ The contribution is the trust record, not just the agent loop.
   before touching disk and logged.
 - **User-owned objective.** Intent lives in the versioned Scope SSOT. The agent proposes; the user
   ratifies.
-- **No fabricated citations.** A citation must resolve to a fetched source before it reaches the record.
+- **Evidence-backed record.** Durable claims should point to package facts, registries, or fetched
+  sources before they reach shared context.
 - **No self-graded success.** Verdicts are checked against the committed success predicate, with
   producer/judge separation.
 - **Independent ranking.** Idea ranking is scored by independent sub-agents; the proposer does not rank
   its own work.
-- **Human-gated self-learning.** Reflection can propose rules, but only `research-apply` can land them
-  with approval and a clearing verdict.
+- **Human-gated self-learning.** The Rule Store promotes lessons only through governed transitions,
+  approval gates, and active-rule export into the registry.
 - **Shared project memory.** The Context Pack is a deterministic projection of project knowledge, so the
   agent and user read the same compiled context.
 
@@ -504,14 +505,14 @@ accepted and committed into the Scope SSOT.
 ### Context Pack
 
 The Context Pack is the project's compiled memory. It contains active rules, failed methods, adopted
-wins, fetched papers, gaps, and the active yardstick. It is deterministic and read-only:
+wins, knowledge registries, gaps, and the active yardstick. It is deterministic and read-only:
 
 - agent face: `outputs/<pkg>/context_pack.md`;
 - human face: `research_html/context.html`;
 - durable core: `research_html/data/context-core.js`.
 
-It never lands a rule by itself. Rules are proposed by reflection and landed only through the governed
-apply path.
+It never lands a rule by itself. Rules enter shared context only through governed Rule Store or
+`research-op` registry paths.
 
 ### Self-evolution memory
 
@@ -565,12 +566,8 @@ Trustworthy-Research-Pipeline/
 | `research-run` | Package execution controller; completes an existing scoped package. |
 | `research-auto` | Direction-campaign conductor; cycles the other skills until the Direction gate clears. |
 | `research-exp-live` | Structured launch/monitor/resume envelope for long-running experiment commands. |
-| `research-lit` | Literature/source gathering role. |
-| `research-ideate` | Idea generation and refinement role. |
 | `research-analysis` | Per-package Rules + Insights page. |
 | `research-op` | Single mutation surface: validate, reject-before-write, audit. |
-| `research-reflect` | Read-only self-learning proposer. |
-| `research-apply` | Human-gated self-learning applier. |
 
 ### Libraries
 
@@ -578,7 +575,6 @@ Trustworthy-Research-Pipeline/
 | --- | --- |
 | `lib/scope_ssot` | Versioned intent store: Project -> Direction -> Task. |
 | `lib/verifier` | Cross-model jury and independence table. |
-| `lib/cite_check` | Fetch-don't-fabricate citation gate. |
 | `lib/ranking` | Independent multi-agent ranking. |
 | `lib/exp_live` | Runtime envelope for wrapper-launched experiment commands. |
 | `lib/package_facts` | JS/CSV fact helpers and projection freshness checks. |

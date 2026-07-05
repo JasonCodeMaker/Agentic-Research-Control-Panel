@@ -74,16 +74,6 @@ def _setup(tmp_path):
          "rationale": "insight-temp", "source": "analysis", "origin": "user",
          "status": "ACTIVE", "addedAt": "2026-06-04"},
     ])
-    banl = tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "ideate" / "banlist.json"
-    banl.parent.mkdir(parents=True, exist_ok=True)
-    banl.write_text(json.dumps([{"id": "hyp-1", "kind": "idea",
-                                 "hypothesis": "re-rank with a cross-encoder",
-                                 "failed_on_metric": "Recall@1"}]), encoding="utf-8")
-    src = tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "lit" / "sources.json"
-    src.parent.mkdir(parents=True, exist_ok=True)
-    src.write_text(json.dumps({"src-001": {"source_id": "src-001", "title": "Dense Passage Retrieval",
-                                           "url": "https://arxiv.org/abs/2004.04906",
-                                           "excerpt": "DPR uses dual encoders."}}), encoding="utf-8")
     return root, log
 
 
@@ -98,20 +88,17 @@ def test_build_writes_full_pack_and_durable_core(tmp_path, monkeypatch):
     pj = json.loads((tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").read_text(encoding="utf-8"))
     core_js = (root / "data" / "context-core.js").read_text(encoding="utf-8")
 
-    # full pack carries everything: direction + cross-package failures + overlay
+    # full pack carries direction + project/package knowledge
     assert "Contrastive retrieval improves zero-shot Recall@1" in md
     assert "hard-negative mining" in md                                  # cross-package failure
     assert "temperature scaling" in md                                   # package lesson row from the registry
     assert "Always reproduce the baseline" in md                         # learned rule
-    assert "cross-encoder" in md                                         # banlist overlay
-    assert "Dense Passage Retrieval" in md                               # papers overlay
     assert pj["stamp"]["scope_version"] == 3
 
-    # durable core is direction-independent: cross-package knowledge only, NO overlay
+    # durable core is direction-independent: cross-package knowledge only
     assert core_js.startswith("window.RESEARCH_CONTEXT_CORE")
     assert "hard-negative mining" in core_js
     assert "Always reproduce the baseline" in core_js
-    assert "Dense Passage Retrieval" not in core_js                      # papers are overlay, not core
     assert "Contrastive retrieval improves" not in core_js               # direction is overlay, not core
 
 
@@ -148,7 +135,7 @@ def test_build_degrades_gracefully_without_optional_stores(tmp_path, monkeypatch
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text("", encoding="utf-8")  # no direction
 
-    # no project/package rule rows, no banlist, no sources — must still build
+    # no project/package rule rows or knowledge registries — must still build
     build.build("research_html", "2026-06-03-retrieval-v2",
                 transitions_path=str(log), generated_at="2026-06-04T00:00:00Z")
 

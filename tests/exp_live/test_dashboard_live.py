@@ -118,6 +118,63 @@ def test_dashboard_server_folds_index_and_attaches_status(tmp_path):
     assert attached["status"]["latest_metrics"]["loss"] == 0.2
 
 
+def test_live_page_shows_run_config_and_drops_gate():
+    # Redesign: each open run is disambiguated by its launched command (config),
+    # and the verdict-flavored gate line is removed from the runtime card.
+    html = LIVE_HTML.read_text(encoding="utf-8")
+
+    assert 'data-field="config"' in html
+    assert "configText" in html
+    assert "run.command" in html
+    assert "primaryMetricVsGate" not in html
+    assert ">gate:" not in html.lower()
+
+
+def test_live_page_bounds_health_and_auto_clears_fixed_failures():
+    # Redesign: health renders through a bounded helper (no unbounded reasons join),
+    # and a failure that was relaunched (retry_of) is treated as superseded -> cleared.
+    html = LIVE_HTML.read_text(encoding="utf-8")
+
+    assert "healthLine" in html
+    assert '.join("; ")' not in html
+    assert "retry_of" in html
+    assert "superseded" in html
+
+
+def test_live_page_supports_acknowledged_runs():
+    # A failure can be acknowledged (kept in terminal history) so it clears from
+    # the attention rail and the alarm counts without a relaunch.
+    html = LIVE_HTML.read_text(encoding="utf-8")
+
+    assert "acknowledged.json" in html
+    assert "fetchAcks" in html
+    assert "acknowledged" in html
+
+
+def test_dashboard_server_passes_command_and_retry_of_through_fold(tmp_path):
+    module = _load_serve_dashboard()
+    outputs = tmp_path / "outputs"
+    (outputs / "_live").mkdir(parents=True)
+    (outputs / "_live" / "runs.jsonl").write_text(
+        json.dumps({
+            "op": "launched",
+            "run_id": "P1-r1",
+            "pkg": "pkg-a",
+            "exp_id": "P1",
+            "dir": str(outputs / "pkg-a" / "runs" / "P1-r1"),
+            "started_at": 1.0,
+            "command": ["bash", "run.sh", "--lr", "3e-4"],
+            "retry_of": "P1-r0",
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    runs, errors = module.fold_index(outputs)
+    assert errors == []
+    assert runs[0]["command"] == ["bash", "run.sh", "--lr", "3e-4"]
+    assert runs[0]["retry_of"] == "P1-r0"
+
+
 def test_dashboard_server_rejects_status_paths_outside_outputs(tmp_path):
     module = _load_serve_dashboard()
     outputs = tmp_path / "outputs"

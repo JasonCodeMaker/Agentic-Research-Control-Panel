@@ -10,7 +10,7 @@ disable-model-invocation: false
 
 A **brainstorm** is a cheap, pre-package, pre-SSOT **idea** that lives on the dashboard brainstorm lane.
 Ideas are many; commitment is the deliberate step. This skill helps a user who only has a vague idea
-shape it — following the brainstorming method, grounding uncertainties with literature, and sharpening
+shape it — following the brainstorming method, grounding factual uncertainties, and sharpening
 hypotheses — until one or more ideas can be **converted** into a single ratified Direction.
 
 The trust line is unchanged: ideas are not gated (they carry no claims, metrics, or evidence). They touch
@@ -28,8 +28,6 @@ disposes. The agent never commits the SSOT.
 | Idea detail pages (user-readable) | `research_html/brainstorm/<YYYY-MM-DD>-<idea-id>.html` |
 | Scope SSOT lib | `<pipeline-root>/lib/scope_ssot/__init__.py` |
 | Triage CLI | `<pipeline-root>/skills/research-scope/scripts/triage.py` |
-| Literature role | `research-lit` |
-| Ideation role | `research-ideate` |
 | Transition log | `outputs/_scope/transitions.jsonl` |
 | Triage queue | `outputs/_scope/triage.jsonl` |
 
@@ -79,18 +77,17 @@ enough; for substantive brainstorming or analysis, immediately enrich that HTML 
 summary, candidate framings, trade-offs, rough metric, evidence links, and next decision. Do not leave the
 user with only a `brainstorms.js` row when the skill is invoked.
 
-**2. Ground uncertainties with `research-lit`.**
+**2. Ground factual uncertainties.**
 
 Whenever a framing turns on a *factual* unknown — is this novel? what is the SOTA baseline? what is the
-standard metric? has this been tried? — invoke **`/research-lit`** to fetch and read sources (fetch-don't-
-fabricate). Fold the grounding back into the idea (e.g., record the real baseline in `--rough-metric`, add
-`--lit-refs`). Do not assert a baseline or prior-art claim you did not fetch.
+standard metric? has this been tried? — fetch and read sources before turning the claim into shared
+context. Fold the grounding back into the idea (e.g., record the real baseline in `--rough-metric`, add
+`--lit-refs`). Do not assert a baseline or prior-art claim without a source or package fact.
 
-**3. Sharpen hypotheses with `research-ideate`.**
+**3. Sharpen hypotheses.**
 
-Use **`/research-ideate`**'s generative step to expand and sharpen candidate hypotheses for the most
-promising framing. (At formation there is no scoped direction or banlist yet, so only the generative step
-applies — write the sharpened ideas back as brainstorms, not as package rows.)
+Expand and sharpen candidate hypotheses for the most promising framing. At formation there is no scoped
+direction yet, so write the sharpened ideas back as brainstorms, not as package rows.
 
 **4. Converge and check readiness.**
 

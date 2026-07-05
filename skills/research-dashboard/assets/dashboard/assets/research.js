@@ -675,7 +675,7 @@
       '<div class="bi-meta-row" data-field="grounding"><dt>Grounding</dt><dd>' +
       (refs.length
         ? htmlEscape(refs.join(" · "))
-        : '<span class="bi-ungrounded">not grounded yet &mdash; run <code>/research-lit</code></span>') +
+        : '<span class="bi-ungrounded">not grounded yet</span>') +
       "</dd></div>"
     );
     return [

@@ -166,7 +166,7 @@ def _route(**over):
     kw = dict(direction_committed=True, pending_direction=False,
               status=conductor.campaign_status([], max_cycles=5),
               open_pkg="2026-06-12-d1", has_executable_exp=True,
-              all_banned=False, dial="AUTONOMOUS", gate_parseable=True)
+              no_candidate=False, dial="AUTONOMOUS", gate_parseable=True)
     kw.update(over)
     return conductor.next_action(**kw)
 
@@ -196,8 +196,8 @@ def test_route_halt_budget():
     assert _route(status=status)["type"] == "HALT_BUDGET"
 
 
-def test_route_halt_all_banned():
-    assert _route(all_banned=True)["type"] == "HALT_ALL_BANNED"
+def test_route_halt_no_candidate():
+    assert _route(no_candidate=True)["type"] == "HALT_NO_CANDIDATE"
 
 
 def test_route_materialize_package():
@@ -212,7 +212,7 @@ def test_route_run_package():
 
 def test_route_design_experiment():
     a = _route(has_executable_exp=False)
-    assert a["type"] == "DESIGN_EXPERIMENT" and "/research-ideate" in a["delegate"]
+    assert a["type"] == "DESIGN_EXPERIMENT" and "/research-op" in a["delegate"]
 
 
 def test_every_route_renders_next_step():
@@ -224,7 +224,7 @@ def test_every_route_renders_next_step():
             [_cycle_record(verdict="PASS", gate_eval="PASS")], max_cycles=5)),
         _route(status=conductor.campaign_status(
             [_cycle_record(), _cycle_record(cycle=2)], max_cycles=2)),
-        _route(all_banned=True),
+        _route(no_candidate=True),
         _route(open_pkg=None),
         _route(),
         _route(has_executable_exp=False),

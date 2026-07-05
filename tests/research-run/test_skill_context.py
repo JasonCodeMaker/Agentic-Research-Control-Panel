@@ -13,7 +13,7 @@ _SKILLS = _PIPE / "skills"
 # Resident: a human converses with these / they drive a continuing loop — forking breaks continuity.
 RESIDENT = {"research-run", "research-auto", "research-onboard", "research-brainstorm", "research-scope"}
 # Forked: bounded "do one task, return a result" executors — isolation is desirable.
-FORKED = {"research-op", "research-lit", "research-ideate", "research-reflect", "research-apply"}
+FORKED = {"research-op"}
 
 
 def _frontmatter(skill_name):

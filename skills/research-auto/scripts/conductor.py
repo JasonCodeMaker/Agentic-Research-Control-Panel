@@ -2,7 +2,7 @@
 
 Given a committed Direction and its gate (the yardstick's success_predicate), the conductor decides
 the next campaign move: form/await scope, materialize, design the next experiment, run the package,
-or exit (success / budget / all-banned / ask). It owns gate evaluation, the typed cycle ledger, and
+or exit (success / budget / no-candidate / ask). It owns gate evaluation, the typed cycle ledger, and
 the authority guard. It never writes a package surface, never writes the SSOT, never disposes
 Triage — its only writes are the campaign ledger and PACK under outputs/_auto/.
 """
@@ -28,7 +28,7 @@ AUTONOMY_LEVELS = ("SUPERVISED", "CHECKPOINTED", "DEFERRED", "AUTONOMOUS")
 AWAY_DIALS = frozenset({"DEFERRED", "AUTONOMOUS"})
 
 ROUTES = ("FORM_DIRECTION", "AWAIT_RATIFICATION", "MATERIALIZE_PACKAGE", "DESIGN_EXPERIMENT",
-          "RUN_PACKAGE", "SUCCESS_EXIT", "HALT_BUDGET", "HALT_ALL_BANNED", "ASK_USER")
+          "RUN_PACKAGE", "SUCCESS_EXIT", "HALT_BUDGET", "HALT_NO_CANDIDATE", "ASK_USER")
 
 CYCLE_FIELDS = ("cycle", "direction_id", "pkg_id", "exp_id", "hypothesis", "verdict",
                 "measured", "gate_eval", "evidence", "next_action")
@@ -115,7 +115,7 @@ def campaign_status(records, *, max_cycles):
 _ROUTE_TABLE = {
     "FORM_DIRECTION": (
         "No committed Direction matches this campaign yet.",
-        "I'll shape the direction (grounded by /research-lit, ranked candidates via /research-ideate) and propose it through Triage with your gate as the success predicate.",
+        "I'll shape the direction through /research-brainstorm, rank competing framings when needed, and propose it through Triage with your gate as the success predicate.",
         "You ratify the Direction + gate + dial when the proposal lands — the campaign starts after that.",
         False, "handoff", "/research-brainstorm"),
     "AWAIT_RATIFICATION": (
@@ -138,10 +138,10 @@ _ROUTE_TABLE = {
         "Stop honestly: campaign report + a Triage proposal to extend budget, revise the metric/scope, or archive the direction.",
         "Pick extend / revise / archive — the campaign never rewrites its own goalpost.",
         True, "handoff", "/research-scope"),
-    "HALT_ALL_BANNED": (
-        "Every surviving candidate idea is banned under the current scope.",
-        "Stop and propose a scope revision through Triage (a metric revise reopens stale bans), or archive the direction.",
-        "Approve a scope revise, hand-unban with justification, or archive.",
+    "HALT_NO_CANDIDATE": (
+        "No legal next experiment remains under the current scope.",
+        "Stop and propose a scope revision through Triage, extend the design space, or archive the direction.",
+        "Approve a scope revise, add a new constraint, or archive.",
         True, "handoff", "/research-scope"),
     "MATERIALIZE_PACKAGE": (
         "Committed scope exists but no open package carries this direction.",
@@ -155,9 +155,9 @@ _ROUTE_TABLE = {
         False, "delegate", "/research-run"),
     "DESIGN_EXPERIMENT": (
         "The gate is unmet and the package has no executable experiment left — the campaign needs its next design.",
-        "Run /research-ideate (banlist-filtered, jury-ranked) and add the selected hypothesis as a new experiments-row through research-op.",
-        "At SUPERVISED/CHECKPOINTED I pause for your pick; at DEFERRED/AUTONOMOUS I proceed and queue the deferred ack.",
-        False, "delegate", "/research-ideate"),
+        "Design the next experiment from the Context Pack plus verified package evidence, then add it as an experiments-row through research-op.",
+        "At SUPERVISED/CHECKPOINTED I pause for the designed row; at DEFERRED/AUTONOMOUS I proceed and queue the deferred ack.",
+        False, "delegate", "/research-op"),
 }
 
 def render_next_step(action):
@@ -167,7 +167,7 @@ def render_next_step(action):
             "awaits_user": awaits, "details": action.get("message") or f"campaign route: {action['type']}"}
 
 def next_action(*, direction_committed, pending_direction, status, open_pkg,
-                has_executable_exp=False, all_banned=False, dial="AUTONOMOUS", gate_parseable=True):
+                has_executable_exp=False, no_candidate=False, dial="AUTONOMOUS", gate_parseable=True):
     """Route the campaign tick by strict precedence; returns one typed action with next_step copy."""
     if not direction_committed:
         route = "AWAIT_RATIFICATION" if pending_direction else "FORM_DIRECTION"
@@ -177,8 +177,8 @@ def next_action(*, direction_committed, pending_direction, status, open_pkg,
         route = "SUCCESS_EXIT"
     elif status["budget_exhausted"]:
         route = "HALT_BUDGET"
-    elif all_banned:
-        route = "HALT_ALL_BANNED"
+    elif no_candidate:
+        route = "HALT_NO_CANDIDATE"
     elif open_pkg is None:
         route = "MATERIALIZE_PACKAGE"
     elif has_executable_exp:
@@ -356,7 +356,7 @@ def main(argv=None):
     ps.add_argument("--max-cycles", type=int, default=5)
     ps.add_argument("--dial", default="AUTONOMOUS", choices=AUTONOMY_LEVELS)
     ps.add_argument("--gate", default="", help="override predicate; default = direction success_predicate")
-    ps.add_argument("--all-banned", action="store_true")
+    ps.add_argument("--no-candidate", action="store_true")
     pg = sub.add_parser("gate-eval")
     pg.add_argument("--measured", required=True)
     pg.add_argument("--predicate", required=True)
@@ -384,7 +384,7 @@ def main(argv=None):
         action = next_action(direction_committed=node is not None,
                              pending_direction=bool(pending_direction_items(args.root, args.direction_id)),
                              status=status, open_pkg=open_pkg, has_executable_exp=executable,
-                             all_banned=args.all_banned, dial=args.dial, gate_parseable=gate_parseable)
+                             no_candidate=args.no_candidate, dial=args.dial, gate_parseable=gate_parseable)
         state = {"direction_committed": node is not None, "gate": predicate,
                  "gate_parseable": gate_parseable, "open_pkg": open_pkg,
                  "has_executable_exp": executable, **status}

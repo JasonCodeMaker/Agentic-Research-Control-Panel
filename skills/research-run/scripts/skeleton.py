@@ -3,8 +3,8 @@
 Each role is thin/stub; what is real is the wiring — the scope write routes through the SSOT's
 gated writer, R5 reads the yardstick back from the SSOT node, L1 cite-exists partitions citations,
 and the terminal acquit routes through research-op's acquit gate at Supervised (T1 ack), blocked
-when the metric oracle fails. Roles split into their own skills in Stage 2b (research-scope /
-research-lit / research-ideate); the package execution controller is research-run.
+when the metric oracle fails. Scope and package mutation are handled by their current skills; the
+package execution controller is research-run.
 """
 
 import json
