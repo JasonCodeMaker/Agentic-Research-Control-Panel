@@ -99,15 +99,26 @@ Required gate per level — the `gate` field passed to `scope_ssot.propose_trans
 
 ## Procedure
 
-**1. Read active scope.**
+**1. Read active scope and pending Triage.**
 
 ```python
 import sys; sys.path.insert(0, "<pipeline-root>/lib"); import scope_ssot
 records = scope_ssot.read_log("outputs/_scope/transitions.jsonl")
+projection = scope_ssot.fold(records)
 history = scope_ssot.history("<node-id>", records)  # [] if new node
 ```
 
 If the log does not exist or is empty, there is no committed scope yet — the first proposal creates it.
+Also inspect pending proposals before drafting a new one:
+
+```bash
+python3 skills/research-scope/scripts/triage.py pending \
+    --log outputs/_scope/triage.jsonl
+```
+
+Use pending items only as collision warnings. They are not accepted intent and must not be treated as
+Scope authority. If a pending item targets the same node, level, or substantially the same change, surface
+that conflict instead of submitting a duplicate proposal.
 
 **2. Validate the proposed node.**
 

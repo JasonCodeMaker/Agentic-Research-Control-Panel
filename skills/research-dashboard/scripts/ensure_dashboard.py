@@ -215,19 +215,18 @@ def copy_helper_scripts(root: Path, force: bool) -> list[Path]:
 
 
 LIVE_PILL = '<a class="pill" href="live.html">Live Runs</a>'
-LIVE_NAV_LINK = '<a href="live.html">Live Runs</a>'
 SCOPE_PILLS = (
     '<a class="pill" href="scope.html">Live Scope</a>',
     '<a class="pill" href="scope.html">Scope Tree</a>',
 )
-SCOPE_NAV_LINKS = (
-    '<a href="scope.html">Live Scope</a>',
-    '<a href="scope.html">Scope Tree</a>',
+DASHBOARD_NAV_GLOBAL_LINK_RE = re.compile(
+    r'\n\s*<a href="(?:scope|live|learnings|context)\.html">'
+    r'(?:Live Scope|Scope Tree|Live Runs|Learnings|Agent Context)</a>'
 )
 
 
 def ensure_live_nav(root: Path) -> list[Path]:
-    """Insert the Live Runs links into a pre-existing index.html that predates live.html."""
+    """Keep legacy index.html navigation aligned with the current chrome split."""
     index = root / "index.html"
     if not index.exists():
         return []
@@ -238,11 +237,7 @@ def ensure_live_nav(root: Path) -> list[Path]:
             if anchor in patched:
                 patched = patched.replace(anchor, anchor + "\n        " + LIVE_PILL, 1)
                 break
-    if LIVE_NAV_LINK not in patched:
-        for anchor in SCOPE_NAV_LINKS:
-            if anchor in patched:
-                patched = patched.replace(anchor, anchor + "\n      " + LIVE_NAV_LINK, 1)
-                break
+    patched = DASHBOARD_NAV_GLOBAL_LINK_RE.sub("", patched)
     if patched == text:
         return []
     index.write_text(patched, encoding="utf-8")

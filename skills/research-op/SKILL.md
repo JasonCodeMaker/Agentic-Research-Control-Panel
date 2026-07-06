@@ -21,6 +21,7 @@ Two shapes — structured (autonomous) and natural-language (user).
 python skills/research-op/scripts/research_op.py --pkg <id> --op insert --target methodsTried --payload '{...}'
 python skills/research-op/scripts/research_op.py --pkg <id> --event CHAIN_DONE --payload '{"artifact": "..."}'
 python skills/research-op/scripts/research_op.py --pkg <id> --op check --scope all
+python skills/research-op/scripts/research_op.py --pkg <id> --op check --scope scope-alignment
 python skills/research-op/scripts/research_op.py --pkg <id> --op scan-events
 python skills/research-op/scripts/research_op.py --pkg <id> --op scope-transition \
   --payload '{"id":"dir/<id>","level":"direction","parents":["project/main"],"version":1,"status":"ACTIVE","spec":{...},"source":"txn-0","op":"create","gate":"USER_CROSS_MODEL_AUDIT"}'
@@ -75,6 +76,11 @@ Three ops live outside the `(category, status)` matrix (they are project-level, 
 ## Validate-before-write contract
 
 Every Insert / Update / Delete passes Phase 1 (state gate) and Phase 2 (invariant check) before bytes hit disk. Phase 1 looks up `(category, status, op, target)` in `transitions.py`; Phase 2 runs per-target rules from [references/validate-rules.md](references/validate-rules.md). Reject envelope: `{rejected: true, phase, rule, file, anchor, field, expected, actual, suggested_fix, op, target}`. On reject, the agent retries with the rule visible.
+
+For Scope-materialized packages, run `--op check --scope scope-alignment` before status transitions,
+terminal routing, package result closeout, or any rewrite that depends on `sourceDirection` /
+`sourceTasks`. This check wraps `learnings_lint.py lint-status --pkg <id>` and verifies package
+provenance against the current Scope SSOT projection.
 
 ## On reject
 

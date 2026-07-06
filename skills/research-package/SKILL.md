@@ -62,6 +62,9 @@ Hard rules:
 - At least one active child `level == "task"` milestone node must exist with the Direction as parent. Milestones are high-level validation objectives, not concrete package experiments.
 - Duplicate package ids or existing package directories are rejected before write.
 - The generated inventory entry carries `sourceDirection`, `sourceVersion`, `sourceChange`, and `sourceTasks` provenance.
+- On success, the materializer immediately builds `outputs/<pkg>/context_pack.md` and
+  `outputs/<pkg>/context_pack.json` from the committed Scope log. The package should not wait for the
+  first `/research-run` tick to get its Agent context.
 
 Default field mapping:
 

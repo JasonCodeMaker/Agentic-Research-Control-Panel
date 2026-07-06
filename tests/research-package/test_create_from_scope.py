@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -110,6 +111,12 @@ def test_materializes_committed_direction_as_package(tmp_path, monkeypatch):
     assert "Adding supervised contrastive pretraining" in inventory
     assert "primaryMetricVsGate" in inventory
     assert "two absolute points" in inventory
+    assert (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.md").exists()
+    pack = json.loads(
+        (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").read_text(encoding="utf-8")
+    )
+    assert pack["stamp"]["sourceDirection"] == "dir/retrieval-v2"
+    assert "package_provenance" in pack["stamp"]["sources_present"]
 
 
 def test_conversion_consumes_brainstorms_and_writes_provenance(tmp_path, monkeypatch):

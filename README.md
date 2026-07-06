@@ -508,8 +508,10 @@ accepted and committed into the Scope SSOT.
 
 ### Context Pack
 
-The Context Pack is the project's compiled memory. It contains active rules, failed methods, adopted
-wins, knowledge registries, gaps, and the active spec. It is deterministic and read-only:
+The Context Pack is the project's compiled memory and the agent's Scope Context Boot. It contains the
+active Project, Direction, related Tasks, package Scope provenance, global Scope version, active rules,
+relevant pending Scope proposals as advisory warnings, active rules, failed methods, adopted wins,
+knowledge registries, and gaps. It is deterministic and read-only:
 
 - agent face: `outputs/<pkg>/context_pack.md`;
 - human face: `research_html/context.html`;

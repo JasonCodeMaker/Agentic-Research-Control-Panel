@@ -102,6 +102,17 @@ def test_active_project_ids(tmp_path):
     assert brainstorm.active_project_ids(log) == ["project/main"]
 
 
+def test_active_project_context_includes_goal_and_out_of_scope(tmp_path):
+    log = tmp_path / "transitions.jsonl"
+    _commit_project(log)
+    context = brainstorm.active_project_context(log)
+    assert context == [{
+        "id": "project/main",
+        "goal": _project_spec()["goal"],
+        "out_of_scope": _project_spec()["out_of_scope"],
+    }]
+
+
 def _good_direction_spec():
     return direction_spec()
 

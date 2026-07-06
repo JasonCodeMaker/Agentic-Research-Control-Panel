@@ -187,6 +187,26 @@ def test_direction_transition_accepts_correct_gate(tmp_path):
     assert scope_ssot.history("dir/contrastive-v2", recs) == recs
 
 
+def test_global_version_is_log_position_not_node_version(tmp_path):
+    log = tmp_path / "transitions.jsonl"
+    assert scope_ssot.global_version(scope_ssot.read_log(log)) == 0
+
+    scope_ssot.propose_transition(
+        _project_node(), op="create", gate="USER_ONLY", log_path=log)
+    scope_ssot.propose_transition(
+        _direction_node(), op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
+    records = scope_ssot.read_log(log)
+    assert scope_ssot.global_version(records) == 2
+
+    revised_project = _project_node()
+    revised_project["version"] = 2
+    scope_ssot.propose_transition(
+        revised_project, op="revise", gate="USER_ONLY", log_path=log)
+    records = scope_ssot.read_log(log)
+    assert scope_ssot.global_version(records) == 3
+    assert scope_ssot.fold(records)["dir/contrastive-v2"]["version"] == 1
+
+
 def test_propagation_invalidate_and_reopen():
     memory = [
         {"id": "r1", "kind": "RESULT", "metric": "Recall@10"},

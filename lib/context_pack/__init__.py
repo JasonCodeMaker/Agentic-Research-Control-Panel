@@ -15,13 +15,20 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-# Sections in canonical order. The first three are the PROTECTED floor — the
-# "never prune failures / rules" invariant the wiki's query_pack enshrines.
-PROTECTED_KEYS = ("direction", "rules", "failed_methods")
+# Sections in canonical order. Scope intent and the learned-rule floor are
+# protected: an agent should never lose the active objective, task gates, or
+# proven failures because of a tight context budget.
+PROTECTED_KEYS = ("project", "direction", "tasks", "package_provenance",
+                  "pending_scope", "scope_warnings", "rules", "failed_methods")
 
 # Canonical section key names (snake_case identifiers, not state-machine values — casing carve-out).
 SECTION_KEYS = (
+    "project",
     "direction",
+    "tasks",
+    "package_provenance",
+    "pending_scope",
+    "scope_warnings",
     "rules",
     "failed_methods",
     "adopted_wins",
@@ -63,6 +70,27 @@ def _baseline_label(baselines) -> str:
     return str(baselines) if baselines else "unmeasured"
 
 
+def _list_label(items) -> str:
+    if isinstance(items, list):
+        return "; ".join(str(item) for item in items) if items else "unmeasured"
+    return str(items) if items else "unmeasured"
+
+
+def _project_section(node) -> Section | None:
+    if not node:
+        return None
+    spec = node.get("spec", {})
+    lines = []
+    if spec.get("goal"):
+        lines.append(f"- Goal: {spec['goal']}")
+    if spec.get("contributions"):
+        lines.append(f"- Contributions: {_list_label(spec['contributions'])}")
+    if spec.get("out_of_scope"):
+        lines.append(f"- Out of scope: {_list_label(spec['out_of_scope'])}")
+    lines.append(f"- Source: scope node {node.get('id', '')}")
+    return Section("project", "Active Project (spec)", lines, protected=True)
+
+
 def _direction_section(node) -> Section | None:
     if not node:
         return None
@@ -77,6 +105,69 @@ def _direction_section(node) -> Section | None:
         lines.append(f"- Success gate: {spec['success_gate']}")
     lines.append(f"- Source: scope node {node.get('id', '')}")
     return Section("direction", "Active Direction (spec)", lines, protected=True)
+
+
+def _tasks_section(nodes) -> Section | None:
+    nodes = sorted(nodes or [], key=lambda n: n.get("id", ""))
+    if not nodes:
+        return None
+    lines = []
+    for node in nodes:
+        spec = node.get("spec", {})
+        bits = [
+            f"experiment={spec.get('experiment', 'unmeasured')}",
+            f"config={spec.get('config', 'unmeasured')}",
+            f"gate={spec.get('gate', 'unmeasured')}",
+            f"control_mode={spec.get('control_mode', 'unmeasured')}",
+        ]
+        lines.append(f"- {node.get('id', '')}: " + "; ".join(bits))
+    return Section("tasks", "Active Tasks (spec)", lines, protected=True)
+
+
+def _package_provenance_section(provenance) -> Section | None:
+    if not provenance:
+        return None
+    lines = []
+    for key in ("sourceDirection", "sourceVersion", "sourceChange"):
+        if provenance.get(key) not in (None, "", []):
+            lines.append(f"- {key}: {provenance.get(key)}")
+    source_tasks = provenance.get("sourceTasks") or []
+    if source_tasks:
+        task_ids = []
+        for item in source_tasks:
+            if isinstance(item, dict):
+                task_ids.append(str(item.get("id", "")))
+            else:
+                task_ids.append(str(item))
+        lines.append(f"- sourceTasks: {', '.join(t for t in task_ids if t)}")
+    exp_tasks = provenance.get("experimentSourceTasks") or []
+    if exp_tasks:
+        lines.append(f"- experimentSourceTasks: {', '.join(str(t) for t in exp_tasks)}")
+    if not lines:
+        return None
+    return Section("package_provenance", "Package Scope provenance", lines, protected=True)
+
+
+def _pending_scope_section(items) -> Section | None:
+    items = sorted(items or [], key=lambda item: item.get("id", ""))
+    if not items:
+        return None
+    lines = []
+    for item in items:
+        target = item.get("node_id") or (item.get("proposed_node") or {}).get("id") or "unknown"
+        change = item.get("change") or item.get("rationale") or "pending Scope proposal"
+        lines.append(
+            f"- {item.get('id', '')}: unratified {item.get('level', 'scope')} proposal "
+            f"for {target}; {change}"
+        )
+    return Section("pending_scope", "Pending Scope proposals (advisory)", lines, protected=True)
+
+
+def _scope_warnings_section(warnings) -> Section | None:
+    warnings = [str(w) for w in (warnings or []) if str(w).strip()]
+    if not warnings:
+        return None
+    return Section("scope_warnings", "Scope warnings", [f"- {w}" for w in warnings], protected=True)
 
 
 def _rules_section(learned_rules, analysis_rules) -> Section | None:
@@ -190,7 +281,12 @@ def _apply_budget(ordered, budget_chars):
 
 def assemble(inputs: dict, *, budget_chars: int = 8000) -> ContextPack:
     """Build a ContextPack from already-loaded stores. Pure + deterministic."""
+    project = _project_section(inputs.get("project_node"))
     direction = _direction_section(inputs.get("direction_node"))
+    tasks = _tasks_section(inputs.get("task_nodes", []))
+    provenance = _package_provenance_section(inputs.get("package_provenance"))
+    pending_scope = _pending_scope_section(inputs.get("pending_scope", []))
+    warnings = _scope_warnings_section(inputs.get("scope_warnings", []))
     rules = _rules_section(inputs.get("learned_rules", []), inputs.get("analysis_rules", []))
     failed = _failed_methods_section(inputs.get("packages", []))
     wins = _adopted_wins_section(inputs.get("packages", []))
@@ -198,15 +294,26 @@ def assemble(inputs: dict, *, budget_chars: int = 8000) -> ContextPack:
     relationships = _relationships_section(inputs.get("edges", []))
     gaps = _open_gaps_section(inputs.get("gaps", []))
 
-    ordered = [s for s in (direction, rules, failed, wins, registry, relationships, gaps)
+    ordered = [s for s in (
+        project, direction, tasks, provenance, pending_scope, warnings,
+        rules, failed, wins, registry, relationships, gaps,
+    )
                if s is not None]
     included, truncated = _apply_budget(ordered, budget_chars)
 
     sources_present = [s.key for s in ordered]
+    package_provenance = inputs.get("package_provenance") or {}
     stamp = {
         "scope_version": inputs.get("scope_version", 0),
+        "global_scope_version": inputs.get("global_scope_version", inputs.get("scope_version", 0)),
+        "triage_version": inputs.get("triage_version", 0),
         "generated_at": inputs.get("generated_at", ""),
         "active_pkg": inputs.get("active_pkg"),
+        "sourceDirection": package_provenance.get("sourceDirection"),
+        "sourceVersion": package_provenance.get("sourceVersion"),
+        "sourceChange": package_provenance.get("sourceChange"),
+        "sourceTasks": package_provenance.get("sourceTasks", []),
+        "pendingScope": [item.get("id") for item in inputs.get("pending_scope", []) if item.get("id")],
         "budget_chars": budget_chars,
         "sources_present": sources_present,
         "truncated": truncated,
@@ -218,7 +325,8 @@ def render_md(pack: ContextPack) -> str:
     """Agent-facing markdown render with stamp header."""
     s = pack.stamp
     out = ["# Context Pack",
-           f"_scope_version={s.get('scope_version')} · generated_at={s.get('generated_at')} · "
+           f"_scope_version={s.get('scope_version')} · global_scope_version={s.get('global_scope_version')} · "
+           f"generated_at={s.get('generated_at')} · "
            f"sources={','.join(s.get('sources_present', [])) or 'none'} · "
            f"truncated={s.get('truncated')}_"]
     out.append("")
@@ -239,6 +347,14 @@ def render_json(pack: ContextPack) -> dict:
     }
 
 
-def is_stale(pack_json: dict, current_scope_version) -> bool:
+def is_stale(pack_json: dict, current_scope_version=None, *, current_global_scope_version=None,
+             current_triage_version=None) -> bool:
     """A pack is stale once the scope it was compiled against has advanced."""
-    return pack_json.get("stamp", {}).get("scope_version") != current_scope_version
+    stamp = pack_json.get("stamp", {})
+    if current_triage_version is not None and stamp.get("triage_version", 0) != current_triage_version:
+        return True
+    if current_global_scope_version is not None:
+        return stamp.get("global_scope_version") != current_global_scope_version
+    if "global_scope_version" in stamp:
+        return stamp.get("global_scope_version") != current_scope_version
+    return stamp.get("scope_version") != current_scope_version

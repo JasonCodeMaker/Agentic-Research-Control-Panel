@@ -33,11 +33,22 @@ def _now_iso() -> str:
 
 def load_packages(root: str) -> list:
     """Read research-packages.js via the canonical node dumper. Graceful: [] on any failure."""
-    dump = Path(root) / "scripts" / "dump_packages.js"
-    if not dump.exists():
-        return []
+    root_path = Path(root)
+    dump = root_path / "scripts" / "dump_packages.js"
     try:
-        out = subprocess.check_output(["node", str(dump)], text=True)
+        if dump.exists():
+            out = subprocess.check_output(["node", str(dump)], text=True)
+        else:
+            data_file = root_path / "data" / "research-packages.js"
+            if not data_file.exists():
+                return []
+            script = (
+                "const fs = require('fs');"
+                "global.window = {};"
+                f"eval(fs.readFileSync({json.dumps(str(data_file))}, 'utf8'));"
+                "process.stdout.write(JSON.stringify({packages: window.RESEARCH_PACKAGES || []}));"
+            )
+            out = subprocess.check_output(["node", "-e", script], text=True)
     except (FileNotFoundError, subprocess.CalledProcessError):
         return []
     try:
@@ -106,6 +117,32 @@ def load_registry(root: str, name: str) -> list:
             except json.JSONDecodeError:
                 continue
     return out
+
+
+def load_pending_triage(triage_path: str = "outputs/_scope/triage.jsonl") -> list[dict]:
+    """Read latest pending Scope Triage items. Pending is advisory, never accepted intent."""
+    path = Path(triage_path)
+    if not path.exists():
+        return []
+    latest = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("id"):
+            latest[rec["id"]] = rec
+    return [rec for rec in latest.values() if rec.get("status") == "pending"]
+
+
+def triage_version(triage_path: str = "outputs/_scope/triage.jsonl") -> int:
+    """Global Triage position, used to refresh advisory pending Scope context."""
+    path = Path(triage_path)
+    if not path.exists():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
 
 
 # Effectiveness-authority ordering for the Rule Store export (proven before advisory, §13.1).
@@ -187,12 +224,172 @@ def resolve_direction(packages: list, pkg_id: str, transitions_path: str):
     return node, node.get("version", 0)
 
 
+def _find_package(packages: list, pkg_id: str) -> dict | None:
+    return next((p for p in packages if p.get("id") == pkg_id), None)
+
+
+def _latest_records_by_node(records: list[dict]) -> dict[str, dict]:
+    latest = {}
+    for rec in records:
+        latest[rec.get("node_id")] = rec
+    return latest
+
+
+def _package_provenance(pkg: dict | None) -> dict:
+    if not pkg:
+        return {}
+    experiments = pkg.get("experiments") or []
+    exp_tasks = sorted({
+        exp.get("sourceTask")
+        for exp in experiments
+        if isinstance(exp, dict) and exp.get("sourceTask")
+    })
+    return {
+        "sourceDirection": pkg.get("sourceDirection"),
+        "sourceVersion": pkg.get("sourceVersion"),
+        "sourceChange": pkg.get("sourceChange"),
+        "sourceTasks": pkg.get("sourceTasks") or [],
+        "experimentSourceTasks": exp_tasks,
+    }
+
+
+def _active_project_for_direction(direction_node: dict | None, projection: dict) -> dict | None:
+    parent_ids = direction_node.get("parents", []) if direction_node else []
+    for parent_id in parent_ids:
+        node = projection.get(parent_id)
+        if node and node.get("level") == "project" and node.get("status") == "ACTIVE":
+            return node
+    projects = scope_ssot.active_nodes(projection, "project")
+    return projects[0] if projects else None
+
+
+def _active_tasks_for_direction(direction_node: dict | None, projection: dict) -> list[dict]:
+    if not direction_node:
+        return []
+    direction_id = direction_node.get("id")
+    return [
+        node for node in scope_ssot.active_nodes(projection, "task")
+        if direction_id in (node.get("parents") or [])
+    ]
+
+
+def _source_task_ids(provenance: dict) -> set[str]:
+    ids = set()
+    for item in provenance.get("sourceTasks") or []:
+        if isinstance(item, dict) and item.get("id"):
+            ids.add(item["id"])
+        elif isinstance(item, str):
+            ids.add(item)
+    return ids
+
+
+def _scope_warnings(pkg: dict | None, direction_node: dict | None, task_nodes: list[dict],
+                    provenance: dict, latest_records: dict[str, dict]) -> list[str]:
+    warnings = []
+    if not pkg:
+        return [f"package {provenance.get('active_pkg', '') or 'unknown'} was not found in package registry"]
+    source_direction = provenance.get("sourceDirection")
+    if not source_direction:
+        warnings.append("package has no sourceDirection; Scope binding cannot be verified")
+    elif not direction_node:
+        warnings.append(f"sourceDirection {source_direction} is missing from folded Scope")
+    elif direction_node.get("status") != "ACTIVE":
+        warnings.append(f"sourceDirection {source_direction} is {direction_node.get('status')}")
+
+    latest = latest_records.get(source_direction)
+    declared_version = provenance.get("sourceVersion")
+    if declared_version not in (None, "", []) and latest:
+        latest_version = latest.get("scope_version")
+        if str(declared_version) != str(latest_version):
+            warnings.append(
+                f"sourceVersion {declared_version} is stale; latest Direction version is {latest_version}"
+            )
+
+    active_task_ids = {node.get("id") for node in task_nodes}
+    declared_task_ids = _source_task_ids(provenance)
+    if source_direction and not declared_task_ids:
+        warnings.append("package has sourceDirection but no sourceTasks")
+    for task_id in sorted(declared_task_ids - active_task_ids):
+        warnings.append(f"sourceTasks includes {task_id}, but it is not an active Task for this Direction")
+    for task_id in sorted(active_task_ids - declared_task_ids):
+        warnings.append(f"active Task {task_id} is not listed in package sourceTasks")
+    exp_task_ids = set(provenance.get("experimentSourceTasks") or [])
+    for task_id in sorted(exp_task_ids - declared_task_ids):
+        warnings.append(f"experiment sourceTask {task_id} is not listed in sourceTasks")
+    return warnings
+
+
+def _triage_target_id(item: dict) -> str | None:
+    proposed = item.get("proposed_node") if isinstance(item.get("proposed_node"), dict) else {}
+    return item.get("node_id") or proposed.get("id")
+
+
+def _triage_parents(item: dict) -> list:
+    proposed = item.get("proposed_node") if isinstance(item.get("proposed_node"), dict) else {}
+    parents = item.get("parents") or proposed.get("parents") or []
+    return parents if isinstance(parents, list) else []
+
+
+def _relevant_pending_triage(pending: list[dict], project_node: dict | None,
+                             direction_node: dict | None, task_nodes: list[dict]) -> list[dict]:
+    project_id = project_node.get("id") if project_node else None
+    direction_id = direction_node.get("id") if direction_node else None
+    task_ids = {node.get("id") for node in task_nodes}
+    chain = {item for item in [project_id, direction_id, *task_ids] if item}
+    out = []
+    for item in pending:
+        target = _triage_target_id(item)
+        parents = set(_triage_parents(item))
+        level = item.get("level")
+        if target in chain:
+            out.append(item)
+        elif level == "task" and direction_id and direction_id in parents:
+            out.append(item)
+        elif level == "direction" and target == direction_id:
+            out.append(item)
+        elif level == "project" and target == project_id:
+            out.append(item)
+    return sorted(out, key=lambda item: item.get("id", ""))
+
+
+def resolve_scope_context(packages: list, pkg_id: str, transitions_path: str,
+                          triage_path: str = "outputs/_scope/triage.jsonl") -> dict:
+    """Resolve Project, Direction, Tasks, provenance, and freshness inputs for one package."""
+    records = scope_ssot.read_log(transitions_path)
+    projection = scope_ssot.fold(records)
+    latest = _latest_records_by_node(records)
+    pkg = _find_package(packages, pkg_id)
+    provenance = _package_provenance(pkg)
+    direction_id = provenance.get("sourceDirection")
+    direction_node = projection.get(direction_id) if direction_id else None
+    scope_version = direction_node.get("version", 0) if direction_node else 0
+    project_node = _active_project_for_direction(direction_node, projection)
+    task_nodes = _active_tasks_for_direction(direction_node, projection)
+    pending_scope = _relevant_pending_triage(
+        load_pending_triage(triage_path), project_node, direction_node, task_nodes)
+    warnings = _scope_warnings(pkg, direction_node, task_nodes, provenance, latest)
+    return {
+        "records": records,
+        "projection": projection,
+        "global_scope_version": scope_ssot.global_version(records),
+        "triage_version": triage_version(triage_path),
+        "project_node": project_node,
+        "direction_node": direction_node,
+        "task_nodes": task_nodes,
+        "package_provenance": provenance,
+        "pending_scope": pending_scope,
+        "scope_warnings": warnings,
+        "scope_version": scope_version,
+    }
+
+
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
 
 def build(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/transitions.jsonl",
+          triage_path: str = "outputs/_scope/triage.jsonl",
           budget_chars: int = 8000, generated_at: str | None = None,
           selfevolve_root: str | None = None):
     """Load stores → assemble full + core packs → write the three artifacts.
@@ -206,14 +403,26 @@ def build(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/tra
     packages = load_packages(root)
     learned_rules = load_learned_rules(root)
     analysis_rules = load_analysis_rules(root)
-    direction_node, scope_version = resolve_direction(packages, pkg_id, transitions_path)
+    scope_context = resolve_scope_context(packages, pkg_id, transitions_path, triage_path=triage_path)
+    direction_node = scope_context["direction_node"]
+    scope_version = scope_context["scope_version"]
+    global_scope_version = scope_context["global_scope_version"]
     # Project-level knowledge registries (cross-package → belong in both full + core).
     papers_registry = load_registry(root, "papers.jsonl")
     edges = load_registry(root, "edges.jsonl")
     gaps = load_registry(root, "gaps.jsonl")
 
     full = assemble({
-        "direction_node": direction_node, "active_pkg": pkg_id, "scope_version": scope_version,
+        "project_node": scope_context["project_node"],
+        "direction_node": direction_node,
+        "task_nodes": scope_context["task_nodes"],
+        "package_provenance": scope_context["package_provenance"],
+        "pending_scope": scope_context["pending_scope"],
+        "scope_warnings": scope_context["scope_warnings"],
+        "active_pkg": pkg_id,
+        "scope_version": scope_version,
+        "global_scope_version": global_scope_version,
+        "triage_version": scope_context["triage_version"],
         "generated_at": generated_at, "packages": packages, "learned_rules": learned_rules,
         "analysis_rules": analysis_rules,
         "papers_registry": papers_registry, "edges": edges, "gaps": gaps,
@@ -221,7 +430,10 @@ def build(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/tra
 
     # Durable core: direction-independent cross-package knowledge only.
     core = assemble({
+        "project_node": scope_context["project_node"],
         "direction_node": None, "active_pkg": None, "scope_version": scope_version,
+        "global_scope_version": global_scope_version,
+        "triage_version": scope_context["triage_version"],
         "generated_at": generated_at, "packages": packages, "learned_rules": learned_rules,
         "analysis_rules": analysis_rules,
         "papers_registry": papers_registry, "edges": edges, "gaps": gaps,
@@ -237,6 +449,7 @@ def build(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/tra
 
 
 def ensure_fresh(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/transitions.jsonl",
+                 triage_path: str = "outputs/_scope/triage.jsonl",
                  budget_chars: int = 8000, generated_at: str | None = None) -> bool:
     """Rebuild the pack iff it is missing or stale (scope advanced). Returns True if it rebuilt.
 
@@ -249,10 +462,14 @@ def ensure_fresh(root: str, pkg_id: str, *, transitions_path: str = "outputs/_sc
         except json.JSONDecodeError:
             pj = None
         if pj is not None:
-            _, ver = resolve_direction(load_packages(root), pkg_id, transitions_path)
-            if not is_stale(pj, ver):
+            records = scope_ssot.read_log(transitions_path)
+            if not is_stale(
+                pj,
+                current_global_scope_version=scope_ssot.global_version(records),
+                current_triage_version=triage_version(triage_path),
+            ):
                 return False
-    build(root, pkg_id, transitions_path=transitions_path,
+    build(root, pkg_id, transitions_path=transitions_path, triage_path=triage_path,
           budget_chars=budget_chars, generated_at=generated_at)
     return True
 
@@ -262,6 +479,7 @@ def main(argv=None) -> int:
     ap.add_argument("--pkg", required=True)
     ap.add_argument("--root", default="research_html")
     ap.add_argument("--transitions", default="outputs/_scope/transitions.jsonl")
+    ap.add_argument("--triage", default="outputs/_scope/triage.jsonl")
     ap.add_argument("--budget-chars", type=int, default=8000)
     ap.add_argument("--selfevolve-root", default=None,
                     help="regenerate the registry's selfevolve-origin rows from this Rule Store first")
@@ -270,10 +488,12 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     if args.if_stale:
         rebuilt = ensure_fresh(args.root, args.pkg, transitions_path=args.transitions,
+                               triage_path=args.triage,
                                budget_chars=args.budget_chars)
         print(f"context_pack {'rebuilt' if rebuilt else 'already fresh'} for {args.pkg}")
         return 0
     full, _ = build(args.root, args.pkg, transitions_path=args.transitions,
+                    triage_path=args.triage,
                     budget_chars=args.budget_chars, selfevolve_root=args.selfevolve_root)
     print(f"context_pack → outputs/{args.pkg}/context_pack.md "
           f"({len(full.sections)} sections); core → {args.root}/data/context-core.js")

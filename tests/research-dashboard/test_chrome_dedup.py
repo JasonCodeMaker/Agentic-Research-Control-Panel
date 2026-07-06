@@ -1,6 +1,7 @@
 """Chrome owns no protocol content: objective renders from the Scope SSOT projection,
 routes from schema.js, rules from the registry (核心问题 #1)."""
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -50,3 +51,24 @@ def test_index_keeps_required_anchors(tmp_path):
     assert "rules/html-rules.html" in html and "rules/trustworthy-research-rules.html" in html
     assert 'id="rules-registry-root"' in html
     assert "data/rules.js" in html  # the registry is loaded on the homepage
+
+
+def _block(html, selector):
+    pattern = rf'<[^>]+{selector}[^>]*>[\s\S]*?</(?:div|nav)>'
+    match = re.search(pattern, html)
+    assert match, f"missing block matching {selector}"
+    return match.group(0)
+
+
+def test_homepage_separates_global_toolbar_from_page_nav(tmp_path):
+    root = _scaffold(tmp_path)
+    html = (root / "index.html").read_text()
+    toolbar = _block(html, r'data-card="dashboard-toolbar"')
+    nav = _block(html, r'class="dashboard-nav"')
+
+    for href in ("scope.html", "live.html", "learnings.html", "context.html"):
+        assert f'href="{href}"' in toolbar
+        assert f'href="{href}"' not in nav
+
+    for href in ("#snapshot", "#lanes", "#packages", "#protocol", "#profile", "#rules"):
+        assert f'href="{href}"' in nav

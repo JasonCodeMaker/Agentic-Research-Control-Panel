@@ -21,6 +21,7 @@ sys.path.insert(0, str(PIPELINE_ROOT / "skills" / "research-brainstorm" / "scrip
 
 import brainstorm  # noqa: E402
 import create_research_package  # noqa: E402
+import context_pack.build as context_pack_build  # noqa: E402
 import scope_ssot  # noqa: E402
 
 
@@ -277,6 +278,8 @@ def main(argv: list[str] | None = None) -> int:
     if rc == 0 and source_brainstorms:
         ideas = brainstorm.consume_brainstorms(root, source_brainstorms)
         _write_brainstorm_provenance(root, package_id, pkg_name, ideas)
+    if rc == 0:
+        context_pack_build.build(str(root), package_id, transitions_path=args.transitions)
     return rc
 
 

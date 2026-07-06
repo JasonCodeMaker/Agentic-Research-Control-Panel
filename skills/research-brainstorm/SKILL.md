@@ -52,6 +52,9 @@ python3 skills/research-brainstorm/scripts/brainstorm.py check-project --transit
 
 If `active_project_ids` is empty, stop and point the user at `/research-onboard` (or `/research-scope`)
 to ratify a Project first. A Direction is always a child of a ratified Project.
+The same command also returns `active_projects` with each Project's `goal` and `out_of_scope`. Read those
+fields before shaping or converting ideas. Candidate Directions must fit the active Project goal and must
+not ask the package workflow to pursue work listed as out of scope.
 
 ## Procedure
 
@@ -101,6 +104,9 @@ python3 skills/research-brainstorm/scripts/brainstorm.py direction-ready --spec 
 `ready=false` means a field is missing or empty — keep shaping. A baseline must be concrete (ideally
 grounded by step 2), not a placeholder. If `metric` is supplied as a string instead of an object, it must
 also be 20-100 words.
+Before this spec becomes a proposal, compare it to the active Project `goal` and `out_of_scope` from
+`check-project`. If it conflicts, either reshape the idea or route a Project/Scope revision through
+`/research-scope`; do not hide the conflict inside the Direction proposal.
 
 **4b. Rank candidate ideas with a separate sub-agent before forming the Direction.**
 

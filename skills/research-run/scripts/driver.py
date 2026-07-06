@@ -20,7 +20,8 @@ import pack  # noqa: E402
 
 # Typed role-return contract every dispatched role must satisfy.
 ROLE_RETURN_FIELDS = ("agent_role", "assigned_scope", "status", "evidence",
-                      "blockers", "recommended_next_action")
+                      "blockers", "recommended_next_action", "global_scope_version",
+                      "sourceDirection", "sourceTask")
 ROLE_STATUSES = {"ROLE_OK", "ROLE_BLOCKED", "ROLE_FAILED"}
 
 # Mutation envelope contract — the only way a role may change a surface (always via research-op).
@@ -46,10 +47,11 @@ def validate_mutation(env):
     return errs
 
 
-def validate_role_return(ret):
+def validate_role_return(ret, *, context=None):
     """Return a list of reasons this role return violates the typed contract (empty = valid)."""
     if not isinstance(ret, dict):
         return ["role return must be an object"]
+    context = context or {}
     errs = [f"missing field: {f}" for f in ROLE_RETURN_FIELDS if f not in ret]
     if errs:
         return errs
@@ -59,6 +61,16 @@ def validate_role_return(ret):
         errs.append("status 'ROLE_OK' requires non-empty evidence")
     if ret["status"] == "ROLE_BLOCKED" and not ret["blockers"]:
         errs.append("status 'ROLE_BLOCKED' requires a non-empty blockers list")
+    expected_version = context.get("global_scope_version")
+    if expected_version is not None and ret.get("global_scope_version") != expected_version:
+        errs.append(
+            f"stale scope report: global_scope_version {ret.get('global_scope_version')!r} "
+            f"does not match current {expected_version!r}"
+        )
+    if not ret.get("sourceDirection"):
+        errs.append("sourceDirection must be non-empty")
+    if not ret.get("sourceTask"):
+        errs.append("sourceTask must be non-empty")
     for env in ret.get("mutations", []):
         errs += [f"mutation: {e}" for e in validate_mutation(env)]
     return errs
@@ -89,7 +101,7 @@ def run_tick(pkg_id, scope_node, role_sequence, adapters, *, context=None, pack_
     rejection = None
     for role in role_sequence:
         ret = adapters[role](ctx)
-        errs = validate_role_return(ret)
+        errs = validate_role_return(ret, context=ctx)
         if errs:
             rejection = {"role": role, "errors": errs}
             break

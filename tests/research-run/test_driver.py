@@ -17,7 +17,11 @@ NODE = direction_node("dir/2026-driver", source="txn-0")
 
 def _ok_return(role, *, mutations=None):
     return {
-        "agent_role": role, "assigned_scope": "dir/2026-driver", "status": "ROLE_OK",
+        "agent_role": role, "assigned_scope": "dir/2026-driver",
+        "global_scope_version": 7,
+        "sourceDirection": "dir/2026-driver",
+        "sourceTask": "task/2026-driver/M0",
+        "status": "ROLE_OK",
         "evidence": [f"{role}-evidence"], "blockers": [],
         "recommended_next_action": "proceed", "mutations": mutations or [],
     }
@@ -41,6 +45,20 @@ def test_role_return_missing_field_rejected():
     del ret["recommended_next_action"]
     errs = driver.validate_role_return(ret)
     assert any("recommended_next_action" in e for e in errs)
+
+
+def test_role_return_missing_scope_version_rejected():
+    ret = _ok_return("lit")
+    del ret["global_scope_version"]
+    errs = driver.validate_role_return(ret)
+    assert any("global_scope_version" in e for e in errs)
+
+
+def test_role_return_stale_scope_version_rejected():
+    ret = _ok_return("lit")
+    ret["global_scope_version"] = 6
+    errs = driver.validate_role_return(ret, context={"global_scope_version": 7})
+    assert any("stale scope" in e for e in errs)
 
 
 def test_role_return_blocked_requires_blockers():
@@ -84,7 +102,10 @@ def test_tick_collects_mutations_and_pack_candidate():
         "scope": _adapter(_ok_return("scope")),
         "verify": _adapter(_ok_return("verify", mutations=muts)),
     }
-    result = driver.run_tick("2026-driver", NODE, ["scope", "verify"], adapters)
+    result = driver.run_tick(
+        "2026-driver", NODE, ["scope", "verify"], adapters,
+        context={"global_scope_version": 7},
+    )
     assert result["rejection"] is None
     assert result["roles_run"] == ["scope", "verify"]
     assert muts[0] in result["proposed_mutations"]

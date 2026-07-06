@@ -14,6 +14,7 @@ import context_pack.build as build  # noqa: E402
 import ensure_dashboard  # noqa: E402
 import scope_ssot  # noqa: E402
 from tests.scope_fixtures import direction_node  # noqa: E402
+from tests.scope_fixtures import project_node, task_node  # noqa: E402
 
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node required to read JS data")
 
@@ -21,6 +22,9 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node requi
 _PACKAGES_JS = '''window.RESEARCH_PACKAGES = [
   { id: "2026-06-03-retrieval-v2", name: "Retrieval V2", category: "in-progress",
     status: "CONTEXT_LOADED", sourceDirection: "dir/retrieval-v2",
+    sourceVersion: "3", sourceChange: "txn-dir",
+    sourceTasks: [{ id: "task/retrieval-v2/M0-baseline-validity", scopeVersion: 1, txn: "txn-task" }],
+    experiments: [{ id: "P0", sourceTask: "task/retrieval-v2/M0-baseline-validity" }],
     activeGate: "R@1>=48", primaryMetricVsGate: "R@1 vs 48", nextRoute: "run P0",
     methodsTried: [] },
   { id: "2026-05-01-old", name: "Old", category: "fail", status: "ARCHIVED",
@@ -54,8 +58,12 @@ def _setup(tmp_path):
 
     # direction node + scope log
     log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
+    scope_ssot.propose_transition(project_node(), op="create", gate="USER_ONLY", log_path=log)
     node = direction_node(version=3)
     scope_ssot.propose_transition(node, op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
+    scope_ssot.propose_transition(
+        task_node("task/retrieval-v2/M0-baseline-validity", control_mode="SUPERVISED"),
+        op="create", gate="AGENT_DEFERRED_ACK", log_path=log)
 
     # learned project rule + package lesson rows in the unified registry
     _append_registry_rows(root, [
@@ -75,20 +83,39 @@ def _setup(tmp_path):
 def test_build_writes_full_pack_and_durable_core(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     root, log = _setup(tmp_path)
+    triage = tmp_path / "outputs" / "_scope" / "triage.jsonl"
+    triage.write_text(
+        json.dumps({
+            "id": "triage-task-gate",
+            "status": "pending",
+            "level": "task",
+            "node_id": "task/retrieval-v2/M0-baseline-validity",
+            "change": "Revise the baseline gate before launch",
+        }) + "\n",
+        encoding="utf-8",
+    )
 
     build.build("research_html", "2026-06-03-retrieval-v2",
-                transitions_path=str(log), generated_at="2026-06-04T00:00:00Z")
+                transitions_path=str(log), triage_path=str(triage),
+                generated_at="2026-06-04T00:00:00Z")
 
     md = (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.md").read_text(encoding="utf-8")
     pj = json.loads((tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").read_text(encoding="utf-8"))
     core_js = (root / "data" / "context-core.js").read_text(encoding="utf-8")
 
     # full pack carries direction + project/package knowledge
+    assert "Build an auditable research workflow" in md
     assert "Adding supervised contrastive pretraining" in md
+    assert "task/retrieval-v2/M0-baseline-validity" in md
+    assert "sourceDirection: dir/retrieval-v2" in md
+    assert "triage-task-gate" in md
     assert "hard-negative mining" in md                                  # cross-package failure
     assert "temperature scaling" in md                                   # package lesson row from the registry
     assert "Always reproduce the baseline" in md                         # learned rule
     assert pj["stamp"]["scope_version"] == 3
+    assert pj["stamp"]["global_scope_version"] == 3
+    assert pj["stamp"]["sourceDirection"] == "dir/retrieval-v2"
+    assert pj["stamp"]["pendingScope"] == ["triage-task-gate"]
 
     # durable core is direction-independent: cross-package knowledge only
     assert core_js.startswith("window.RESEARCH_CONTEXT_CORE")
@@ -159,14 +186,54 @@ def test_ensure_fresh_rebuilds_only_when_scope_advanced(tmp_path, monkeypatch):
     pj = json.loads((tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").read_text())
     assert pj["stamp"]["generated_at"] == "t0"
 
-    # advance the scope (a metric revise bumps the direction version) → stale → rebuild
+    # advance the scope (a project revise leaves the direction version alone) → stale → rebuild
+    project = scope_ssot.fold(scope_ssot.read_log(str(log)))["project/main"]
+    project["version"] = 2
+    scope_ssot.propose_transition(project, op="revise", gate="USER_ONLY", log_path=log)
+    assert build.ensure_fresh("research_html", "2026-06-03-retrieval-v2", transitions_path=str(log),
+                              generated_at="t-project") is True
+    pj_project = json.loads((tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").read_text())
+    assert pj_project["stamp"]["scope_version"] == 3
+    assert pj_project["stamp"]["global_scope_version"] == 4
+    assert pj_project["stamp"]["generated_at"] == "t-project"
+
+    # advance the scope again with a metric revise → stale → rebuild
     node = scope_ssot.fold(scope_ssot.read_log(str(log)))["dir/retrieval-v2"]
     node["version"] = 4
     scope_ssot.propose_transition(node, op="revise", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
     assert build.ensure_fresh("research_html", "2026-06-03-retrieval-v2", transitions_path=str(log),
                               generated_at="t2") is True
     pj2 = json.loads((tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").read_text())
-    assert pj2["stamp"]["scope_version"] == 4 and pj2["stamp"]["generated_at"] == "t2"
+    assert pj2["stamp"]["scope_version"] == 4
+    assert pj2["stamp"]["global_scope_version"] == 5
+    assert pj2["stamp"]["generated_at"] == "t2"
+
+
+def test_ensure_fresh_rebuilds_when_triage_changes(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    root, log = _setup(tmp_path)
+    triage = tmp_path / "outputs" / "_scope" / "triage.jsonl"
+    triage.write_text("", encoding="utf-8")
+    build.build("research_html", "2026-06-03-retrieval-v2", transitions_path=str(log),
+                triage_path=str(triage), generated_at="t0")
+
+    triage.write_text(
+        json.dumps({
+            "id": "triage-task-gate",
+            "status": "pending",
+            "level": "task",
+            "node_id": "task/retrieval-v2/M0-baseline-validity",
+            "change": "Revise the baseline gate before launch",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    assert build.ensure_fresh("research_html", "2026-06-03-retrieval-v2",
+                              transitions_path=str(log), triage_path=str(triage),
+                              generated_at="t-triage") is True
+    pj = json.loads((tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").read_text())
+    assert pj["stamp"]["triage_version"] == 1
+    assert pj["stamp"]["pendingScope"] == ["triage-task-gate"]
+    assert pj["stamp"]["generated_at"] == "t-triage"
 
 
 def test_cli_if_stale_builds_then_skips(tmp_path, monkeypatch, capsys):

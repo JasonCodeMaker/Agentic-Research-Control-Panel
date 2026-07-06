@@ -10,6 +10,22 @@ import context_pack  # noqa: E402
 
 def _inputs(**over):
     base = {
+        "project_node": {
+            "id": "project/main",
+            "spec": {
+                "goal": (
+                    "Build an auditable retrieval workflow that keeps intent, evidence, "
+                    "package execution, and user decisions aligned across repeated experiments."
+                ),
+                "contributions": [
+                    "Keep ratified project intent readable before package execution begins.",
+                    "Bind accepted validation tasks to package experiments through provenance.",
+                ],
+                "out_of_scope": [
+                    "Do not claim production adoption without evidence from accepted gates.",
+                ],
+            },
+        },
         "direction_node": {
             "id": "dir/retrieval-v2",
             "spec": {
@@ -19,8 +35,34 @@ def _inputs(**over):
                 "success_gate": "Recall@1 >= 48",
             },
         },
+        "task_nodes": [
+            {
+                "id": "task/retrieval-v2/M0-baseline-validity",
+                "spec": {
+                    "experiment": "Reproduce the baseline before testing the retrieval variant.",
+                    "config": "scope:dir/retrieval-v2#m0",
+                    "gate": "Baseline must reproduce inside the accepted tolerance.",
+                    "control_mode": "SUPERVISED",
+                },
+            },
+        ],
+        "package_provenance": {
+            "sourceDirection": "dir/retrieval-v2",
+            "sourceVersion": 3,
+            "sourceChange": "txn-dir",
+            "sourceTasks": [{"id": "task/retrieval-v2/M0-baseline-validity"}],
+        },
+        "pending_scope": [
+            {
+                "id": "triage-1",
+                "level": "task",
+                "node_id": "task/retrieval-v2/M0-baseline-validity",
+                "change": "Revise the baseline validity gate",
+            },
+        ],
         "active_pkg": "2026-06-03-retrieval-v2",
         "scope_version": 3,
+        "global_scope_version": 5,
         "generated_at": "2026-06-04T00:00:00Z",
         "packages": [
             {
@@ -58,6 +100,19 @@ def test_direction_section_carries_spec():
     md = context_pack.render_md(pack)
     assert "Contrastive retrieval improves zero-shot Recall@1" in md
     assert "Recall@1 >= 48" in md  # success predicate
+
+
+def test_scope_boot_sections_carry_project_tasks_and_provenance():
+    pack = context_pack.assemble(_inputs())
+    md = context_pack.render_md(pack)
+    keys = {s.key for s in pack.sections}
+    assert {"project", "direction", "tasks", "package_provenance", "pending_scope"} <= keys
+    assert "Build an auditable retrieval workflow" in md
+    assert "Do not claim production adoption" in md
+    assert "task/retrieval-v2/M0-baseline-validity" in md
+    assert "sourceDirection: dir/retrieval-v2" in md
+    assert "triage-1" in md
+    assert "unratified" in md
 
 
 def test_failed_methods_are_cross_package_and_evidence_linked():
@@ -126,14 +181,17 @@ def test_floor_never_pruned_even_when_over_budget():
 def test_stamp_records_scope_version_and_sources_present():
     pack = context_pack.assemble(_inputs())
     assert pack.stamp["scope_version"] == 3
+    assert pack.stamp["global_scope_version"] == 5
+    assert pack.stamp["sourceDirection"] == "dir/retrieval-v2"
+    assert pack.stamp["pendingScope"] == ["triage-1"]
     assert pack.stamp["generated_at"] == "2026-06-04T00:00:00Z"
     assert "failed_methods" in pack.stamp["sources_present"]
 
 
 def test_is_stale_when_scope_version_advanced():
     pj = context_pack.render_json(context_pack.assemble(_inputs()))
-    assert context_pack.is_stale(pj, current_scope_version=4) is True
-    assert context_pack.is_stale(pj, current_scope_version=3) is False
+    assert context_pack.is_stale(pj, current_scope_version=6) is True
+    assert context_pack.is_stale(pj, current_scope_version=5) is False
 
 
 # ── shape + graceful degradation ────────────────────────────────────────────

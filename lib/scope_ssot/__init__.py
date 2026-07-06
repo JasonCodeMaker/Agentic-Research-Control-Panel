@@ -245,6 +245,11 @@ def read_log(log_path):
     return [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def global_version(records):
+    """Global Scope version: the deterministic position of the append-only transition log."""
+    return len(records)
+
+
 def history(node_id, records):
     """The transition timeline for one node."""
     return [r for r in records if r["node_id"] == node_id]
@@ -256,6 +261,14 @@ def fold(records):
     for r in records:
         projection[r["node_id"]] = copy.deepcopy(r["node"])  # detached — never alias the store
     return projection
+
+
+def active_nodes(projection, level):
+    """Active folded nodes for one Scope level, ordered by id for deterministic consumers."""
+    return sorted(
+        (n for n in projection.values() if n.get("level") == level and n.get("status") == "ACTIVE"),
+        key=lambda n: n.get("id", ""),
+    )
 
 
 def intent(node_id, records):

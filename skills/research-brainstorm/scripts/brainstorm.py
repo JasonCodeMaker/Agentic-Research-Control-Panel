@@ -199,6 +199,20 @@ def active_project_ids(transitions_path) -> list[str]:
             if n.get("level") == "project" and n.get("status") == "ACTIVE"]
 
 
+def active_project_context(transitions_path) -> list[dict]:
+    """Committed active Project context that constrains Direction proposals."""
+    projection = scope_ssot.fold(scope_ssot.read_log(transitions_path))
+    projects = scope_ssot.active_nodes(projection, "project")
+    return [
+        {
+            "id": node["id"],
+            "goal": (node.get("spec") or {}).get("goal"),
+            "out_of_scope": (node.get("spec") or {}).get("out_of_scope", []),
+        }
+        for node in projects
+    ]
+
+
 def direction_ready(spec: dict) -> bool:
     """True iff the spec carries all four direction fields, non-empty (the conversion gate)."""
     for field in DIRECTION_FIELDS:
@@ -288,7 +302,11 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "remove":
         print(json.dumps({"removed": remove_brainstorm(args.root, args.id)}, ensure_ascii=False))
     elif args.cmd == "check-project":
-        print(json.dumps({"active_project_ids": active_project_ids(args.transitions)}, ensure_ascii=False))
+        projects = active_project_context(args.transitions)
+        print(json.dumps({
+            "active_project_ids": [p["id"] for p in projects],
+            "active_projects": projects,
+        }, ensure_ascii=False))
     elif args.cmd == "direction-ready":
         print(json.dumps({"ready": direction_ready(json.loads(args.spec))}, ensure_ascii=False))
     elif args.cmd == "build-proposal":

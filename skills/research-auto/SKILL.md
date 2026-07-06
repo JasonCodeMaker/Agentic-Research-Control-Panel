@@ -147,7 +147,9 @@ Then act on `action.type`; one tick per route, re-run `status` after each:
   its model-tiering: light roles on small models, code/analysis on the strong one.
 - **`DESIGN_EXPERIMENT`** — the gate is unmet and the spine has nothing executable:
   1. `python3 lib/context_pack/build.py --pkg <pkg> --if-stale` and read the pack (read-only;
-     it is project context, not a mutation path).
+     it is project context, not a mutation path). Treat the pack's `global_scope_version`,
+     Project, Direction, Tasks, and package provenance as the current agent context. Pending Triage is
+     only a collision warning unless the user accepts it into Scope.
   2. Draft the next hypothesis from the pack, verified package facts, and the committed Direction.
      If multiple candidates are plausible, rank them with an independent sub-agent (`lib/ranking`).
   3. Map the selected hypothesis to its owning milestone. Fits an active milestone → add one

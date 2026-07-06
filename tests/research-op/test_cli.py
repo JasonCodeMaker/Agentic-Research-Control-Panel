@@ -49,6 +49,19 @@ def test_check_scope_fact_alignment_invokes_fact_lint(tmp_package):
     assert json.loads((tmp_package / "lint_args.json").read_text()) == ["fact-alignment", "--pkg", "test-pkg"]
 
 
+def test_check_scope_alignment_alias_invokes_scope_provenance_lint(tmp_package):
+    lint = tmp_package / "research_html" / "scripts" / "learnings_lint.py"
+    lint.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json, pathlib, sys\n"
+        "pathlib.Path('lint_args.json').write_text(json.dumps(sys.argv[1:]))\n",
+        encoding="utf-8",
+    )
+    r = _run(["--pkg", "test-pkg", "--op", "check", "--scope", "scope-alignment"], cwd=tmp_package)
+    assert r.returncode == 0, r.stderr + r.stdout
+    assert json.loads((tmp_package / "lint_args.json").read_text()) == ["lint-status", "--pkg", "test-pkg"]
+
+
 def test_state_gate_rejects_illegal_insert(tmp_package):
     r = _run(["--pkg", "test-pkg", "--op", "insert", "--target", "methodsTried",
               "--payload", "{}"], cwd=tmp_package)

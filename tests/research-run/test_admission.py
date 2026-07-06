@@ -47,6 +47,12 @@ def _task(root):
         op="create", gate="AGENT_DEFERRED_ACK", log_path=_log(root), trigger="t", cause="c")
 
 
+def _pending(root, item):
+    path = root / "outputs" / "_scope" / "triage.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(__import__("json").dumps({**item, "status": "pending"}) + "\n", encoding="utf-8")
+
+
 # ---- state detection ----
 
 def test_state_NO_DASHBOARD_missing(tmp_path):
@@ -72,6 +78,70 @@ def test_state_READY_full_and_ready(tmp_path):
     _dashboard(tmp_path, inventory='window.RESEARCH_PACKAGES = [{id: "p1", sourceDirection: "dir/d1"}];\n')
     _project(tmp_path); _direction(tmp_path); _task(tmp_path)
     assert admission.detect_admission_state(tmp_path, readiness_ok=True) == "READY"
+
+
+def test_scope_context_summary_is_returned_for_ready_package(tmp_path):
+    _dashboard(
+        tmp_path,
+        inventory=(
+            'window.RESEARCH_PACKAGES = [{id: "p1", sourceDirection: "dir/d1", '
+            'sourceVersion: "1", sourceTasks: [{id: "task/d1/m1"}], '
+            'experiments: [{id: "P0", sourceTask: "task/d1/m1"}]}];\n'
+        ),
+    )
+    _project(tmp_path); _direction(tmp_path); _task(tmp_path)
+    node = direction_node("dir/d1", source="triage:d1")
+    adapters = {
+        "scope": lambda ctx: {
+            "agent_role": "scope",
+            "assigned_scope": "dir/d1",
+            "global_scope_version": ctx["global_scope_version"],
+            "sourceDirection": "dir/d1",
+            "sourceTask": "task/d1/m1",
+            "status": "ROLE_OK",
+            "evidence": ["e"],
+            "blockers": [],
+            "recommended_next_action": "go",
+        }
+    }
+    result = admission.run_front_door(tmp_path, pkg_id="p1", scope_node=node,
+                                      role_sequence=["scope"], adapters=adapters,
+                                      readiness_ok=True)
+    ctx = result["scope_context"]
+    assert ctx["global_scope_version"] == 3
+    assert ctx["project"]["id"] == "project/main"
+    assert ctx["direction"]["id"] == "dir/d1"
+    assert ctx["tasks"][0]["id"] == "task/d1/m1"
+    assert ctx["package"]["sourceDirection"] == "dir/d1"
+    assert result["tick"]["role_returns"][0]["global_scope_version"] == 3
+
+
+def test_scope_context_summary_is_returned_for_handoff(tmp_path):
+    _dashboard(tmp_path)
+    _project(tmp_path)
+    result = admission.run_front_door(tmp_path)
+    assert result["entered"] is False
+    assert result["state"] == "NO_DIRECTION"
+    assert result["scope_context"]["global_scope_version"] == 1
+    assert result["scope_context"]["project"]["id"] == "project/main"
+
+
+def test_relevant_pending_scope_blocks_ready_run(tmp_path):
+    _dashboard(tmp_path, inventory='window.RESEARCH_PACKAGES = [{id: "p1", sourceDirection: "dir/d1"}];\n')
+    _project(tmp_path); _direction(tmp_path); _task(tmp_path)
+    _pending(tmp_path, {"id": "triage-dir", "level": "direction", "node_id": "dir/d1"})
+    node = direction_node("dir/d1", source="triage:d1")
+    adapters = {"scope": lambda ctx: (_ for _ in ()).throw(AssertionError("dispatch should not run"))}
+
+    result = admission.run_front_door(tmp_path, pkg_id="p1", scope_node=node,
+                                      role_sequence=["scope"], adapters=adapters,
+                                      readiness_ok=True)
+
+    assert result["entered"] is False
+    assert result["state"] == "READY"
+    assert result["actions"][0]["type"] == "AWAIT_TRIAGE_DECISION"
+    assert result["actions"][0]["pending"] == ["triage-dir"]
+    assert result["scope_context"]["pending_scope"][0]["id"] == "triage-dir"
 
 
 # ---- plan's six required tests ----
@@ -132,8 +202,11 @@ def test_5_ready_package_enters_loop(tmp_path):
     _dashboard(tmp_path, inventory='window.RESEARCH_PACKAGES = [{id: "p1", sourceDirection: "dir/d1"}];\n')
     _project(tmp_path); _direction(tmp_path); _task(tmp_path)
     node = direction_node("dir/d1", source="triage:d1")
-    adapters = {"scope": lambda ctx: {"agent_role": "scope", "assigned_scope": "dir/d1", "status": "ROLE_OK",
-                                      "evidence": ["e"], "blockers": [], "recommended_next_action": "go"}}
+    adapters = {"scope": lambda ctx: {"agent_role": "scope", "assigned_scope": "dir/d1",
+                                      "global_scope_version": ctx["global_scope_version"],
+                                      "sourceDirection": "dir/d1", "sourceTask": "task/d1/m1",
+                                      "status": "ROLE_OK", "evidence": ["e"], "blockers": [],
+                                      "recommended_next_action": "go"}}
     result = admission.run_front_door(tmp_path, pkg_id="p1", scope_node=node,
                                       role_sequence=["scope"], adapters=adapters, readiness_ok=True)
     assert result["entered"] is True

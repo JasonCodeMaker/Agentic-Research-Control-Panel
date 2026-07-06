@@ -7,6 +7,7 @@ Scope SSOT nodes, or materializes package surfaces itself.
 
 import re
 import sys
+import json
 from pathlib import Path
 
 _PIPE = Path(__file__).resolve().parents[3]
@@ -41,6 +42,117 @@ def _active(nodes, level):
     return [n for n in nodes.values() if n.get("level") == level and n.get("status") == "ACTIVE"]
 
 
+def _scope_records_and_nodes(root):
+    records = scope_ssot.read_log(Path(root) / "outputs" / "_scope" / "transitions.jsonl")
+    return records, scope_ssot.fold(records)
+
+
+def _package_summary(root, *, pkg_id=None, direction_id=None):
+    inv = Path(root) / "research_html" / "data" / "research-packages.js"
+    if not inv.exists():
+        return None
+    text = inv.read_text(encoding="utf-8")
+    if pkg_id and f'id: "{pkg_id}"' not in text and f"id: '{pkg_id}'" not in text:
+        return None
+    if direction_id and f'sourceDirection: "{direction_id}"' not in text:
+        return None
+    return {"id": pkg_id, "sourceDirection": direction_id}
+
+
+def _pending_triage(root):
+    path = Path(root) / "outputs" / "_scope" / "triage.jsonl"
+    if not path.exists():
+        return []
+    latest = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("id"):
+            latest[rec["id"]] = rec
+    return [rec for rec in latest.values() if rec.get("status") == "pending"]
+
+
+def _triage_target_id(item):
+    proposed = item.get("proposed_node") if isinstance(item.get("proposed_node"), dict) else {}
+    return item.get("node_id") or proposed.get("id")
+
+
+def _triage_parents(item):
+    proposed = item.get("proposed_node") if isinstance(item.get("proposed_node"), dict) else {}
+    parents = item.get("parents") or proposed.get("parents") or []
+    return parents if isinstance(parents, list) else []
+
+
+def _relevant_pending(pending, *, project, direction, tasks):
+    project_id = project.get("id") if project else None
+    direction_id = direction.get("id") if direction else None
+    task_ids = {task.get("id") for task in tasks}
+    chain = {item for item in [project_id, direction_id, *task_ids] if item}
+    out = []
+    for item in pending:
+        target = _triage_target_id(item)
+        parents = set(_triage_parents(item))
+        level = item.get("level")
+        if target in chain:
+            out.append(item)
+        elif level == "task" and direction_id and direction_id in parents:
+            out.append(item)
+        elif level == "direction" and target == direction_id:
+            out.append(item)
+        elif level == "project" and target == project_id:
+            out.append(item)
+    return sorted(out, key=lambda item: item.get("id", ""))
+
+
+def build_scope_context(root, *, pkg_id=None):
+    """Agent-facing Scope summary for the front door and dispatch context."""
+    records, nodes = _scope_records_and_nodes(root)
+    projects = _active(nodes, "project")
+    directions = _active(nodes, "direction")
+    direction = directions[0] if directions else None
+    project = None
+    if direction:
+        for parent in direction.get("parents", []):
+            candidate = nodes.get(parent)
+            if candidate and candidate.get("level") == "project" and candidate.get("status") == "ACTIVE":
+                project = candidate
+                break
+    if project is None and projects:
+        project = projects[0]
+    tasks = [
+        n for n in _active(nodes, "task")
+        if not direction or direction.get("id") in (n.get("parents") or [])
+    ]
+    tasks.sort(key=lambda n: n.get("id", ""))
+    direction_id = direction.get("id") if direction else None
+    package = _package_summary(root, pkg_id=pkg_id, direction_id=direction_id) if direction_id else None
+    pending_scope = _relevant_pending(_pending_triage(root), project=project, direction=direction, tasks=tasks)
+    return {
+        "global_scope_version": scope_ssot.global_version(records),
+        "project": _summarize_node(project),
+        "direction": _summarize_node(direction),
+        "tasks": [_summarize_node(t) for t in tasks],
+        "package": package,
+        "pending_scope": pending_scope,
+    }
+
+
+def _summarize_node(node):
+    if not node:
+        return None
+    return {
+        "id": node.get("id"),
+        "level": node.get("level"),
+        "version": node.get("version"),
+        "status": node.get("status"),
+        "spec": node.get("spec", {}),
+    }
+
+
 def _package_for_direction(root, direction_ids):
     """True iff the inventory carries a package materialized from one of these committed directions."""
     inv = Path(root) / "research_html" / "data" / "research-packages.js"
@@ -62,8 +174,7 @@ def detect_admission_state(root, *, readiness_ok=None):
     root = Path(root)
     if not (root / "research_html" / "index.html").exists():
         return "NO_DASHBOARD"  # dashboard scaffolding is an init op, not a run-loop mutation
-    records = scope_ssot.read_log(root / "outputs" / "_scope" / "transitions.jsonl")
-    nodes = scope_ssot.fold(records)
+    _, nodes = _scope_records_and_nodes(root)
     if not _active(nodes, "project"):
         return "NO_PROJECT"
     if not _active(nodes, "direction"):
@@ -256,8 +367,30 @@ def run_front_door(root, *, pkg_id=None, scope_node=None, role_sequence=None, ad
                    readiness_ok=None, context=None):
     """Drive the front door: enter the package run loop when READY, else return prerequisite handoffs."""
     state = detect_admission_state(root, readiness_ok=readiness_ok)
+    scope_context = build_scope_context(root, pkg_id=pkg_id)
+    action_context = dict(context or {})
+    action_context["pending"] = scope_context.get("pending_scope", [])
+    if state in {"READY", "NOT_READY"} and scope_context.get("pending_scope"):
+        actions = [{
+            "type": "AWAIT_TRIAGE_DECISION",
+            "level": "scope",
+            "pending": [item["id"] for item in scope_context["pending_scope"]],
+            "message": "A pending Scope proposal targets this package's active Scope chain.",
+        }]
+        for action in actions:
+            action["next_step"] = render_next_step(action, root=root)
+        return {"entered": False, "state": state, "scope_context": scope_context, "actions": actions}
     if state == "READY":
+        tick_context = action_context
+        tick_context["scope_context"] = scope_context
+        tick_context["global_scope_version"] = scope_context["global_scope_version"]
+        if scope_context.get("direction"):
+            tick_context["sourceDirection"] = scope_context["direction"]["id"]
+        if scope_context.get("tasks"):
+            tick_context["sourceTask"] = scope_context["tasks"][0]["id"]
         return {"entered": True, "state": "READY",
-                "tick": driver.run_tick(pkg_id, scope_node, role_sequence, adapters, context=context)}
+                "scope_context": scope_context,
+                "tick": driver.run_tick(pkg_id, scope_node, role_sequence, adapters, context=tick_context)}
     return {"entered": False, "state": state,
-            "actions": build_admission_actions(state, context, root=root)}
+            "scope_context": scope_context,
+            "actions": build_admission_actions(state, action_context, root=root)}

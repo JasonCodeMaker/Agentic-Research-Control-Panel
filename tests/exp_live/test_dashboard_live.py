@@ -184,20 +184,33 @@ def test_dashboard_server_rejects_status_paths_outside_outputs(tmp_path):
 
 
 def test_ensure_dashboard_repairs_missing_live_nav_on_existing_index(tmp_path):
-    # F11b: an already-attached project's index.html gains the Live Runs links.
+    # F11b: an already-attached project's index.html gains the Live Runs toolbar
+    # link, while stale global links are removed from the sticky in-page nav.
     root = tmp_path / "research_html"
     ensure_dashboard.ensure_dashboard(root, force=False)
     index = root / "index.html"
     stripped = (
         index.read_text(encoding="utf-8")
         .replace('        <a class="pill" href="live.html">Live Runs</a>\n', "")
-        .replace('      <a href="live.html">Live Runs</a>\n', "")
     )
-    assert 'href="live.html"' not in stripped
+    stripped = stripped.replace(
+        '      <a href="#packages">Packages</a>\n',
+        '      <a href="#packages">Packages</a>\n'
+        '      <a href="scope.html">Live Scope</a>\n'
+        '      <a href="live.html">Live Runs</a>\n'
+        '      <a href="learnings.html">Learnings</a>\n'
+        '      <a href="context.html">Agent Context</a>\n',
+        1,
+    )
+    assert '<a class="pill" href="live.html">Live Runs</a>' not in stripped
+    assert '<a href="live.html">Live Runs</a>' in stripped
     index.write_text(stripped, encoding="utf-8")
 
     written = ensure_dashboard.ensure_dashboard(root, force=False)
     text = index.read_text(encoding="utf-8")
+    nav_start = text.index('<nav class="dashboard-nav"')
+    nav = text[nav_start:text.index("</nav>", nav_start)]
     assert '<a class="pill" href="live.html">Live Runs</a>' in text
-    assert '<a href="live.html">Live Runs</a>' in text
+    for href in ("scope.html", "live.html", "learnings.html", "context.html"):
+        assert f'href="{href}"' not in nav
     assert index in written
