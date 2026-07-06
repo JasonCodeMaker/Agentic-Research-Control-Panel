@@ -48,37 +48,36 @@ read surfaces unless their owning skill says otherwise. For detailed surface own
 relevant skill/reference, especially `research-dashboard`, `research-package`, `research-op`, and
 `research-scope`.
 
-## Attaching The Pipeline To A Target Project
+## Cold Start Skill Routing
 
-When setting up a target research repo for Codex:
+Do not load every `research-*` skill body at session start. Codex and Claude discover skill metadata first;
+the full `SKILL.md` body is loaded only when the task matches that skill or the user invokes it explicitly.
+For ambiguous target-project research workflow requests, use this lifecycle only to avoid skipping
+prerequisites:
 
-1. Install toolbox skills by symlinking `skills/research-*` into `$HOME/.codex/skills`; do not copy skill
-   directories.
-2. Copy or merge `AGENTS.md` and `CLAUDE.md` into the target repo root.
-3. If the target already has `AGENTS.md` or `CLAUDE.md`, merge the pipeline protocol without overwriting
-   existing user/project instructions.
-4. Prepend target-specific context above the reusable protocol sections:
-   - project objective and motivation;
-   - datasets, baselines, metrics, gates, and success criteria;
-   - compute constraints and available machines;
-   - non-goals, safety constraints, reviewer concerns, and current best checkpoint.
-5. Create `outputs/_scope/` and `outputs/_selfevolve/`, then run `/research-dashboard`.
-6. If no committed Project node exists, run `/research-onboard` for an existing repo or `/research-scope`
-   when the user already knows the exact Project objective.
+`dashboard -> onboard/scope -> brainstorm -> package -> run`
 
-The pipeline is not active for research execution until a Project node is committed in the Scope SSOT.
-Onboarding and scoping may propose; only a human-ratified transition commits the objective.
+If the user names a specific skill, file, surface, script, or operation, go directly to that owner instead
+of forcing the lifecycle route.
 
-## Codex Skill And Script Resolution
+`research-auto` is the campaign-level entrypoint when its installed skill metadata matches the task; it
+still routes through the same Scope, package, run, and mutation boundaries. Use `research-op` for guarded
+Scope/package/registry/rule mutations, `research-exp-live` for structured long-running experiment state,
+`research-resource` for compute placement/allocation, and `research-analysis` for package Rules/Insights.
+The exact trigger boundaries live in the installed skill descriptions; after choosing a skill, read only
+that skill body and its directly referenced contract files.
 
-In a target research project, do not assume this toolbox source tree is vendored into the repo.
+## Setup And Script Resolution
 
-- Resolve `skills/<name>/scripts/...` through the installed Codex skill first:
-  `$HOME/.codex/skills/<name>/scripts/...`.
-- If a command in `CLAUDE.md`, `workflow.ts`, or a skill body uses a relative `skills/...` path, adapt it
-  to the installed skill path when running from the target project.
-- When editing this toolbox repo itself, use the local `skills/<name>/...` path and run the relevant
-  maintainer checks available in that checkout.
+Setup and attach work is occasional, not ordinary cold-start context. For target-repo setup, use `README.md`
+and the owning setup skills (`research-dashboard`, then `research-onboard` or `research-scope`) without
+overwriting existing target `AGENTS.md` / `CLAUDE.md` instructions. The pipeline is not active for research
+execution until a Project node is committed in the Scope SSOT.
+
+In a target research project, do not assume this toolbox source tree is vendored into the repo. Resolve
+relative `skills/<name>/scripts/...` commands through the installed Codex skill first
+(`$HOME/.codex/skills/<name>/...`). When editing this toolbox repo itself, use the local `skills/<name>/...`
+path and run the relevant maintainer checks available in this checkout.
 
 ## Scope And Triage Contract
 
@@ -125,7 +124,8 @@ When modifying this toolbox repo:
 - Keep changes surgical and preserve project-agnostic protocol bodies unless the task explicitly asks to
   change them.
 - Read `README.md` and the relevant `skills/*/SKILL.md` before changing setup, dashboard, Scope, package,
-  or operation behavior.
+  or operation behavior; keep detailed runbooks in those owning locations rather than in this always-loaded
+  bootloader.
 - Behavior changes must be covered by maintainer-side verification before release. In release checkouts
   where developer checks are intentionally absent, run syntax or contract checks appropriate to the
   touched files before claiming toolbox behavior changes are complete.
