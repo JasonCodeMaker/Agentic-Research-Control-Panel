@@ -1195,7 +1195,6 @@
       '<fieldset class="filter-group"><legend>Status</legend><select name="status">' + statusOptions + "</select></fieldset>",
       '<fieldset class="filter-group"><legend>Next route</legend><select name="route">' + routeOptions + "</select></fieldset>",
       '<fieldset class="filter-group"><legend>Sort</legend><select name="sort"><option value="recency">Most recent</option><option value="category">By lane</option><option value="status">By status</option></select></fieldset>',
-      '<fieldset class="filter-group filter-meta"><legend>Quality</legend><label><input type="checkbox" name="show-only-missing"> only ⚠ missing-required</label></fieldset>',
     ].join("");
   }
 
@@ -1203,7 +1202,6 @@
     var lanes = form ? Array.prototype.map.call(form.querySelectorAll('input[name="lane"]:checked'), function (i) { return i.value; }) : [];
     var route = form && form.elements.route ? form.elements.route.value : "all";
     var statusFilter = form && form.elements.status ? form.elements.status.value : "all";
-    var onlyMissing = form && form.elements["show-only-missing"] ? form.elements["show-only-missing"].checked : false;
     var sort = form && form.elements.sort ? form.elements.sort.value : "recency";
     // Lane filter is always required: no lane selected → no packages rendered.
     var items = (lanes && lanes.length)
@@ -1211,7 +1209,6 @@
       : [];
     if (route !== "all") items = items.filter(function (p) { return (p.nextRoute || "unmeasured") === route; });
     if (statusFilter !== "all") items = items.filter(function (p) { return (packageStatus(p) || "unmeasured") === statusFilter; });
-    if (onlyMissing) items = items.filter(function (p) { return missingRequiredFields(p).length > 0; });
     if (sort === "recency") {
       items.sort(function (a, b) { return String(b.lastUpdated || "").localeCompare(String(a.lastUpdated || "")); });
     } else if (sort === "status") {

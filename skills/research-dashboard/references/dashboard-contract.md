@@ -15,7 +15,6 @@ Required root files:
 - `categories/success/index.html`
 - `categories/fail/index.html`
 - `package-template.html`
-- `templates/module-library.html`
 
 Required data globals:
 
@@ -65,7 +64,7 @@ logs belong in package modules or artifact roots.
 
 Required dashboard sections (each must carry the matching `data-section` anchor):
 
-- `masthead`: title, lead paragraph, and toolbar with rules + README links.
+- `masthead`: title, lead paragraph, and toolbar with global dashboard links.
 - `nav`: in-page anchor nav over the remaining sections.
 - `snapshot`: one `data-card="dashboard-role"` article that names this surface
   as overview + agent context, and points readers to package surfaces for

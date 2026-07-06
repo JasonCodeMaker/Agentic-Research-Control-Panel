@@ -123,7 +123,12 @@ def write_if_missing(path: Path, source: Path | None, text: str | None, force: b
 # data/ files that hold project state — never overwritten by --refresh-chrome.
 USER_DATA = {"data/research-packages.js", "data/brainstorms.js",
              "data/scope-projection.json", "data/scope-projection.js", "data/rules.js"}
-OBSOLETE_CONTEXT_SURFACE = ("context.html", "assets/research-context.js", "data/context-core.js")
+OBSOLETE_DASHBOARD_SURFACES = (
+    "context.html",
+    "assets/research-context.js",
+    "data/context-core.js",
+    "templates/module-library.html",
+)
 
 
 def copy_bundled_chrome(root: Path, force: bool, refresh: bool = False) -> list[Path]:
@@ -176,10 +181,10 @@ def write_brainstorms_store(root: Path, force: bool) -> list[Path]:
     return written
 
 
-def remove_obsolete_context_surface(root: Path) -> list[Path]:
-    """Delete the retired global Agent Context dashboard surface if present."""
+def remove_obsolete_dashboard_surfaces(root: Path) -> list[Path]:
+    """Delete retired global dashboard reference surfaces if present."""
     written: list[Path] = []
-    for rel in OBSOLETE_CONTEXT_SURFACE:
+    for rel in OBSOLETE_DASHBOARD_SURFACES:
         path = root / rel
         if path.exists():
             path.unlink()
@@ -253,7 +258,7 @@ def ensure_dashboard(root: Path, force: bool, refresh: bool = False) -> list[Pat
     written.extend(copy_rule_files(root, force or refresh))
     written.extend(write_rules_store(root))
     written.extend(ensure_live_nav(root))
-    written.extend(remove_obsolete_context_surface(root))
+    written.extend(remove_obsolete_dashboard_surfaces(root))
     return written
 
 

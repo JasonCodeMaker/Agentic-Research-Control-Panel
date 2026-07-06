@@ -53,6 +53,28 @@ def test_dashboard_scaffold_installs_live_api_server_script(tmp_path):
     py_compile.compile(str(server), doraise=True)
 
 
+def test_dashboard_scaffold_omits_module_library_interface(tmp_path):
+    root = tmp_path / "research_html"
+    ensure_dashboard.ensure_dashboard(root, force=False)
+
+    assert not (root / "templates" / "module-library.html").exists()
+    assert 'templates/module-library.html' not in (root / "index.html").read_text(encoding="utf-8")
+    contract = (ROOT / "skills" / "research-dashboard" / "references" / "dashboard-contract.md").read_text(encoding="utf-8")
+    assert "templates/module-library.html" not in contract
+
+
+def test_dashboard_scaffold_removes_legacy_module_library_interface(tmp_path):
+    root = tmp_path / "research_html"
+    legacy = root / "templates" / "module-library.html"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy", encoding="utf-8")
+
+    written = ensure_dashboard.ensure_dashboard(root, force=False)
+
+    assert legacy in written
+    assert not legacy.exists()
+
+
 def test_chrome_copy_skips_python_cache_files(tmp_path, monkeypatch):
     bundle = tmp_path / "bundle"
     (bundle / "scripts" / "__pycache__").mkdir(parents=True)

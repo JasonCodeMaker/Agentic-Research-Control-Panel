@@ -71,6 +71,39 @@ def test_homepage_separates_global_toolbar_from_page_nav(tmp_path):
         assert f'href="{href}"' not in nav
     assert 'href="context.html"' not in toolbar
     assert 'href="context.html"' not in nav
+    assert 'templates/module-library.html' not in toolbar
+    assert 'Module Library' not in toolbar
+    assert 'href="README.md"' not in toolbar
+    assert 'README' not in toolbar
+    assert 'href="rules/html-rules.html"' not in toolbar
+    assert 'href="rules/trustworthy-research-rules.html"' not in toolbar
+    assert 'HTML Rules' not in toolbar
+    assert 'Trust Rules' not in toolbar
+
+    assert 'data-card="rule-link-html"' in html
+    assert 'data-card="rule-link-trust"' in html
+    assert 'href="rules/html-rules.html"' in html
+    assert 'href="rules/trustworthy-research-rules.html"' in html
 
     for href in ("#snapshot", "#lanes", "#packages", "#protocol", "#profile", "#rules"):
         assert f'href="{href}"' in nav
+
+
+def test_dashboard_contract_does_not_require_readme_toolbar_link():
+    contract = (SKILL / "references" / "dashboard-contract.md").read_text(encoding="utf-8")
+    assert "README links" not in contract
+
+
+def test_dashboard_contract_does_not_require_rule_toolbar_links():
+    contract = (SKILL / "references" / "dashboard-contract.md").read_text(encoding="utf-8")
+    assert "toolbar with global dashboard + rule links" not in contract
+
+
+def test_package_filters_do_not_include_quality_toggle(tmp_path):
+    root = _scaffold(tmp_path)
+    js = (root / "assets" / "research.js").read_text(encoding="utf-8")
+
+    assert "<legend>Quality</legend>" not in js
+    assert "show-only-missing" not in js
+    assert "filter-meta" not in js
+    assert "missingRequiredFields(p).length > 0" not in js
