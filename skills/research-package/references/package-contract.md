@@ -141,7 +141,7 @@ package contract:
 
 - `hypothesis` &mdash; canonical hypothesis text.
 - `noChangeBoundary` &mdash; one-sentence boundary reference.
-- `experiments` &mdash; ordered typed task-spine array `[{ id, label?, purpose, after, output, gate, status, measures, requiresCode, complex, runLink?, docsAnchor? }, …]`. Painted onto `index.html#plan-status` by `renderPlanStatus()` (status chips), and onto `plan.html#experiments` by `renderPipelineTimeline()` (vertical pipeline of nodes plus task-thread chips). Allowed `status` values: `pending`, `queued`, `running`, `completed`, `failed`, `skipped`, `blocked`. **Timeline-field caps**: `purpose` &le; 12 words leading with an action verb; `gate` is exactly one measurable predicate (no top-level `AND` / `OR`, no semicolon-joined predicates, fewer than two comparator clauses); `output` is exactly one key artifact (single line); `after` is a list of phase ids that must each resolve to another `experiments[].id`; `docsAnchor` defaults to `docs/pipeline.html#<id_lowercase>`. The task flags drive derived blocks: `measures: true` (default for new tasks) requires a result-gate row and predefined `data-table="result-slot-<id>"`; `requiresCode: true` requires an implementation change card bound by `validating-exp`; `complex: true` requires a resolving docs block. The painters are the only read path; inventory is the only write path. `learnings_lint.py alignment` enforces caps, derived-block presence, reverse orphan rows/cards, and status contradictions. Legacy entries with none of `measures`/`requiresCode`/`complex` skip the derived-block checks with an `alignment-flags-unset` warning; the field caps stay always-on for every entry.
+- `experiments` &mdash; ordered typed task-spine array `[{ id, label?, purpose, after, output, gate, status, measures, requiresCode, complex, resultSchemaRef?, runLink?, docsAnchor? }, …]`. Painted onto `index.html#plan-status` by `renderPlanStatus()` (status chips), and onto `plan.html#experiments` by `renderPipelineTimeline()` (vertical pipeline of nodes plus task-thread chips). Allowed `status` values: `pending`, `queued`, `running`, `completed`, `failed`, `skipped`, `blocked`. **Timeline-field caps**: `purpose` &le; 12 words leading with an action verb; `gate` is exactly one measurable predicate (no top-level `AND` / `OR`, no semicolon-joined predicates, fewer than two comparator clauses); `output` is exactly one key artifact (single line); `after` is a list of phase ids that must each resolve to another `experiments[].id`; `docsAnchor` defaults to `docs/pipeline.html#<id_lowercase>`. The task flags drive derived blocks: `measures: true` (default for new tasks) requires a result-gate row, a predefined result table, and a task-specific result schema; `requiresCode: true` requires an implementation change card bound by `validating-exp`; `complex: true` requires a resolving docs block. New fact-backed packages store the detailed schema in `<pkg>.facts.js resultSchemas` and keep only `resultSchemaRef` on the inventory row. Legacy `data-table="result-slot-<id>"` anchors remain link-compatible, but the canonical fact-backed table id is `result_table_<id>`. The painters are the only read path; inventory plus package facts are the only write path. `learnings_lint.py alignment` enforces caps, derived-block presence, reverse orphan rows/cards, and status contradictions. `learnings_lint.py fact-alignment` enforces result-schema planned cells against CSV facts. Legacy entries with none of `measures`/`requiresCode`/`complex` skip the derived-block checks with an `alignment-flags-unset` warning; the field caps stay always-on for every entry.
 - `workflowState`, `activeGate`, `primaryMetricVsGate`, `lastDecision`,
   `lastDecisionEvidencePath`, `nextRoute`, `currentBlocker` &mdash; the six T2
   fields plus an evidence-path hint.
@@ -171,10 +171,14 @@ research_html/data/packages/<pkg>/extractors/<exp_id>.json
 Rules:
 
 - JavaScript facts own repeated content facts such as headline references,
-  objective summaries, projection revisions, and page-level summaries.
-- CSV files own table facts. Result tables, result-gate rows, and headline
-  metric cards must reference the same CSV `row_id` when they display the same
-  value.
+  objective summaries, projection revisions, page-level summaries, and
+  `resultSchemas`.
+- CSV files own table facts. `result_gate.csv` owns compact verdict rows.
+  `result_table_<exp_id>.csv` stores normalized cell facts (`row_key`,
+  `column_key`, `metric`, `value`, provenance), and the renderer pivots those
+  cells into task-specific HTML tables such as baseline-by-Recall matrices.
+  Result tables, result-gate rows, and headline metric cards must reference the
+  same CSV `row_id` when they display the same value.
 - Experiment result CSVs are generated from real runtime artifacts by extractor
   scripts whenever the artifact format is machine-readable.
 - Manual CSV rows must carry `source_type=manual`, `source_note`, and

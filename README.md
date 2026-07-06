@@ -307,7 +307,7 @@ During day-to-day use, the runtime and fact storage appear through the same surf
 | --- | --- | --- |
 | `research_html/live.html` | Open, stale, failed, and recent terminal wrapper-launched runs. | It reads runtime files first, so use it before raw tmux scrollback for routine status. |
 | Package `tracker.html` | Live checks, resource allocation, runtime roots, and log paths. | For fact-backed packages, repeated tracker rows come from `live_checks.csv` and `resource_allocation.csv`. |
-| Package `results.html` | Result gates, result tables, headline metrics, and verdict support. | Repeated result values should point back to the same CSV row id. |
+| Package `results.html` | Result gates, task-specific result tables, headline metrics, and verdict support. | Fact-backed result tables are rendered from normalized CSV cell facts; repeated result values should point back to the same CSV row id. |
 | `research_html/learnings.html` | Decision view over tried methods: reuse, do-not-repeat, reopen condition, promoted rule, and Scope impact. | Read it before proposing new work; it is derived and must not be edited directly. |
 | `research_html/scripts/learning_context_gate.py --json` | Machine-readable summary of packages, active rules, failed methods, adopted wins, unresolved methods, and open gaps. | Run before brainstorm, Scope proposal, package materialization, or execution; malformed rules fail closed. |
 | Dashboard `methodsTried[]` | The compact method/result summary shown on package cards and lint surfaces. | For fact-backed packages, it is a compatibility projection from `methods_tried.csv`. |
@@ -395,7 +395,7 @@ The contribution is the trust record, not just the agent loop.
 | `research_html/data/research-packages.js` | Dashboard registry: package cards, status, task spine, and compatibility projections. |
 | `research_html/data/rules.js` | Unified rules registry: every binding rule as one typed row (`universal` R/T mirror · `project` · `package`); mutated only via `research-op --target rule`. |
 | `research_html/data/packages/<pkg>.facts.js` | Package content facts and page projection metadata for fact-backed packages. |
-| `research_html/data/packages/<pkg>/tables/*.csv` | Canonical package table facts: result gates, result tables, tracker live checks, resource allocation, and methods tried. |
+| `research_html/data/packages/<pkg>/tables/*.csv` | Canonical package table facts: result gates, normalized result-table cells, tracker live checks, resource allocation, and methods tried. |
 | `outputs/_scope/transitions.jsonl` | Canonical Scope SSOT transition log. |
 | `outputs/_scope/triage.jsonl` | Pending and disposed objective proposals. |
 | `outputs/_live/runs.jsonl` | Global index of wrapper-launched experiment runs. |

@@ -10,6 +10,7 @@ import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 from . import _pkg_block
 
@@ -22,6 +23,11 @@ from render_result_facts import render as render_result_facts  # noqa: E402
 from render_tracker_facts import render as render_tracker_facts  # noqa: E402
 from sync_methods_tried_projection import sync_methods_tried_projection  # noqa: E402
 from task_spine import derive_task_blocks  # noqa: E402
+from create_research_package import (  # noqa: E402
+    materialize_result_schemas,
+    placeholder_cell_rows,
+    placeholder_result_row,
+)
 
 def _bump_last_updated(path: Path) -> None:
     """Update the <time data-field='last-updated'> on a touched HTML file."""
@@ -111,11 +117,35 @@ def _tracker_sources(paths: package_facts.FactPaths) -> list[str]:
     return sources
 
 
+def _schema_table_ids(paths: package_facts.FactPaths) -> set[str]:
+    try:
+        facts = package_facts.load_facts_js(paths.pkg, root=paths.root)
+    except package_facts.FactError:
+        return set()
+    schemas = facts.get("resultSchemas") or {}
+    if isinstance(schemas, list):
+        return {str(item.get("tableId") or "") for item in schemas if isinstance(item, dict)}
+    if isinstance(schemas, dict):
+        return {str(item.get("tableId") or "") for item in schemas.values() if isinstance(item, dict)}
+    return set()
+
+
+def _result_table_csv_paths(paths: package_facts.FactPaths) -> list[Path]:
+    by_name = {path.name: path for path in sorted(paths.tables_dir.glob("result_table_*.csv"))}
+    for table_id in _schema_table_ids(paths):
+        if not table_id:
+            continue
+        path = paths.tables_dir / f"{table_id}.csv"
+        if path.exists():
+            by_name.setdefault(path.name, path)
+    return [by_name[name] for name in sorted(by_name)]
+
+
 def _results_sources(paths: package_facts.FactPaths) -> list[str]:
     sources = []
     if (paths.tables_dir / "result_gate.csv").exists():
         sources.append("tables/result_gate.csv")
-    sources.extend(f"tables/{path.name}" for path in sorted(paths.tables_dir.glob("result_table_*.csv")))
+    sources.extend(f"tables/{path.name}" for path in _result_table_csv_paths(paths))
     return sources
 
 
@@ -161,11 +191,41 @@ def _render_results_projection_candidate(pkg: str, csv_path: Path, csv_text: str
         _copy_if_exists(root / results_rel, tmp_root / results_rel)
         _copy_if_exists(live_paths.facts_js, tmp_root / facts_rel)
         _copy_if_exists(live_paths.tables_dir / "result_gate.csv", tmp_paths.tables_dir / "result_gate.csv")
-        for table_path in live_paths.tables_dir.glob("result_table_*.csv"):
+        for table_path in _result_table_csv_paths(live_paths):
             _copy_if_exists(table_path, tmp_paths.tables_dir / table_path.name)
         target_csv = tmp_root / csv_path
         target_csv.parent.mkdir(parents=True, exist_ok=True)
         target_csv.write_text(csv_text, encoding="utf-8")
+        render_result_facts(pkg, tmp_root)
+        results_path = tmp_root / results_rel
+        package_facts.record_page_projection(
+            pkg,
+            "results.html",
+            _results_sources(tmp_paths),
+            results_path,
+            "render_result_facts.py",
+            root=tmp_root,
+        )
+        return results_path.read_text(encoding="utf-8"), (tmp_root / facts_rel).read_text(encoding="utf-8")
+
+
+def _render_results_projection_candidate_many(pkg: str, staged_texts: dict[Path, str]) -> tuple[str, str]:
+    root = Path(".")
+    results_rel = Path("research_html") / "packages" / pkg / "results.html"
+    live_paths = package_facts.fact_paths(pkg)
+    facts_rel = live_paths.facts_js
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_root = Path(tmp)
+        tmp_paths = package_facts.fact_paths(pkg, root=tmp_root)
+        _copy_if_exists(root / results_rel, tmp_root / results_rel)
+        _copy_if_exists(live_paths.facts_js, tmp_root / facts_rel)
+        _copy_if_exists(live_paths.tables_dir / "result_gate.csv", tmp_paths.tables_dir / "result_gate.csv")
+        for table_path in _result_table_csv_paths(live_paths):
+            _copy_if_exists(table_path, tmp_paths.tables_dir / table_path.name)
+        for path, text in staged_texts.items():
+            target = tmp_root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8")
         render_result_facts(pkg, tmp_root)
         results_path = tmp_root / results_rel
         package_facts.record_page_projection(
@@ -187,6 +247,83 @@ def _commit_fact_projection(files: dict[Path, str]) -> None:
         tx.commit()
     finally:
         tx.cleanup()
+
+
+def _fact_args_for_experiment(payload: dict) -> SimpleNamespace:
+    return SimpleNamespace(
+        primary_metric=str(payload.get("gate") or payload.get("primaryMetric") or ""),
+        baseline=str(payload.get("baseline") or ""),
+        artifact_root=str(payload.get("output") or ""),
+    )
+
+
+def materialize_experiment_payload(payload: dict) -> tuple[dict, dict[str, dict], SimpleNamespace]:
+    args = _fact_args_for_experiment(payload)
+    rows, schemas = materialize_result_schemas([payload], args)
+    return rows[0], schemas, args
+
+
+def _merge_result_schema_facts(pkg: str, entry: dict, schemas: dict[str, dict], args: SimpleNamespace) -> dict[Path, str]:
+    if not schemas or entry.get("measures") is False:
+        return {}
+    paths = package_facts.fact_paths(pkg)
+    facts = package_facts.load_facts_js(pkg)
+    facts.setdefault("schemaVersion", 1)
+    facts.setdefault("packageId", pkg)
+    experiments = [str(item) for item in facts.get("experiments") or []]
+    if str(entry.get("id")) not in experiments:
+        experiments.append(str(entry.get("id")))
+    facts["experiments"] = experiments
+
+    schema = schemas[str(entry["resultSchemaRef"])]
+    table_id = str(schema["tableId"])
+    result_tables = [str(item) for item in facts.get("resultTables") or []]
+    if table_id not in result_tables:
+        result_tables.append(table_id)
+    facts["resultTables"] = result_tables
+
+    existing_schemas = facts.get("resultSchemas") or {}
+    if isinstance(existing_schemas, list):
+        existing_schemas = {str(item.get("id") or ""): item for item in existing_schemas if isinstance(item, dict)}
+    elif not isinstance(existing_schemas, dict):
+        existing_schemas = {}
+    existing_schemas.update(schemas)
+    facts["resultSchemas"] = existing_schemas
+
+    gate_csv = paths.tables_dir / "result_gate.csv"
+    table_csv = paths.tables_dir / f"{schema['tableId']}.csv"
+    gate_csv_text = _csv_text_after_upsert(
+        gate_csv,
+        package_facts.RESULT_COLUMNS,
+        [placeholder_result_row(entry, args, f"{entry['id']}_gate")],
+    )
+    table_csv_text = _csv_text_after_upsert(
+        table_csv,
+        package_facts.RESULT_CELL_COLUMNS,
+        placeholder_cell_rows(entry, schema, args),
+    )
+    facts_text = package_facts.facts_js_text(pkg, facts)
+    return {
+        paths.facts_js: facts_text,
+        gate_csv: gate_csv_text,
+        table_csv: table_csv_text,
+    }
+
+
+def commit_experiment_result_facts(pkg: str, entry: dict, schemas: dict[str, dict], args: SimpleNamespace) -> list[str]:
+    if not _is_fact_backed(pkg) or not schemas:
+        return []
+    staged = _merge_result_schema_facts(pkg, entry, schemas, args)
+    if not staged:
+        return []
+    results_text, facts_text = _render_results_projection_candidate_many(pkg, staged)
+    results_path = Path("research_html") / "packages" / pkg / "results.html"
+    paths = package_facts.fact_paths(pkg)
+    commit_files = dict(staged)
+    commit_files[results_path] = results_text
+    commit_files[paths.facts_js] = facts_text
+    _commit_fact_projection(commit_files)
+    return [str(path) for path in commit_files]
 
 
 def _measured(source_row: dict[str, str]) -> str:
@@ -268,8 +405,10 @@ def insert_methodstried(pkg: str, payload: dict) -> list[str]:
 
 
 def insert_experiments_row(pkg: str, payload: dict) -> list[str]:
-    files = [_append_to_inventory_array(pkg, "experiments", payload)]
-    files.extend(derive_task_blocks(Path(f"research_html/packages/{pkg}"), [payload]))
+    entry, schemas, args = materialize_experiment_payload(payload)
+    files = [_append_to_inventory_array(pkg, "experiments", entry)]
+    files.extend(derive_task_blocks(Path(f"research_html/packages/{pkg}"), [entry]))
+    files.extend(commit_experiment_result_facts(pkg, entry, schemas, args))
     return files
 
 

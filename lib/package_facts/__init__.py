@@ -29,6 +29,32 @@ RESULT_COLUMNS = [
     "extracted_at",
 ]
 
+RESULT_CELL_COLUMNS = [
+    "row_id",
+    "exp_id",
+    "table_id",
+    "row_key",
+    "row_label",
+    "column_key",
+    "column_label",
+    "metric",
+    "value",
+    "unit",
+    "dataset",
+    "split",
+    "seed",
+    "method",
+    "baseline",
+    "variant",
+    "aggregate",
+    "n",
+    "validity",
+    "source_artifact",
+    "source_mtime",
+    "extractor",
+    "extracted_at",
+]
+
 LIVE_CHECK_COLUMNS = [
     "row_id",
     "time",

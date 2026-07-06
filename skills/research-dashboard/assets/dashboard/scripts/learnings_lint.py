@@ -1437,9 +1437,11 @@ def _methods_projection_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]
     return [{field: row.get(field, "") for field in METHODS_COMPAT_FIELDS} for row in rows]
 
 
-def _required_projection_pages(paths) -> list[str]:
+def _required_projection_pages(paths, facts: dict | None = None) -> list[str]:
     pages = []
-    if (paths.tables_dir / "result_gate.csv").exists() or list(paths.tables_dir.glob("result_table_*.csv")):
+    has_result_table = bool(list(paths.tables_dir.glob("result_table_*.csv")))
+    has_schema_table = bool(_result_schemas_by_table(facts or {}))
+    if (paths.tables_dir / "result_gate.csv").exists() or has_result_table or has_schema_table:
         pages.append("results.html")
     if (paths.tables_dir / "live_checks.csv").exists() or (paths.tables_dir / "resource_allocation.csv").exists():
         pages.append("tracker.html")
@@ -1471,11 +1473,12 @@ def _result_table_requires_manifest(path: Path) -> bool:
     return any((row.get("extractor") or "").strip() for row in package_facts.read_csv_rows(path))
 
 
-def _check_result_table_manifests(rep: Report, pid: str, paths, root: Path) -> None:
-    for table_path in sorted(paths.tables_dir.glob("result_table_*.csv")):
+def _check_result_table_manifests(rep: Report, pid: str, paths, root: Path, facts: dict) -> None:
+    schemas = _result_schemas_by_table(facts)
+    for table_path in _result_table_fact_paths(paths, facts):
         if not _result_table_requires_manifest(table_path):
             continue
-        exp_id = table_path.stem.removeprefix("result_table_")
+        exp_id = str((schemas.get(table_path.stem) or {}).get("expId") or table_path.stem.removeprefix("result_table_"))
         manifest = paths.extractors_dir / f"{exp_id}.json"
         expected_csv = str(table_path.relative_to(root))
         if not manifest.exists():
@@ -1498,6 +1501,67 @@ def _check_result_table_manifests(rep: Report, pid: str, paths, root: Path) -> N
                 f"{manifest.relative_to(root)} output_csv={payload.get('output_csv')!r}, expected {expected_csv!r}",
                 "error",
             ))
+
+
+def _result_schemas_by_table(facts: dict) -> dict[str, dict]:
+    schemas = facts.get("resultSchemas") or {}
+    if isinstance(schemas, list):
+        return {str(item.get("tableId") or ""): item for item in schemas if isinstance(item, dict)}
+    if isinstance(schemas, dict):
+        return {str(item.get("tableId") or ""): item for item in schemas.values() if isinstance(item, dict)}
+    return {}
+
+
+def _result_table_fact_paths(paths, facts: dict) -> list[Path]:
+    by_name = {path.name: path for path in sorted(paths.tables_dir.glob("result_table_*.csv"))}
+    for table_id in _result_schemas_by_table(facts):
+        if not table_id:
+            continue
+        path = paths.tables_dir / f"{table_id}.csv"
+        if path.exists():
+            by_name.setdefault(path.name, path)
+    return [by_name[name] for name in sorted(by_name)]
+
+
+def _planned_schema_cell_ids(schema: dict) -> list[str]:
+    exp_id = str(schema.get("expId") or "").strip()
+    row_axis = schema.get("rowAxis") if isinstance(schema.get("rowAxis"), dict) else {}
+    planned_rows = row_axis.get("plannedRows") if isinstance(row_axis.get("plannedRows"), list) else []
+    columns = schema.get("columns") if isinstance(schema.get("columns"), list) else []
+    planned = []
+    for row in planned_rows:
+        if not isinstance(row, dict):
+            continue
+        row_key = str(row.get("key") or "").strip()
+        if not row_key:
+            continue
+        for column in columns:
+            if not isinstance(column, dict):
+                continue
+            column_key = str(column.get("key") or "").strip()
+            if column_key:
+                planned.append(f"{exp_id}:{row_key}:{column_key}")
+    return planned
+
+
+def _check_result_schemas(rep: Report, pid: str, facts: dict, paths, root: Path) -> None:
+    for table_id, schema in sorted(_result_schemas_by_table(facts).items()):
+        if not table_id:
+            rep.add(Violation(pid, "result-schema-table-missing", f"{schema.get('id', '(no-id)')}: tableId is blank", "error"))
+            continue
+        table_path = paths.tables_dir / f"{table_id}.csv"
+        if not table_path.exists():
+            rep.add(Violation(pid, "result-schema-table-missing", f"{table_id}.csv is declared by resultSchemas but missing", "error"))
+            continue
+        row_ids = {str(row.get("row_id") or "") for row in package_facts.read_csv_rows(table_path)}
+        for cell_id in _planned_schema_cell_ids(schema):
+            if cell_id not in row_ids:
+                rep.add(Violation(
+                    pid,
+                    "result-schema-cell-missing",
+                    f"{cell_id} is declared by {schema.get('id', '(no-id)')} but missing from {table_path.relative_to(root)}",
+                    "error",
+                ))
 
 
 def lint_fact_alignment(data: dict, pkg_filter: str | None = None, repo_root: Path | None = None) -> Report:
@@ -1529,8 +1593,9 @@ def lint_fact_alignment(data: dict, pkg_filter: str | None = None, repo_root: Pa
         _check_duplicate_display_rows(rep, pid, display_rows)
 
         if package_facts.is_fact_backed(pid, root=root):
-            _check_result_table_manifests(rep, pid, paths, root)
-            for page in _required_projection_pages(paths):
+            _check_result_schemas(rep, pid, facts, paths, root)
+            _check_result_table_manifests(rep, pid, paths, root, facts)
+            for page in _required_projection_pages(paths, facts):
                 html_path = package_dir / page
                 if not html_path.exists():
                     rep.add(Violation(pid, "projection-page-missing", f"{page} is required by package facts", "error"))

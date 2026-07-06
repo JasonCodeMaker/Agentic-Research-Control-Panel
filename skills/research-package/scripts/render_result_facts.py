@@ -20,16 +20,17 @@ def esc(value) -> str:
     return html.escape(str(value or ""), quote=True)
 
 
-def _read_valid_result_rows(path: Path) -> list[dict[str, str]]:
+def _read_valid_result_rows(path: Path, schema: dict | None = None) -> list[dict[str, str]]:
     rows = package_facts.read_csv_rows(path)
+    columns = package_facts.RESULT_CELL_COLUMNS if schema or path.stem.startswith("result_table_") else package_facts.RESULT_COLUMNS
     for index, row in enumerate(rows):
         if None in row:
             raise package_facts.FactError(f"malformed CSV row {index + 1} in {path}")
         if not row.get("row_id"):
             raise package_facts.FactError(f"CSV row {index + 1} in {path} has no row_id")
-        for col in package_facts.RESULT_COLUMNS:
+        for col in columns:
             row.setdefault(col, "")
-        package_facts.validate_csv_fact_row(package_facts.RESULT_COLUMNS, row)
+        package_facts.validate_csv_fact_row(columns, row)
     return rows
 
 
@@ -144,7 +145,104 @@ def replace_or_insert_headline(text: str, headline_html: str) -> str:
     return text.replace("</body>", headline_html + "\n</body>", 1)
 
 
-def render_result_article(table_path: Path, rows: list[dict]) -> str:
+def _schemas_by_table(pkg: str, root: Path) -> dict[str, dict]:
+    facts = package_facts.load_facts_js(pkg, root=root)
+    schemas = facts.get("resultSchemas") or {}
+    if isinstance(schemas, list):
+        return {str(item.get("tableId") or ""): item for item in schemas if isinstance(item, dict)}
+    if isinstance(schemas, dict):
+        return {str(item.get("tableId") or ""): item for item in schemas.values() if isinstance(item, dict)}
+    return {}
+
+
+def _result_table_paths(paths: package_facts.FactPaths, schemas: dict[str, dict]) -> list[Path]:
+    by_name = {path.name: path for path in sorted(paths.tables_dir.glob("result_table_*.csv"))}
+    for table_id in schemas:
+        if not table_id:
+            continue
+        path = paths.tables_dir / f"{table_id}.csv"
+        by_name.setdefault(path.name, path)
+    return [path for path in sorted(by_name.values(), key=lambda item: item.name) if path.exists()]
+
+
+def _cell_by_axis(rows: list[dict]) -> dict[tuple[str, str], dict]:
+    out = {}
+    for row in rows:
+        row_key = str(row.get("row_key") or "").strip()
+        column_key = str(row.get("column_key") or "").strip()
+        if row_key and column_key:
+            out[(row_key, column_key)] = row
+    return out
+
+
+def render_schema_result_article(table_path: Path, rows: list[dict], schema: dict) -> str:
+    table_id = table_path.stem
+    revision = package_facts.file_revision(table_path)
+    schema_id = str(schema.get("id") or "")
+    exp_id = str(schema.get("expId") or table_id.replace("result_table_", ""))
+    row_axis = schema.get("rowAxis") if isinstance(schema.get("rowAxis"), dict) else {}
+    row_axis_label = str(row_axis.get("label") or row_axis.get("key") or "Row")
+    planned_rows = row_axis.get("plannedRows") if isinstance(row_axis.get("plannedRows"), list) else []
+    columns = schema.get("columns") if isinstance(schema.get("columns"), list) else []
+    cells = _cell_by_axis(rows)
+    header_cells = "".join(
+        "<th>{label}</th>".format(label=esc(column.get("label") or column.get("key") or "Metric"))
+        for column in columns
+    )
+    body_rows = []
+    for row_item in planned_rows:
+        row_key = str(row_item.get("key") or "")
+        row_label = str(row_item.get("label") or row_key or "unmeasured")
+        values = []
+        for column in columns:
+            column_key = str(column.get("key") or "")
+            cell = cells.get((row_key, column_key))
+            if cell:
+                ref = package_facts.source_ref(table_id, cell["row_id"])
+                value = f"{cell.get('value') or 'unmeasured'}{cell.get('unit') or ''}"
+                values.append(
+                    '<td data-source-row="{ref}" data-validity="{validity}">{value}</td>'.format(
+                        ref=esc(ref),
+                        validity=esc(cell.get("validity") or "UNMEASURED"),
+                        value=esc(value),
+                    )
+                )
+            else:
+                values.append('<td data-validity="MISSING">missing</td>')
+        body_rows.append(
+            '              <tr data-row-key="{row_key}"><th>{row_label}</th>{values}</tr>'.format(
+                row_key=esc(row_key),
+                row_label=esc(row_label),
+                values="".join(values),
+            )
+        )
+    return """        <article class="result-block" id="result-slot-{low}" data-result-block data-fact-projection="results" data-exp-id="{exp}" data-phase-id="{exp}" data-source="tables/{name}" data-fact-revision="{revision}" data-result-schema="{schema_id}">
+          <h2>{exp} &mdash; {kind}</h2>
+          <p class="block-summary">{question}</p>
+          <table class="data-table block-main-table" data-table="{table_id}" data-exp-id="{exp}">
+            <thead><tr><th>{row_axis_label}</th>{header_cells}</tr></thead>
+            <tbody data-table-body="{table_id}">
+{rows}
+            </tbody>
+          </table>
+        </article>""".format(
+        low=esc(exp_id.lower()),
+        exp=esc(exp_id),
+        name=esc(table_path.name),
+        revision=esc(revision),
+        schema_id=esc(schema_id),
+        kind=esc(schema.get("kind") or "result table"),
+        question=esc(schema.get("decisionQuestion") or "Task-specific result table."),
+        table_id=esc(table_id),
+        row_axis_label=esc(row_axis_label),
+        header_cells=header_cells,
+        rows="\n".join(body_rows),
+    )
+
+
+def render_result_article(table_path: Path, rows: list[dict], schema: dict | None = None) -> str:
+    if schema:
+        return render_schema_result_article(table_path, rows, schema)
     table_id = table_path.stem
     revision = package_facts.file_revision(table_path)
     body_rows = []
@@ -230,8 +328,12 @@ def render(pkg: str, root: Path) -> Path:
         raise package_facts.FactError(f"missing results.html for {pkg}")
     gate_path = paths.tables_dir / "result_gate.csv"
     gate_rows = _read_valid_result_rows(gate_path) if gate_path.exists() else []
-    table_paths = sorted(paths.tables_dir.glob("result_table_*.csv"))
-    articles = [render_result_article(p, _read_valid_result_rows(p)) for p in table_paths]
+    schemas = _schemas_by_table(pkg, root)
+    table_paths = _result_table_paths(paths, schemas)
+    articles = [
+        render_result_article(p, _read_valid_result_rows(p, schemas.get(p.stem)), schemas.get(p.stem))
+        for p in table_paths
+    ]
     text = results_path.read_text(encoding="utf-8")
     headline_ref = _headline_fact_ref(pkg, root)
     if headline_ref:

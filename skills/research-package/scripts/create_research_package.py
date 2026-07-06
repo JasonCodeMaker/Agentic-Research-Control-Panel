@@ -161,18 +161,128 @@ def placeholder_result_row(exp: dict, args: argparse.Namespace, row_id: str) -> 
     }
 
 
+def _schema_key(value: object, fallback: str) -> str:
+    text = str(value or "").strip().lower()
+    key = re.sub(r"[^a-z0-9]+", "_", text).strip("_")
+    return key or fallback
+
+
+def _schema_items(raw_items: object, fallback_key: str, fallback_label: str) -> list[dict[str, str]]:
+    if not isinstance(raw_items, list) or not raw_items:
+        return [{"key": fallback_key, "label": fallback_label}]
+    items = []
+    for index, item in enumerate(raw_items):
+        if isinstance(item, dict):
+            label = str(item.get("label") or item.get("name") or item.get("key") or f"Item {index + 1}")
+            key = _schema_key(item.get("key") or label, f"item_{index + 1}")
+            normalized = {k: str(v) for k, v in item.items() if isinstance(v, (str, int, float, bool))}
+            normalized["key"] = key
+            normalized["label"] = label
+        else:
+            label = str(item)
+            normalized = {"key": _schema_key(label, f"item_{index + 1}"), "label": label}
+        items.append(normalized)
+    return items
+
+
+def normalize_result_schema(exp: dict, args: argparse.Namespace) -> dict:
+    eid = exp_id(exp)
+    raw = exp.get("resultSchema") if isinstance(exp.get("resultSchema"), dict) else {}
+    schema_id = str(raw.get("id") or f"result_schema_{eid}")
+    table_id = str(raw.get("tableId") or f"result_table_{eid}")
+    metric_label = str(exp.get("gate") or args.primary_metric or "Metric")
+    row_axis = raw.get("rowAxis") if isinstance(raw.get("rowAxis"), dict) else {}
+    normalized_row_axis = {
+        "key": str(row_axis.get("key") or "subject"),
+        "label": str(row_axis.get("label") or "Subject"),
+        "plannedRows": _schema_items(row_axis.get("plannedRows"), "planned", "Planned"),
+    }
+    columns = _schema_items(raw.get("columns"), _schema_key(metric_label, "metric"), metric_label)
+    normalized_columns = []
+    for column in columns:
+        col = dict(column)
+        col.setdefault("metric", col["label"])
+        normalized_columns.append(col)
+    return {
+        "id": schema_id,
+        "expId": eid,
+        "tableId": table_id,
+        "kind": str(raw.get("kind") or "metric_table"),
+        "decisionQuestion": str(raw.get("decisionQuestion") or exp.get("purpose") or metric_label),
+        "rowAxis": normalized_row_axis,
+        "columns": normalized_columns,
+        "primaryGate": raw.get("primaryGate") if isinstance(raw.get("primaryGate"), dict) else {},
+        "requiredProvenance": raw.get("requiredProvenance") if isinstance(raw.get("requiredProvenance"), list) else ["source_artifact"],
+        "designedBy": str(raw.get("designedBy") or "agent"),
+        "schemaVersion": int(raw.get("schemaVersion") or 1),
+    }
+
+
+def materialize_result_schemas(experiments: list[dict], args: argparse.Namespace) -> tuple[list[dict], dict[str, dict]]:
+    materialized: list[dict] = []
+    schemas: dict[str, dict] = {}
+    for exp in experiments:
+        item = dict(exp)
+        if exp_id(item) and exp_measures(item):
+            schema = normalize_result_schema(item, args)
+            item["resultSchemaRef"] = schema["id"]
+            item.pop("resultSchema", None)
+            schemas[schema["id"]] = schema
+        materialized.append(item)
+    return materialized, schemas
+
+
+def placeholder_cell_rows(exp: dict, schema: dict, args: argparse.Namespace) -> list[dict[str, str]]:
+    rows = []
+    source_artifact = str(exp.get("output") or args.artifact_root or "")
+    for row_item in schema["rowAxis"]["plannedRows"]:
+        for column in schema["columns"]:
+            row_key = str(row_item["key"])
+            column_key = str(column["key"])
+            rows.append({
+                "row_id": f"{exp_id(exp)}:{row_key}:{column_key}",
+                "exp_id": exp_id(exp),
+                "table_id": str(schema["tableId"]),
+                "row_key": row_key,
+                "row_label": str(row_item["label"]),
+                "column_key": column_key,
+                "column_label": str(column["label"]),
+                "metric": str(column.get("metric") or column["label"]),
+                "value": "unmeasured",
+                "unit": str(column.get("unit") or ""),
+                "dataset": str(column.get("dataset") or ""),
+                "split": str(column.get("split") or ""),
+                "seed": "",
+                "method": str(row_item.get("method") or ""),
+                "baseline": str(row_item.get("baseline") or args.baseline or ""),
+                "variant": str(row_item.get("variant") or ""),
+                "aggregate": str(column.get("aggregate") or ""),
+                "n": "",
+                "validity": "UNMEASURED",
+                "source_artifact": source_artifact,
+                "source_mtime": "",
+                "extractor": "",
+                "extracted_at": "",
+            })
+    return rows
+
+
 def initialize_fact_layer(
     repo_root: Path,
     package_id: str,
     args: argparse.Namespace,
     experiments: list[dict],
+    result_schemas: dict[str, dict],
 ) -> list[Path]:
     measurable = [exp for exp in experiments if exp_id(exp) and exp_measures(exp)]
     if not experiments:
         return []
 
     paths = package_facts.fact_paths(package_id, root=repo_root)
-    result_tables = [f"result_table_{exp_id(exp)}" for exp in measurable]
+    result_tables = [
+        str(result_schemas[str(exp.get("resultSchemaRef"))]["tableId"])
+        for exp in measurable
+    ]
     package_facts.write_facts_js(
         package_id,
         {
@@ -182,6 +292,7 @@ def initialize_fact_layer(
             "createdAt": now_iso(),
             "experiments": [exp_id(exp) for exp in experiments if exp_id(exp)],
             "resultTables": result_tables,
+            "resultSchemas": result_schemas,
             "projections": {"pages": {}},
         },
         root=repo_root,
@@ -196,11 +307,12 @@ def initialize_fact_layer(
         package_facts.upsert_csv_rows(paths.tables_dir / "result_gate.csv", package_facts.RESULT_COLUMNS, gate_rows)
         touched.append(paths.tables_dir / "result_gate.csv")
         for exp in measurable:
-            table_path = paths.tables_dir / f"result_table_{exp_id(exp)}.csv"
+            schema = result_schemas[str(exp.get("resultSchemaRef"))]
+            table_path = paths.tables_dir / f"{schema['tableId']}.csv"
             package_facts.upsert_csv_rows(
                 table_path,
-                package_facts.RESULT_COLUMNS,
-                [placeholder_result_row(exp, args, f"{exp_id(exp)}_placeholder")],
+                package_facts.RESULT_CELL_COLUMNS,
+                placeholder_cell_rows(exp, schema, args),
             )
             touched.append(table_path)
 
@@ -366,6 +478,9 @@ def main(argv: list[str] | None = None) -> int:
 
     pages = parse_scope(args.scope, args.category)
     experiments = parse_experiments_json(args.experiments_json)
+    experiments, result_schemas = materialize_result_schemas(experiments, args)
+    if experiments:
+        args.experiments_json = json.dumps(experiments, ensure_ascii=False)
     if any(exp_id(exp) and exp_measures(exp) for exp in experiments) and "results" not in pages:
         pages.append("results")
     package_root = root / "packages" / package_id
@@ -385,7 +500,7 @@ def main(argv: list[str] | None = None) -> int:
     derived = []
     if experiments:
         derived = derive_task_blocks(package_root, experiments)
-    fact_files = initialize_fact_layer(root.parent, package_id, args, experiments)
+    fact_files = initialize_fact_layer(root.parent, package_id, args, experiments, result_schemas)
 
     print(f"package_id={package_id}")
     print(f"package_root={package_root}")

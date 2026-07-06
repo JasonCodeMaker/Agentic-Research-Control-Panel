@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from . import _pkg_block
+from .insert import commit_experiment_result_facts, materialize_experiment_payload
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(PIPELINE_ROOT / "skills" / "research-package" / "scripts"))
@@ -130,7 +131,7 @@ def update_objective_contract(pkg: str, payload: dict) -> list[str]:
 def update_experiments_row(pkg: str, payload: dict) -> list[str]:
     """Replace the experiments[] entry identified by payload.id with payload.row."""
     exp_id = payload["id"]
-    row = payload["row"]
+    row, schemas, args = materialize_experiment_payload(payload["row"])
     p = Path("research_html/data/research-packages.js")
     text = p.read_text()
     bounds = _pkg_block.find_package_block(text, pkg)
@@ -152,6 +153,7 @@ def update_experiments_row(pkg: str, payload: dict) -> list[str]:
     p.write_text(text[:pkg_start] + new_block + text[pkg_end:])
     files = [str(p)]
     files.extend(derive_task_blocks(Path(f"research_html/packages/{pkg}"), [row]))
+    files.extend(commit_experiment_result_facts(pkg, row, schemas, args))
     return files
 
 
