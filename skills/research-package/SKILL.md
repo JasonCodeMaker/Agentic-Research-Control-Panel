@@ -58,21 +58,21 @@ python3 skills/research-package/scripts/create_from_scope.py \
 Hard rules:
 
 - The materializer reads only committed `outputs/_scope/transitions.jsonl`; it never reads pending Triage proposals as package authority.
-- The Direction node must exist, be `level == "direction"`, and be `status == "active"`.
+- The Direction node must exist, be `level == "direction"`, and be `status == "ACTIVE"`.
 - At least one active child `level == "task"` milestone node must exist with the Direction as parent. Milestones are high-level validation objectives, not concrete package experiments.
 - Duplicate package ids or existing package directories are rejected before write.
-- The generated inventory entry carries `sourceScopeNode`, `sourceScopeVersion`, `sourceScopeTxn`, and `sourceScopeMilestones` provenance.
+- The generated inventory entry carries `sourceDirection`, `sourceVersion`, `sourceChange`, and `sourceTasks` provenance.
 
 Default field mapping:
 
-| Direction yardstick | Package field |
+| Direction spec | Package field |
 | --- | --- |
 | `hypothesis` | `hypothesis`, `problem`, `objective`, `direction` |
 | `metric` | `primaryMetric` |
-| `success_predicate` | `activeGate`, `primaryMetricVsGate` |
+| `success_gate` | `activeGate`, `primaryMetricVsGate` |
 | `baselines` | `baseline` |
 
-During materialization, the accepted Milestones are projected into initial package `experiments[]` rows. Each row is a concrete package-level execution task and carries `parentTask` pointing back to the high-level SSOT Milestone. The package may later refine or split concrete experiments through `/research-op insert --target experiments-row`, but it must not invent new high-level validation goals without a Scope Milestone proposal.
+During materialization, the accepted Milestones are projected into initial package `experiments[]` rows. Each row is a concrete package-level execution task and carries `sourceTask` pointing back to the high-level SSOT Milestone. The package may later refine or split concrete experiments through `/research-op insert --target experiments-row`, but it must not invent new high-level validation goals without a Scope Milestone proposal.
 
 ## Required Details
 
@@ -259,7 +259,7 @@ python "$PACKAGE_SKILL/scripts/create_research_package.py" \
   --scope index,plan,results,tracker,docs,_agent
 ```
 
-From an accepted Scope Direction, prefer the materializer instead of manually copying yardstick fields:
+From an accepted Scope Direction, prefer the materializer instead of manually copying spec fields:
 
 ```bash
 python3 skills/research-package/scripts/create_from_scope.py \

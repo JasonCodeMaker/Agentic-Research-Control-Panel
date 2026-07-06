@@ -32,14 +32,14 @@ def test_cli_scaffold(tmp_path, capsys):
 
 
 def test_cli_build_proposal(tmp_path, capsys):
-    yardstick = {
-        "north_star": "Beat ResNet-18 on CIFAR-10 top-1 accuracy",
-        "contribution_spine": ["mixup"],
-        "non_goals": ["no NAS"],
+    spec = {
+        "goal": "Beat ResNet-18 on CIFAR-10 top-1 accuracy",
+        "contributions": ["mixup"],
+        "out_of_scope": ["no NAS"],
     }
     rc = onboard.main([
         "build-proposal", "--node-id", "project/cifar10",
-        "--yardstick", json.dumps(yardstick), "--provenance", "read:README.md",
+        "--spec", json.dumps(spec), "--source", "read:README.md",
     ])
     assert rc == 0
     item = json.loads(capsys.readouterr().out)

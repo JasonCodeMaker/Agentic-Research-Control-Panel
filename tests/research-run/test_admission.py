@@ -30,8 +30,8 @@ def _log(root):
 def _project(root):
     scope_ssot.propose_transition(
         {"id": "project/main", "level": "project", "parents": [], "version": 1, "status": "ACTIVE",
-         "yardstick": {"north_star": "trustworthy auto research", "contribution_spine": "SSOT+gates",
-                       "non_goals": "none"}, "provenance": "triage:p1"},
+         "spec": {"goal": "trustworthy auto research", "contributions": "SSOT+gates",
+                       "out_of_scope": "none"}, "source": "triage:p1"},
         op="create", gate="USER_ONLY", log_path=_log(root), trigger="t", cause="c")
 
 
@@ -39,18 +39,18 @@ def _direction(root):
     scope_ssot.propose_transition(
         {"id": "dir/d1", "level": "direction", "parents": ["project/main"], "version": 1,
          "status": "ACTIVE",
-         "yardstick": {"hypothesis": "X improves recall", "metric": {"name": "recall", "dir": "higher"},
-                       "baselines": ["b0"], "success_predicate": "measured >= 0.80"},
-         "provenance": "triage:d1"},
+         "spec": {"hypothesis": "X improves recall", "metric": {"name": "recall", "dir": "higher"},
+                       "baselines": ["b0"], "success_gate": "measured >= 0.80"},
+         "source": "triage:d1"},
         op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=_log(root), trigger="t", cause="c")
 
 
 def _task(root):
     scope_ssot.propose_transition(
         {"id": "task/d1/m1", "level": "task", "parents": ["dir/d1"], "version": 1, "status": "ACTIVE",
-         "yardstick": {"experiment": "validate", "config_ref": "scope:dir/d1#m1",
-                       "gate_predicate": "measured >= 0.80", "autonomy_level": "SUPERVISED"},
-         "provenance": "triage:m1"},
+         "spec": {"experiment": "validate", "config": "scope:dir/d1#m1",
+                       "gate": "measured >= 0.80", "control_mode": "SUPERVISED"},
+         "source": "triage:m1"},
         op="create", gate="AGENT_DEFERRED_ACK", log_path=_log(root), trigger="t", cause="c")
 
 
@@ -76,7 +76,7 @@ def test_state_NO_PACKAGE(tmp_path):
 
 
 def test_state_READY_full_and_ready(tmp_path):
-    _dashboard(tmp_path, inventory='window.RESEARCH_PACKAGES = [{id: "p1", sourceScopeNode: "dir/d1"}];\n')
+    _dashboard(tmp_path, inventory='window.RESEARCH_PACKAGES = [{id: "p1", sourceDirection: "dir/d1"}];\n')
     _project(tmp_path); _direction(tmp_path); _task(tmp_path)
     assert admission.detect_admission_state(tmp_path, readiness_ok=True) == "READY"
 
@@ -123,26 +123,26 @@ def test_no_package_hands_off_to_package_materializer(tmp_path):
     assert actions[0]["handoff"] == "/research-package"
 
 
-def test_readiness_default_dial_is_autonomous(tmp_path):
-    _dashboard(tmp_path, inventory='window.RESEARCH_PACKAGES = [{id: "p1", sourceScopeNode: "dir/d1"}];\n')
+def test_readiness_default_control_mode_is_autonomous(tmp_path):
+    _dashboard(tmp_path, inventory='window.RESEARCH_PACKAGES = [{id: "p1", sourceDirection: "dir/d1"}];\n')
     _project(tmp_path); _direction(tmp_path); _task(tmp_path)
     actions = admission.build_admission_actions(admission.detect_admission_state(tmp_path), {})
-    assert actions[0] == {"type": "RUN_READINESS", "dial": "AUTONOMOUS"}
+    assert actions[0] == {"type": "RUN_READINESS", "control_mode": "AUTONOMOUS"}
 
 
-def test_invalid_autonomy_level_rejected_for_readiness():
+def test_invalid_control_mode_rejected_for_readiness():
     assert admission.validate_admission_action(
-        {"type": "RUN_READINESS", "dial": "reckless"}) is not None
+        {"type": "RUN_READINESS", "control_mode": "reckless"}) is not None
 
 
 def test_5_ready_package_enters_loop(tmp_path):
-    _dashboard(tmp_path, inventory='window.RESEARCH_PACKAGES = [{id: "p1", sourceScopeNode: "dir/d1"}];\n')
+    _dashboard(tmp_path, inventory='window.RESEARCH_PACKAGES = [{id: "p1", sourceDirection: "dir/d1"}];\n')
     _project(tmp_path); _direction(tmp_path); _task(tmp_path)
     node = {"id": "dir/d1", "level": "direction", "parents": ["project/main"], "version": 1,
             "status": "ACTIVE",
-            "yardstick": {"hypothesis": "X improves recall", "metric": {"name": "recall", "dir": "higher"},
-                          "baselines": ["b0"], "success_predicate": "measured >= 0.80"},
-            "provenance": "triage:d1"}
+            "spec": {"hypothesis": "X improves recall", "metric": {"name": "recall", "dir": "higher"},
+                          "baselines": ["b0"], "success_gate": "measured >= 0.80"},
+            "source": "triage:d1"}
     adapters = {"scope": lambda ctx: {"agent_role": "scope", "assigned_scope": "dir/d1", "status": "ROLE_OK",
                                       "evidence": ["e"], "blockers": [], "recommended_next_action": "go"}}
     result = admission.run_front_door(tmp_path, pkg_id="p1", scope_node=node,

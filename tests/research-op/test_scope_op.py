@@ -18,11 +18,11 @@ def _direction_payload(gate):
     return {
         "id": "dir/test-pkg", "level": "direction", "parents": ["project/main"],
         "version": 1, "status": "ACTIVE",
-        "yardstick": {
+        "spec": {
             "hypothesis": "h", "metric": {"name": "nDCG@10", "dir": "higher"},
-            "baselines": ["xpool"], "success_predicate": "nDCG@10 >= base + 2",
+            "baselines": ["xpool"], "success_gate": "nDCG@10 >= base + 2",
         },
-        "provenance": "txn-0",
+        "source": "txn-0",
         "op": "revise", "gate": gate, "trigger": "exp#42", "cause": "metric saturated",
     }
 

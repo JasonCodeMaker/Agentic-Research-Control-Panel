@@ -38,8 +38,8 @@ python3 skills/research-brainstorm/scripts/brainstorm.py add --root research_htm
 python3 skills/research-brainstorm/scripts/brainstorm.py list --root research_html
 python3 skills/research-brainstorm/scripts/brainstorm.py remove --root research_html --id <idea-id>
 python3 skills/research-brainstorm/scripts/brainstorm.py check-project --transitions outputs/_scope/transitions.jsonl
-python3 skills/research-brainstorm/scripts/brainstorm.py direction-ready --yardstick '<json>'
-python3 skills/research-brainstorm/scripts/brainstorm.py build-proposal --node-id direction/<slug> --parent-project-id <project-id> --yardstick '<json>' --provenance '<text>' --source-brainstorms '<json list of idea ids>'
+python3 skills/research-brainstorm/scripts/brainstorm.py direction-ready --spec '<json>'
+python3 skills/research-brainstorm/scripts/brainstorm.py build-proposal --node-id direction/<slug> --parent-project-id <project-id> --spec '<json>' --source '<text>' --source-brainstorms '<json list of idea ids>'
 ```
 
 ## Precondition
@@ -57,7 +57,7 @@ to ratify a Project first. A Direction is always a child of a ratified Project.
 
 **1. Shape the idea (follow the brainstorming method).**
 
-The user usually has only a vague or partial idea. Do **not** demand a full yardstick up front. Following
+The user usually has only a vague or partial idea. Do **not** demand a full spec up front. Following
 the brainstorming method: ask one question at a time, surface 2-3 candidate framings with trade-offs, and
 converge. Capture each distinct candidate as a cheap idea — there can be several:
 
@@ -92,10 +92,10 @@ direction yet, so write the sharpened ideas back as brainstorms, not as package 
 **4. Converge and check readiness.**
 
 Decide, with the user, which one or more ideas become **one** Direction. Synthesize a single typed
-yardstick `{hypothesis, metric, baselines, success_predicate}` from them and check it is conversion-ready:
+spec `{hypothesis, metric, baselines, success_gate}` from them and check it is conversion-ready:
 
 ```bash
-python3 skills/research-brainstorm/scripts/brainstorm.py direction-ready --yardstick '{"hypothesis":"...","metric":"...","baselines":["..."],"success_predicate":"..."}'
+python3 skills/research-brainstorm/scripts/brainstorm.py direction-ready --spec '{"hypothesis":"...","metric":"...","baselines":["..."],"success_gate":"..."}'
 ```
 
 `ready=false` means a field is missing or empty — keep shaping. A baseline must be concrete (ideally
@@ -135,12 +135,12 @@ If only one idea is in contention, this step is skipped — proceed directly to 
 ```bash
 P=$(python3 skills/research-brainstorm/scripts/brainstorm.py build-proposal \
   --node-id direction/<slug> --parent-project-id <project-id> \
-  --yardstick '<json>' --provenance 'brainstorms:<idea-ids>' --source-brainstorms '<json list of idea ids>')
+  --spec '<json>' --source 'brainstorms:<idea-ids>' --source-brainstorms '<json list of idea ids>')
 python3 skills/research-scope/scripts/triage.py propose --log outputs/_scope/triage.jsonl --item "$P"
 python3 skills/research-scope/scripts/triage.py pending --log outputs/_scope/triage.jsonl
 ```
 
-`build-proposal` validates the yardstick against the SSOT schema (reject-before-propose) and carries
+`build-proposal` validates the spec against the SSOT schema (reject-before-propose) and carries
 `source_brainstorms` so the consumed ideas are known at conversion. Show the pending item and **STOP** —
 ratifying the Direction is the PM's decision.
 

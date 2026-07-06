@@ -20,9 +20,9 @@ import scope_ssot  # noqa: E402
 def _direction_node():
     return {"id": "dir/d1", "level": "direction", "parents": ["project/main"], "version": 1,
             "status": "ACTIVE",
-            "yardstick": {"hypothesis": "X improves recall", "metric": {"name": "R@1"},
-                          "baselines": ["b0=42.3"], "success_predicate": "R@1 >= 48"},
-            "provenance": "triage:d1"}
+            "spec": {"hypothesis": "X improves recall", "metric": {"name": "R@1"},
+                          "baselines": ["b0=42.3"], "success_gate": "R@1 >= 48"},
+            "source": "triage:d1"}
 
 
 def _cycle_record(**over):
@@ -298,17 +298,17 @@ def test_milestone_task_node_valid():
     node = conductor.milestone_task_node(
         _direction_node(), cycle=3, suffix="M9-reranker-ablation",
         experiment="Ablate the reranker against the committed gate",
-        gate_predicate="R@1 >= 48", dial="DEFERRED")
+        gate="R@1 >= 48", dial="DEFERRED")
     scope_ssot.validate_node(node)
     assert node["parents"] == ["dir/d1"]
-    assert node["yardstick"]["autonomy_level"] == "DEFERRED"
-    assert node["provenance"].startswith("research-auto:cycle-3")
+    assert node["spec"]["control_mode"] == "DEFERRED"
+    assert node["source"].startswith("research-auto:cycle-3")
 
 
 def test_milestone_task_node_rejects_bad_dial():
     try:
         conductor.milestone_task_node(_direction_node(), cycle=1, suffix="M9",
-                                      experiment="x", gate_predicate="m >= 1", dial="YOLO")
+                                      experiment="x", gate="m >= 1", dial="YOLO")
     except ValueError:
         return
     raise AssertionError("expected ValueError for unknown dial")
@@ -321,12 +321,12 @@ def test_detect_open_package_and_executable(tmp_path):
   {
     id: "2026-06-10-other",
     category: "success",
-    sourceScopeNode: "dir/other",
+    sourceDirection: "dir/other",
   },
   {
     id: "2026-06-12-d1",
     category: "in-progress",
-    sourceScopeNode: "dir/d1",
+    sourceDirection: "dir/d1",
     experiments: [{"id": "P0", "status": "completed"}, {"id": "P1", "status": "queued"}],
   },
 ];
@@ -340,7 +340,7 @@ def test_detect_open_package_accepts_real_inventory_status_forms(tmp_path):
   {
     id: "2026-06-12-d1",
     category: "in-progress",
-    sourceScopeNode: "dir/d1",
+    sourceDirection: "dir/d1",
     experiments: [{ id: "P0", status: "QUEUED" }, {"id": "P1", "status": "running"}],
   },
 ];
@@ -351,7 +351,7 @@ def test_detect_open_package_accepts_real_inventory_status_forms(tmp_path):
 
 def test_detect_open_package_none_when_terminal(tmp_path):
     _registry(tmp_path, '''window.RESEARCH_PACKAGES = [
-  { id: "2026-06-12-d1", category: "fail", sourceScopeNode: "dir/d1" },
+  { id: "2026-06-12-d1", category: "fail", sourceDirection: "dir/d1" },
 ];
 ''')
     assert conductor.detect_open_package(tmp_path, "dir/d1") == (None, False)
@@ -362,7 +362,7 @@ def test_cli_status_routes_run_package(tmp_path, capsys, monkeypatch):
   {
     id: "2026-06-12-d1",
     category: "in-progress",
-    sourceScopeNode: "dir/d1",
+    sourceDirection: "dir/d1",
     experiments: [{"id": "P0", "status": "queued"}],
   },
 ];
@@ -416,7 +416,7 @@ def test_cli_status_ignores_unrelated_pending_direction(tmp_path, capsys):
 
 
 def test_cli_gate_eval(capsys):
-    rc = conductor.main(["gate-eval", "--measured", "48.2", "--predicate", "R@1 >= 48"])
+    rc = conductor.main(["gate-eval", "--measured", "48.2", "--gate", "R@1 >= 48"])
     assert rc == 0
     assert json.loads(capsys.readouterr().out)["gate_eval"] == "PASS"
 

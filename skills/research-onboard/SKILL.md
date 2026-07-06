@@ -1,6 +1,6 @@
 ---
 name: research-onboard
-description: "The steps 1->3 on-ramp: bridge a raw workspace into the Scope SSOT. Use right after /research-dashboard when no Project node exists yet, or whenever the user types /research-onboard, asks to bootstrap / initialize / set up a research project, or asks the agent to analyze a workspace and propose a project objective. Two cases: an EMPTY workspace gets an in-place deep-learning skeleton plus AGENTS.md / CLAUDE.md stubs, then a north-star elicited by dialogue; an EXISTING workspace gets analyzed (README / AGENTS.md / CLAUDE.md / configs / src / data / baselines) into a prior-knowledge artifact plus a drafted objective. Both end by proposing a Project node through Triage for the human to ratify. Project-agnostic. The agent only PROPOSES — it never commits the SSOT and never creates packages."
+description: "The steps 1->3 on-ramp: bridge a raw workspace into the Scope SSOT. Use right after /research-dashboard when no Project node exists yet, or whenever the user types /research-onboard, asks to bootstrap / initialize / set up a research project, or asks the agent to analyze a workspace and propose a project objective. Two cases: an EMPTY workspace gets an in-place deep-learning skeleton plus AGENTS.md / CLAUDE.md stubs, then a goal elicited by dialogue; an EXISTING workspace gets analyzed (README / AGENTS.md / CLAUDE.md / configs / src / data / baselines) into a prior-knowledge artifact plus a drafted objective. Both end by proposing a Project node through Triage for the human to ratify. Project-agnostic. The agent only PROPOSES — it never commits the SSOT and never creates packages."
 argument-hint: "[<cwd, defaults to .>]"
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
 disable-model-invocation: false
@@ -37,7 +37,7 @@ Onboard CLI commands (drive via `Bash(python3 *)`):
 python3 skills/research-onboard/scripts/onboard.py detect --cwd .
 python3 skills/research-onboard/scripts/onboard.py scaffold --cwd .
 python3 skills/research-onboard/scripts/onboard.py write-prior-knowledge --state-root outputs --content '<markdown>'
-python3 skills/research-onboard/scripts/onboard.py build-proposal --node-id project/<slug> --yardstick '<json>' --provenance '<files read>'
+python3 skills/research-onboard/scripts/onboard.py build-proposal --node-id project/<slug> --spec '<json>' --source '<files read>'
 python3 skills/research-onboard/scripts/onboard.py has-project-scope --transitions outputs/_scope/transitions.jsonl
 ```
 
@@ -67,9 +67,9 @@ only if absent):
 python3 skills/research-onboard/scripts/onboard.py scaffold --cwd .
 ```
 
-There is no repo to mine, so **elicit** the objective from the user in plain dialogue — one question at a
-time: the north-star (what beating looks like), the contribution spine (the 1–3 ideas that must survive),
-and the non-goals. Do not invent these. Provenance for the proposal is `user-dialogue:onboarding`.
+There is no repo to mine, so **elicit** the objective from the user in plain dialogue, one question at a
+time: the goal, the core contributions, and what is out of scope. Do not invent these. Source for the
+proposal is `user-dialogue:onboarding`.
 
 **2b. Existing workspace — analyze, then draft.**
 
@@ -84,11 +84,11 @@ Read the content entries `detect` reported — typically `README.md`, any `AGENT
   python3 skills/research-onboard/scripts/onboard.py write-prior-knowledge --state-root outputs --content '<markdown>'
   ```
 
-- **a candidate objective** — `north_star`, `contribution_spine`, `non_goals` inferred from what you read.
-  Keep these as *intent*, never readings (no measured values inside the yardstick). Provenance lists the
+- **a candidate objective** — `goal`, `contributions`, `out_of_scope` inferred from what you read.
+  Keep these as *intent*, never readings (no measured values inside the spec). Provenance lists the
   files you read, e.g. `read:README.md,AGENTS.md,CLAUDE.md,configs/train.yaml`.
 
-Confirm the drafted objective with the user before proposing — they may correct the north-star. This is the
+Confirm the drafted objective with the user before proposing — they may correct the goal. This is the
 HCI-alignment moment (核心问题 #2): the agent shows its inferred understanding and the user steers it.
 
 **3. Build the validated Project proposal.**
@@ -96,12 +96,12 @@ HCI-alignment moment (核心问题 #2): the agent shows its inferred understandi
 ```bash
 python3 skills/research-onboard/scripts/onboard.py build-proposal \
     --node-id project/<slug> \
-    --yardstick '{"north_star":"...","contribution_spine":["..."],"non_goals":["..."]}' \
-    --provenance '<dialogue or files read>'
+    --spec '{"goal":"...","contributions":["..."],"out_of_scope":["..."]}' \
+    --source '<dialogue or files read>'
 ```
 
-`build-proposal` validates the yardstick against the SSOT schema (reject-before-propose): a reading or a
-non-project field is refused before anything is written. Fix the yardstick if it raises.
+`build-proposal` validates the spec against the SSOT schema (reject-before-propose): a reading or a
+non-project field is refused before anything is written. Fix the spec if it raises.
 
 **4. Submit through the Triage gate and STOP.**
 
@@ -123,7 +123,7 @@ This mirrors `research-scope`'s human-accept path. The PM:
 3. Once the Project is committed, the journey advances to **step 3** — forming a Direction under the
    ratified Project. If the user only has a vague idea, route through **`/research-brainstorm`** (shape it,
    ground uncertainties, converge to a Direction proposal). If they already have a
-   clear Direction (`hypothesis / metric / baselines / success_predicate`), `/research-scope` proposes it
+   clear Direction (`hypothesis / metric / baselines / success_gate`), `/research-scope` proposes it
    directly.
 
 ## Scope (what this skill does NOT do)

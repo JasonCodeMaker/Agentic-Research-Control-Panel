@@ -15,8 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import scope_ssot  # noqa: E402
 import driver  # noqa: E402
 
-AUTONOMY_LEVELS = ("SUPERVISED", "CHECKPOINTED", "DEFERRED", "AUTONOMOUS")
-DEFAULT_AUTONOMY_LEVEL = "AUTONOMOUS"
+CONTROL_MODES = ("SUPERVISED", "CHECKPOINTED", "DEFERRED", "AUTONOMOUS")
+DEFAULT_CONTROL_MODE = "AUTONOMOUS"
 
 STATES = (
     "NO_DASHBOARD", "NO_PROJECT", "NO_DIRECTION", "NO_TASK",
@@ -47,14 +47,14 @@ def _package_for_direction(root, direction_ids):
     if not inv.exists():
         return False
     text = inv.read_text(encoding="utf-8")
-    return any(f'sourceScopeNode: "{did}"' in text for did in direction_ids)
+    return any(f'sourceDirection: "{did}"' in text for did in direction_ids)
 
 
-def _requested_autonomy(context):
-    """Autonomy requested by context, defaulting to Autonomous as the front-door policy."""
+def _requested_control_mode(context):
+    """Control mode requested by context, defaulting to Autonomous as the front-door policy."""
     proposal = context.get("task_proposal") or {}
-    yardstick = proposal.get("yardstick") or {}
-    return context.get("autonomy_level") or context.get("dial") or yardstick.get("autonomy_level") or DEFAULT_AUTONOMY_LEVEL
+    spec = proposal.get("spec") or {}
+    return context.get("control_mode") or context.get("dial") or spec.get("control_mode") or DEFAULT_CONTROL_MODE
 
 
 def detect_admission_state(root, *, readiness_ok=None):
@@ -118,11 +118,11 @@ def _raw_admission_actions(state, context=None):
                  "message": f"/research-run requires an existing package; use {handoff} for the missing {level}."}]
     if state == "NO_PACKAGE":
         return [{"type": "HANDOFF_PACKAGE", "handoff": "/research-package",
-                 "sourceScopeNode": context.get("direction_id"),
-                 "sourceScopeTxn": context.get("source_txn"),
+                 "sourceDirection": context.get("direction_id"),
+                 "sourceChange": context.get("source_txn"),
                  "message": "Committed scope exists, but package materialization belongs to /research-package."}]
     if state == "NOT_READY":
-        return [{"type": "RUN_READINESS", "dial": _requested_autonomy(context)}]
+        return [{"type": "RUN_READINESS", "control_mode": _requested_control_mode(context)}]
     if state == "READY":
         return [{"type": "ENTER_RUN_LOOP"}]
     raise ValueError(f"unknown admission state: {state!r}")
@@ -239,9 +239,9 @@ def validate_admission_action(action):
     if action.get("decision") in ("accept", "reject", "ACCEPTED", "REJECTED"):
         reasons.append("authority smuggle: a disposal decision belongs to the user, not the loop")
     if action.get("type") == "RUN_READINESS":
-        level = action.get("dial")
-        if level not in AUTONOMY_LEVELS:
-            reasons.append(f"invalid autonomy level: {level!r}; expected one of {list(AUTONOMY_LEVELS)}")
+        level = action.get("control_mode")
+        if level not in CONTROL_MODES:
+            reasons.append(f"invalid control mode: {level!r}; expected one of {list(CONTROL_MODES)}")
     for m in action.get("mutations", []):
         if isinstance(m, dict) and m.get("op") == "scope-transition":
             reasons.append("authority smuggle: /research-run never commits a scope-transition")

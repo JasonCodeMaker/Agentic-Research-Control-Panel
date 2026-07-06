@@ -137,13 +137,13 @@ def _experiment_rows(package_id: str, milestones: list[dict]) -> list[dict]:
             "purpose": purpose_by_suffix.get(suffix_key, "Validate milestone"),
             "after": [] if idx == 0 else [f"P{idx - 1}"],
             "output": f"outputs/{package_id}/{exp_id}/result.json",
-            "gate": node["yardstick"]["gate_predicate"],
+            "gate": node["spec"]["gate"],
             "status": "queued",
             "measures": True,
             "requiresCode": requires_code,
             "complex": complex_phase,
             "docsAnchor": f"docs/pipeline.html#p{idx}" if complex_phase else "docs/index.html",
-            "parentTask": node["id"],
+            "sourceTask": node["id"],
         })
     return rows
 
@@ -174,11 +174,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--objective", default="", help="objective text; default from direction hypothesis")
     p.add_argument("--motivation", default="Accepted Scope SSOT direction materialized as a package")
     p.add_argument("--budget", default="unmeasured")
-    p.add_argument("--no-change-boundary", default="SSOT yardstick fields are the source of truth",
+    p.add_argument("--no-change-boundary", default="SSOT spec fields are the source of truth",
                    dest="no_change_boundary")
     p.add_argument("--source-path", default="", dest="source_path")
     p.add_argument("--artifact-root", default="", dest="artifact_root")
-    p.add_argument("--next-action", default="Plan validation tasks from the accepted direction yardstick",
+    p.add_argument("--next-action", default="Plan validation tasks from the accepted direction spec",
                    dest="next_action")
     p.add_argument("--scope", default="index,plan,implementation,results,tracker,docs,_agent")
     p.add_argument("--status", default="CONTEXT_LOADED")
@@ -207,7 +207,7 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(f"Direction must be active before materialization, got status={node.get('status')!r}")
 
     scope_ssot.validate_node(node)
-    yardstick = node["yardstick"]
+    spec = node["spec"]
     direction_slug = _slug_from_direction_id(args.direction_id)
     package_id = args.id or create_research_package.default_id(direction_slug)
     if _inventory_contains(root, package_id) or (root / "packages" / package_id).exists():
@@ -224,9 +224,9 @@ def main(argv: list[str] | None = None) -> int:
     # brainstorm.html is provenance-only — written directly by _write_brainstorm_provenance,
     # not a STAGE_PAGES entry; do not inject it into scope.
 
-    hypothesis = str(yardstick["hypothesis"])
-    metric = _metric_label(yardstick["metric"])
-    success_predicate = str(yardstick["success_predicate"])
+    hypothesis = str(spec["hypothesis"])
+    metric = _metric_label(spec["metric"])
+    success_gate = str(spec["success_gate"])
     milestone_provenance = [
         {
             "id": item["node"]["id"],
@@ -247,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
         "--motivation", args.motivation,
         "--hypothesis", hypothesis,
         "--primary-metric", metric,
-        "--baseline", _baseline_label(yardstick["baselines"]),
+        "--baseline", _baseline_label(spec["baselines"]),
         "--budget", args.budget,
         "--no-change-boundary", args.no_change_boundary,
         "--next-action", args.next_action,
@@ -255,15 +255,15 @@ def main(argv: list[str] | None = None) -> int:
         "--status", args.status,
         "--contribution-spine-flag", args.contribution_spine_flag,
         "--direction", hypothesis,
-        "--active-gate", success_predicate,
-        "--primary-metric-vs-gate", f"{metric} vs {success_predicate}",
+        "--active-gate", success_gate,
+        "--primary-metric-vs-gate", f"{metric} vs {success_gate}",
         "--last-action", f"materialized from {args.direction_id}",
         "--open-runs", "none",
         "--experiments-json", json.dumps(_experiment_rows(package_id, milestones), ensure_ascii=False),
-        "--source-scope-node", args.direction_id,
-        "--source-scope-version", str(record["scope_version"]),
-        "--source-scope-txn", str(record["transaction_id"]),
-        "--source-scope-milestones", json.dumps(milestone_provenance, ensure_ascii=False),
+        "--source-direction", args.direction_id,
+        "--source-version", str(record["scope_version"]),
+        "--source-change", str(record["transaction_id"]),
+        "--source-tasks", json.dumps(milestone_provenance, ensure_ascii=False),
     ]
     if args.source_path:
         create_args.extend(["--source-path", args.source_path])

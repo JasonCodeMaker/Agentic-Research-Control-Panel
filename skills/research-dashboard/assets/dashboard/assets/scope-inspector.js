@@ -4,8 +4,8 @@
  *
  * Folds the canonical transition + triage logs in the browser. It encodes NO
  * SSOT schema rule: the tree comes from `parents` edges (not a level list) and
- * node detail is rendered from whatever `yardstick` fields a node carries, so a
- * new level or a new yardstick field shows up without changing this file. The
+ * node detail is rendered from whatever `spec` fields a node carries, so a
+ * new level or a new spec field shows up without changing this file. The
  * one shared convention is the writer's "active" status value (lib/scope_ssot).
  */
 (function (root, factory) {
@@ -195,13 +195,13 @@
     return '<div class="kv-grid scope-subgrid">' + rows.join("") + "</div>";
   }
 
-  function renderYardstick(node) {
-    var yard = (node && node.yardstick) || {};
-    var keys = Object.keys(yard);
-    if (!keys.length) { return '<p class="unmeasured">No yardstick fields declared.</p>'; }
+  function renderSpec(node) {
+    var spec = (node && node.spec) || {};
+    var keys = Object.keys(spec);
+    if (!keys.length) { return '<p class="unmeasured">No spec fields declared.</p>'; }
     return keys.map(function (k) {
       return '<div class="scope-field"><div class="k">' + esc(humanizeKey(k)) + "</div>" +
-        renderValue(yard[k]) + "</div>";
+        renderValue(spec[k]) + "</div>";
     }).join("");
   }
 
@@ -225,7 +225,7 @@
       statusChip(node.status),
       "</div>",
     ].join("");
-    var summary = renderYardstick(node);
+    var summary = renderSpec(node);
     var childHtml = children.length
       ? '<div class="scope-children">' + children.map(function (cid) {
           return nodeCardHtml(cid, tree, depth + 1);
@@ -360,8 +360,8 @@
   function linkedPackages(nodeId) {
     var pkgs = (typeof window !== "undefined" && window.RESEARCH_PACKAGES) || [];
     return pkgs.filter(function (p) {
-      if (p.sourceScopeNode === nodeId) { return true; }
-      return (p.sourceScopeMilestones || []).some(function (m) { return m && m.id === nodeId; });
+      if (p.sourceDirection === nodeId) { return true; }
+      return (p.sourceTasks || []).some(function (m) { return m && m.id === nodeId; });
     });
   }
 
@@ -380,7 +380,7 @@
       ["Status", statusChip(node.status)],
       ["Version", esc(node.version != null ? node.version : "-")],
       ["Parents", (node.parents && node.parents.length) ? renderValue(node.parents) : '<span class="unmeasured">root</span>'],
-      ["Provenance", node.provenance ? "<code>" + esc(node.provenance) + "</code>" : '<span class="unmeasured">-</span>'],
+      ["Source", node.source ? "<code>" + esc(node.source) + "</code>" : '<span class="unmeasured">-</span>'],
     ];
     var prov = [
       ["Latest txn", rec.transaction_id ? "<code>" + esc(rec.transaction_id) + "</code>" : '<span class="unmeasured">-</span>'],
@@ -400,8 +400,8 @@
       : '<span class="unmeasured">No package links found.</span>';
     return [
       kvBlock(rows),
-      '<div class="scope-drawer-section"><div class="scope-drawer-label">Yardstick</div>' +
-        renderYardstick(node) + "</div>",
+      '<div class="scope-drawer-section"><div class="scope-drawer-label">Spec</div>' +
+        renderSpec(node) + "</div>",
       '<div class="scope-drawer-section"><div class="scope-drawer-label">Latest transition</div>' +
         kvBlock(prov) + "</div>",
       '<div class="scope-drawer-section"><div class="scope-drawer-label">Linked packages</div>' +
@@ -432,7 +432,7 @@
       kvBlock(rows),
       rec.node
         ? '<div class="scope-drawer-section"><div class="scope-drawer-label">Node snapshot</div>' +
-          renderYardstick(rec.node) + "</div>"
+          renderSpec(rec.node) + "</div>"
         : "",
     ].join("");
   }

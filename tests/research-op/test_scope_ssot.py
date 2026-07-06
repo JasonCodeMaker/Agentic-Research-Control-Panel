@@ -17,13 +17,13 @@ def _direction_node():
         "parents": ["project/main"],
         "version": 1,
         "status": "ACTIVE",
-        "yardstick": {
+        "spec": {
             "hypothesis": "contrastive pretrain helps recall",
             "metric": {"name": "Recall@10", "dir": "higher"},
             "baselines": ["xpool"],
-            "success_predicate": "Recall@10 >= baseline + 2",
+            "success_gate": "Recall@10 >= baseline + 2",
         },
-        "provenance": "txn-0",
+        "source": "txn-0",
     }
 
 
@@ -34,14 +34,29 @@ def test_node_round_trips():
 
 def test_out_of_schema_field_rejected():
     node = _direction_node()
-    node["yardstick"]["foobar"] = "x"
+    node["spec"]["foobar"] = "x"
     with pytest.raises(RuleViolation):
         scope_ssot.validate_node(node)
 
 
-def test_reading_in_yardstick_rejected():
+def test_reading_in_spec_rejected():
     node = _direction_node()
-    node["yardstick"]["measured"] = 0.5  # a reading, not an intent
+    node["spec"]["measured"] = 0.5  # a reading, not an intent
+    with pytest.raises(RuleViolation):
+        scope_ssot.validate_node(node)
+
+
+def test_old_yardstick_key_rejected():
+    node = _direction_node()
+    node["yardstick"] = node.pop("spec")
+    with pytest.raises(RuleViolation, match="spec"):
+        scope_ssot.validate_node(node)
+
+
+@pytest.mark.parametrize("old_field", ["north_star", "success_predicate", "config_ref", "gate_predicate"])
+def test_old_spec_field_names_rejected(old_field):
+    node = _direction_node()
+    node["spec"][old_field] = "old"
     with pytest.raises(RuleViolation):
         scope_ssot.validate_node(node)
 
@@ -82,7 +97,7 @@ def test_propagation_invalidate_and_reopen():
 def test_multihomed_refcount():
     node = {
         "id": "base/B", "level": "direction", "parents": ["dir/A", "dir/B2"],
-        "version": 1, "status": "active", "yardstick": {}, "provenance": "t",
+        "version": 1, "status": "active", "spec": {}, "source": "t",
     }
     assert scope_ssot.should_invalidate(node, {"dir/B2"}) is False  # one parent still active
     assert scope_ssot.should_invalidate(node, set()) is True        # last owner gone
@@ -96,7 +111,7 @@ def _create_revise_log(tmp_path):
                                   trigger="t0", cause="initial")
     n2 = _direction_node()
     n2["version"] = 2
-    n2["yardstick"]["success_predicate"] = "Recall@10 >= baseline + 3"
+    n2["spec"]["success_gate"] = "Recall@10 >= baseline + 3"
     scope_ssot.propose_transition(n2, op="revise", gate="USER_CROSS_MODEL_AUDIT", log_path=log,
                                   trigger="exp#42", cause="metric saturated")
     return log
@@ -108,7 +123,7 @@ def test_fold_returns_latest_version_per_node(tmp_path):
     assert set(proj) == {"dir/contrastive-v2"}
     node = proj["dir/contrastive-v2"]
     assert node["version"] == 2  # later transition wins
-    assert node["yardstick"]["success_predicate"] == "Recall@10 >= baseline + 3"
+    assert node["spec"]["success_gate"] == "Recall@10 >= baseline + 3"
 
 
 def test_fold_marks_archived_node(tmp_path):
@@ -122,10 +137,10 @@ def test_fold_marks_archived_node(tmp_path):
     assert proj["dir/contrastive-v2"]["status"] == "ARCHIVED"
 
 
-def test_intent_returns_current_yardstick(tmp_path):
+def test_intent_returns_current_spec(tmp_path):
     recs = scope_ssot.read_log(_create_revise_log(tmp_path))
-    yard = scope_ssot.intent("dir/contrastive-v2", recs)
-    assert yard["success_predicate"] == "Recall@10 >= baseline + 3"  # the folded (latest) bar
+    spec = scope_ssot.intent("dir/contrastive-v2", recs)
+    assert spec["success_gate"] == "Recall@10 >= baseline + 3"  # the folded latest gate
 
 
 def test_assert_consistent_passes_on_fold(tmp_path):

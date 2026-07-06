@@ -84,13 +84,13 @@ def test_consume_skips_missing_ids(tmp_path):
 
 # --- precondition + readiness ---------------------------------------------
 
-def _project_yardstick():
-    return {"north_star": "beat baseline", "contribution_spine": ["mixup"], "non_goals": ["no NAS"]}
+def _project_spec():
+    return {"goal": "beat baseline", "contributions": ["mixup"], "out_of_scope": ["no NAS"]}
 
 
 def _commit_project(log, node_id="project/main"):
     node = {"id": node_id, "level": "project", "parents": [], "version": 1,
-            "status": "ACTIVE", "yardstick": _project_yardstick(), "provenance": "accepted"}
+            "status": "ACTIVE", "spec": _project_spec(), "source": "accepted"}
     scope_ssot.propose_transition(node, op="create", gate="USER_ONLY", log_path=log)
 
 
@@ -101,26 +101,26 @@ def test_active_project_ids(tmp_path):
     assert brainstorm.active_project_ids(log) == ["project/main"]
 
 
-def _good_direction_yardstick():
+def _good_direction_spec():
     return {
         "hypothesis": "mixup improves top-1",
         "metric": "top-1 accuracy",
         "baselines": ["ResNet-18"],
-        "success_predicate": "top-1 > baseline + 1.0",
+        "success_gate": "top-1 > baseline + 1.0",
     }
 
 
 def test_direction_ready_true():
-    assert brainstorm.direction_ready(_good_direction_yardstick()) is True
+    assert brainstorm.direction_ready(_good_direction_spec()) is True
 
 
 def test_direction_ready_false_missing_field():
-    y = {k: v for k, v in _good_direction_yardstick().items() if k != "success_predicate"}
+    y = {k: v for k, v in _good_direction_spec().items() if k != "success_gate"}
     assert brainstorm.direction_ready(y) is False
 
 
 def test_direction_ready_false_empty_baselines():
-    y = {**_good_direction_yardstick(), "baselines": []}
+    y = {**_good_direction_spec(), "baselines": []}
     assert brainstorm.direction_ready(y) is False
 
 
@@ -128,27 +128,27 @@ def test_direction_ready_false_empty_baselines():
 
 def test_build_direction_proposal_valid():
     item = brainstorm.build_direction_proposal(
-        "dir/mixup", _good_direction_yardstick(),
-        parent_project_id="project/main", provenance="brainstorms:bs-1,bs-2",
+        "dir/mixup", _good_direction_spec(),
+        parent_project_id="project/main", source="brainstorms:bs-1,bs-2",
         source_brainstorms=["bs-1", "bs-2"])
     assert item["level"] == "direction"
     assert item["op"] == "create"
     assert item["gate"] == "USER_CROSS_MODEL_AUDIT"  # direction gate
     assert item["proposed_node"]["parents"] == ["project/main"]
-    assert item["proposed_node"]["yardstick"] == _good_direction_yardstick()
+    assert item["proposed_node"]["spec"] == _good_direction_spec()
     assert item["source_brainstorms"] == ["bs-1", "bs-2"]
     assert "id" in item
 
 
-def test_build_direction_proposal_rejects_reading_in_yardstick():
-    bad = {**_good_direction_yardstick(), "measured": 0.9}
+def test_build_direction_proposal_rejects_reading_in_spec():
+    bad = {**_good_direction_spec(), "measured": 0.9}
     with pytest.raises(scope_ssot.RuleViolation):
         brainstorm.build_direction_proposal("dir/x", bad, parent_project_id="project/main",
-                                            provenance="p")
+                                            source="p")
 
 
 def test_build_direction_proposal_rejects_wrong_level_field():
-    bad = {**_good_direction_yardstick(), "north_star": "oops"}  # project field, illegal for direction
+    bad = {**_good_direction_spec(), "goal": "oops"}  # project field, illegal for direction
     with pytest.raises(scope_ssot.RuleViolation):
         brainstorm.build_direction_proposal("dir/x", bad, parent_project_id="project/main",
-                                            provenance="p")
+                                            source="p")

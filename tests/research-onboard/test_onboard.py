@@ -83,36 +83,36 @@ def test_write_prior_knowledge(tmp_path):
 
 # --- build_project_proposal ------------------------------------------------
 
-def _good_yardstick():
+def _good_spec():
     return {
-        "north_star": "Beat ResNet-18 on CIFAR-10 top-1 accuracy",
-        "contribution_spine": ["mixup augmentation", "cosine schedule"],
-        "non_goals": ["no architecture search"],
+        "goal": "Beat ResNet-18 on CIFAR-10 top-1 accuracy",
+        "contributions": ["mixup augmentation", "cosine schedule"],
+        "out_of_scope": ["no architecture search"],
     }
 
 
 def test_build_project_proposal_valid():
     item = onboard.build_project_proposal(
-        "project/cifar10", _good_yardstick(), provenance="read:README.md,CLAUDE.md")
+        "project/cifar10", _good_spec(), source="read:README.md,CLAUDE.md")
     assert item["level"] == "project"
     assert item["op"] == "create"
     assert item["gate"] == "USER_ONLY"  # project gate per scope_ssot.REQUIRED_GATE
-    assert item["proposed_yardstick"] == _good_yardstick()
-    assert item["proposed_node"]["yardstick"] == _good_yardstick()
+    assert item["proposed_spec"] == _good_spec()
+    assert item["proposed_node"]["spec"] == _good_spec()
     assert item["proposed_node"]["level"] == "project"
     assert "id" in item  # triage.propose enforces an id
 
 
-def test_build_project_proposal_rejects_bad_yardstick():
-    bad = {**_good_yardstick(), "metric": "top-1"}  # 'metric' is a direction field, illegal for project
+def test_build_project_proposal_rejects_bad_spec():
+    bad = {**_good_spec(), "metric": "top-1"}  # 'metric' is a direction field, illegal for project
     with pytest.raises(scope_ssot.RuleViolation):
-        onboard.build_project_proposal("project/cifar10", bad, provenance="x")
+        onboard.build_project_proposal("project/cifar10", bad, source="x")
 
 
-def test_build_project_proposal_rejects_reading_in_yardstick():
-    bad = {**_good_yardstick(), "measured": 0.91}  # a reading must never live in a yardstick
+def test_build_project_proposal_rejects_reading_in_spec():
+    bad = {**_good_spec(), "measured": 0.91}  # a reading must never live in a spec
     with pytest.raises(scope_ssot.RuleViolation):
-        onboard.build_project_proposal("project/cifar10", bad, provenance="x")
+        onboard.build_project_proposal("project/cifar10", bad, source="x")
 
 
 # --- has_project_scope -----------------------------------------------------
@@ -125,7 +125,7 @@ def test_has_project_scope_true_after_commit(tmp_path):
     log = tmp_path / "transitions.jsonl"
     node = {
         "id": "project/cifar10", "level": "project", "parents": [], "version": 1,
-        "status": "ACTIVE", "yardstick": _good_yardstick(), "provenance": "accepted",
+        "status": "ACTIVE", "spec": _good_spec(), "source": "accepted",
     }
     scope_ssot.propose_transition(node, op="create", gate="USER_ONLY", log_path=log)
     assert onboard.has_project_scope(log) is True

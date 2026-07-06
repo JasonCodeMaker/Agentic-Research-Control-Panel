@@ -12,11 +12,11 @@ def _inputs(**over):
     base = {
         "direction_node": {
             "id": "dir/retrieval-v2",
-            "yardstick": {
+            "spec": {
                 "hypothesis": "Contrastive retrieval improves zero-shot Recall@1",
                 "metric": {"name": "Recall@1", "dir": "higher"},
                 "baselines": ["CLIP zero-shot = 42.3"],
-                "success_predicate": "Recall@1 >= 48",
+                "success_gate": "Recall@1 >= 48",
             },
         },
         "active_pkg": "2026-06-03-retrieval-v2",
@@ -53,7 +53,7 @@ def _inputs(**over):
 
 # ── content ───────────────────────────────────────────────────────────────
 
-def test_direction_section_carries_yardstick():
+def test_direction_section_carries_spec():
     pack = context_pack.assemble(_inputs())
     md = context_pack.render_md(pack)
     assert "Contrastive retrieval improves zero-shot Recall@1" in md

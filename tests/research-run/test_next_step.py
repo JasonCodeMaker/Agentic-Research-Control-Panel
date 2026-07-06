@@ -119,7 +119,7 @@ def test_run_front_door_emits_next_step(tmp_path):
     log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
     scope_ssot.propose_transition({"id": "project/grdr", "level": "project", "parents": [],
                                    "version": 1, "status": "ACTIVE",
-                                   "yardstick": {}, "provenance": "t"},
+                                   "spec": {}, "source": "t"},
                                   op="create", gate="USER_ONLY", log_path=log)
     res = admission.run_front_door(tmp_path, context={})
     assert res["state"] == "NO_DIRECTION"
@@ -128,4 +128,4 @@ def test_run_front_door_emits_next_step(tmp_path):
 
 def test_build_actions_without_root_stays_raw():
     # back-compat: no root => no enrichment (keeps the pure contract other admission tests rely on)
-    assert admission.build_admission_actions("NOT_READY", {})[0] == {"type": "RUN_READINESS", "dial": "AUTONOMOUS"}
+    assert admission.build_admission_actions("NOT_READY", {})[0] == {"type": "RUN_READINESS", "control_mode": "AUTONOMOUS"}

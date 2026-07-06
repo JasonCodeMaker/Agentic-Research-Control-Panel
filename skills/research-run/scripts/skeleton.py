@@ -1,7 +1,7 @@
 """Stage-1 walking skeleton: one thin idea->verified-result pass through all six roles + the real gates.
 
 Each role is thin/stub; what is real is the wiring — the scope write routes through the SSOT's
-gated writer, R5 reads the yardstick back from the SSOT node, L1 cite-exists partitions citations,
+gated writer, R5 reads the spec back from the SSOT node, L1 cite-exists partitions citations,
 and the terminal acquit routes through research-op's acquit gate at Supervised (T1 ack), blocked
 when the metric oracle fails. Scope and package mutation are handled by their current skills; the
 package execution controller is research-run.
@@ -19,20 +19,20 @@ import validate  # noqa: E402
 
 
 def scope(intent, pkg_id):
-    """R1 (thin): turn a fixed intent into a typed Direction node (problem + yardstick)."""
+    """R1 (thin): turn a fixed intent into a typed Direction node."""
     return {
         "id": f"dir/{pkg_id}",
         "level": "direction",
         "parents": ["project/main"],
         "version": 1,
         "status": "ACTIVE",
-        "yardstick": {
+        "spec": {
             "hypothesis": intent,
             "metric": {"name": "toy_metric", "dir": "higher"},
             "baselines": ["baseline-0"],
-            "success_predicate": "measured >= 0.80",
+            "success_gate": "measured >= 0.80",
         },
-        "provenance": "txn-0",
+        "source": "txn-0",
     }
 
 
@@ -46,7 +46,7 @@ def search_read(citations):
 
 def ideate(node):
     """R3 (stub): adopt the direction's hypothesis as the idea under test."""
-    return node["yardstick"]["hypothesis"]
+    return node["spec"]["hypothesis"]
 
 
 def experiment(pkg_id, runtime_root, measured):
@@ -60,10 +60,10 @@ def experiment(pkg_id, runtime_root, measured):
     return {"artifact_id": artifact_id, "path": str(artifact_path)}
 
 
-def verify(artifact_path, yardstick):
+def verify(artifact_path, spec):
     """R5 L1 metric oracle: read the measured value from the artifact on disk, compare to the SSOT predicate."""
     artifact = json.loads(Path(artifact_path).read_text(encoding="utf-8"))  # missing artifact => no fabricated metric
-    threshold = float(yardstick["success_predicate"].split(">=")[1].strip())
+    threshold = float(spec["success_gate"].split(">=")[1].strip())
     measured = artifact["measured"]
     return {"judge": "L1-metric-oracle",
             "result": "PASS" if measured >= threshold else "FAIL",
@@ -90,8 +90,8 @@ def run(intent, *, pkg_id, runtime_root, citations, measured):
     artifact = experiment(pkg_id, runtime_root, measured)
     chain.append("R4:experiment")
 
-    yardstick = node["yardstick"]  # read the bar from the SSOT node, not a prompt
-    verdict = verify(artifact["path"], yardstick)  # read the number from the artifact, not a prompt
+    spec = node["spec"]  # read the bar from the SSOT node, not a prompt
+    verdict = verify(artifact["path"], spec)  # read the number from the artifact, not a prompt
     chain.append("R5:verify")
 
     # R6 remember + terminal acquit at Supervised — gated by the L1 metric oracle.
@@ -112,7 +112,7 @@ def run(intent, *, pkg_id, runtime_root, citations, measured):
     chain.append("R6:remember")
 
     record = {
-        "chain": chain, "idea": idea, "yardstick": yardstick, "verdict": verdict,
+        "chain": chain, "idea": idea, "spec": spec, "verdict": verdict,
         "verified_citations": verified, "rejected_citations": rejected,
         "acquitted": acquitted, "ack_token": ack_token,
     }

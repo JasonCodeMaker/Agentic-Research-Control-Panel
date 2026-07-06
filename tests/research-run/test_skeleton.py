@@ -24,8 +24,8 @@ def test_walking_skeleton_smoke(tmp_path):
                      citations=_citations(tmp_path, fabricated=False), measured=0.9)
     # all six roles fired, in order
     assert [c.split(":")[0] for c in r["chain"]] == ["R1", "R2", "R3", "R4", "R5", "R6"]
-    # the yardstick was read from the SSOT node, not invented
-    assert r["yardstick"]["success_predicate"] == "measured >= 0.80"
+    # the spec was read from the SSOT node, not invented
+    assert r["spec"]["success_gate"] == "measured >= 0.80"
     assert r["verdict"]["result"] == "PASS"
     assert r["acquitted"] is True
     assert r["ack_token"] == "T1:supervised-ack"

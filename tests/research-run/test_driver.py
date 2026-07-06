@@ -14,9 +14,9 @@ import driver  # noqa: E402
 NODE = {
     "id": "dir/2026-driver", "level": "direction", "parents": ["project/main"],
     "version": 1, "status": "ACTIVE",
-    "yardstick": {"hypothesis": "X improves recall", "metric": {"name": "recall", "dir": "higher"},
-                  "baselines": ["b0"], "success_predicate": "measured >= 0.80"},
-    "provenance": "txn-0",
+    "spec": {"hypothesis": "X improves recall", "metric": {"name": "recall", "dir": "higher"},
+                  "baselines": ["b0"], "success_gate": "measured >= 0.80"},
+    "source": "txn-0",
 }
 
 

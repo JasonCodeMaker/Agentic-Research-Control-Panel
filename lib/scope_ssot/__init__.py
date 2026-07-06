@@ -1,6 +1,6 @@
 """Scope SSOT — the passive, versioned home of intent (Project -> Direction -> Task).
 
-Owns the yardstick (what to measure / what counts as success), never the reading
+Owns the spec (what to measure / what counts as success), never the reading
 (the measured value). Read freely; write only through the one gated writer,
 propose_transition. See plan/prototype/scope-ssot-design.html.
 """
@@ -12,14 +12,14 @@ from pathlib import Path
 
 LEVELS = ("project", "direction", "task")
 
-# Each level's allowed yardstick fields — intent only, never a measured value.
-YARDSTICK_FIELDS = {
-    "project":   frozenset({"north_star", "contribution_spine", "non_goals"}),
-    "direction": frozenset({"hypothesis", "metric", "baselines", "success_predicate"}),
-    "task":      frozenset({"experiment", "config_ref", "gate_predicate", "autonomy_level"}),
+# Each level's allowed spec fields: intent only, never a measured value.
+SPEC_FIELDS = {
+    "project":   frozenset({"goal", "contributions", "out_of_scope"}),
+    "direction": frozenset({"hypothesis", "metric", "baselines", "success_gate"}),
+    "task":      frozenset({"experiment", "config", "gate", "control_mode"}),
 }
 
-# Reading (empirical) fields that must never appear inside a yardstick.
+# Reading (empirical) fields that must never appear inside a spec.
 READING_FIELDS = frozenset({
     "measured", "result", "verdict", "metric_value", "current_best",
     "primaryMetricVsGate", "methodsTried",
@@ -55,16 +55,23 @@ class RuleViolation(Exception):
 
 
 def validate_node(node):
-    """Reject a node with an illegal level, an unknown yardstick field, or a reading in its yardstick."""
+    """Reject a node with an illegal level, an unknown spec field, or a reading in its spec."""
     level = node.get("level")
-    if level not in YARDSTICK_FIELDS:
+    if level not in SPEC_FIELDS:
         raise RuleViolation(f"illegal level: {level!r}")
-    allowed = YARDSTICK_FIELDS[level]
-    for field in node.get("yardstick", {}):
+    if "yardstick" in node:
+        raise RuleViolation("old field 'yardstick' is rejected; use 'spec'")
+    if "provenance" in node:
+        raise RuleViolation("old field 'provenance' is rejected; use 'source'")
+    spec = node.get("spec")
+    if not isinstance(spec, dict):
+        raise RuleViolation("node must carry a spec object")
+    allowed = SPEC_FIELDS[level]
+    for field in spec:
         if field in READING_FIELDS:
-            raise RuleViolation(f"reading field {field!r} cannot live in a yardstick")
+            raise RuleViolation(f"reading field {field!r} cannot live in a spec")
         if field not in allowed:
-            raise RuleViolation(f"unknown yardstick field {field!r} for level {level!r}")
+            raise RuleViolation(f"unknown spec field {field!r} for level {level!r}")
 
 
 def node_to_json(node):
@@ -134,8 +141,8 @@ def fold(records):
 
 
 def intent(node_id, records):
-    """Read: the node's current (folded) yardstick."""
-    return fold(records)[node_id]["yardstick"]
+    """Read: the node's current (folded) spec."""
+    return fold(records)[node_id]["spec"]
 
 
 def assert_consistent(projection, records):

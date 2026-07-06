@@ -26,13 +26,13 @@ def _direction_node(status="ACTIVE"):
         "parents": ["project/main"],
         "version": 3,
         "status": status,
-        "yardstick": {
+        "spec": {
             "hypothesis": "Contrastive retrieval improves zero-shot Recall@1",
             "metric": {"name": "Recall@1", "dir": "higher"},
             "baselines": ["CLIP zero-shot = 42.3"],
-            "success_predicate": "Recall@1 >= 48",
+            "success_gate": "Recall@1 >= 48",
         },
-        "provenance": "triage:t1",
+        "source": "triage:t1",
     }
 
 
@@ -43,12 +43,12 @@ def _project_node():
         "parents": [],
         "version": 1,
         "status": "ACTIVE",
-        "yardstick": {
-            "north_star": "trustworthy auto research",
-            "contribution_spine": "SSOT plus gates",
-            "non_goals": "paper writing",
+        "spec": {
+            "goal": "trustworthy auto research",
+            "contributions": "SSOT plus gates",
+            "out_of_scope": "paper writing",
         },
-        "provenance": "triage:p1",
+        "source": "triage:p1",
     }
 
 
@@ -72,13 +72,13 @@ def _milestone_node(parent, suffix, gate="Gate is explicit"):
         "parents": [parent],
         "version": 1,
         "status": "ACTIVE",
-        "yardstick": {
+        "spec": {
             "experiment": f"Validate {suffix}",
-            "config_ref": f"scope:{parent}#{suffix.lower()}",
-            "gate_predicate": gate,
-            "autonomy_level": "CHECKPOINTED",
+            "config": f"scope:{parent}#{suffix.lower()}",
+            "gate": gate,
+            "control_mode": "CHECKPOINTED",
         },
-        "provenance": f"test:{suffix}",
+        "source": f"test:{suffix}",
     }
 
 
@@ -115,12 +115,12 @@ def test_materializes_committed_direction_as_package(tmp_path, monkeypatch):
     assert (tmp_path / "research_html" / "packages" / "2026-06-03-retrieval-v2" / "index.html").exists()
     inventory = (tmp_path / "research_html" / "data" / "research-packages.js").read_text(encoding="utf-8")
     assert 'id: "2026-06-03-retrieval-v2"' in inventory
-    assert 'sourceScopeNode: "dir/retrieval-v2"' in inventory
-    assert f'sourceScopeTxn: "{rec["transaction_id"]}"' in inventory
-    assert "sourceScopeMilestones" in inventory
+    assert 'sourceDirection: "dir/retrieval-v2"' in inventory
+    assert f'sourceChange: "{rec["transaction_id"]}"' in inventory
+    assert "sourceTasks" in inventory
     assert f'"txn": "{milestone_recs[0]["transaction_id"]}"' in inventory
     assert "experiments" in inventory
-    assert '"parentTask": "task/retrieval-v2/M0-baseline-validity"' in inventory
+    assert '"sourceTask": "task/retrieval-v2/M0-baseline-validity"' in inventory
     assert '"purpose": "Verify baseline"' in inventory
     assert "Contrastive retrieval improves zero-shot Recall@1" in inventory
     assert 'primaryMetricVsGate: "Recall@1 vs Recall@1 >= 48"' in inventory
@@ -199,7 +199,7 @@ def test_non_direction_node_rejected(tmp_path, monkeypatch):
 
 def test_experiment_rows_set_readiness_flags():
     def ms(suffix):
-        return {"node": {"id": f"task/d/{suffix}", "yardstick": {"gate_predicate": "g"}}}
+        return {"node": {"id": f"task/d/{suffix}", "spec": {"gate": "g"}}}
     rows = create_from_scope._experiment_rows(
         "pkg", [ms("M0-baseline-validity"), ms("M1-main-hypothesis")])
     # baseline validity runs an existing baseline: no code, not complex

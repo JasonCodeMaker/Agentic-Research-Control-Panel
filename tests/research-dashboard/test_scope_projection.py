@@ -23,12 +23,12 @@ def _direction_node(version=1, predicate="Recall@10 >= baseline + 2"):
     return {
         "id": "dir/contrastive-v2", "level": "direction", "parents": ["project/main"],
         "version": version, "status": "ACTIVE",
-        "yardstick": {
+        "spec": {
             "hypothesis": "contrastive pretrain helps recall",
             "metric": {"name": "Recall@10", "dir": "higher"},
-            "baselines": ["xpool"], "success_predicate": predicate,
+            "baselines": ["xpool"], "success_gate": predicate,
         },
-        "provenance": "txn-0",
+        "source": "txn-0",
     }
 
 
@@ -66,7 +66,7 @@ def test_check_detects_manual_projection_drift(tmp_path):
     proj_path = tmp_path / "data" / "scope-projection.json"
     rsp.render(log, proj_path)
     tampered = json.loads(proj_path.read_text(encoding="utf-8"))
-    tampered["dir/contrastive-v2"]["yardstick"]["success_predicate"] = "Recall@10 >= baseline + 0"
+    tampered["dir/contrastive-v2"]["spec"]["success_gate"] = "Recall@10 >= baseline + 0"
     proj_path.write_text(json.dumps(tampered), encoding="utf-8")
     with pytest.raises(RuleViolation):
         rsp.check(log, proj_path)

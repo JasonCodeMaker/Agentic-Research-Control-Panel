@@ -1,7 +1,7 @@
 """Item 4 TDD gate: R4 produces a verified metric artifact on disk; R5 reads the metric from that
-artifact (not from an in-memory argument); the artifact value never enters the SSOT yardstick.
+artifact (not from an in-memory argument); the artifact value never enters the SSOT spec.
 
-Ledger 1 r4-experiment / Ledger 3 verified runtime artifact (read artifact value and SSOT yardstick
+Ledger 1 r4-experiment / Ledger 3 verified runtime artifact (read artifact value and SSOT spec
 separately; artifact value cannot be copied into SSOT).
 """
 
@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "skills" / "research-run" / "scripts"))
 import scope_ssot  # noqa: E402
 import skeleton  # noqa: E402
 
-YARD = {"success_predicate": "measured >= 0.80"}
+YARD = {"success_gate": "measured >= 0.80"}
 
 
 def test_experiment_writes_artifact_file(tmp_path):
@@ -51,6 +51,6 @@ def test_artifact_value_not_copied_into_ssot(tmp_path):
     skeleton.run("contrastive pretraining improves recall", pkg_id="2026-x",
                  runtime_root=tmp_path, citations=[], measured=0.9)
     proj = scope_ssot.fold(scope_ssot.read_log(tmp_path / "_scope" / "transitions.jsonl"))
-    yard = proj["dir/2026-x"]["yardstick"]
+    yard = proj["dir/2026-x"]["spec"]
     assert not (scope_ssot.READING_FIELDS & set(yard))  # no reading leaked into the SSOT
     assert "measured" not in yard

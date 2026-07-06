@@ -1,7 +1,7 @@
 ---
 name: research-auto
 description: "Use when the user invokes /research-auto or asks to run an autonomous research campaign over one Direction toward a measurable gate."
-argument-hint: "<direction text or committed direction-id> --gate \"<measurable predicate>\" [--dial SUPERVISED|CHECKPOINTED|DEFERRED|AUTONOMOUS] [--max-cycles N]"
+argument-hint: "<direction text or committed direction-id> --gate \"<measurable gate>\" [--dial SUPERVISED|CHECKPOINTED|DEFERRED|AUTONOMOUS] [--max-cycles N]"
 allowed-tools: Bash(python3 *), Bash(node *), Read, Edit, Write, Grep, Glob, Agent
 disable-model-invocation: false
 ---
@@ -14,7 +14,7 @@ disable-model-invocation: false
 `/research-run` completes exactly one already-scoped package and stops, `/research-auto` owns the loop
 around it: when a package finishes short of the gate, it designs the next experiment from what the last
 one taught plus the current Context Pack, routes it through the same scoped surfaces, runs it, and
-re-checks the gate — until the Direction's success predicate clears with verified evidence, the cycle
+re-checks the gate — until the Direction's success gate clears with verified evidence, the cycle
 budget is exhausted, or a decision surfaces that belongs to the human.
 
 ```text
@@ -41,9 +41,9 @@ directly.
 | Decision | Owner | Mechanism |
 | --- | --- | --- |
 | Project / Direction commits | human | Triage propose → PM dispose → `research-op scope-transition`. The campaign pauses at `AWAIT_RATIFICATION`; it never disposes. |
-| Charter (gate, dial, max-cycles) | human | Ratified with the Direction — the gate *is* the Direction's `success_predicate`. |
+| Charter (gate, dial, max-cycles) | human | Ratified with the Direction — the gate *is* the Direction's `success_gate`. |
 | New / revised milestone Task mid-campaign | dial-keyed | `SUPERVISED`/`CHECKPOINTED`: Triage pause per proposal. `DEFERRED`/`AUTONOMOUS`: self-commit with the SSOT task gate `AGENT_DEFERRED_ACK` **and** a queued `deferred_ack` entry the exit report surfaces. Checked by `conductor.validate_campaign_action` before any commit. |
-| Concrete per-cycle experiments | agent | `research-op insert --target experiments-row` under an owning milestone (`parentTask`) — the existing package contract. |
+| Concrete per-cycle experiments | agent | `research-op insert --target experiments-row` under an owning milestone (`sourceTask`) — the existing package contract. |
 | Terminal package transitions, adoption | human (T1) | `/research-run`'s existing gates; away dials queue the ack (present-only QA). |
 | Campaign exit | conductor routes; human owns acks | `SUCCESS_EXIT` needs a ledgered `gate_eval=PASS` with evidence; every `HALT_*` ends in a typed Triage proposal (extend / revise / archive), never a silent goalpost move. |
 
@@ -70,8 +70,8 @@ Conductor CLI:
 
 ```bash
 python3 skills/research-auto/scripts/conductor.py status --root . --direction-id <dir-id> \
-  --max-cycles <N> --dial <DIAL> [--gate "<predicate>"] [--no-candidate]
-python3 skills/research-auto/scripts/conductor.py gate-eval --measured <x> --predicate "<predicate>"
+  --max-cycles <N> --dial <DIAL> [--gate "<gate>"] [--no-candidate]
+python3 skills/research-auto/scripts/conductor.py gate-eval --measured <x> --gate "<gate>"
 python3 skills/research-auto/scripts/conductor.py append-cycle --root . --direction-id <dir-id> --record '<json>'
 python3 skills/research-auto/scripts/conductor.py pack --root . --direction-id <dir-id> --bundle '<json>'
 ```
@@ -81,8 +81,8 @@ python3 skills/research-auto/scripts/conductor.py pack --root . --direction-id <
 An invocation carries up to four facts; everything else is derived:
 
 - **direction** — a committed direction node id (`dir/<slug>`), or free text to be shaped.
-- **gate** — a measurable predicate (`R@1 >= 48`). It becomes the Direction's `success_predicate`;
-  if the Direction is already committed and the given gate conflicts with its `success_predicate`,
+- **gate** — a measurable gate (`R@1 >= 48`). It becomes the Direction's `success_gate`;
+  if the Direction is already committed and the given gate conflicts with its `success_gate`,
   that is a Direction *revise* → Triage proposal, never an in-place edit.
 - **dial** — defaults `AUTONOMOUS`. Surfaced at ratification with all four choices.
 - **max-cycles** — defaults 5. A cycle = one designed-and-verified experiment outcome.
@@ -111,7 +111,7 @@ SSOT fold and ask). Route on `action.type`:
 
 - `FORM_DIRECTION` — invoke **`/research-brainstorm`** with the direction text: ground factual
   unknowns against available sources and project evidence, rank competing framings when needed
-  (`lib/ranking`), then build the Direction proposal with the charter gate as `success_predicate` and
+  (`lib/ranking`), then build the Direction proposal with the charter gate as `success_gate` and
   submit through Triage. Declare the dial and max-cycles in the proposal's `change`/`rationale` so the
   human ratifies the whole charter. **Pause.**
 - `AWAIT_RATIFICATION` — show the pending item; **pause**. Never dispose it.
@@ -121,7 +121,7 @@ SSOT fold and ask). Route on `action.type`:
 **2. Materialize once per campaign.** When `status` routes `MATERIALIZE_PACKAGE`:
 
 1. Milestones: if the Direction has no active task children, run
-   `plan_milestones.py --direction-id <id> --autonomy-level <dial> --dry-run` to shape them, then
+   `plan_milestones.py --direction-id <id> --control-mode <dial> --dry-run` to shape them, then
    commit per the dial — at `SUPERVISED`/`CHECKPOINTED` submit through Triage and **pause**; at
    `DEFERRED`/`AUTONOMOUS` commit each node via `research-op --op scope-transition`
    (`gate=AGENT_DEFERRED_ACK`, payload carrying a non-empty `deferred_ack`), after
@@ -152,7 +152,7 @@ Then act on `action.type`; one tick per route, re-run `status` after each:
      If multiple candidates are plausible, rank them with an independent sub-agent (`lib/ranking`).
   3. Map the selected hypothesis to its owning milestone. Fits an active milestone → add one
      experiments-row through research-op (id `P<n>`, action-verb purpose ≤ 12 words, one gate, one
-     output, `parentTask` = the milestone id):
+     output, `sourceTask` = the milestone id):
      ```bash
      python3 skills/research-op/scripts/research_op.py --pkg <pkg> --op insert \
        --target experiments-row --payload '{"id":"P3","purpose":"Evaluate reranker variant",...}'
@@ -168,7 +168,7 @@ records a verdict for the cycle's experiment:
 
 1. Read `verdict` + `measured` only from the package's verified facts (the `methodsTried` row /
    result-gate row and its `evidencePath`, themselves written from runtime artifacts). Never from chat.
-2. Gate-check: `conductor.py gate-eval --measured <x> --predicate "<gate>"`.
+2. Gate-check: `conductor.py gate-eval --measured <x> --gate "<gate>"`.
 3. On `FAIL`, make the failure visible in the package facts and cycle ledger so future designs do not
    repeat it without explicit justification.
 4. When the cycle taught a mechanism-level lesson, record it via **`/research-analysis`**
@@ -229,7 +229,7 @@ away-mode ticks always leave a fresh PACK bundle.
 
 | Symptom | Meaning | Action |
 | --- | --- | --- |
-| `GateUnparseable` from status/gate-eval | The predicate has no comparator clause | Route `ASK_USER`; never self-judge an unmeasurable gate |
+| `GateUnparseable` from status/gate-eval | The gate has no comparator clause | Route `ASK_USER`; never self-judge an unmeasurable gate |
 | `validate_campaign_action` returns rejected | The planned action smuggles authority (disposal, direction commit, gateless task commit) | Drop the action; take the Triage-pause path instead |
 | `append-cycle` raises ValueError | Cycle record incomplete or verdict/gate_eval illegal | Fill the missing field from facts; an unproven verdict cannot clear the gate |
 | `create_from_scope` rejects | Pending-only scope or duplicate package id | Wait for ratification, or materialize with the `-c<N>` id |

@@ -44,7 +44,7 @@ byte hits disk. Rule ids are the values that appear in the rejection envelope's
 ### Update: status — acquit into the success lane (U1, success-bound)
 These fire in addition to the lane-crossing rules above whenever the destination category is `success`.
 - `acquit-needs-verdict`: the payload must carry a non-empty `verdict` record (judge, verdict, evidence) for any acquit into the success lane.
-- `acquit-judge-independent`: the verdict's judge must satisfy the independence constraint for the task's `autonomy_level` (default `"SUPERVISED"`); at `"AUTONOMOUS"` the judge must be cross-family from the producer. Implemented via `lib/verifier.assess_acquit(verdict, level)` — acquit only on a `SOUND` verdict.
+- `acquit-judge-independent`: the verdict's judge must satisfy the independence constraint for the task's `control_mode` (default `"SUPERVISED"`); at `"AUTONOMOUS"` the judge must be cross-family from the producer. Implemented via `lib/verifier.assess_acquit(verdict, level)` — acquit only on a `SOUND` verdict.
 
 ### Insert: doc-file (I9) + paired doc-card
 - `doc-file-path-under-package`: file path matches `research_html/packages/<pkg>/docs/<slug>.html`.

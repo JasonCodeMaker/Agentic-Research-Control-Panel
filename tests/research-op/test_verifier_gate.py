@@ -13,7 +13,7 @@ def _acquit(level, producer, judge, result="SOUND"):
     return {
         "to_status": "ADOPTED_UNCONFIRMED", "to_category": "success",
         "ack_token": "user-ack", "terminationMessage": "m", "adoptionPath": "CLAUDE.md#cb",
-        "autonomy_level": level,
+        "control_mode": level,
         "verdict": {"producer": producer, "judge": judge, "result": result, "evidence": "e"},
     }
 

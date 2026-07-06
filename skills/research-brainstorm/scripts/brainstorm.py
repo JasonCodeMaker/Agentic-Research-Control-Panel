@@ -22,7 +22,7 @@ sys.path.insert(0, str(PIPELINE_ROOT / "lib"))
 
 import scope_ssot  # noqa: E402
 
-DIRECTION_FIELDS = ("hypothesis", "metric", "baselines", "success_predicate")
+DIRECTION_FIELDS = ("hypothesis", "metric", "baselines", "success_gate")
 
 
 def brainstorms_path(dashboard_root) -> Path:
@@ -132,7 +132,7 @@ def render_brainstorm_html(entry: dict, *, language: str = "en") -> str:
               </ul>
             </dd>
             <dt>Next decision</dt>
-            <dd>Shape this hunch into a typed yardstick only when the user is ready: <code>{{hypothesis, metric, baselines, success_predicate}}</code>. Submit any Direction through Triage; do not commit the SSOT from this page.</dd>
+            <dd>Shape this hunch into a typed spec only when the user is ready: <code>{{hypothesis, metric, baselines, success_gate}}</code>. Submit any Direction through Triage; do not commit the SSOT from this page.</dd>
           </dl>
         </article>
       </section>
@@ -199,25 +199,25 @@ def active_project_ids(transitions_path) -> list[str]:
             if n.get("level") == "project" and n.get("status") == "ACTIVE"]
 
 
-def direction_ready(yardstick: dict) -> bool:
-    """True iff the yardstick carries all four direction fields, non-empty (the conversion gate)."""
+def direction_ready(spec: dict) -> bool:
+    """True iff the spec carries all four direction fields, non-empty (the conversion gate)."""
     for field in DIRECTION_FIELDS:
-        value = yardstick.get(field)
+        value = spec.get(field)
         if value is None or value == "" or value == [] or value == {}:
             return False
     return True
 
 
-def build_direction_proposal(node_id: str, yardstick: dict, *, parent_project_id: str,
-                             provenance: str, source_brainstorms: list[str] | None = None,
+def build_direction_proposal(node_id: str, spec: dict, *, parent_project_id: str,
+                             source: str, source_brainstorms: list[str] | None = None,
                              item_id: str | None = None, change: str | None = None,
                              rationale: str | None = None) -> dict:
-    """Build a validated level=direction Triage item. Raises RuleViolation on a bad yardstick."""
+    """Build a validated level=direction Triage item. Raises RuleViolation on a bad spec."""
     node = {
         "id": node_id, "level": "direction", "parents": [parent_project_id], "version": 1,
-        "status": "ACTIVE", "yardstick": yardstick, "provenance": provenance,
+        "status": "ACTIVE", "spec": spec, "source": source,
     }
-    scope_ssot.validate_node(node)  # reject-before-propose: direction-legal yardstick only
+    scope_ssot.validate_node(node)  # reject-before-propose: direction-legal spec only
     return {
         "id": item_id or f"direction-{_slug(node_id.rsplit('/', 1)[-1])}",
         "level": "direction",
@@ -226,7 +226,7 @@ def build_direction_proposal(node_id: str, yardstick: dict, *, parent_project_id
         "gate": scope_ssot.REQUIRED_GATE["direction"],
         "change": change or f"Create direction {node_id} from brainstormed idea(s)",
         "rationale": rationale or "Brainstormed idea(s) converged into a testable direction; PM must ratify.",
-        "proposed_yardstick": yardstick,
+        "proposed_spec": spec,
         "proposed_node": node,
         "source_brainstorms": list(source_brainstorms or []),
         "post_accept_actions": [],
@@ -256,14 +256,14 @@ def build_parser() -> argparse.ArgumentParser:
     pc = sub.add_parser("check-project", help="list committed active Project node ids")
     pc.add_argument("--transitions", default="outputs/_scope/transitions.jsonl")
 
-    pd = sub.add_parser("direction-ready", help="check a yardstick is conversion-ready")
-    pd.add_argument("--yardstick", required=True)
+    pd = sub.add_parser("direction-ready", help="check a spec is conversion-ready")
+    pd.add_argument("--spec", required=True)
 
     pb = sub.add_parser("build-proposal", help="build a validated direction Triage item")
     pb.add_argument("--node-id", required=True)
     pb.add_argument("--parent-project-id", required=True)
-    pb.add_argument("--yardstick", required=True, help="JSON: hypothesis, metric, baselines, success_predicate")
-    pb.add_argument("--provenance", required=True)
+    pb.add_argument("--spec", required=True, help="JSON: hypothesis, metric, baselines, success_gate")
+    pb.add_argument("--source", required=True)
     pb.add_argument("--source-brainstorms", default="[]", help="JSON list of idea ids")
     pb.add_argument("--item-id", default=None)
     return p
@@ -290,11 +290,11 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "check-project":
         print(json.dumps({"active_project_ids": active_project_ids(args.transitions)}, ensure_ascii=False))
     elif args.cmd == "direction-ready":
-        print(json.dumps({"ready": direction_ready(json.loads(args.yardstick))}, ensure_ascii=False))
+        print(json.dumps({"ready": direction_ready(json.loads(args.spec))}, ensure_ascii=False))
     elif args.cmd == "build-proposal":
         item = build_direction_proposal(
-            args.node_id, json.loads(args.yardstick), parent_project_id=args.parent_project_id,
-            provenance=args.provenance, source_brainstorms=json.loads(args.source_brainstorms),
+            args.node_id, json.loads(args.spec), parent_project_id=args.parent_project_id,
+            source=args.source, source_brainstorms=json.loads(args.source_brainstorms),
             item_id=args.item_id)
         print(json.dumps(item, ensure_ascii=False))
     return 0

@@ -21,9 +21,9 @@ from scope_ssot import RuleViolation  # noqa: E402
 def _project_node():
     return {
         "id": "project/main", "level": "project", "parents": [], "version": 1, "status": "ACTIVE",
-        "yardstick": {"north_star": "trustworthy auto-research",
-                      "contribution_spine": "typed gates + SSOT", "non_goals": "multi-project"},
-        "provenance": "txn-0",
+        "spec": {"goal": "trustworthy auto-research",
+                      "contributions": "typed gates + SSOT", "out_of_scope": "multi-project"},
+        "source": "txn-0",
     }
 
 
@@ -31,10 +31,10 @@ def _direction_node(version=1, status="ACTIVE"):
     return {
         "id": "dir/contrastive-v2", "level": "direction", "parents": ["project/main"],
         "version": version, "status": status,
-        "yardstick": {"hypothesis": "contrastive pretrain helps recall",
+        "spec": {"hypothesis": "contrastive pretrain helps recall",
                       "metric": {"name": "Recall@10", "dir": "higher"},
-                      "baselines": ["xpool"], "success_predicate": "Recall@10 >= baseline + 2"},
-        "provenance": "txn-0",
+                      "baselines": ["xpool"], "success_gate": "Recall@10 >= baseline + 2"},
+        "source": "txn-0",
     }
 
 
@@ -50,9 +50,9 @@ def _log(tmp_path):
 def test_profile_projects_project_node(tmp_path):
     proj = scope_ssot.fold(scope_ssot.read_log(_log(tmp_path)))
     inv = ri.build_inventory(proj)
-    assert inv["profile"]["north_star"] == "trustworthy auto-research"
-    assert inv["profile"]["contribution_spine"] == "typed gates + SSOT"
-    assert inv["profile"]["non_goals"] == "multi-project"
+    assert inv["profile"]["goal"] == "trustworthy auto-research"
+    assert inv["profile"]["contributions"] == "typed gates + SSOT"
+    assert inv["profile"]["out_of_scope"] == "multi-project"
 
 
 def test_card_status_matches_ssot_task_state(tmp_path):
@@ -69,6 +69,6 @@ def test_card_status_matches_ssot_task_state(tmp_path):
 def test_manual_inventory_divergence_flagged(tmp_path):
     proj = scope_ssot.fold(scope_ssot.read_log(_log(tmp_path)))
     inv = ri.build_inventory(proj)
-    inv["profile"]["north_star"] = "something the SSOT never said"  # planted drift
+    inv["profile"]["goal"] = "something the SSOT never said"  # planted drift
     with pytest.raises(RuleViolation):
         ri.assert_inventory_consistent(inv, proj)

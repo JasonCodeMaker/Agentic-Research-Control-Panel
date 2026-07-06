@@ -20,13 +20,13 @@ def build_inventory(projection):
     profile, cards = {}, []
     for node_id, node in projection.items():
         if node["level"] == "project":
-            y = node["yardstick"]
-            profile = {"north_star": y.get("north_star"),
-                       "contribution_spine": y.get("contribution_spine"),
-                       "non_goals": y.get("non_goals"), "version": node["version"]}
+            spec = node["spec"]
+            profile = {"goal": spec.get("goal"),
+                       "contributions": spec.get("contributions"),
+                       "out_of_scope": spec.get("out_of_scope"), "version": node["version"]}
         else:
             cards.append({"id": node_id, "level": node["level"], "status": node["status"],
-                          "version": node["version"], "hypothesis": node["yardstick"].get("hypothesis")})
+                          "version": node["version"], "hypothesis": node["spec"].get("hypothesis")})
     cards.sort(key=lambda c: c["id"])
     return {"profile": profile, "cards": cards}
 

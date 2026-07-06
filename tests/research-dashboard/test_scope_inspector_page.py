@@ -14,11 +14,12 @@ SCOPE_HTML = DASH / "scope.html"
 INDEX_HTML = DASH / "index.html"
 INSPECTOR_JS = DASH / "assets" / "scope-inspector.js"
 
-# Yardstick field names are SSOT schema rules; the live view must not hardcode them.
-YARDSTICK_FIELDS = [
-    "north_star", "contribution_spine", "non_goals",
-    "hypothesis", "success_predicate", "baselines",
-    "experiment", "config_ref", "gate_predicate", "autonomy_level",
+# Spec field names are SSOT schema rules; the live view must not hardcode them.
+# `gate` is also transition metadata, so a plain text check would be a false positive.
+SPEC_FIELDS = [
+    "goal", "contributions", "out_of_scope",
+    "hypothesis", "success_gate", "baselines",
+    "experiment", "config", "control_mode",
 ]
 LEVEL_LITERALS = ['"project"', '"direction"', '"task"', "'project'", "'direction'", "'task'"]
 
@@ -77,11 +78,11 @@ def test_scope_view_is_read_only():
             assert verb not in text, f"write verb {verb!r} present; view must be read-only"
 
 
-def test_no_hardcoded_yardstick_fields_in_view():
+def test_no_hardcoded_spec_fields_in_view():
     # The whole point of the live view: render whatever the node carries.
     for path in (SCOPE_HTML, INSPECTOR_JS):
         text = _read(path)
-        for field in YARDSTICK_FIELDS:
+        for field in SPEC_FIELDS:
             assert field not in text, f"hardcoded SSOT field {field!r} in {path.name}"
 
 

@@ -37,10 +37,10 @@ def test_cli_remove(tmp_path, capsys):
 
 
 def test_cli_build_proposal(tmp_path, capsys):
-    yardstick = {"hypothesis": "h", "metric": "m", "baselines": ["b"], "success_predicate": "p"}
+    spec = {"hypothesis": "h", "metric": "m", "baselines": ["b"], "success_gate": "p"}
     rc = brainstorm.main([
         "build-proposal", "--node-id", "dir/x", "--parent-project-id", "project/main",
-        "--yardstick", json.dumps(yardstick), "--provenance", "brainstorms:bs-1",
+        "--spec", json.dumps(spec), "--source", "brainstorms:bs-1",
         "--source-brainstorms", json.dumps(["bs-1"]),
     ])
     assert rc == 0
@@ -51,7 +51,7 @@ def test_cli_build_proposal(tmp_path, capsys):
 
 
 def test_cli_direction_ready(tmp_path, capsys):
-    yardstick = {"hypothesis": "h", "metric": "m", "baselines": ["b"], "success_predicate": "p"}
-    rc = brainstorm.main(["direction-ready", "--yardstick", json.dumps(yardstick)])
+    spec = {"hypothesis": "h", "metric": "m", "baselines": ["b"], "success_gate": "p"}
+    rc = brainstorm.main(["direction-ready", "--spec", json.dumps(spec)])
     assert rc == 0
     assert json.loads(capsys.readouterr().out)["ready"] is True

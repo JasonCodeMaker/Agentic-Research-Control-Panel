@@ -1,7 +1,7 @@
 """Context Pack — a deterministic, read-only projection of pipeline knowledge.
 
 To agent-context what learnings.html is to the human: a budgeted, evidence-linked
-compile of stores we already maintain (scope yardstick, cross-package methodsTried,
+compile of stores we already maintain (scope spec, cross-package methodsTried,
 learned rules, and project knowledge registries). No LLM in assembly (a hallucination
 cannot enter at compile time); no mutation of any store (writes still go through
 research-op).
@@ -66,17 +66,17 @@ def _baseline_label(baselines) -> str:
 def _direction_section(node) -> Section | None:
     if not node:
         return None
-    y = node.get("yardstick", {})
+    spec = node.get("spec", {})
     lines = []
-    if y.get("hypothesis"):
-        lines.append(f"- Hypothesis: {y['hypothesis']}")
-    lines.append(f"- Metric: {_metric_label(y.get('metric'))}")
-    if y.get("baselines"):
-        lines.append(f"- Baselines: {_baseline_label(y['baselines'])}")
-    if y.get("success_predicate"):
-        lines.append(f"- Success: {y['success_predicate']}")
+    if spec.get("hypothesis"):
+        lines.append(f"- Hypothesis: {spec['hypothesis']}")
+    lines.append(f"- Metric: {_metric_label(spec.get('metric'))}")
+    if spec.get("baselines"):
+        lines.append(f"- Baselines: {_baseline_label(spec['baselines'])}")
+    if spec.get("success_gate"):
+        lines.append(f"- Success gate: {spec['success_gate']}")
     lines.append(f"- Source: scope node {node.get('id', '')}")
-    return Section("direction", "Active Direction (yardstick)", lines, protected=True)
+    return Section("direction", "Active Direction (spec)", lines, protected=True)
 
 
 def _rules_section(learned_rules, analysis_rules) -> Section | None:

@@ -227,7 +227,7 @@ def main() -> int:
         import scope_ssot  # noqa: E402
         payload = json.loads(args.payload)
         node = {k: payload[k] for k in ("id", "level", "parents", "version", "status",
-                                        "yardstick", "provenance") if k in payload}
+                                        "spec", "source") if k in payload}
         log_path = audit.runtime_root("_scope") / "transitions.jsonl"
         try:
             record = scope_ssot.propose_transition(

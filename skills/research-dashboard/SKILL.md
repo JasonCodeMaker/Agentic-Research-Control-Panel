@@ -152,7 +152,7 @@ python <root>/scripts/learnings_lint.py alignment       # task-spine structural 
 python <root>/scripts/learnings_lint.py all             # status + evidence + scan + alignment + rules
 ```
 
-The Stop Gate of any learnings-relevant turn requires `learnings_lint.py all` to exit 0. For Scope-materialized packages, `lint-status` also checks that `sourceScopeNode`, `sourceScopeMilestones`, and `experiments[].parentTask` still point to active Scope SSOT nodes; `alignment` checks each typed task's result/implementation/docs/tracker thread.
+The Stop Gate of any learnings-relevant turn requires `learnings_lint.py all` to exit 0. For Scope-materialized packages, `lint-status` also checks that `sourceDirection`, `sourceTasks`, and `experiments[].sourceTask` still point to active Scope SSOT nodes; `alignment` checks each typed task's result/implementation/docs/tracker thread.
 
 ## Event-manifest applier (auto-propagation)
 

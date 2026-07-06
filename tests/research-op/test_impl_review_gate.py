@@ -60,9 +60,9 @@ def test_non_launch_transition_not_gated():
 
 
 def test_supervised_does_not_relax():
-    # Gap 4: even with autonomy_level=SUPERVISED, a non-acquitting verdict is still rejected.
+    # Gap 4: even with control_mode=SUPERVISED, a non-acquitting verdict is still rejected.
     payload = _launch_payload(_v(result="NEEDS_REVISION"))
-    payload["autonomy_level"] = "SUPERVISED"
+    payload["control_mode"] = "SUPERVISED"
     rej = validate.validate("test-pkg", "update", "status", payload, _IN_REVIEW)
     assert rej is not None and rej.rule == "launch-acquits"
 
@@ -79,6 +79,6 @@ def test_launch_autonomous_not_tightened():
     # Autonomy-independent both ways: at AUTONOMOUS, a distinct same-family sound verdict still passes
     # (this gate adds no cross-family requirement).
     payload = _launch_payload(_v())
-    payload["autonomy_level"] = "AUTONOMOUS"
+    payload["control_mode"] = "AUTONOMOUS"
     rej = validate.validate("test-pkg", "update", "status", payload, _IN_REVIEW)
     assert rej is None

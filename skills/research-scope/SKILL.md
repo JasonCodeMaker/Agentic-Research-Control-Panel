@@ -11,8 +11,8 @@ The agent proposes; the PM disposes. This separation is how "user-monitored" and
 the Scope SSOT is never mutated by agent action alone — every write is either a user-committed
 `scope-transition` (accepted Triage item) or rejected with the SSOT left untouched.
 
-> If the user has only a vague idea and cannot yet state a clear Direction yardstick
-> (`hypothesis / metric / baselines / success_predicate`), use **`/research-brainstorm`** first — it shapes
+> If the user has only a vague idea and cannot yet state a clear Direction spec
+> (`hypothesis / metric / baselines / success_gate`), use **`/research-brainstorm`** first — it shapes
 > the idea into pre-package brainstorms and converges them into a Direction proposal. Use this skill
 > directly when the Direction is already clear.
 
@@ -28,6 +28,7 @@ the Scope SSOT is never mutated by agent action alone — every write is either 
 | Triage queue (pending/disposed) | `outputs/_scope/triage.jsonl` |
 | research-op entrypoint | `<pipeline-root>/skills/research-op/scripts/research_op.py` |
 | Milestone planner | `<pipeline-root>/skills/research-scope/scripts/plan_milestones.py` |
+| Scope name migration | `<pipeline-root>/skills/research-scope/scripts/migrate_scope_names.py` |
 | Direction→package materializer | `<pipeline-root>/skills/research-package/scripts/create_from_scope.py` |
 
 Import pattern for the lib:
@@ -59,7 +60,7 @@ On accept, the human then commits the transition (agent does NOT do this). The p
 ```bash
 python3 skills/research-op/scripts/research_op.py \
     --pkg <pkg-id> --op scope-transition \
-    --payload '{"id":"dir-retrieval-v2","level":"direction","parents":[],"version":1,"status":"ACTIVE","yardstick":{...},"provenance":"...","op":"create","gate":"USER_CROSS_MODEL_AUDIT"}'
+    --payload '{"id":"dir-retrieval-v2","level":"direction","parents":[],"version":1,"status":"ACTIVE","spec":{...},"source":"...","op":"create","gate":"USER_CROSS_MODEL_AUDIT"}'
 ```
 
 ## Node shape
@@ -73,20 +74,20 @@ A node has these required fields:
   "parents": ["<parent-id>"],
   "version": 1,
   "status": "ACTIVE",
-  "yardstick": { ... },
-  "provenance": "<free text or reference>"
+  "spec": { ... },
+  "source": "<free text or reference>"
 }
 ```
 
-Yardstick fields differ by level — supply all fields for the relevant level, no others:
+Spec fields differ by level. Supply all fields for the relevant level, no others:
 
-| level | required yardstick fields |
+| level | required spec fields |
 |---|---|
-| `project` | `north_star`, `contribution_spine`, `non_goals` |
-| `direction` | `hypothesis`, `metric`, `baselines`, `success_predicate` |
-| `task` | `experiment`, `config_ref`, `gate_predicate`, `autonomy_level` |
+| `project` | `goal`, `contributions`, `out_of_scope` |
+| `direction` | `hypothesis`, `metric`, `baselines`, `success_gate` |
+| `task` | `experiment`, `config`, `gate`, `control_mode` |
 
-A yardstick must not contain readings (measured values, results, verdicts). Those live in results surfaces, not in scope.
+A spec must not contain readings (measured values, results, verdicts). Those live in results surfaces, not in scope.
 
 Required gate per level — the `gate` field passed to `scope_ssot.propose_transition`:
 
@@ -113,10 +114,24 @@ If the log does not exist or is empty, there is no committed scope yet — the f
 Build the node dict according to the shape above, then call:
 
 ```python
-scope_ssot.validate_node(node)  # checks level + yardstick field legality only; id/version/parents/status/provenance must also be present (propose_transition relies on them)
+scope_ssot.validate_node(node)  # checks level + spec field legality only; id/version/parents/status/source must also be present (propose_transition relies on them)
 ```
 
 Fix any `RuleViolation` before proceeding. Do not hand-edit log files to work around a violation.
+
+**Migration from old Scope names.**
+
+If a live project still has old `yardstick` / `provenance` records, migrate them explicitly:
+
+```bash
+python3 skills/research-scope/scripts/migrate_scope_names.py \
+    --transitions outputs/_scope/transitions.jsonl \
+    --triage outputs/_scope/triage.jsonl \
+    --inventory research_html/data/research-packages.js \
+    --write
+```
+
+Run it without `--write` first for a dry run. Normal Scope validation rejects the old node shape.
 
 **3. Build the Triage item.**
 
@@ -128,7 +143,7 @@ The item dict passed to `triage.py propose` must include:
   "level": "project|direction|task",
   "change": "<one-sentence description of what changes>",
   "rationale": "<why this change is needed>",
-  "proposed_yardstick": { ... },
+  "proposed_spec": { ... },
   "post_accept_actions": []
 }
 ```
@@ -150,7 +165,7 @@ If the user answers no or later, leave `post_accept_actions` empty. Never create
 ```bash
 python3 skills/research-scope/scripts/triage.py propose \
     --log outputs/_scope/triage.jsonl \
-    --item '{"id":"scope-001","level":"direction","change":"...","rationale":"...","proposed_yardstick":{...}}'
+    --item '{"id":"scope-001","level":"direction","change":"...","rationale":"...","proposed_spec":{...}}'
 ```
 
 **5. Show pending items to the user and STOP.**
@@ -199,11 +214,11 @@ python3 skills/research-scope/scripts/triage.py propose \
       "level": "direction",
       "change": "Narrow retrieval target to zero-shot cross-modal setting only",
       "rationale": "In-distribution results are at ceiling; zero-shot gap is the open problem",
-      "proposed_yardstick": {
+      "proposed_spec": {
         "hypothesis": "Cross-modal zero-shot R@1 can reach 48 without supervised fine-tuning",
         "metric": "R@1 on MSRVTT zero-shot split",
         "baselines": ["CLIP-zero-shot=42.3"],
-        "success_predicate": "R@1 >= 48 on held-out seed"
+        "success_gate": "R@1 >= 48 on held-out seed"
       },
       "post_accept_actions": ["plan_validation_milestones"]
     }'
@@ -227,7 +242,7 @@ The skill is done when the pending Triage item is visible in `triage.jsonl`, has
 
 | Error | Meaning | Action |
 |---|---|---|
-| `RuleViolation` from `validate_node` | The node dict violates the schema (missing field, wrong level, reading in yardstick, etc.) | Fix the node dict and retry `validate_node` before calling `triage.py propose`. Never hand-edit the log. |
+| `RuleViolation` from `validate_node` | The node dict violates the schema (missing field, wrong level, reading in spec, etc.) | Fix the node dict and retry `validate_node` before calling `triage.py propose`. Never hand-edit the log. |
 | `RuleViolation` from `scope_ssot.propose_transition` (human path) | The transition op was refused by the gate check | Confirm the `gate` value matches `scope_ssot.REQUIRED_GATE[node["level"]]` (e.g. `USER_CROSS_MODEL_AUDIT` for direction) and retry. |
-| `triage.py propose` exits non-zero | Item JSON is malformed, or the `id` key is missing (the script enforces only `id`) | Check the `--item` JSON parses and carries `id`. `level`, `change`, `rationale`, and `proposed_yardstick` are required by this contract (downstream consumers need them) but are not validated by the script — include them anyway. |
+| `triage.py propose` exits non-zero | Item JSON is malformed, or the `id` key is missing (the script enforces only `id`) | Check the `--item` JSON parses and carries `id`. `level`, `change`, `rationale`, and `proposed_spec` are required by this contract (downstream consumers need them) but are not validated by the script — include them anyway. |
 | Triage item sits pending indefinitely | PM has not disposed it | Surface the pending list again; do not re-propose the same change. |

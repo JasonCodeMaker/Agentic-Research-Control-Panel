@@ -143,7 +143,7 @@ window.PACKAGE_FACTS["<pkg>"] = {
   schemaVersion: 1,
   packageId: "<pkg>",
   updatedAt: "2026-06-11",
-  sourceScopeNode: "dir/example",
+  sourceDirection: "dir/example",
   objective: {
     hypothesis: "...",
     metric: "...",

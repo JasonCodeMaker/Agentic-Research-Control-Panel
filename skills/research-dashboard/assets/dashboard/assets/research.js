@@ -251,8 +251,8 @@
     ].join("");
   }
 
-  function scopeYardstick(node) {
-    return (node && node.yardstick) || {};
+  function scopeSpec(node) {
+    return (node && node.spec) || {};
   }
 
   function scopeList(value) {
@@ -265,13 +265,13 @@
   }
 
   function scopeProjectHtml(node) {
-    var yard = scopeYardstick(node);
+    var spec = scopeSpec(node);
     var fields = [
-      '<div class="scope-field"><div class="k">North star</div><p class="scope-value">' + htmlEscape(yard.north_star || "unmeasured") + "</p></div>",
-      '<div class="scope-field"><div class="k">Contribution spine</div>' + scopeList(yard.contribution_spine) + "</div>",
+      '<div class="scope-field"><div class="k">Goal</div><p class="scope-value">' + htmlEscape(spec.goal || "unmeasured") + "</p></div>",
+      '<div class="scope-field"><div class="k">Contributions</div>' + scopeList(spec.contributions) + "</div>",
     ];
-    if (yard.non_goals) {
-      fields.push('<div class="scope-field"><div class="k">Non-goals</div>' + scopeList(yard.non_goals) + "</div>");
+    if (spec.out_of_scope) {
+      fields.push('<div class="scope-field"><div class="k">Out of scope</div>' + scopeList(spec.out_of_scope) + "</div>");
     }
     fields.push('<div class="scope-field"><div class="k">Version</div><p class="scope-value">' + htmlEscape(node.version || "unmeasured") + "</p></div>");
     return [
@@ -284,8 +284,8 @@
   }
 
   function scopeDirectionHtml(node, children) {
-    var yard = scopeYardstick(node);
-    var metric = typeof yard.metric === "object" ? (yard.metric.name || JSON.stringify(yard.metric)) : yard.metric;
+    var spec = scopeSpec(node);
+    var metric = typeof spec.metric === "object" ? (spec.metric.name || JSON.stringify(spec.metric)) : spec.metric;
     var childHtml = children.length
       ? children.map(scopeTaskHtml).join("")
       : '<li class="scope-task-empty">No accepted validation Milestones under this Direction.</li>';
@@ -295,10 +295,10 @@
       '<div><div class="k">Direction</div><h3>' + htmlEscape(node.id) + "</h3></div>",
       '<span class="chip" data-status="' + htmlEscape(node.status || "unmeasured") + '">' + htmlEscape(node.status || "unmeasured") + "</span>",
       "</div>",
-      '<p class="card-text"><b>Hypothesis:</b> ' + htmlEscape(yard.hypothesis || "unmeasured") + "</p>",
+      '<p class="card-text"><b>Hypothesis:</b> ' + htmlEscape(spec.hypothesis || "unmeasured") + "</p>",
       '<div class="kv-grid">',
       '<div class="k">Metric</div><div>' + htmlEscape(metric || "unmeasured") + "</div>",
-      '<div class="k">Gate</div><div>' + htmlEscape(yard.success_predicate || "unmeasured") + "</div>",
+      '<div class="k">Success gate</div><div>' + htmlEscape(spec.success_gate || "unmeasured") + "</div>",
       '<div class="k">Version</div><div>' + htmlEscape(node.version || "unmeasured") + "</div>",
       "</div>",
       '<ol class="scope-task-list">' + childHtml + "</ol>",
@@ -307,14 +307,14 @@
   }
 
   function scopeTaskHtml(node) {
-    var yard = scopeYardstick(node);
+    var spec = scopeSpec(node);
     return [
       '<li class="scope-task" data-scope-node="' + htmlEscape(node.id) + '">',
       '<code>' + htmlEscape(node.id) + "</code>",
-      '<p class="card-text"><b>Experiment:</b> ' + htmlEscape(yard.experiment || "not declared") + "</p>",
-      '<p class="card-text"><b>Config:</b> ' + htmlEscape(yard.config_ref || "not declared") + "</p>",
-      '<p class="card-text"><b>Autonomy:</b> ' + htmlEscape(yard.autonomy_level || "not declared") + "</p>",
-      '<p class="card-text"><b>Gate:</b> ' + htmlEscape(yard.gate_predicate || "not declared") + "</p>",
+      '<p class="card-text"><b>Experiment:</b> ' + htmlEscape(spec.experiment || "not declared") + "</p>",
+      '<p class="card-text"><b>Config:</b> ' + htmlEscape(spec.config || "not declared") + "</p>",
+      '<p class="card-text"><b>Control mode:</b> ' + htmlEscape(spec.control_mode || "not declared") + "</p>",
+      '<p class="card-text"><b>Gate:</b> ' + htmlEscape(spec.gate || "not declared") + "</p>",
       "</li>",
     ].join("");
   }

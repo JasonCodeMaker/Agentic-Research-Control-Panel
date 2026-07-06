@@ -1,6 +1,6 @@
 """Campaign conductor for /research-auto — deterministic routing over one Direction.
 
-Given a committed Direction and its gate (the yardstick's success_predicate), the conductor decides
+Given a committed Direction and its gate (the spec's success_gate), the conductor decides
 the next campaign move: form/await scope, materialize, design the next experiment, run the package,
 or exit (success / budget / no-candidate / ask). It owns gate evaluation, the typed cycle ledger, and
 the authority guard. It never writes a package surface, never writes the SSOT, never disposes
@@ -40,21 +40,21 @@ _EXECUTABLE_EXP_STATUSES = frozenset({"pending", "queued", "running"})
 
 
 class GateUnparseable(Exception):
-    """Raised when a success predicate carries no machine-checkable comparator clause."""
+    """Raised when a gate carries no machine-checkable comparator clause."""
 
 
 # ---- gate parsing + evaluation ----
 
-def parse_gate(predicate):
-    """Extract the first `<cmp> <number>` clause of a success predicate; raise if none exists."""
-    m = re.search(r"(>=|<=|>|<)\s*([0-9]+(?:\.[0-9]+)?)", str(predicate))
+def parse_gate(gate_text):
+    """Extract the first `<cmp> <number>` clause of a gate; raise if none exists."""
+    m = re.search(r"(>=|<=|>|<)\s*([0-9]+(?:\.[0-9]+)?)", str(gate_text))
     if not m:
-        raise GateUnparseable(f"no comparator clause in predicate: {predicate!r}")
+        raise GateUnparseable(f"no comparator clause in gate: {gate_text!r}")
     return {"cmp": m.group(1), "threshold": float(m.group(2))}
 
-def evaluate_gate(measured, predicate):
+def evaluate_gate(measured, gate_text):
     """PASS/FAIL the campaign gate for a measured value; the value must come from verified facts."""
-    gate = parse_gate(predicate)
+    gate = parse_gate(gate_text)
     value = float(measured)
     ops = {">=": value >= gate["threshold"], "<=": value <= gate["threshold"],
            ">": value > gate["threshold"], "<": value < gate["threshold"]}
@@ -115,7 +115,7 @@ def campaign_status(records, *, max_cycles):
 _ROUTE_TABLE = {
     "FORM_DIRECTION": (
         "No committed Direction matches this campaign yet.",
-        "I'll shape the direction through /research-brainstorm, rank competing framings when needed, and propose it through Triage with your gate as the success predicate.",
+        "I'll shape the direction through /research-brainstorm, rank competing framings when needed, and propose it through Triage with your gate as the success gate.",
         "You ratify the Direction + gate + dial when the proposal lands — the campaign starts after that.",
         False, "handoff", "/research-brainstorm"),
     "AWAIT_RATIFICATION": (
@@ -126,7 +126,7 @@ _ROUTE_TABLE = {
     "ASK_USER": (
         "The campaign gate is not machine-checkable, so the loop cannot self-judge success.",
         "Restate the gate as a comparator clause (e.g. `R@1 >= 48`), or tell me to run supervised with you judging results.",
-        "One sentence with a measurable predicate unblocks the campaign.",
+        "One sentence with a measurable gate unblocks the campaign.",
         True, "handoff", "user"),
     "SUCCESS_EXIT": (
         "The campaign gate has been cleared with verified evidence.",
@@ -225,7 +225,7 @@ def validate_campaign_action(action):
 
 # ---- per-cycle task shaping ----
 
-def milestone_task_node(direction_node, *, cycle, suffix, experiment, gate_predicate, dial):
+def milestone_task_node(direction_node, *, cycle, suffix, experiment, gate, dial):
     """Build a validated milestone Task node for a campaign cycle (the dial-keyed scope seam)."""
     if dial not in AUTONOMY_LEVELS:
         raise ValueError(f"unknown dial {dial!r}; expected one of {list(AUTONOMY_LEVELS)}")
@@ -236,11 +236,11 @@ def milestone_task_node(direction_node, *, cycle, suffix, experiment, gate_predi
         "parents": [direction_id],
         "version": 1,
         "status": "ACTIVE",
-        "yardstick": {"experiment": experiment,
-                      "config_ref": f"scope:{direction_id}#{suffix.lower()}",
-                      "gate_predicate": gate_predicate,
-                      "autonomy_level": dial},
-        "provenance": f"research-auto:cycle-{cycle}:{suffix}",
+        "spec": {"experiment": experiment,
+                 "config": f"scope:{direction_id}#{suffix.lower()}",
+                 "gate": gate,
+                 "control_mode": dial},
+        "source": f"research-auto:cycle-{cycle}:{suffix}",
     }
     scope_ssot.validate_node(node)
     return node
@@ -335,7 +335,7 @@ def detect_open_package(root, direction_id):
         pkg_id = _top_level_value(block, "id")
         if not pkg_id:
             continue
-        if _top_level_value(block, "sourceScopeNode") != direction_id:
+        if _top_level_value(block, "sourceDirection") != direction_id:
             continue
         if _top_level_value(block, "category") != "in-progress":
             continue
@@ -355,11 +355,11 @@ def main(argv=None):
     ps.add_argument("--direction-id", required=True)
     ps.add_argument("--max-cycles", type=int, default=5)
     ps.add_argument("--dial", default="AUTONOMOUS", choices=AUTONOMY_LEVELS)
-    ps.add_argument("--gate", default="", help="override predicate; default = direction success_predicate")
+    ps.add_argument("--gate", default="", help="override gate; default = direction success_gate")
     ps.add_argument("--no-candidate", action="store_true")
     pg = sub.add_parser("gate-eval")
     pg.add_argument("--measured", required=True)
-    pg.add_argument("--predicate", required=True)
+    pg.add_argument("--gate", required=True)
     pa = sub.add_parser("append-cycle")
     pa.add_argument("--root", default=".")
     pa.add_argument("--direction-id", required=True)
@@ -372,9 +372,9 @@ def main(argv=None):
 
     if args.cmd == "status":
         node = committed_direction(args.root, args.direction_id)
-        predicate = args.gate or (node or {}).get("yardstick", {}).get("success_predicate", "")
+        gate_text = args.gate or (node or {}).get("spec", {}).get("success_gate", "")
         try:
-            parse_gate(predicate)
+            parse_gate(gate_text)
             gate_parseable = True
         except GateUnparseable:
             gate_parseable = False
@@ -385,12 +385,12 @@ def main(argv=None):
                              pending_direction=bool(pending_direction_items(args.root, args.direction_id)),
                              status=status, open_pkg=open_pkg, has_executable_exp=executable,
                              no_candidate=args.no_candidate, dial=args.dial, gate_parseable=gate_parseable)
-        state = {"direction_committed": node is not None, "gate": predicate,
+        state = {"direction_committed": node is not None, "gate": gate_text,
                  "gate_parseable": gate_parseable, "open_pkg": open_pkg,
                  "has_executable_exp": executable, **status}
         print(json.dumps({"state": state, "action": action}, ensure_ascii=False))
     elif args.cmd == "gate-eval":
-        print(json.dumps({"gate_eval": evaluate_gate(args.measured, args.predicate)}))
+        print(json.dumps({"gate_eval": evaluate_gate(args.measured, args.gate)}))
     elif args.cmd == "append-cycle":
         row = append_cycle(ledger_path(args.root, args.direction_id), json.loads(args.record))
         print(json.dumps(row, ensure_ascii=False))

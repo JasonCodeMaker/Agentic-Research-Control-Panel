@@ -26,7 +26,7 @@ RENDER = ROOT / "skills" / "research-dashboard" / "assets" / "dashboard" / "asse
 
 _PACKAGES_JS = '''window.RESEARCH_PACKAGES = [
   { id: "2026-06-03-active", name: "Active", category: "in-progress", status: "CONTEXT_LOADED",
-    sourceScopeNode: "dir/active", activeGate: "g", primaryMetricVsGate: "m vs g", nextRoute: "run",
+    sourceDirection: "dir/active", activeGate: "g", primaryMetricVsGate: "m vs g", nextRoute: "run",
     methodsTried: [] },
   { id: "2026-05-01-f1", name: "F1", category: "fail", status: "ARCHIVED", terminationMessage: "x",
     methodsTried: [ { method: "mining", hypothesis: "h1", gate: "g", measured: "m", verdict: "FAIL",
@@ -51,8 +51,8 @@ def test_full_wiki_integration(tmp_path, monkeypatch):
     log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
     scope_ssot.propose_transition(
         {"id": "dir/active", "level": "direction", "parents": ["project/main"], "version": 1,
-         "status": "ACTIVE", "yardstick": {"hypothesis": "active hypothesis", "metric": {"name": "R@1"},
-                                           "baselines": ["b"], "success_predicate": "R@1>=48"}},
+         "status": "ACTIVE", "spec": {"hypothesis": "active hypothesis", "metric": {"name": "R@1"},
+                                           "baselines": ["b"], "success_gate": "R@1>=48"}},
         op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
     # Land a project rule through the real single entry (research-op rule target).
     assert _op(tmp_path, "--pkg", "_project", "--op", "insert", "--target", "rule",

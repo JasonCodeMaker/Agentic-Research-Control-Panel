@@ -313,9 +313,9 @@ def check_scope_provenance(pkg: dict) -> list[Violation]:
     """Check package links back to committed Scope Direction and Milestones."""
     pid = pkg.get("id", "(no-id)")
     has_scope_link = (
-        field_present(pkg.get("sourceScopeNode")) or
-        field_present(pkg.get("sourceScopeMilestones")) or
-        any(field_present((exp or {}).get("parentTask")) for exp in (pkg.get("experiments") or []))
+        field_present(pkg.get("sourceDirection")) or
+        field_present(pkg.get("sourceTasks")) or
+        any(field_present((exp or {}).get("sourceTask")) for exp in (pkg.get("experiments") or []))
     )
     if not has_scope_link:
         return []
@@ -330,30 +330,30 @@ def check_scope_provenance(pkg: dict) -> list[Violation]:
     latest = latest_scope_records(records)
     violations: list[Violation] = []
 
-    direction_id = pkg.get("sourceScopeNode")
+    direction_id = pkg.get("sourceDirection")
     if not field_present(direction_id):
         violations.append(Violation(pid, "scope-source-missing",
-                                    "sourceScopeNode is required when experiments carry parentTask links",
+                                    "sourceDirection is required when experiments carry sourceTask links",
                                     "error"))
         return violations
 
     direction = projection.get(direction_id)
     if not direction:
         violations.append(Violation(pid, "scope-source-stale",
-                                    f"sourceScopeNode={direction_id!r} not found in Scope projection", "error"))
+                                    f"sourceDirection={direction_id!r} not found in Scope projection", "error"))
         return violations
     if direction.get("level") != "direction":
         violations.append(Violation(pid, "scope-source-not-direction",
-                                    f"sourceScopeNode={direction_id!r} has level={direction.get('level')!r}", "error"))
+                                    f"sourceDirection={direction_id!r} has level={direction.get('level')!r}", "error"))
     if direction.get("status") != "ACTIVE":
         violations.append(Violation(pid, "scope-source-inactive",
-                                    f"sourceScopeNode={direction_id!r} has status={direction.get('status')!r}", "error"))
+                                    f"sourceDirection={direction_id!r} has status={direction.get('status')!r}", "error"))
 
-    declared_version = pkg.get("sourceScopeVersion")
+    declared_version = pkg.get("sourceVersion")
     latest_rec = latest.get(direction_id)
     if field_present(declared_version) and latest_rec and str(declared_version) != str(latest_rec.get("scope_version")):
         violations.append(Violation(pid, "scope-source-version-drift",
-                                    f"sourceScopeVersion={declared_version!r} but latest Scope version is {latest_rec.get('scope_version')!r}",
+                                    f"sourceVersion={declared_version!r} but latest Scope version is {latest_rec.get('scope_version')!r}",
                                     "error"))
 
     active_milestones = {
@@ -362,10 +362,10 @@ def check_scope_provenance(pkg: dict) -> list[Violation]:
         and node.get("status") == "ACTIVE"
         and direction_id in (node.get("parents") or [])
     }
-    milestone_rows = pkg.get("sourceScopeMilestones") or []
+    milestone_rows = pkg.get("sourceTasks") or []
     if not isinstance(milestone_rows, list):
         violations.append(Violation(pid, "scope-milestones-not-list",
-                                    "sourceScopeMilestones must be an array", "error"))
+                                    "sourceTasks must be an array", "error"))
         milestone_rows = []
     declared_milestones = {
         row.get("id") for row in milestone_rows
@@ -373,33 +373,33 @@ def check_scope_provenance(pkg: dict) -> list[Violation]:
     }
     if not declared_milestones:
         violations.append(Violation(pid, "scope-milestones-missing",
-                                    "sourceScopeMilestones is required for Scope-materialized packages", "error"))
+                                    "sourceTasks is required for Scope-materialized packages", "error"))
 
     for mid in sorted(declared_milestones - active_milestones):
         violations.append(Violation(pid, "scope-milestone-stale",
-                                    f"sourceScopeMilestones id={mid!r} is not an active Task child of {direction_id!r}",
+                                    f"sourceTasks id={mid!r} is not an active Task child of {direction_id!r}",
                                     "error"))
     for mid in sorted(active_milestones - declared_milestones):
         violations.append(Violation(pid, "scope-milestone-uncovered",
-                                    f"active Scope Milestone {mid!r} is not listed in sourceScopeMilestones",
+                                    f"active Scope Milestone {mid!r} is not listed in sourceTasks",
                                     "error"))
 
     experiments = pkg.get("experiments") or []
     parent_tasks = set()
     for i, exp in enumerate(experiments):
-        parent = (exp or {}).get("parentTask")
+        parent = (exp or {}).get("sourceTask")
         if not field_present(parent):
             violations.append(Violation(pid, "scope-parent-task-missing",
-                                        f"experiments[{i}] has no parentTask", "error"))
+                                        f"experiments[{i}] has no sourceTask", "error"))
             continue
         parent_tasks.add(parent)
         if parent not in declared_milestones:
             violations.append(Violation(pid, "scope-parent-task-stale",
-                                        f"experiments[{i}].parentTask={parent!r} is not in sourceScopeMilestones",
+                                        f"experiments[{i}].sourceTask={parent!r} is not in sourceTasks",
                                         "error"))
     for mid in sorted(declared_milestones - parent_tasks):
         violations.append(Violation(pid, "scope-milestone-no-experiment",
-                                    f"sourceScopeMilestone {mid!r} has no experiment with parentTask", "error"))
+                                    f"sourceTask {mid!r} has no experiment row", "error"))
 
     return violations
 

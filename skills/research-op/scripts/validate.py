@@ -708,7 +708,7 @@ def rule_acquit_needs_verdict(pkg, op, target, payload, state) -> Reject | None:
 
 
 def rule_acquit_judge_independent(pkg, op, target, payload, state) -> Reject | None:
-    """L2 (Stage 2a): the acquit verdict must be independent enough for the Task's autonomy level."""
+    """L2 (Stage 2a): the acquit verdict must be independent enough for the Task's control mode."""
     if target != "status" or op != "update":
         return None
     if payload.get("to_category") != "success":
@@ -716,13 +716,13 @@ def rule_acquit_judge_independent(pkg, op, target, payload, state) -> Reject | N
     verdict = payload.get("verdict")
     if not verdict:
         return None  # presence is handled by rule_acquit_needs_verdict
-    level = payload.get("autonomy_level", "SUPERVISED")
-    reason = verifier.assess_acquit(verdict, level)
+    mode = payload.get("control_mode", "SUPERVISED")
+    reason = verifier.assess_acquit(verdict, mode)
     if reason:
         return Reject(
             rule="acquit-judge-independent",
             file=None, anchor=None, field="verdict",
-            expected=f"a verdict whose independence satisfies autonomy={level!r} and that acquits",
+            expected=f"a verdict whose independence satisfies control_mode={mode!r} and that acquits",
             actual=reason,
             suggested_fix="Use a fresh judge distinct from the producer (cross-family at Autonomous) "
                           "and acquit only on a 'sound' verdict.",

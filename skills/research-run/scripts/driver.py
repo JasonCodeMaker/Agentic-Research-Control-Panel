@@ -72,7 +72,7 @@ def _pack_candidate(node, role_returns):
     return {
         "attempted": ", ".join(r["agent_role"] for r in role_returns) or "none",
         "found": "; ".join(map(str, evidence)) or "none",
-        "hypothesis_state": node["yardstick"]["hypothesis"],
+        "hypothesis_state": node["spec"]["hypothesis"],
         "next_action": last.get("recommended_next_action") or "none",
         "blocking_decision": "; ".join(map(str, blockers)) or "none",
     }
@@ -82,7 +82,7 @@ def run_tick(pkg_id, scope_node, role_sequence, adapters, *, context=None, pack_
     """Dry-run one dispatch tick: run each role adapter in order, validate its return, collect the
     proposed research-op mutations + a PACK candidate. Halts at the first invalid return. Writes no
     package surface; writes the PACK candidate only if pack_log is given."""
-    scope_ssot.validate_node(scope_node)  # malformed yardstick stops the tick before any role runs
+    scope_ssot.validate_node(scope_node)  # malformed spec stops the tick before any role runs
     ctx = dict(context or {})
     ctx["scope_node"] = scope_node
     roles_run, role_returns, proposed = [], [], []

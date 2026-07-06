@@ -62,15 +62,15 @@ def latest_direction(direction_id: str, transitions_path: str | Path) -> dict:
     return node
 
 
-def build_milestones(direction_node: dict, *, autonomy_level: str = "CHECKPOINTED") -> list[dict]:
+def build_milestones(direction_node: dict, *, control_mode: str = "CHECKPOINTED") -> list[dict]:
     """Return high-level Task/Milestone node proposals for a Direction node."""
     direction_id = direction_node["id"]
     dslug = _direction_slug(direction_id)
-    y = direction_node["yardstick"]
-    hypothesis = str(y["hypothesis"])
-    metric = _metric_label(y["metric"])
-    baselines = _baseline_label(y["baselines"])
-    success_predicate = str(y["success_predicate"])
+    spec = direction_node["spec"]
+    hypothesis = str(spec["hypothesis"])
+    metric = _metric_label(spec["metric"])
+    baselines = _baseline_label(spec["baselines"])
+    success_gate = str(spec["success_gate"])
     specs = [
         (
             "M0-baseline-validity",
@@ -82,7 +82,7 @@ def build_milestones(direction_node: dict, *, autonomy_level: str = "CHECKPOINTE
             "M1-main-hypothesis",
             f"Validate the main direction hypothesis: {hypothesis}",
             f"main result artifact for {metric}",
-            success_predicate,
+            success_gate,
         ),
         (
             "M2-mechanism-validation",
@@ -111,13 +111,13 @@ def build_milestones(direction_node: dict, *, autonomy_level: str = "CHECKPOINTE
             "parents": [direction_id],
             "version": 1,
             "status": "ACTIVE",
-            "yardstick": {
+            "spec": {
                 "experiment": experiment,
-                "config_ref": f"scope:{direction_id}#{suffix.lower()}",
-                "gate_predicate": gate,
-                "autonomy_level": autonomy_level,
+                "config": f"scope:{direction_id}#{suffix.lower()}",
+                "gate": gate,
+                "control_mode": control_mode,
             },
-            "provenance": f"milestone-plan:{direction_id}:{idx}",
+            "source": f"milestone-plan:{direction_id}:{idx}",
         }
         scope_ssot.validate_node(node)
         nodes.append(node)
@@ -134,7 +134,7 @@ def proposal_for(node: dict, direction_id: str) -> dict:
         "gate": scope_ssot.REQUIRED_GATE["task"],
         "change": f"Create validation milestone {suffix} for {direction_id}",
         "rationale": "Accepted Direction needs high-level validation milestones before package materialization.",
-        "proposed_yardstick": node["yardstick"],
+        "proposed_spec": node["spec"],
         "proposed_node": node,
         "post_accept_actions": [],
     }
@@ -145,7 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--direction-id", required=True)
     p.add_argument("--transitions", default="outputs/_scope/transitions.jsonl")
     p.add_argument("--triage", default="outputs/_scope/triage.jsonl")
-    p.add_argument("--autonomy-level", default="CHECKPOINTED")
+    p.add_argument("--control-mode", default="CHECKPOINTED")
     p.add_argument("--dry-run", action="store_true", help="print proposals without writing triage")
     return p
 
@@ -154,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     direction = latest_direction(args.direction_id, args.transitions)
     proposals = [proposal_for(node, args.direction_id)
-                 for node in build_milestones(direction, autonomy_level=args.autonomy_level)]
+                 for node in build_milestones(direction, control_mode=args.control_mode)]
     if args.dry_run:
         print(json.dumps(proposals, indent=2, ensure_ascii=False))
         return 0

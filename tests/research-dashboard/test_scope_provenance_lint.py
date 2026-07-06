@@ -16,13 +16,13 @@ def _direction_node():
         "parents": ["project/main"],
         "version": 1,
         "status": "ACTIVE",
-        "yardstick": {
+        "spec": {
             "hypothesis": "better retrieval objective improves Recall@10",
             "metric": {"name": "Recall@10", "dir": "higher"},
             "baselines": ["xpool"],
-            "success_predicate": "Recall@10 >= baseline + 2",
+            "success_gate": "Recall@10 >= baseline + 2",
         },
-        "provenance": "test",
+        "source": "test",
     }
 
 
@@ -33,13 +33,13 @@ def _task_node(suffix="M0-baseline-validity", version=1):
         "parents": ["dir/retrieval-v2"],
         "version": version,
         "status": "ACTIVE",
-        "yardstick": {
+        "spec": {
             "experiment": suffix,
-            "config_ref": f"configs/{suffix}.yaml",
-            "gate_predicate": "Recall@10 >= baseline",
-            "autonomy_level": "CHECKPOINTED",
+            "config": f"configs/{suffix}.yaml",
+            "gate": "Recall@10 >= baseline",
+            "control_mode": "CHECKPOINTED",
         },
-        "provenance": "test",
+        "source": "test",
     }
 
 
@@ -77,10 +77,10 @@ def _pkg(direction_rec, task_rec, parent_task=None):
         "category": "in-progress",
         "status": "CONTEXT_LOADED",
         "pages": [],
-        "sourceScopeNode": direction_rec["node_id"],
-        "sourceScopeVersion": direction_rec["scope_version"],
-        "sourceScopeTxn": direction_rec["transaction_id"],
-        "sourceScopeMilestones": [{
+        "sourceDirection": direction_rec["node_id"],
+        "sourceVersion": direction_rec["scope_version"],
+        "sourceChange": direction_rec["transaction_id"],
+        "sourceTasks": [{
             "id": task_rec["node_id"],
             "scopeVersion": task_rec["scope_version"],
             "txn": task_rec["transaction_id"],
@@ -92,7 +92,7 @@ def _pkg(direction_rec, task_rec, parent_task=None):
             "output": "outputs/2026-06-03-retrieval-v2/P0/result.json",
             "gate": "Recall@10 >= baseline",
             "status": "QUEUED",
-            "parentTask": parent,
+            "sourceTask": parent,
         }],
     }
 

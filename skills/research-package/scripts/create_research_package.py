@@ -261,12 +261,12 @@ def append_inventory(root: Path, package_id: str, args: argparse.Namespace, page
     }
     if args.experiments_json:
         item["experiments"] = parse_experiments_json(args.experiments_json)
-    if args.source_scope_node:
-        item["sourceScopeNode"] = args.source_scope_node
-        item["sourceScopeVersion"] = args.source_scope_version
-        item["sourceScopeTxn"] = args.source_scope_txn
-        if args.source_scope_milestones:
-            item["sourceScopeMilestones"] = json.loads(args.source_scope_milestones)
+    if args.source_direction:
+        item["sourceDirection"] = args.source_direction
+        item["sourceVersion"] = args.source_version
+        item["sourceChange"] = args.source_change
+        if args.source_tasks:
+            item["sourceTasks"] = json.loads(args.source_tasks)
     rendered = js_object(item)
 
     compact_empty = "window.RESEARCH_PACKAGES = [];"
@@ -331,14 +331,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--last-updated", default=dt.date.today().isoformat(), dest="last_updated")
     parser.add_argument("--experiments-json", "--experiments", default="", dest="experiments_json",
                         help="JSON list of initial experiments[] rows to add to inventory")
-    parser.add_argument("--source-scope-node", default="", dest="source_scope_node",
+    parser.add_argument("--source-direction", default="", dest="source_direction",
                         help="SSOT direction node id that produced this package")
-    parser.add_argument("--source-scope-version", default="", dest="source_scope_version",
+    parser.add_argument("--source-version", default="", dest="source_version",
                         help="SSOT scope version that produced this package")
-    parser.add_argument("--source-scope-txn", default="", dest="source_scope_txn",
+    parser.add_argument("--source-change", default="", dest="source_change",
                         help="SSOT transition txn id that produced this package")
-    parser.add_argument("--source-scope-milestones", default="", dest="source_scope_milestones",
-                        help="JSON list of accepted SSOT milestone task node ids")
+    parser.add_argument("--source-tasks", default="", dest="source_tasks",
+                        help="JSON list of accepted SSOT task node ids")
     parser.add_argument("--force", action="store_true", help="overwrite existing package html files")
     return parser
 

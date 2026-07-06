@@ -3,7 +3,7 @@
 
 Detects whether the workspace is empty or existing, scaffolds a deep-learning
 project skeleton in place, writes a project-level prior-knowledge artifact, and
-builds a *validated* Project-node Triage proposal. It never commits the SSOT —
+builds a *validated* Project-node Triage proposal. It never commits the SSOT;
 the proposal flows through the same triage.py gate research-scope uses.
 """
 
@@ -135,24 +135,24 @@ def _slug(value: str) -> str:
     return slug or "project"
 
 
-def build_project_proposal(node_id: str, yardstick: dict, *, provenance: str,
+def build_project_proposal(node_id: str, spec: dict, *, source: str,
                            item_id: str | None = None, change: str | None = None,
                            rationale: str | None = None) -> dict:
-    """Build a validated level=project Triage item. Raises RuleViolation on a bad yardstick."""
+    """Build a validated level=project Triage item. Raises RuleViolation on a bad spec."""
     node = {
         "id": node_id, "level": "project", "parents": [], "version": 1,
-        "status": "ACTIVE", "yardstick": yardstick, "provenance": provenance,
+        "status": "ACTIVE", "spec": spec, "source": source,
     }
-    scope_ssot.validate_node(node)  # reject-before-propose: yardstick must be project-legal
+    scope_ssot.validate_node(node)  # reject-before-propose: spec must be project-legal
     return {
         "id": item_id or f"project-{_slug(node_id.rsplit('/', 1)[-1])}",
         "level": "project",
         "node_id": node_id,
         "op": "create",
         "gate": scope_ssot.REQUIRED_GATE["project"],
-        "change": change or f"Define the project north-star for {node_id}",
+        "change": change or f"Define the project goal for {node_id}",
         "rationale": rationale or "Onboarding bootstrapped a project objective from the workspace; PM must ratify it.",
-        "proposed_yardstick": yardstick,
+        "proposed_spec": spec,
         "proposed_node": node,
         "post_accept_actions": [],
     }
@@ -180,8 +180,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     pb = sub.add_parser("build-proposal", help="build a validated project Triage item (pipe to triage.py)")
     pb.add_argument("--node-id", required=True)
-    pb.add_argument("--yardstick", required=True, help="JSON: north_star, contribution_spine, non_goals")
-    pb.add_argument("--provenance", required=True)
+    pb.add_argument("--spec", required=True, help="JSON: goal, contributions, out_of_scope")
+    pb.add_argument("--source", required=True)
     pb.add_argument("--item-id", default=None)
 
     ph = sub.add_parser("has-project-scope", help="True iff a Project node is committed in the SSOT")
@@ -207,8 +207,8 @@ def main(argv: list[str] | None = None) -> int:
         path = write_prior_knowledge(args.state_root, args.content)
         print(json.dumps({"path": str(path)}, ensure_ascii=False))
     elif args.cmd == "build-proposal":
-        item = build_project_proposal(args.node_id, json.loads(args.yardstick),
-                                      provenance=args.provenance, item_id=args.item_id)
+        item = build_project_proposal(args.node_id, json.loads(args.spec),
+                                      source=args.source, item_id=args.item_id)
         print(json.dumps(item, ensure_ascii=False))
     elif args.cmd == "has-project-scope":
         print(json.dumps({"has_project_scope": has_project_scope(args.transitions)}, ensure_ascii=False))

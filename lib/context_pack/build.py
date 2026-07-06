@@ -178,7 +178,7 @@ def export_learned_rules(selfevolve_root: str, root: str) -> int:
 
 def resolve_direction(packages: list, pkg_id: str, transitions_path: str):
     """Active direction node + its scope_version for a package (None, 0 if unresolved)."""
-    node_id = next((p.get("sourceScopeNode") for p in packages if p.get("id") == pkg_id), None)
+    node_id = next((p.get("sourceDirection") for p in packages if p.get("id") == pkg_id), None)
     if not node_id:
         return None, 0
     node = scope_ssot.fold(scope_ssot.read_log(transitions_path)).get(node_id)

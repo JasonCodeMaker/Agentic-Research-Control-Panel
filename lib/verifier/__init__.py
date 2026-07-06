@@ -2,7 +2,7 @@
 
 The substantive judgment is made by a fresh, cross-family model (via mcp__codex__codex, called
 by the research-run / research-op skill with file paths only). This lib owns the *deterministic*
-half: which independence a Task's autonomy level requires, and whether a verdict is allowed to acquit.
+half: which independence a Task's control mode requires, and whether a verdict is allowed to acquit.
 A judge may DRIVE review but may never ACQUIT its own work.
 """
 
@@ -16,10 +16,10 @@ _FAMILY_PREFIXES = {
     "codex": "openai", "gemini": "google", "llama": "meta", "mistral": "mistral",
 }
 
-# Autonomy dial canonical values (SSOT for this concept).
-AUTONOMY_LEVELS = ("SUPERVISED", "CHECKPOINTED", "DEFERRED", "AUTONOMOUS")
+# Control mode canonical values (SSOT for this concept).
+CONTROL_MODES = ("SUPERVISED", "CHECKPOINTED", "DEFERRED", "AUTONOMOUS")
 
-# Autonomy level -> required judge independence. The dial escalates this.
+# Control mode -> required judge independence. The mode escalates this.
 INDEPENDENCE_TABLE = {
     "SUPERVISED":   "HUMAN_BACKSTOP",   # human is the backstop; L2 is a deferring placeholder
     "CHECKPOINTED": "CROSS_MODEL",
@@ -30,7 +30,7 @@ INDEPENDENCE_TABLE = {
 # Gate kind canonical values.
 GATE_KIND = ("TERMINAL", "INTERMEDIATE")
 
-# Autonomy level -> pause cadence + whether the loop blocks waiting on a human.
+# Control mode -> pause cadence + whether the loop blocks waiting on a human.
 # SUPERVISED pauses at every gate; CHECKPOINTED only at terminal gates; DEFERRED/AUTONOMOUS never block.
 DIAL_BEHAVIOR = {
     "SUPERVISED":   {"pauses": ("TERMINAL", "INTERMEDIATE"), "blocks": True},
@@ -46,7 +46,7 @@ ACQUIT_STATES = {"SOUND"}
 
 
 class VerifierError(Exception):
-    """Raised when the verifier configuration is invalid (e.g. an unknown autonomy level)."""
+    """Raised when the verifier configuration is invalid, e.g. an unknown control mode."""
 
 
 def family_of(model_id):
@@ -58,11 +58,11 @@ def family_of(model_id):
     return "unknown"
 
 
-def assess_acquit(verdict, autonomy_level):
-    """Return a violation reason if this verdict may not acquit at this autonomy level, else None."""
-    required = INDEPENDENCE_TABLE.get(autonomy_level)
+def assess_acquit(verdict, control_mode):
+    """Return a violation reason if this verdict may not acquit at this control mode, else None."""
+    required = INDEPENDENCE_TABLE.get(control_mode)
     if required is None:
-        raise VerifierError(f"unknown autonomy level: {autonomy_level!r}")
+        raise VerifierError(f"unknown control mode: {control_mode!r}")
     if required == "HUMAN_BACKSTOP":
         return None  # Supervised: presence + L1 metric gate already enforced upstream
     if verdict.get("result") not in ACQUIT_STATES:
@@ -73,23 +73,23 @@ def assess_acquit(verdict, autonomy_level):
     if producer == judge:
         return "producer == judge (may DRIVE review but never ACQUIT)"
     if required == "CROSS_FAMILY" and family_of(producer) == family_of(judge):
-        return f"autonomy {autonomy_level!r} requires a cross-family judge"
+        return f"control mode {control_mode!r} requires a cross-family judge"
     return None
 
 
-def pauses_at(autonomy_level, gate_kind):
-    """Whether the loop pauses for a human at a gate of this kind at this autonomy level."""
-    behavior = DIAL_BEHAVIOR.get(autonomy_level)
+def pauses_at(control_mode, gate_kind):
+    """Whether the loop pauses for a human at a gate of this kind at this control mode."""
+    behavior = DIAL_BEHAVIOR.get(control_mode)
     if behavior is None:
-        raise VerifierError(f"unknown autonomy level: {autonomy_level!r}")
+        raise VerifierError(f"unknown control mode: {control_mode!r}")
     return gate_kind in behavior["pauses"]
 
 
-def blocks(autonomy_level):
-    """Whether the loop blocks waiting on a human at this autonomy level (DEFERRED/AUTONOMOUS never do)."""
-    behavior = DIAL_BEHAVIOR.get(autonomy_level)
+def blocks(control_mode):
+    """Whether the loop blocks waiting on a human at this control mode. DEFERRED/AUTONOMOUS never do."""
+    behavior = DIAL_BEHAVIOR.get(control_mode)
     if behavior is None:
-        raise VerifierError(f"unknown autonomy level: {autonomy_level!r}")
+        raise VerifierError(f"unknown control mode: {control_mode!r}")
     return behavior["blocks"]
 
 

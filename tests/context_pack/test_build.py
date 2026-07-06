@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node requi
 
 _PACKAGES_JS = '''window.RESEARCH_PACKAGES = [
   { id: "2026-06-03-retrieval-v2", name: "Retrieval V2", category: "in-progress",
-    status: "CONTEXT_LOADED", sourceScopeNode: "dir/retrieval-v2",
+    status: "CONTEXT_LOADED", sourceDirection: "dir/retrieval-v2",
     activeGate: "R@1>=48", primaryMetricVsGate: "R@1 vs 48", nextRoute: "run P0",
     methodsTried: [] },
   { id: "2026-05-01-old", name: "Old", category: "fail", status: "ARCHIVED",
@@ -56,9 +56,9 @@ def _setup(tmp_path):
     node = {
         "id": "dir/retrieval-v2", "level": "direction", "parents": ["project/main"], "version": 3,
         "status": "ACTIVE",
-        "yardstick": {"hypothesis": "Contrastive retrieval improves zero-shot Recall@1",
+        "spec": {"hypothesis": "Contrastive retrieval improves zero-shot Recall@1",
                       "metric": {"name": "Recall@1", "dir": "higher"},
-                      "baselines": ["CLIP=42.3"], "success_predicate": "Recall@1 >= 48"},
+                      "baselines": ["CLIP=42.3"], "success_gate": "Recall@1 >= 48"},
     }
     scope_ssot.propose_transition(node, op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
 

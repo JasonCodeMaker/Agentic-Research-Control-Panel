@@ -20,13 +20,13 @@ def _direction_node():
         "parents": ["project/main"],
         "version": 2,
         "status": "ACTIVE",
-        "yardstick": {
+        "spec": {
             "hypothesis": "Contrastive retrieval improves zero-shot Recall@1",
             "metric": {"name": "Recall@1", "dir": "higher"},
             "baselines": ["CLIP zero-shot = 42.3"],
-            "success_predicate": "Recall@1 >= 48",
+            "success_gate": "Recall@1 >= 48",
         },
-        "provenance": "accepted:t1",
+        "source": "accepted:t1",
     }
 
 
@@ -58,7 +58,7 @@ def test_plan_milestones_writes_pending_task_proposals_only(tmp_path):
     assert all(item["level"] == "task" for item in pending)
     assert all(item["gate"] == "AGENT_DEFERRED_ACK" for item in pending)
     assert pending[0]["proposed_node"]["parents"] == ["dir/retrieval-v2"]
-    assert pending[0]["proposed_node"]["yardstick"]["autonomy_level"] == "CHECKPOINTED"
+    assert pending[0]["proposed_node"]["spec"]["control_mode"] == "CHECKPOINTED"
 
     # The script proposes only; the committed transition log still has just the Direction.
     records = scope_ssot.read_log(transitions)
