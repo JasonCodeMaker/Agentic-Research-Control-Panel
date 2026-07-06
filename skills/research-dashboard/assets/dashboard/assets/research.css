@@ -1912,6 +1912,31 @@ html[data-stale="true"] .masthead {
 .learnings-package-head h3 a:hover { text-decoration: underline; }
 .learnings-message { margin: 4px 0; color: var(--slate); }
 .learnings-meta { margin: 4px 0 8px 0; font-size: 12px; color: var(--g600); }
+.learnings-decision-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin: 10px 0 12px 0;
+}
+.learnings-decision-grid > div {
+  padding: 9px 10px;
+  border: 1px solid var(--g200);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.015);
+}
+.learnings-decision-grid .scope-impact {
+  grid-column: 1 / -1;
+}
+.learnings-decision-grid .k {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  color: var(--g600);
+}
+.learnings-decision-grid p {
+  margin: 3px 0 0 0;
+  color: var(--slate);
+}
 
 .methods-tried-table {
   width: 100%;
@@ -1931,8 +1956,8 @@ html[data-stale="true"] .masthead {
   padding: 6px 8px;
   border-top: 1px solid var(--g200);
 }
-.methods-tried-table tr[data-verdict="fail"] td { background: rgba(174, 79, 56, 0.05); }
-.methods-tried-table tr[data-verdict="pass"] td { background: rgba(116, 142, 80, 0.05); }
+.methods-tried-table tr[data-verdict="FAIL"] td { background: rgba(174, 79, 56, 0.05); }
+.methods-tried-table tr[data-verdict="PASS"] td { background: rgba(116, 142, 80, 0.05); }
 
 .chip-spine {
   border-color: var(--g600);

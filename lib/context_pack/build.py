@@ -10,6 +10,7 @@ degrades gracefully (missing → that section is simply absent from the pack).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import subprocess
@@ -23,6 +24,7 @@ import scope_ssot  # noqa: E402
 from context_pack import assemble, render_md, render_json, is_stale  # noqa: E402
 
 RULES_PREFIX = "window.RESEARCH_RULES = "
+PIPELINE_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _now_iso() -> str:
@@ -56,17 +58,20 @@ def load_packages(root: str) -> list:
 
 
 def load_rules_registry(root: str) -> list:
-    """Read data/rules.js — the unified rules registry. Graceful: [] on any failure."""
+    """Read data/rules.js — missing is empty, malformed fails closed."""
     p = Path(root) / "data" / "rules.js"
     if not p.exists():
         return []
     text = p.read_text(encoding="utf-8").strip()
     if not text.startswith(RULES_PREFIX):
-        return []
+        raise ValueError(f"rules registry malformed: {p} must start with {RULES_PREFIX!r}")
     try:
-        return json.loads(text[len(RULES_PREFIX):].rstrip(";"))
-    except json.JSONDecodeError:
-        return []
+        rows = json.loads(text[len(RULES_PREFIX):].rstrip(";"))
+    except json.JSONDecodeError as e:
+        raise ValueError(f"rules registry malformed: {p}: {e}") from e
+    if not isinstance(rows, list):
+        raise ValueError(f"rules registry malformed: {p}: expected JSON array")
+    return rows
 
 
 def load_rules_registry_strict(root: str) -> list:
@@ -90,6 +95,13 @@ def load_learned_rules(root: str) -> list:
     """ACTIVE project-level rule texts from the registry (replaces the rules.md bullets)."""
     return [r.get("text", "") for r in load_rules_registry(root)
             if r.get("level") == "project" and r.get("status") == "ACTIVE" and r.get("text")]
+
+
+def load_package_binding_rules(root: str, pkg_id: str) -> list:
+    """ACTIVE package-level binding rows for the package currently receiving the pack."""
+    return [r.get("text", "") for r in load_rules_registry(root)
+            if r.get("level") == "package" and r.get("kind") == "binding"
+            and r.get("pkg") == pkg_id and r.get("status") == "ACTIVE" and r.get("text")]
 
 
 def load_analysis_rules(root: str) -> list:
@@ -162,7 +174,9 @@ def load_rule_store_active(selfevolve_root: str = "outputs/_selfevolve") -> list
             continue
         rule = json.loads(rel.read_text(encoding="utf-8"))
         rules.append({"id": eid, "content": rule.get("content", ""),
-                      "authority": t.get("admission", "TENTATIVELY_ADMITTED")})
+                      "authority": t.get("admission", "TENTATIVELY_ADMITTED"),
+                      "scope": rule.get("scope", {}),
+                      "title": rule.get("title") or rule.get("content", "")[:60]})
     rules.sort(key=lambda r: (_AUTHORITY_ORDER.get(r["authority"], 9), r["id"]))
     return rules
 
@@ -171,19 +185,44 @@ def _rule_slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60] or "rule"
 
 
-def _unique_rule_id(base_slug: str, source_id: str, used: set[str]) -> str:
-    rid = f"PRJ-se-{base_slug}"
+def _unique_rule_id(base_slug: str, source_id: str, used: set[str], *, prefix: str = "PRJ-se-") -> str:
+    rid = f"{prefix}{base_slug}"
     if rid not in used:
         used.add(rid)
         return rid
     source_slug = re.sub(r"[^a-z0-9]+", "-", source_id.lower()).strip("-") or "rule"
-    rid = f"PRJ-se-{base_slug}-{source_slug}"
+    rid = f"{prefix}{base_slug}-{source_slug}"
     i = 2
     while rid in used:
-        rid = f"PRJ-se-{base_slug}-{source_slug}-{i}"
+        rid = f"{prefix}{base_slug}-{source_slug}-{i}"
         i += 1
     used.add(rid)
     return rid
+
+
+def _selfevolve_registry_rows(rule: dict, used: set[str]) -> list[dict]:
+    content = str(rule.get("content", ""))
+    base_slug = _rule_slug(content)
+    scope = rule.get("scope") if isinstance(rule.get("scope"), dict) else {}
+    packages = [str(p) for p in scope.get("packages", []) if str(p).strip()]
+    title = str(rule.get("title") or content[:60] or "Self-evolve rule")[:80]
+    common = {
+        "title": title,
+        "text": content,
+        "rationale": f"self-evolve {rule['authority']}",
+        "source": f"selfevolve:{rule['id']}",
+        "origin": "selfevolve",
+        "status": "ACTIVE",
+        "addedAt": "derived",
+    }
+    if packages and packages != ["*"]:
+        rows = []
+        for pkg in sorted(packages):
+            rid = _unique_rule_id(base_slug, rule["id"], used, prefix=f"{pkg}#se-")
+            rows.append({**common, "id": rid, "level": "package", "pkg": pkg, "kind": "binding"})
+        return rows
+    rid = _unique_rule_id(base_slug, rule["id"], used)
+    return [{**common, "id": rid, "level": "project", "kind": "constraint"}]
 
 
 def export_learned_rules(selfevolve_root: str, root: str) -> int:
@@ -191,24 +230,52 @@ def export_learned_rules(selfevolve_root: str, root: str) -> int:
 
     The self-evolve store stays authoritative for the learning lifecycle; the registry
     (data/rules.js) is authoritative for what binds the agent now. This one-way export is the
-    only bridge — selfevolve-origin rows are regenerated, never hand-edited. Proven-effective
-    rules come first so the pack budget prunes advisory rules first.
+    only bridge — selfevolve-origin rows are regenerated, never hand-edited.
     """
+    scripts_root = PIPELINE_ROOT / "skills" / "research-op" / "scripts"
+    if str(scripts_root) not in sys.path:
+        sys.path.insert(0, str(scripts_root))
+    import rules_store  # noqa: E402
+
     rules = load_rule_store_active(selfevolve_root)
     registry = [r for r in load_rules_registry_strict(root) if r.get("origin") != "selfevolve"]
     used = {r.get("id") for r in registry if r.get("id")}
     for r in rules:
-        rid = _unique_rule_id(_rule_slug(r["content"]), r["id"], used)
-        registry.append({"id": rid, "level": "project", "kind": "constraint",
-                         "title": r["content"][:60], "text": r["content"],
-                         "rationale": f"self-evolve {r['authority']}",
-                         "source": f"selfevolve:{r['id']}", "origin": "selfevolve",
-                         "status": "ACTIVE", "addedAt": "derived"})
-    p = Path(root) / "data" / "rules.js"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(RULES_PREFIX + json.dumps(registry, indent=2, ensure_ascii=False) + ";\n",
-                 encoding="utf-8")
+        registry.extend(_selfevolve_registry_rows(r, used))
+    rules_store.save_rules(Path(root), registry)
     return len(rules)
+
+
+def _hash_path(hasher, label: str, path: Path) -> None:
+    if not path.exists() or not path.is_file():
+        return
+    hasher.update(label.encode("utf-8"))
+    hasher.update(b"\0")
+    hasher.update(path.as_posix().encode("utf-8"))
+    hasher.update(b"\0")
+    hasher.update(path.read_bytes())
+    hasher.update(b"\0")
+
+
+def learning_fingerprint(root: str, *, selfevolve_root: str | None = None) -> str:
+    """Fingerprint every store whose changes should refresh agent learning context."""
+    root_path = Path(root)
+    hasher = hashlib.sha256()
+    for rel in (
+        "data/research-packages.js",
+        "data/rules.js",
+        "data/papers.jsonl",
+        "data/edges.jsonl",
+        "data/gaps.jsonl",
+    ):
+        _hash_path(hasher, rel, root_path / rel)
+    data_packages = root_path / "data" / "packages"
+    if data_packages.exists():
+        for path in sorted(data_packages.glob("*/tables/methods_tried.csv")):
+            _hash_path(hasher, str(path.relative_to(root_path)), path)
+    se_root = Path(selfevolve_root) if selfevolve_root is not None else Path("outputs/_selfevolve")
+    _hash_path(hasher, "selfevolve:rules/transitions.jsonl", se_root / "rules" / "transitions.jsonl")
+    return "sha256:" + hasher.hexdigest()
 
 
 def resolve_direction(packages: list, pkg_id: str, transitions_path: str):
@@ -398,8 +465,11 @@ def build(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/tra
     generated_at = generated_at or _now_iso()
     if selfevolve_root is not None:
         export_learned_rules(selfevolve_root, root)
+    learning_stamp = learning_fingerprint(root, selfevolve_root=selfevolve_root)
     packages = load_packages(root)
-    learned_rules = load_learned_rules(root)
+    project_rules = load_learned_rules(root)
+    active_package_rules = load_package_binding_rules(root, pkg_id)
+    learned_rules = project_rules + active_package_rules
     analysis_rules = load_analysis_rules(root)
     scope_context = resolve_scope_context(packages, pkg_id, transitions_path, triage_path=triage_path)
     direction_node = scope_context["direction_node"]
@@ -421,6 +491,7 @@ def build(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/tra
         "scope_version": scope_version,
         "global_scope_version": global_scope_version,
         "triage_version": scope_context["triage_version"],
+        "learning_fingerprint": learning_stamp,
         "generated_at": generated_at, "packages": packages, "learned_rules": learned_rules,
         "analysis_rules": analysis_rules,
         "papers_registry": papers_registry, "edges": edges, "gaps": gaps,
@@ -433,7 +504,8 @@ def build(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/tra
         "direction_node": None, "active_pkg": None, "scope_version": scope_version,
         "global_scope_version": global_scope_version,
         "triage_version": scope_context["triage_version"],
-        "generated_at": generated_at, "packages": packages, "learned_rules": learned_rules,
+        "learning_fingerprint": learning_stamp,
+        "generated_at": generated_at, "packages": packages, "learned_rules": project_rules,
         "analysis_rules": analysis_rules,
         "papers_registry": papers_registry, "edges": edges, "gaps": gaps,
     }, budget_chars=budget_chars)
@@ -446,12 +518,16 @@ def build(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/tra
 
 def ensure_fresh(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/transitions.jsonl",
                  triage_path: str = "outputs/_scope/triage.jsonl",
-                 budget_chars: int = 8000, generated_at: str | None = None) -> bool:
+                 budget_chars: int = 8000, generated_at: str | None = None,
+                 selfevolve_root: str | None = None) -> bool:
     """Rebuild the pack iff it is missing or stale (scope advanced). Returns True if it rebuilt.
 
     This is the staleness + backfill contract a consumer runs before reading the pack.
     """
     pack_json = Path("outputs") / pkg_id / "context_pack.json"
+    if selfevolve_root is not None:
+        export_learned_rules(selfevolve_root, root)
+    current_learning_fingerprint = learning_fingerprint(root, selfevolve_root=selfevolve_root)
     if pack_json.exists():
         try:
             pj = json.loads(pack_json.read_text(encoding="utf-8"))
@@ -463,10 +539,12 @@ def ensure_fresh(root: str, pkg_id: str, *, transitions_path: str = "outputs/_sc
                 pj,
                 current_global_scope_version=scope_ssot.global_version(records),
                 current_triage_version=triage_version(triage_path),
+                current_learning_fingerprint=current_learning_fingerprint,
             ):
                 return False
     build(root, pkg_id, transitions_path=transitions_path, triage_path=triage_path,
-          budget_chars=budget_chars, generated_at=generated_at)
+          budget_chars=budget_chars, generated_at=generated_at,
+          selfevolve_root=selfevolve_root)
     return True
 
 
@@ -485,7 +563,8 @@ def main(argv=None) -> int:
     if args.if_stale:
         rebuilt = ensure_fresh(args.root, args.pkg, transitions_path=args.transitions,
                                triage_path=args.triage,
-                               budget_chars=args.budget_chars)
+                               budget_chars=args.budget_chars,
+                               selfevolve_root=args.selfevolve_root)
         print(f"context_pack {'rebuilt' if rebuilt else 'already fresh'} for {args.pkg}")
         return 0
     full, _ = build(args.root, args.pkg, transitions_path=args.transitions,

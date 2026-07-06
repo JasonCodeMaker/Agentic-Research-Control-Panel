@@ -32,7 +32,6 @@
       <a href="#adopted">Adopted wins</a>
       <a href="#failed">Failed attempts</a>
       <a href="#reopenable">Reopenable</a>
-      <a href="#abandoned">Abandoned brainstorm</a>
     </nav>
 
     <section id="learnings-root" data-section="learnings"></section>
@@ -40,12 +39,15 @@
     <footer class="footer-note">
       This page is derived: it does not own claims, gates, or evidence. To revise a
       <code>terminationMessage</code>, <code>methodsTried</code> row, or <code>adoptionPath</code>,
-      edit the package entry in <code>data/research-packages.js</code> (and the owning
-      <code>results.html</code> / <code>next-action.html</code>) per the Fact Propagation Contract.
+      use <code>research-op</code> or the fact-backed CSV path, then refresh the projection into
+      <code>data/research-packages.js</code>. Result evidence lives on <code>results.html</code>;
+      terminal route evidence lives on <code>tracker.html#chosen-route</code>.
     </footer>
   </div>
 
   <script src="data/schema.js"></script>
+  <script src="data/scope-projection.js"></script>
+  <script src="data/rules.js"></script>
   <script src="data/research-packages.js"></script>
   <script src="assets/research.js"></script>
   <script src="assets/live-data.js"></script>

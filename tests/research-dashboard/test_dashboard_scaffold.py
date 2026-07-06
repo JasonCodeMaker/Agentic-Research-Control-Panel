@@ -53,6 +53,17 @@ def test_dashboard_scaffold_installs_live_api_server_script(tmp_path):
     py_compile.compile(str(server), doraise=True)
 
 
+def test_dashboard_scaffold_installs_learning_context_gate(tmp_path):
+    root = tmp_path / "research_html"
+    written = ensure_dashboard.ensure_dashboard(root, force=False)
+
+    written_rel = {p.relative_to(root).as_posix() for p in written}
+    gate = root / "scripts" / "learning_context_gate.py"
+    assert "scripts/learning_context_gate.py" in written_rel
+    assert gate.exists()
+    py_compile.compile(str(gate), doraise=True)
+
+
 def test_dashboard_scaffold_omits_module_library_interface(tmp_path):
     root = tmp_path / "research_html"
     ensure_dashboard.ensure_dashboard(root, force=False)

@@ -138,10 +138,25 @@ The dashboard ships a `(category, status)` state machine. Every package carries 
 Required field sets per `(category, status)` and the structured `methodsTried` row shape are declared in `<root>/data/schema.js` — that file is the single source of truth and is bundled by this skill. The card renderer and the lint tool both import from it.
 
 Terminal-state `success` packages must carry a `terminationMessage`, a `methodsTried[]` array of structured rows (`{method, hypothesis, gate, measured, verdict, evidencePath}`, verdict in `{PASS, FAIL, INCONCLUSIVE, DIAGNOSTIC}`), and an `adoptionPath`; `fail` packages require the `terminationMessage` and `methodsTried[]`. The learnings page (`<root>/learnings.html`, also bundled) is a derived view over `data/research-packages.js` that re-organizes those rows by contribution spine.
+It also renders the action-facing decision strip for each package: reuse, do-not-repeat, reopen condition,
+promoted package rule, and Scope impact. It reads `data/rules.js` and `data/scope-projection.js` as
+read-only context and owns none of those stores.
+
+Before brainstorm conversion, Scope proposal, package materialization, or package execution, agents run:
+
+```bash
+python <root>/scripts/learning_context_gate.py --root <root> --json
+```
+
+This is the project-level read gate. It counts active rules, failed methods, unresolved methods, adopted
+wins, and open gaps. It fails closed on malformed rule/package/gap sources; zero counts are allowed only
+after the stores were loaded successfully.
 
 The Context Pack is agent-facing only: `lib/context_pack/build.py` writes
 `outputs/<pkg>/context_pack.md` and `outputs/<pkg>/context_pack.json` at
-context-load. The retired global `context.html` / `data/context-core.js`
+context-load. The pack freshness stamp includes package inventory, rules, knowledge registries,
+fact-backed `methods_tried.csv` files, and the self-evolve rule transition log, so package learning
+changes rebuild context even when Scope does not move. The retired global `context.html` / `data/context-core.js`
 dashboard surface must not be reintroduced as a second project-memory interface;
 inspect the package-local Context Pack artifact when agent working context needs
 auditing.
@@ -233,6 +248,7 @@ explicitly (use the skill's refresh path; do **not** blanket `--force`, which ca
 - `assets/dashboard/learnings.html` — cross-package learnings view (derived; do not edit directly).
 - `assets/dashboard/live.html` + `assets/dashboard/scripts/serve_dashboard.py` — API-first live-run view and local read-only API server. The server serves static `research_html/` and exposes `/api/live/*` by reading `outputs/_live/runs.jsonl` and `status.json`; volatile runtime writes stay out of the static page reload path.
 - `assets/dashboard/scripts/learnings_lint.py` + `dump_packages.js` — the dashboard-wide lint and draft tool, including Scope/package provenance drift checks.
+- `assets/dashboard/scripts/learning_context_gate.py` — project-level agent read gate over current Learnings, Rules, and open gaps.
 - `scripts/render_scope_projection.py` — renders/checks `research_html/data/scope-projection.json` and the JS companion consumed by the dashboard homepage.
 - `assets/dashboard/scripts/propagate_apply.py` — event-manifest executor (`verdict_finalized`, `status_changed`, `adoption`, `supersession`, `reopen`, `state_derived`) with `--auto-derive` drift scanner.
 - `assets/dashboard/scripts/emit_verdict_manifest.py` — launcher-side helper that parses a trainer log into a `verdict_finalized` manifest.

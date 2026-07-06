@@ -314,6 +314,7 @@ def assemble(inputs: dict, *, budget_chars: int = 8000) -> ContextPack:
         "sourceChange": package_provenance.get("sourceChange"),
         "sourceTasks": package_provenance.get("sourceTasks", []),
         "pendingScope": [item.get("id") for item in inputs.get("pending_scope", []) if item.get("id")],
+        "learning_fingerprint": inputs.get("learning_fingerprint", ""),
         "budget_chars": budget_chars,
         "sources_present": sources_present,
         "truncated": truncated,
@@ -348,9 +349,12 @@ def render_json(pack: ContextPack) -> dict:
 
 
 def is_stale(pack_json: dict, current_scope_version=None, *, current_global_scope_version=None,
-             current_triage_version=None) -> bool:
+             current_triage_version=None, current_learning_fingerprint=None) -> bool:
     """A pack is stale once the scope it was compiled against has advanced."""
     stamp = pack_json.get("stamp", {})
+    if current_learning_fingerprint is not None:
+        if stamp.get("learning_fingerprint", "") != current_learning_fingerprint:
+            return True
     if current_triage_version is not None and stamp.get("triage_version", 0) != current_triage_version:
         return True
     if current_global_scope_version is not None:

@@ -322,6 +322,22 @@ def rule_methodstried_verdict_enum(pkg, op, target, payload) -> Reject | None:
     return None
 
 
+def rule_methodstried_fact_backed_requires_source_ref(pkg, op, target, payload) -> Reject | None:
+    if target != "methodsTried" or op != "insert":
+        return None
+    if payload.get("source_ref") or not _is_fact_backed(pkg):
+        return None
+    return Reject(
+        rule="fact-backed-methodstried-requires-source-ref",
+        file=f"research_html/data/packages/{pkg}/tables/methods_tried.csv",
+        anchor=None,
+        field="source_ref",
+        expected="source_ref pointing at a fact CSV row",
+        actual="manual methodsTried row for a fact-backed package",
+        suggested_fix="Insert the witnessing result row first, then append methodsTried with source_ref.",
+    )
+
+
 def rule_methodstried_evidence_resolves(pkg, op, target, payload) -> Reject | None:
     if target != "methodsTried" or op != "insert":
         return None
@@ -1003,6 +1019,7 @@ _RULES: list[tuple[Callable, bool]] = [
     (rule_rule_origin_immutable,             False),
     (rule_methodstried_six_fields,           False),
     (rule_methodstried_verdict_enum,         False),
+    (rule_methodstried_fact_backed_requires_source_ref, False),
     (rule_methodstried_manual_pass_forbidden, False),
     (rule_methodstried_evidence_resolves,    False),
     (rule_result_gate_ten_cols,              False),

@@ -68,6 +68,15 @@ Manual creation must still fill the inventory contract, but it should not preten
 
 When the user asks to generate a package from a Scope SSOT Direction, use the materializer only after both the Direction and its high-level validation Milestones are committed in the Scope SSOT:
 
+First read the learning context gate so the package is not created without the current failed-method,
+adopted-win, rule, and open-gap context:
+
+```bash
+python3 research_html/scripts/learning_context_gate.py --root research_html --json
+```
+
+If the gate fails, repair the learning surface before materializing the package.
+
 First run the readiness diagnosis. It is read-only and gives the next owning skill when the package is
 not ready:
 
@@ -98,7 +107,7 @@ Hard rules:
 - Duplicate package ids or existing package directories are rejected before write.
 - The generated inventory entry carries `sourceDirection`, `sourceVersion`, `sourceChange`, and `sourceTasks` provenance.
 - On success, the materializer immediately builds `outputs/<pkg>/context_pack.md` and
-  `outputs/<pkg>/context_pack.json` from the committed Scope log. The package should not wait for the
+  `outputs/<pkg>/context_pack.json` from the committed Scope log and current learning stores. The package should not wait for the
   first `/research-run` tick to get its Agent context.
 
 Default field mapping:

@@ -199,6 +199,31 @@ def test_fact_backed_methodstried_insert_uses_source_ref_and_syncs_projection(tm
     assert "research_html/data/research-packages.js" in files
 
 
+def test_fact_backed_methodstried_insert_rejects_manual_rows_without_source_ref(tmp_path):
+    pkg = "test-pkg"
+    _write_inventory(tmp_path, pkg, "RESULT_ANALYSIS")
+    _fact_back(tmp_path, pkg)
+    payload = {
+        "method": "manual negative result",
+        "hypothesis": "Manual rows should not bypass the fact table",
+        "gate": "Recall@1 > 40.0",
+        "measured": "Recall@1=39.0",
+        "verdict": "FAIL",
+        "evidencePath": "outputs/test-pkg/runs/r1/summary.json",
+    }
+
+    result = _run([
+        "--pkg", pkg,
+        "--op", "insert",
+        "--target", "methodsTried",
+        "--payload", json.dumps(payload),
+    ], cwd=tmp_path)
+
+    assert result.returncode != 0
+    assert "fact-backed-methodstried-requires-source-ref" in result.stdout
+    assert not (tmp_path / "research_html" / "data" / "packages" / pkg / "tables" / "methods_tried.csv").exists()
+
+
 def test_fact_backed_checkpoint_saved_event_writes_result_facts_and_completes(tmp_path):
     pkg = "test-pkg"
     _write_inventory(tmp_path, pkg, "RESULT_ANALYSIS")

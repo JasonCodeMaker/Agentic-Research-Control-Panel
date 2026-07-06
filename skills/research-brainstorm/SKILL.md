@@ -60,6 +60,16 @@ The same command also returns `active_projects` with each Project's `goal` and `
 fields before shaping or converting ideas. Candidate Directions must fit the active Project goal and must
 not ask the package workflow to pursue work listed as out of scope.
 
+Before shaping or converting an idea, run the learning context gate and read its JSON summary:
+
+```bash
+python3 research_html/scripts/learning_context_gate.py --root research_html --json
+```
+
+If it reports malformed rules or unreadable package data, stop and repair the learning surface first.
+Use the counts as an explicit empty-source stamp: zero failed methods or adopted wins is allowed only
+after this gate has loaded the stores successfully.
+
 ## Procedure
 
 **1. Shape the idea (follow the brainstorming method).**

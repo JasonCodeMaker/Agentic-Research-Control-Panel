@@ -10,12 +10,12 @@ import context_pack.build as cb  # noqa: E402
 from self_evolve import schema, store  # noqa: E402
 
 
-def _seed_rule_store(se_root, rule_id, content, authority):
+def _seed_rule_store(se_root, rule_id, content, authority, *, scope=None):
     """Promote one rule to RULE_ACTIVE with a sealed release + admission label."""
     rule = {
         "schema_version": schema.RULE_SCHEMA, "id": rule_id, "version": "1.0.0",
         "title": "t", "description": "d", "content": content,
-        "scope": {"project": "*", "packages": ["*"], "task_types": ["x"]},
+        "scope": scope or {"project": "*", "packages": ["*"], "task_types": ["x"]},
         "risk_class": "R1_CONTEXT", "provenance": {"generated_by": "rule-inducer-v1"},
         "validation_policy": {"required_oracles": ["faithfulness", "conflict"]},
     }
@@ -57,6 +57,39 @@ def test_export_writes_derived_registry_rows(tmp_path):
     rows = _registry(root)
     assert len(rows) == 1 and rows[0]["origin"] == "selfevolve"
     assert rows[0]["text"] == "always verify the metric contract"
+
+
+def test_export_preserves_package_scope_as_package_binding_rows(tmp_path):
+    se = tmp_path / "_selfevolve"
+    _seed_rule_store(
+        se,
+        "rule.package",
+        "keep this package-specific repair local to the source package",
+        "FULLY_ADMITTED",
+        scope={"project": "*", "packages": ["pkg-a"], "task_types": ["repair"]},
+    )
+    root = tmp_path / "research_html"
+
+    cb.export_learned_rules(str(se), str(root))
+
+    rows = _registry(root)
+    assert rows[0]["level"] == "package"
+    assert rows[0]["kind"] == "binding"
+    assert rows[0]["pkg"] == "pkg-a"
+    assert rows[0]["id"].startswith("pkg-a#se-")
+
+
+def test_export_rejects_html_like_rule_content(tmp_path):
+    se = tmp_path / "_selfevolve"
+    _seed_rule_store(se, "rule.html", "Never keep <b>markup</b> in rule text.", "FULLY_ADMITTED")
+    root = tmp_path / "research_html"
+
+    try:
+        cb.export_learned_rules(str(se), str(root))
+    except Exception as exc:
+        assert "plain prose" in str(exc) or "HTML" in str(exc)
+    else:
+        raise AssertionError("expected self-evolve export to use the rules registry validator")
 
 
 def test_export_is_idempotent_replace_not_append(tmp_path):

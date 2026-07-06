@@ -1288,6 +1288,78 @@
     ].join("");
   }
 
+  function packageRulesFor(pkg) {
+    var pid = pkg && pkg.id;
+    return rulesRegistry().filter(function (row) {
+      return row && row.status === "ACTIVE" && row.level === "package" && row.pkg === pid;
+    });
+  }
+
+  function methodNamesByVerdict(pkg, verdict) {
+    return methodsTriedRows(pkg).filter(function (row) {
+      return String((row && row.verdict) || "").toUpperCase() === verdict;
+    }).map(function (row) {
+      return (row && row.method) || "unmeasured";
+    });
+  }
+
+  function packageScopeImpactHtml(pkg) {
+    var directionId = pkg.sourceDirection || "";
+    if (!directionId) return "Legacy package. No Scope binding recorded.";
+    var projection = scopeProjection() || {};
+    var direction = projection[directionId];
+    var tasks = (pkg.sourceTasks || []).map(function (item) {
+      return item && item.id ? item.id : String(item || "");
+    }).filter(Boolean);
+    if (!direction) {
+      return 'sourceDirection <code>' + htmlEscape(directionId) + "</code> is missing from the Scope projection.";
+    }
+    var status = direction.status || "unmeasured";
+    var version = direction.version || "";
+    var declared = pkg.sourceVersion || "";
+    var stale = declared && version && String(declared) !== String(version);
+    var pieces = [
+      'Direction <code>' + htmlEscape(directionId) + "</code>",
+      "status " + htmlEscape(status),
+    ];
+    if (declared || version) {
+      pieces.push("version " + htmlEscape(declared || "unmeasured") + " / current " + htmlEscape(version || "unmeasured"));
+    }
+    if (tasks.length) {
+      pieces.push("tasks " + tasks.map(function (task) { return "<code>" + htmlEscape(task) + "</code>"; }).join(", "));
+    }
+    if (stale || status !== "ACTIVE") {
+      pieces.push("requires Scope check before reuse");
+    }
+    return pieces.join("; ") + ".";
+  }
+
+  function learningDecisionHtml(pkg, opts) {
+    var passMethods = methodNamesByVerdict(pkg, "PASS");
+    var failMethods = methodNamesByVerdict(pkg, "FAIL");
+    var inconclusiveMethods = methodNamesByVerdict(pkg, "INCONCLUSIVE");
+    var rules = packageRulesFor(pkg);
+    var reuse = passMethods.length
+      ? "Reuse: " + passMethods.join(", ")
+      : (opts.kind === "fail" ? "Do not reuse without a new gate or Scope change." : "No reusable method recorded.");
+    var avoid = failMethods.length
+      ? "Do not repeat: " + failMethods.join(", ")
+      : (inconclusiveMethods.length ? "Unresolved: " + inconclusiveMethods.join(", ") : "No blocked method recorded.");
+    var reopen = pkg.reopenTrigger || (opts.kind === "fail" ? "No reopen trigger recorded." : "Not archived.");
+    var promoted = pkg.promotedTo || (rules.length
+      ? rules.map(function (row) { return row.title || row.id; }).join(", ")
+      : "No linked active package rule.");
+    return [
+      '<div class="learnings-decision-grid" data-card="learning-decision">',
+      '<div><div class="k">Reuse</div><p>' + htmlEscape(reuse) + "</p></div>",
+      '<div><div class="k">Do not repeat</div><p>' + htmlEscape(avoid) + "</p></div>",
+      '<div><div class="k">Reopen only if</div><p>' + htmlEscape(reopen) + "</p></div>",
+      '<div><div class="k">Promoted rule</div><p>' + htmlEscape(promoted) + "</p></div>",
+      '<div class="scope-impact"><div class="k">Scope impact</div><p>' + packageScopeImpactHtml(pkg) + "</p></div>",
+      "</div>",
+    ].join("");
+  }
+
   function learningsPackageBlock(pkg, opts) {
     opts = opts || {};
     var status = packageStatus(pkg) || "unmeasured";
@@ -1307,6 +1379,7 @@
       "</header>",
       '<p class="learnings-message"><strong>Why ' + (opts.kind === "fail" ? "ended" : "kept") + ":</strong> " + fieldOrUnmeasured(pkg.terminationMessage) + "</p>",
       extras.length ? '<p class="learnings-meta">' + extras.join(" · ") + "</p>" : "",
+      learningDecisionHtml(pkg, opts),
       methodsTriedTableHtml(pkg),
       "</article>",
     ].join("");
@@ -1315,7 +1388,7 @@
   function learningsGroupHtml(title, items, opts) {
     if (!items.length) {
       return [
-        '<section class="learnings-group learnings-group-empty" data-group="' + htmlEscape(opts.id) + '">',
+        '<section id="' + htmlEscape(opts.id) + '" class="learnings-group learnings-group-empty" data-group="' + htmlEscape(opts.id) + '">',
         "<h2>" + htmlEscape(title) + "</h2>",
         '<p class="empty-state">No packages in this group.</p>',
         "</section>",
@@ -1325,7 +1398,7 @@
     var bySpine = groupBy(items, function (p) { return p.contributionSpineFlag || "unmeasured"; });
     var spineKeys = Object.keys(bySpine).sort();
     return [
-      '<section class="learnings-group" data-group="' + htmlEscape(opts.id) + '">',
+      '<section id="' + htmlEscape(opts.id) + '" class="learnings-group" data-group="' + htmlEscape(opts.id) + '">',
       "<h2>" + htmlEscape(title) + ' <span class="count">(' + items.length + ")</span></h2>",
       spineKeys.map(function (spineId) {
         var label = spineMap[spineId] || spineId;
@@ -1351,7 +1424,7 @@
       else if (s === "ARCHIVED_CONDITIONAL") counts.reopenable += 1;
     });
     return [
-      '<section class="learnings-hero" data-card="learnings-hero">',
+      '<section id="hero" class="learnings-hero" data-card="learnings-hero">',
       '<div class="k">Cross-package learnings</div>',
       "<h2>What this project has actually tried</h2>",
       '<p class="lead">A derived view over <code>data/research-packages.js</code>. Adopted wins and failed attempts grouped by which paper-spine contribution they touch, so the agent reads the full <em>what was tried, what worked, why it failed</em> picture in one pass.</p>',

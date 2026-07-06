@@ -247,6 +247,11 @@ def _projection_files(pkg: str, csv_path: Path, page: str) -> list[str]:
 
 
 def insert_methodstried(pkg: str, payload: dict) -> list[str]:
+    if _is_fact_backed(pkg) and not payload.get("source_ref"):
+        raise SystemExit(
+            "fact-backed-methodstried-requires-source-ref: insert the witnessing result row first, "
+            "then append methodsTried with source_ref"
+        )
     if _is_fact_backed(pkg) and payload.get("source_ref"):
         paths = package_facts.fact_paths(pkg)
         csv_path = paths.tables_dir / "methods_tried.csv"

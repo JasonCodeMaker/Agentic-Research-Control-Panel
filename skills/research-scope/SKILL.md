@@ -99,7 +99,16 @@ Required gate per level — the `gate` field passed to `scope_ssot.propose_trans
 
 ## Procedure
 
-**1. Read active scope and pending Triage.**
+**1. Read the learning context gate, active Scope, and pending Triage.**
+
+Before drafting any Project, Direction, or Task proposal, load the project learning summary:
+
+```bash
+python3 research_html/scripts/learning_context_gate.py --root research_html --json
+```
+
+If the gate fails, repair the malformed learning source before proposing Scope. A zero count is not a
+problem; an unreadable rules or package source is.
 
 ```python
 import sys; sys.path.insert(0, "<pipeline-root>/lib"); import scope_ssot

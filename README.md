@@ -300,9 +300,9 @@ decision, agent action, and durable output.
 | **0 · Attach toolbox** | Install skills and attach protocols to the target repo. | Symlinks skills, preserves/merges protocol files, and verifies the toolbox. | The target repo now has the operating rules. |
 | **1 · Initialize workspace** | Run `/research-dashboard`, then `/research-onboard` if no Project node exists. | Scaffolds the live dashboard; for existing repos, analyzes project context into a prior-knowledge digest and Project proposal. | `research_html/`, optional `outputs/_scope/prior_knowledge.md`, dashboard lanes. |
 | **2 · Ratify project objective** | Inspect and approve/reject the `/research-onboard` or `/research-scope` Project proposal. | Proposes a Project node through Triage; commits only after human ratification. | Accepted Project in Scope SSOT, or a rejected proposal record. |
-| **3 · Form a research direction** | Approve/reject the Direction proposal in chat. | Uses brainstorm, evidence checks, and ranking to shape a Direction with a typed spec. | Direction node with hypothesis, metric, baselines, success gate. |
-| **4 · Create an executable task** | Approve/reject the Task proposal; optionally change the control mode. | Proposes a Task with experiment, config, gate, and control mode. Default mode is `AUTONOMOUS`. | Task node and, once committed, a materialized package. |
-| **5 · Execute the research package** | Run `/research-run`; supervise according to the dial. | Loads context, runs readiness, implements/reviews if needed, launches and monitors experiments, propagates artifacts, verifies results, and routes the package until terminal. | Runtime artifacts, audit log, verdicts, package state updates. |
+| **3 · Form a research direction** | Approve/reject the Direction proposal in chat. | Runs the learning context gate, then uses brainstorm, evidence checks, and ranking to shape a Direction with a typed spec. | Direction node with hypothesis, metric, baselines, success gate. |
+| **4 · Create an executable task** | Approve/reject the Task proposal; optionally change the control mode. | Runs the learning context gate, then proposes a Task with experiment, config, gate, and control mode. Default mode is `AUTONOMOUS`. | Task node and, once committed, a materialized package. |
+| **5 · Execute the research package** | Run `/research-run`; supervise according to the dial. | Loads the learning gate and fresh Context Pack, runs readiness, implements/reviews if needed, launches and monitors experiments, propagates artifacts, verifies results, and routes the package until terminal. | Runtime artifacts, audit log, verdicts, package state updates. |
 | **6 · Decide the outcome** | Review dashboard/PACK/verdict in chat; approve terminal decisions or scope changes. | Files Triage proposals when goals should change; never edits the objective silently. | Success/fail/archive state, or a versioned Scope revision. |
 | **7 · Learn for the next cycle** | Promote accepted lessons through the governed Rule Store path. | Keeps durable rules under explicit authority and exports active rules into project context. | Active project rules exported into the Context Pack. |
 
@@ -317,6 +317,8 @@ During day-to-day use, the runtime and fact storage appear through the same surf
 | `research_html/live.html` | Open, stale, failed, and recent terminal wrapper-launched runs. | It reads runtime files first, so use it before raw tmux scrollback for routine status. |
 | Package `tracker.html` | Live checks, resource allocation, runtime roots, and log paths. | For fact-backed packages, repeated tracker rows come from `live_checks.csv` and `resource_allocation.csv`. |
 | Package `results.html` | Result gates, result tables, headline metrics, and verdict support. | Repeated result values should point back to the same CSV row id. |
+| `research_html/learnings.html` | Decision view over tried methods: reuse, do-not-repeat, reopen condition, promoted rule, and Scope impact. | Read it before proposing new work; it is derived and must not be edited directly. |
+| `research_html/scripts/learning_context_gate.py --json` | Machine-readable summary of packages, active rules, failed methods, adopted wins, unresolved methods, and open gaps. | Run before brainstorm, Scope proposal, package materialization, or execution; malformed rules fail closed. |
 | Dashboard `methodsTried[]` | The compact method/result summary shown on package cards and lint surfaces. | For fact-backed packages, it is a compatibility projection from `methods_tried.csv`. |
 | `research-op check --scope fact-alignment` | Missing sources, stale projections, manual PASS rows, and migration state. | Treat errors here as evidence that a page or registry view no longer matches its fact source. |
 
@@ -511,15 +513,17 @@ accepted and committed into the Scope SSOT.
 ### Context Pack
 
 The Context Pack is the project's compiled memory and the agent's Scope Context Boot. It contains the
-active Project, Direction, related Tasks, package Scope provenance, global Scope version, active rules,
-relevant pending Scope proposals as advisory warnings, active rules, failed methods, adopted wins,
-knowledge registries, and gaps. It is deterministic, read-only, and agent-facing:
+active Project, Direction, related Tasks, package Scope provenance, global Scope version, active project
+rules, active package binding rules, relevant pending Scope proposals as advisory warnings, failed
+methods, adopted wins, knowledge registries, and gaps. It is deterministic, read-only, and agent-facing:
 
 - markdown face: `outputs/<pkg>/context_pack.md`;
 - structured face: `outputs/<pkg>/context_pack.json`.
 
 It never lands a rule by itself. Rules enter shared context only through governed Rule Store or
-`research-op` registry paths.
+`research-op` registry paths. The freshness stamp includes a learning fingerprint over package inventory,
+rules, knowledge registries, fact-backed `methods_tried.csv` files, and the self-evolve rule transition
+log, so learning changes rebuild the pack even when Scope has not changed.
 
 ### Self-evolution memory
 

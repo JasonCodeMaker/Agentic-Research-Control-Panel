@@ -140,6 +140,41 @@ def test_build_surfaces_knowledge_registries(tmp_path, monkeypatch):
         assert needle in md
 
 
+def test_build_includes_active_package_binding_rules_for_the_active_package(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    root, log = _setup(tmp_path)
+    _append_registry_rows(root, [
+        {"id": "2026-06-03-retrieval-v2#keep-one-run-ledger", "level": "package",
+         "pkg": "2026-06-03-retrieval-v2", "kind": "binding",
+         "title": "Keep one run ledger",
+         "text": "Keep all run status updates in the package tracker ledger.",
+         "rationale": "avoid stale run context", "source": "user", "origin": "user",
+         "status": "ACTIVE", "addedAt": "2026-06-05"},
+        {"id": "2026-05-01-old#ignore-other-binding", "level": "package",
+         "pkg": "2026-05-01-old", "kind": "binding",
+         "title": "Other package binding",
+         "text": "This binding belongs to another package.",
+         "rationale": "scope", "source": "user", "origin": "user",
+         "status": "ACTIVE", "addedAt": "2026-06-05"},
+    ])
+
+    build.build("research_html", "2026-06-03-retrieval-v2",
+                transitions_path=str(log), generated_at="t0")
+
+    md = (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.md").read_text(encoding="utf-8")
+    assert "Keep all run status updates in the package tracker ledger." in md
+    assert "This binding belongs to another package." not in md
+
+
+def test_build_fails_closed_on_malformed_rules_registry(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    root, log = _setup(tmp_path)
+    (root / "data" / "rules.js").write_text("window.BAD_RULES = [];\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="rules registry"):
+        build.build("research_html", "2026-06-03-retrieval-v2", transitions_path=str(log))
+
+
 def test_build_degrades_gracefully_without_optional_stores(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     root = tmp_path / "research_html"
@@ -226,6 +261,26 @@ def test_ensure_fresh_rebuilds_when_triage_changes(tmp_path, monkeypatch):
     assert pj["stamp"]["triage_version"] == 1
     assert pj["stamp"]["pendingScope"] == ["triage-task-gate"]
     assert pj["stamp"]["generated_at"] == "t-triage"
+
+
+def test_ensure_fresh_rebuilds_when_learning_sources_change(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    root, log = _setup(tmp_path)
+    build.build("research_html", "2026-06-03-retrieval-v2", transitions_path=str(log),
+                generated_at="t0")
+
+    _append_registry_rows(root, [
+        {"id": "PRJ-new-learning", "level": "project", "kind": "constraint",
+         "title": "New learning", "text": "Check the new learning source before proposing work.",
+         "rationale": "freshness", "source": "user", "origin": "user",
+         "status": "ACTIVE", "addedAt": "2026-06-05"},
+    ])
+
+    assert build.ensure_fresh("research_html", "2026-06-03-retrieval-v2",
+                              transitions_path=str(log), generated_at="t-learning") is True
+    pj = json.loads((tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").read_text())
+    assert pj["stamp"]["generated_at"] == "t-learning"
+    assert pj["stamp"]["learning_fingerprint"]
 
 
 def test_cli_if_stale_builds_then_skips(tmp_path, monkeypatch, capsys):
