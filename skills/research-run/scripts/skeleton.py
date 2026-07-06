@@ -8,6 +8,7 @@ package execution controller is research-run.
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -20,6 +21,14 @@ import validate  # noqa: E402
 
 def scope(intent, pkg_id):
     """R1 (thin): turn a fixed intent into a typed Direction node."""
+    hypothesis = (
+        f"The supplied intent, {intent}, should produce measurable improvement in the toy retrieval "
+        "benchmark while keeping the fixed dataset, baseline, and evaluation budget unchanged."
+    )
+    success_gate = (
+        "The measured toy metric must satisfy measured >= 0.80 on the persisted artifact before any "
+        "terminal success transition is allowed by this walking skeleton."
+    )
     return {
         "id": f"dir/{pkg_id}",
         "level": "direction",
@@ -27,10 +36,10 @@ def scope(intent, pkg_id):
         "version": 1,
         "status": "ACTIVE",
         "spec": {
-            "hypothesis": intent,
+            "hypothesis": hypothesis,
             "metric": {"name": "toy_metric", "dir": "higher"},
-            "baselines": ["baseline-0"],
-            "success_gate": "measured >= 0.80",
+            "baselines": ["Fixed toy baseline measured by the same persisted artifact reader."],
+            "success_gate": success_gate,
         },
         "source": "txn-0",
     }
@@ -63,7 +72,10 @@ def experiment(pkg_id, runtime_root, measured):
 def verify(artifact_path, spec):
     """R5 L1 metric oracle: read the measured value from the artifact on disk, compare to the SSOT predicate."""
     artifact = json.loads(Path(artifact_path).read_text(encoding="utf-8"))  # missing artifact => no fabricated metric
-    threshold = float(spec["success_gate"].split(">=")[1].strip())
+    match = re.search(r">=\s*([0-9]+(?:\.[0-9]+)?)", spec["success_gate"])
+    if not match:
+        raise ValueError(f"success_gate must contain a numeric >= threshold: {spec['success_gate']!r}")
+    threshold = float(match.group(1))
     measured = artifact["measured"]
     return {"judge": "L1-metric-oracle",
             "result": "PASS" if measured >= threshold else "FAIL",

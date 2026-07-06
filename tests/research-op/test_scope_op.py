@@ -7,6 +7,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "skills" / "research-op" / "scripts" / "research_op.py"
+sys.path.insert(0, str(ROOT))
+from tests.scope_fixtures import direction_spec  # noqa: E402
 
 
 def _run(args, cwd):
@@ -18,10 +20,7 @@ def _direction_payload(gate):
     return {
         "id": "dir/test-pkg", "level": "direction", "parents": ["project/main"],
         "version": 1, "status": "ACTIVE",
-        "spec": {
-            "hypothesis": "h", "metric": {"name": "nDCG@10", "dir": "higher"},
-            "baselines": ["xpool"], "success_gate": "nDCG@10 >= base + 2",
-        },
+        "spec": direction_spec(metric={"name": "nDCG@10", "dir": "higher"}),
         "source": "txn-0",
         "op": "revise", "gate": gate, "trigger": "exp#42", "cause": "metric saturated",
     }

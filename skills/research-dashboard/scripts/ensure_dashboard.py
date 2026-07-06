@@ -216,8 +216,14 @@ def copy_helper_scripts(root: Path, force: bool) -> list[Path]:
 
 LIVE_PILL = '<a class="pill" href="live.html">Live Runs</a>'
 LIVE_NAV_LINK = '<a href="live.html">Live Runs</a>'
-SCOPE_PILL = '<a class="pill" href="scope.html">Scope Tree</a>'
-SCOPE_NAV_LINK = '<a href="scope.html">Scope Tree</a>'
+SCOPE_PILLS = (
+    '<a class="pill" href="scope.html">Live Scope</a>',
+    '<a class="pill" href="scope.html">Scope Tree</a>',
+)
+SCOPE_NAV_LINKS = (
+    '<a href="scope.html">Live Scope</a>',
+    '<a href="scope.html">Scope Tree</a>',
+)
 
 
 def ensure_live_nav(root: Path) -> list[Path]:
@@ -227,10 +233,16 @@ def ensure_live_nav(root: Path) -> list[Path]:
         return []
     text = index.read_text(encoding="utf-8")
     patched = text
-    if LIVE_PILL not in patched and SCOPE_PILL in patched:
-        patched = patched.replace(SCOPE_PILL, SCOPE_PILL + "\n        " + LIVE_PILL, 1)
-    if LIVE_NAV_LINK not in patched and SCOPE_NAV_LINK in patched:
-        patched = patched.replace(SCOPE_NAV_LINK, SCOPE_NAV_LINK + "\n      " + LIVE_NAV_LINK, 1)
+    if LIVE_PILL not in patched:
+        for anchor in SCOPE_PILLS:
+            if anchor in patched:
+                patched = patched.replace(anchor, anchor + "\n        " + LIVE_PILL, 1)
+                break
+    if LIVE_NAV_LINK not in patched:
+        for anchor in SCOPE_NAV_LINKS:
+            if anchor in patched:
+                patched = patched.replace(anchor, anchor + "\n      " + LIVE_NAV_LINK, 1)
+                break
     if patched == text:
         return []
     index.write_text(patched, encoding="utf-8")

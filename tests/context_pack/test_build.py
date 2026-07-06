@@ -13,6 +13,7 @@ sys.path.insert(0, str(ROOT / "skills" / "research-dashboard" / "scripts"))
 import context_pack.build as build  # noqa: E402
 import ensure_dashboard  # noqa: E402
 import scope_ssot  # noqa: E402
+from tests.scope_fixtures import direction_node  # noqa: E402
 
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node required to read JS data")
 
@@ -53,13 +54,7 @@ def _setup(tmp_path):
 
     # direction node + scope log
     log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
-    node = {
-        "id": "dir/retrieval-v2", "level": "direction", "parents": ["project/main"], "version": 3,
-        "status": "ACTIVE",
-        "spec": {"hypothesis": "Contrastive retrieval improves zero-shot Recall@1",
-                      "metric": {"name": "Recall@1", "dir": "higher"},
-                      "baselines": ["CLIP=42.3"], "success_gate": "Recall@1 >= 48"},
-    }
+    node = direction_node(version=3)
     scope_ssot.propose_transition(node, op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
 
     # learned project rule + package lesson rows in the unified registry
@@ -89,7 +84,7 @@ def test_build_writes_full_pack_and_durable_core(tmp_path, monkeypatch):
     core_js = (root / "data" / "context-core.js").read_text(encoding="utf-8")
 
     # full pack carries direction + project/package knowledge
-    assert "Contrastive retrieval improves zero-shot Recall@1" in md
+    assert "Adding supervised contrastive pretraining" in md
     assert "hard-negative mining" in md                                  # cross-package failure
     assert "temperature scaling" in md                                   # package lesson row from the registry
     assert "Always reproduce the baseline" in md                         # learned rule
@@ -99,7 +94,7 @@ def test_build_writes_full_pack_and_durable_core(tmp_path, monkeypatch):
     assert core_js.startswith("window.RESEARCH_CONTEXT_CORE")
     assert "hard-negative mining" in core_js
     assert "Always reproduce the baseline" in core_js
-    assert "Contrastive retrieval improves" not in core_js               # direction is overlay, not core
+    assert "Adding supervised contrastive pretraining" not in core_js    # direction is overlay, not core
 
 
 def test_build_surfaces_knowledge_registries(tmp_path, monkeypatch):

@@ -7,40 +7,16 @@ sys.path.insert(0, str(ROOT / "skills" / "research-dashboard" / "assets" / "dash
 
 import learnings_lint  # noqa: E402
 import scope_ssot  # noqa: E402
+from tests.scope_fixtures import direction_node, task_node  # noqa: E402
 
 
 def _direction_node():
-    return {
-        "id": "dir/retrieval-v2",
-        "level": "direction",
-        "parents": ["project/main"],
-        "version": 1,
-        "status": "ACTIVE",
-        "spec": {
-            "hypothesis": "better retrieval objective improves Recall@10",
-            "metric": {"name": "Recall@10", "dir": "higher"},
-            "baselines": ["xpool"],
-            "success_gate": "Recall@10 >= baseline + 2",
-        },
-        "source": "test",
-    }
+    return direction_node(source="test")
 
 
 def _task_node(suffix="M0-baseline-validity", version=1):
-    return {
-        "id": f"task/retrieval-v2/{suffix}",
-        "level": "task",
-        "parents": ["dir/retrieval-v2"],
-        "version": version,
-        "status": "ACTIVE",
-        "spec": {
-            "experiment": suffix,
-            "config": f"configs/{suffix}.yaml",
-            "gate": "Recall@10 >= baseline",
-            "control_mode": "CHECKPOINTED",
-        },
-        "source": "test",
-    }
+    return task_node(f"task/retrieval-v2/{suffix}", parent="dir/retrieval-v2",
+                     version=version, source="test", config=f"configs/{suffix}.yaml")
 
 
 def _scope_log(tmp_path, extra_task=False):

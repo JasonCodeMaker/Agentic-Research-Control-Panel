@@ -13,16 +13,21 @@ sys.path.insert(0, str(_PIPE / "skills" / "research-auto" / "scripts"))
 sys.path.insert(0, str(_PIPE / "lib"))
 import conductor  # noqa: E402
 import scope_ssot  # noqa: E402
+from tests.scope_fixtures import direction_node  # noqa: E402
 
 
 # ---- fixtures ----
 
 def _direction_node():
-    return {"id": "dir/d1", "level": "direction", "parents": ["project/main"], "version": 1,
-            "status": "ACTIVE",
-            "spec": {"hypothesis": "X improves recall", "metric": {"name": "R@1"},
-                          "baselines": ["b0=42.3"], "success_gate": "R@1 >= 48"},
-            "source": "triage:d1"}
+    return direction_node(
+        "dir/d1",
+        metric={"name": "R@1"},
+        success_gate=(
+            "The primary retrieval score must satisfy R@1 >= 48 on the held out split before "
+            "the campaign can report success safely."
+        ),
+        source="triage:d1",
+    )
 
 
 def _cycle_record(**over):
@@ -297,8 +302,15 @@ def test_validate_rejects_illegal_envelope():
 def test_milestone_task_node_valid():
     node = conductor.milestone_task_node(
         _direction_node(), cycle=3, suffix="M9-reranker-ablation",
-        experiment="Ablate the reranker against the committed gate",
-        gate="R@1 >= 48", dial="DEFERRED")
+        experiment=(
+            "Ablate the reranker by disabling the reranking stage while preserving datasets, "
+            "candidates, metrics, budget, and review artifacts against the committed Direction gate."
+        ),
+        gate=(
+            "The reranker ablation must keep R@1 >= 48 while showing the claimed improvement depends "
+            "on the reranking stage under unchanged evaluation controls."
+        ),
+        dial="DEFERRED")
     scope_ssot.validate_node(node)
     assert node["parents"] == ["dir/d1"]
     assert node["spec"]["control_mode"] == "DEFERRED"

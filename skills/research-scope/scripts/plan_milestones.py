@@ -74,33 +74,33 @@ def build_milestones(direction_node: dict, *, control_mode: str = "CHECKPOINTED"
     specs = [
         (
             "M0-baseline-validity",
-            "Validate that the declared baseline is reproducible before testing new variants.",
+            "Reproduce the declared baseline with the agreed data split, logging artifacts and tolerance checks before any new variant receives evaluation time.",
             f"baseline evidence for {baselines}",
-            f"{metric} baseline reproduced within declared tolerance",
+            f"The declared baseline for {metric} must reproduce within the accepted tolerance window before any downstream comparison is considered fair during review.",
         ),
         (
             "M1-main-hypothesis",
-            f"Validate the main direction hypothesis: {hypothesis}",
+            "Run the main validation experiment for the accepted Direction, comparing the primary metric against declared baselines under the approved evaluation budget.",
             f"main result artifact for {metric}",
             success_gate,
         ),
         (
             "M2-mechanism-validation",
-            "Validate that the claimed mechanism is necessary via targeted ablation.",
+            "Run a targeted ablation that removes the claimed mechanism while keeping data, budget, and evaluation scripts fixed for attribution review.",
             "ablation artifact isolating the claimed mechanism",
-            "Ablation changes the primary metric in the direction predicted by the hypothesis",
+            "The ablation must move the primary metric in the direction predicted by the hypothesis while preserving all agreed evaluation controls.",
         ),
         (
             "M3-robustness-validation",
-            "Validate robustness across seeds, subsets, or settings before adoption.",
+            "Repeat the validated setting across agreed seeds, subsets, or evaluation slices before any result is treated as robust review evidence.",
             "robustness summary across the agreed evaluation slices",
-            f"{metric} clears the accepted gate without relying on a single lucky run",
+            f"The {metric} result must clear the accepted gate without relying on a single lucky run or an undocumented evaluation slice.",
         ),
         (
             "M4-failure-boundary",
-            "Pre-register the failure boundary that should archive, pivot, or revise scope.",
+            "Document the failure boundary that should archive, pivot, or revise the Direction before results are interpreted opportunistically by any reviewer.",
             "failure-boundary report with stop or pivot recommendation",
-            "Failure conditions are explicit before result interpretation",
+            "Failure conditions must be explicit enough that the reviewer can choose archive, pivot, or revise without moving the accepted gate.",
         ),
     ]
     nodes = []

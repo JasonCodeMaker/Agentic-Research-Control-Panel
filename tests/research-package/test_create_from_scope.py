@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "skills" / "research-package" / "scripts"))
 
 import create_from_scope  # noqa: E402
 import scope_ssot  # noqa: E402
+from tests.scope_fixtures import direction_node, project_node, task_spec  # noqa: E402
 
 
 def _dashboard(tmp_path):
@@ -20,36 +21,11 @@ def _dashboard(tmp_path):
 
 
 def _direction_node(status="ACTIVE"):
-    return {
-        "id": "dir/retrieval-v2",
-        "level": "direction",
-        "parents": ["project/main"],
-        "version": 3,
-        "status": status,
-        "spec": {
-            "hypothesis": "Contrastive retrieval improves zero-shot Recall@1",
-            "metric": {"name": "Recall@1", "dir": "higher"},
-            "baselines": ["CLIP zero-shot = 42.3"],
-            "success_gate": "Recall@1 >= 48",
-        },
-        "source": "triage:t1",
-    }
+    return direction_node(version=3, status=status, source="triage:t1")
 
 
 def _project_node():
-    return {
-        "id": "project/main",
-        "level": "project",
-        "parents": [],
-        "version": 1,
-        "status": "ACTIVE",
-        "spec": {
-            "goal": "trustworthy auto research",
-            "contributions": "SSOT plus gates",
-            "out_of_scope": "paper writing",
-        },
-        "source": "triage:p1",
-    }
+    return project_node()
 
 
 def _write_direction_log(tmp_path, node=None):
@@ -66,18 +42,21 @@ def _write_direction_log(tmp_path, node=None):
 
 
 def _milestone_node(parent, suffix, gate="Gate is explicit"):
+    spec = task_spec(
+        experiment=(
+            f"Validate milestone {suffix} by running the agreed package phase, preserving "
+            "review artifacts, and comparing only against committed Scope gates carefully."
+        ),
+        config=f"scope:{parent}#{suffix.lower()}",
+        gate=gate,
+    )
     return {
         "id": f"task/retrieval-v2/{suffix}",
         "level": "task",
         "parents": [parent],
         "version": 1,
         "status": "ACTIVE",
-        "spec": {
-            "experiment": f"Validate {suffix}",
-            "config": f"scope:{parent}#{suffix.lower()}",
-            "gate": gate,
-            "control_mode": "CHECKPOINTED",
-        },
+        "spec": spec,
         "source": f"test:{suffix}",
     }
 
@@ -85,8 +64,14 @@ def _milestone_node(parent, suffix, gate="Gate is explicit"):
 def _write_milestones(log):
     recs = []
     for suffix, gate in [
-        ("M0-baseline-validity", "Baseline reproduced within tolerance"),
-        ("M1-main-hypothesis", "Recall@1 >= 48"),
+        (
+            "M0-baseline-validity",
+            "The baseline must reproduce within the accepted tolerance window before any new retrieval variant is compared against it during package review.",
+        ),
+        (
+            "M1-main-hypothesis",
+            "The primary retrieval metric must improve by at least two absolute points over the declared baseline on the held out split.",
+        ),
     ]:
         recs.append(scope_ssot.propose_transition(
             _milestone_node("dir/retrieval-v2", suffix, gate=gate),
@@ -122,8 +107,9 @@ def test_materializes_committed_direction_as_package(tmp_path, monkeypatch):
     assert "experiments" in inventory
     assert '"sourceTask": "task/retrieval-v2/M0-baseline-validity"' in inventory
     assert '"purpose": "Verify baseline"' in inventory
-    assert "Contrastive retrieval improves zero-shot Recall@1" in inventory
-    assert 'primaryMetricVsGate: "Recall@1 vs Recall@1 >= 48"' in inventory
+    assert "Adding supervised contrastive pretraining" in inventory
+    assert "primaryMetricVsGate" in inventory
+    assert "two absolute points" in inventory
 
 
 def test_conversion_consumes_brainstorms_and_writes_provenance(tmp_path, monkeypatch):

@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "lib"))
 sys.path.insert(0, str(ROOT / "skills" / "research-brainstorm" / "scripts"))
 
 import brainstorm  # noqa: E402
+from tests.scope_fixtures import direction_spec  # noqa: E402
 
 
 def test_cli_add_then_list(tmp_path, capsys):
@@ -37,7 +38,7 @@ def test_cli_remove(tmp_path, capsys):
 
 
 def test_cli_build_proposal(tmp_path, capsys):
-    spec = {"hypothesis": "h", "metric": "m", "baselines": ["b"], "success_gate": "p"}
+    spec = direction_spec()
     rc = brainstorm.main([
         "build-proposal", "--node-id", "dir/x", "--parent-project-id", "project/main",
         "--spec", json.dumps(spec), "--source", "brainstorms:bs-1",

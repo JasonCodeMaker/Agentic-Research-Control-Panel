@@ -116,10 +116,9 @@ def test_run_front_door_emits_next_step(tmp_path):
     (tmp_path / "research_html" / "data" / "research-packages.js").write_text(
         "window.RESEARCH_PACKAGES = [];\n", encoding="utf-8")
     import scope_ssot  # noqa: E402
+    from tests.scope_fixtures import project_node  # noqa: E402
     log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
-    scope_ssot.propose_transition({"id": "project/grdr", "level": "project", "parents": [],
-                                   "version": 1, "status": "ACTIVE",
-                                   "spec": {}, "source": "t"},
+    scope_ssot.propose_transition(project_node("project/grdr", source="t"),
                                   op="create", gate="USER_ONLY", log_path=log)
     res = admission.run_front_door(tmp_path, context={})
     assert res["state"] == "NO_DIRECTION"

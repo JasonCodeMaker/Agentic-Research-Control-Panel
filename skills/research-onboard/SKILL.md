@@ -87,6 +87,8 @@ Read the content entries `detect` reported — typically `README.md`, any `AGENT
 - **a candidate objective** — `goal`, `contributions`, `out_of_scope` inferred from what you read.
   Keep these as *intent*, never readings (no measured values inside the spec). Provenance lists the
   files you read, e.g. `read:README.md,AGENTS.md,CLAUDE.md,configs/train.yaml`.
+  `goal` is a 20-100 word string; `contributions` and `out_of_scope` are non-empty lists where each
+  item is 5-50 words.
 
 Confirm the drafted objective with the user before proposing — they may correct the goal. This is the
 HCI-alignment moment (核心问题 #2): the agent shows its inferred understanding and the user steers it.
@@ -96,7 +98,7 @@ HCI-alignment moment (核心问题 #2): the agent shows its inferred understandi
 ```bash
 python3 skills/research-onboard/scripts/onboard.py build-proposal \
     --node-id project/<slug> \
-    --spec '{"goal":"...","contributions":["..."],"out_of_scope":["..."]}' \
+    --spec '{"goal":"<20-100 word project goal>","contributions":["<5-50 word contribution>"],"out_of_scope":["<5-50 word boundary>"]}' \
     --source '<dialogue or files read>'
 ```
 

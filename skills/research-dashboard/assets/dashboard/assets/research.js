@@ -750,6 +750,10 @@
     return rootPrefix() + "index.html";
   }
 
+  function scopeHref() {
+    return rootPrefix() + "scope.html";
+  }
+
   function docsHref(pkg) {
     return rootPrefix() + "packages/" + pkg.id + "/docs/";
   }
@@ -779,6 +783,7 @@
       tagBadgeHtml(pkg),
       '<span class="tag">' + htmlEscape(pkg.category) + "</span>",
       '<a class="pill" href="' + dashboardHref() + '">Dashboard</a>',
+      '<a class="pill" href="' + scopeHref() + '">Live Scope</a>',
       '<a class="pill" href="' + rootPrefix() + 'categories/' + htmlEscape(pkg.category) + '/">Category</a>',
       "</div>",
       "</header>",
@@ -804,6 +809,7 @@
       '<div class="k">Category</div><div data-field="category">' + htmlEscape(pkg.category) + "</div>",
       "</div>",
       "</article>",
+      scopeProvenanceCard(pkg),
       '<article class="module-card" id="overview-paths">',
       "<h3>Path Anchors</h3>",
       '<div class="artifact-list">',
@@ -834,6 +840,33 @@
       "</article>",
       "</div>",
       "</section>",
+    ].join("");
+  }
+
+  function scopeProvenanceCard(pkg) {
+    var tasks = (pkg.sourceTasks || []).map(function (item) {
+      var parts = [];
+      if (item.id) parts.push(item.id);
+      if (item.scopeVersion != null) parts.push("v" + item.scopeVersion);
+      if (item.txn) parts.push(item.txn);
+      return parts.join(" / ");
+    }).filter(Boolean);
+    var rows = [
+      '<div class="k">Live Scope</div><div><a href="' + scopeHref() + '">Open scope.html</a></div>',
+      '<div class="k">Direction</div><div><code>' + htmlEscape(pkg.sourceDirection || "unmeasured") + "</code></div>",
+      '<div class="k">Version</div><div>' + htmlEscape(pkg.sourceVersion || "unmeasured") + "</div>",
+      '<div class="k">Change</div><div><code>' + htmlEscape(pkg.sourceChange || "unmeasured") + "</code></div>",
+      '<div class="k">Tasks</div><div>' + (tasks.length
+        ? '<ul class="scope-list">' + tasks.map(function (t) { return "<li>" + htmlEscape(t) + "</li>"; }).join("") + "</ul>"
+        : '<span class="unmeasured">No sourceTasks recorded.</span>') + "</div>",
+    ];
+    return [
+      '<article class="module-card" id="overview-scope" data-card="scope-provenance">',
+      "<h3>Scope Provenance</h3>",
+      '<div class="kv-grid">',
+      rows.join(""),
+      "</div>",
+      "</article>",
     ].join("");
   }
 

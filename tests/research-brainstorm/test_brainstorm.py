@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "skills" / "research-brainstorm" / "scripts"))
 
 import brainstorm  # noqa: E402
 import scope_ssot  # noqa: E402
+from tests.scope_fixtures import direction_spec, project_spec  # noqa: E402
 
 
 # --- idea store (brainstorms.js) ------------------------------------------
@@ -85,7 +86,7 @@ def test_consume_skips_missing_ids(tmp_path):
 # --- precondition + readiness ---------------------------------------------
 
 def _project_spec():
-    return {"goal": "beat baseline", "contributions": ["mixup"], "out_of_scope": ["no NAS"]}
+    return project_spec()
 
 
 def _commit_project(log, node_id="project/main"):
@@ -102,12 +103,7 @@ def test_active_project_ids(tmp_path):
 
 
 def _good_direction_spec():
-    return {
-        "hypothesis": "mixup improves top-1",
-        "metric": "top-1 accuracy",
-        "baselines": ["ResNet-18"],
-        "success_gate": "top-1 > baseline + 1.0",
-    }
+    return direction_spec()
 
 
 def test_direction_ready_true():

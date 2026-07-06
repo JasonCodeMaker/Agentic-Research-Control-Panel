@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT / "lib"))
 sys.path.insert(0, str(ROOT / "skills" / "research-onboard" / "scripts"))
 
 import onboard  # noqa: E402
+from tests.scope_fixtures import project_spec  # noqa: E402
 
 
 def test_cli_detect(tmp_path, capsys):
@@ -32,11 +33,7 @@ def test_cli_scaffold(tmp_path, capsys):
 
 
 def test_cli_build_proposal(tmp_path, capsys):
-    spec = {
-        "goal": "Beat ResNet-18 on CIFAR-10 top-1 accuracy",
-        "contributions": ["mixup"],
-        "out_of_scope": ["no NAS"],
-    }
+    spec = project_spec()
     rc = onboard.main([
         "build-proposal", "--node-id", "project/cifar10",
         "--spec", json.dumps(spec), "--source", "read:README.md",

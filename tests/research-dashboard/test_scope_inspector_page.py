@@ -6,6 +6,8 @@ the dashboard scope-projection, explicit failure states, read-only, and the
 no-hardcoded-SSOT-rules requirement (the tree/fields are data-driven).
 """
 
+import re
+import importlib.util
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -13,6 +15,9 @@ DASH = ROOT / "skills" / "research-dashboard" / "assets" / "dashboard"
 SCOPE_HTML = DASH / "scope.html"
 INDEX_HTML = DASH / "index.html"
 INSPECTOR_JS = DASH / "assets" / "scope-inspector.js"
+RESEARCH_JS = DASH / "assets" / "research.js"
+SCOPE_SCHEMA_JS = DASH / "data" / "scope-schema.js"
+SCOPE_SCHEMA_RENDERER = DASH / "scripts" / "render_scope_schema.py"
 
 # Spec field names are SSOT schema rules; the live view must not hardcode them.
 # `gate` is also transition metadata, so a plain text check would be a false positive.
@@ -37,6 +42,18 @@ def test_index_links_to_scope_page():
     assert 'href="scope.html"' in _read(INDEX_HTML)
 
 
+def test_index_labels_scope_as_live_decision_surface():
+    assert "Live Scope" in _read(INDEX_HTML)
+
+
+def test_package_overview_links_back_to_live_scope_provenance():
+    js = _read(RESEARCH_JS)
+    assert 'data-card="scope-provenance"' in js
+    assert "sourceDirection" in js
+    assert "sourceTasks" in js
+    assert "scope.html" in js
+
+
 def test_scope_reads_canonical_logs_directly():
     html = _read(SCOPE_HTML)
     assert "outputs/_scope/transitions.jsonl" in html
@@ -52,8 +69,28 @@ def test_scope_does_not_depend_on_dashboard_projection():
 def test_scope_loads_inspector_module_and_shared_css():
     html = _read(SCOPE_HTML)
     assert "assets/scope-inspector.js" in html
+    assert "data/scope-schema.js" in html
     assert "assets/research.css" in html
     assert 'data-page="scope"' in html
+
+
+def test_scope_declares_understanding_and_schema_health_surfaces():
+    html = _read(SCOPE_HTML)
+    assert 'data-section="understanding"' in html
+    assert 'data-section="schema-health"' in html
+
+
+def test_scope_inspector_renders_decision_and_audit_labels():
+    js = _read(INSPECTOR_JS)
+    for label in (
+        "Current vs proposed",
+        "Affected packages",
+        "Accepted - needs scope-transition",
+        "Recent changes",
+        "Transition parse errors",
+        "Triage parse errors",
+    ):
+        assert label in js
 
 
 def test_scope_declares_the_four_views():
@@ -83,7 +120,24 @@ def test_no_hardcoded_spec_fields_in_view():
     for path in (SCOPE_HTML, INSPECTOR_JS):
         text = _read(path)
         for field in SPEC_FIELDS:
-            assert field not in text, f"hardcoded SSOT field {field!r} in {path.name}"
+            pattern = r"(?<![A-Za-z0-9_])" + re.escape(field) + r"(?![A-Za-z0-9_])"
+            assert not re.search(pattern, text), f"hardcoded SSOT field {field!r} in {path.name}"
+
+
+def test_scope_schema_js_exists_as_the_field_contract_source():
+    assert SCOPE_SCHEMA_JS.exists(), f"missing {SCOPE_SCHEMA_JS}"
+    text = _read(SCOPE_SCHEMA_JS)
+    for field in SPEC_FIELDS:
+        assert field in text
+    assert "SCOPE_SCHEMA" in text
+
+
+def test_scope_schema_js_is_generated_from_scope_ssot():
+    spec = importlib.util.spec_from_file_location("render_scope_schema", SCOPE_SCHEMA_RENDERER)
+    module = importlib.util.module_from_spec(spec)
+    assert spec and spec.loader
+    spec.loader.exec_module(module)
+    assert module.render_js() == _read(SCOPE_SCHEMA_JS)
 
 
 def test_inspector_logic_has_no_hardcoded_level_names():

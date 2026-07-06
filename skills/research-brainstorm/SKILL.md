@@ -95,11 +95,12 @@ Decide, with the user, which one or more ideas become **one** Direction. Synthes
 spec `{hypothesis, metric, baselines, success_gate}` from them and check it is conversion-ready:
 
 ```bash
-python3 skills/research-brainstorm/scripts/brainstorm.py direction-ready --spec '{"hypothesis":"...","metric":"...","baselines":["..."],"success_gate":"..."}'
+python3 skills/research-brainstorm/scripts/brainstorm.py direction-ready --spec '{"hypothesis":"<20-100 word testable claim>","metric":{"name":"<primary metric>","dir":"higher"},"baselines":["<5-50 word baseline>"],"success_gate":"<20-100 word success condition>"}'
 ```
 
 `ready=false` means a field is missing or empty — keep shaping. A baseline must be concrete (ideally
-grounded by step 2), not a placeholder.
+grounded by step 2), not a placeholder. If `metric` is supplied as a string instead of an object, it must
+also be 20-100 words.
 
 **4b. Rank candidate ideas with a separate sub-agent before forming the Direction.**
 

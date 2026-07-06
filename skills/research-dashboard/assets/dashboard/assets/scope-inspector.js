@@ -9,11 +9,11 @@
  * one shared convention is the writer's "active" status value (lib/scope_ssot).
  */
 (function (root, factory) {
-  var api = factory();
+  var api = factory(root || {});
   if (typeof module !== "undefined" && module.exports) { module.exports = api; }
   if (root) { root.ScopeInspector = api; }
   if (typeof document !== "undefined") { api._initWhenReady(); }
-})(typeof self !== "undefined" ? self : (typeof globalThis !== "undefined" ? globalThis : this), function () {
+})(typeof self !== "undefined" ? self : (typeof globalThis !== "undefined" ? globalThis : this), function (root) {
 
   // ───────── pure logic (also unit-tested under node) ─────────
 
@@ -104,22 +104,331 @@
     return { active: active, roots: roots, childrenOf: childrenOf };
   }
 
-  // Latest status per triage id wins (mirrors research-scope/triage.pending()).
+  function mergeRecord(base, update) {
+    var out = {};
+    Object.keys(base || {}).forEach(function (k) { out[k] = base[k]; });
+    Object.keys(update || {}).forEach(function (k) {
+      if (update[k] !== undefined) { out[k] = update[k]; }
+    });
+    return out;
+  }
+
+  // Latest status per triage id wins, while earlier proposal detail is retained.
   function foldTriage(records) {
     var latest = {};
     for (var i = 0; i < records.length; i++) {
       var r = records[i];
-      if (r && r.id != null) { latest[r.id] = r; }
+      if (r && r.id != null) { latest[r.id] = mergeRecord(latest[r.id], r); }
     }
     var pending = [];
-    var disposed = [];
+    var accepted = [];
+    var rejected = [];
+    var other = [];
     Object.keys(latest).forEach(function (id) {
-      if (latest[id].status === PENDING) { pending.push(latest[id]); }
-      else { disposed.push(latest[id]); }
+      var item = latest[id];
+      var status = String(item.status || "").toLowerCase();
+      if (status === PENDING) { pending.push(item); }
+      else if (status === "accepted") { accepted.push(item); }
+      else if (status === "rejected") { rejected.push(item); }
+      else { other.push(item); }
     });
     pending.sort(function (a, b) { return byKey(a.id, b.id); });
-    disposed.sort(function (a, b) { return byKey(a.id, b.id); });
-    return { pending: pending, disposed: disposed };
+    accepted.sort(function (a, b) { return byKey(a.id, b.id); });
+    rejected.sort(function (a, b) { return byKey(a.id, b.id); });
+    other.sort(function (a, b) { return byKey(a.id, b.id); });
+    return { pending: pending, accepted: accepted, rejected: rejected, other: other, disposed: accepted.concat(rejected, other) };
+  }
+
+  var WORD_RE = /[A-Za-z0-9]+(?:[@._:/+-][A-Za-z0-9]+)*|[\u4e00-\u9fff]/g;
+
+  function wordCount(value) {
+    return String(value == null ? "" : value).match(WORD_RE || []) || [];
+  }
+
+  function countWords(value) {
+    return wordCount(value).length;
+  }
+
+  function schemaLevels(schema) {
+    return (schema && schema.levels) || {};
+  }
+
+  function schemaForNode(node, schema) {
+    return schemaLevels(schema)[node && node.level] || null;
+  }
+
+  function schemaField(schemaLevel, key) {
+    return schemaLevel && schemaLevel.fields ? schemaLevel.fields[key] : null;
+  }
+
+  function issue(out, nodeId, severity, message) {
+    out.push({ node_id: nodeId, severity: severity || "error", message: message });
+  }
+
+  function checkWordBounds(out, nodeId, field, value, min, max) {
+    var n = countWords(value);
+    if (typeof min === "number" && typeof max === "number" && (n < min || n > max)) {
+      issue(out, nodeId, "error", field + " must be " + min + "-" + max + " words, got " + n);
+    }
+  }
+
+  function validateFieldValue(out, nodeId, field, value, def) {
+    if (!def) { return; }
+    if (def.kind === "list") {
+      if (!Array.isArray(value) || !value.length) {
+        issue(out, nodeId, "error", field + " must be a non-empty list");
+        return;
+      }
+      value.forEach(function (item, idx) {
+        if (typeof item !== "string") {
+          issue(out, nodeId, "error", field + "[" + idx + "] must be a string");
+        } else {
+          checkWordBounds(out, nodeId, field + "[" + idx + "]", item, def.minWords, def.maxWords);
+        }
+      });
+      return;
+    }
+    if (def.kind === "ref") {
+      if (typeof value !== "string" || !value.trim()) {
+        issue(out, nodeId, "error", field + " must be a non-empty reference string");
+      }
+      return;
+    }
+    if (def.kind === "enum") {
+      if ((def.values || []).indexOf(value) < 0) {
+        issue(out, nodeId, "error", field + " must be one of " + (def.values || []).join(", "));
+      }
+      return;
+    }
+    if (def.kind === "metric" && value && typeof value === "object" && !Array.isArray(value)) {
+      if (!Object.keys(value).length) { issue(out, nodeId, "error", field + " must be non-empty"); }
+      return;
+    }
+    if (typeof value !== "string") {
+      issue(out, nodeId, "error", field + " must be a string");
+      return;
+    }
+    checkWordBounds(out, nodeId, field, value, def.minWords, def.maxWords);
+  }
+
+  function schemaHealth(projection, schema) {
+    var issues = [];
+    var oldNodeFields = (schema && schema.oldNodeFields) || [];
+    var readingFields = (schema && schema.readingFields) || [];
+    Object.keys(projection || {}).sort(byKey).forEach(function (id) {
+      var node = projection[id] || {};
+      var schemaLevel = schemaForNode(node, schema);
+      oldNodeFields.forEach(function (key) {
+        if (Object.prototype.hasOwnProperty.call(node, key)) {
+          issue(issues, id, "error", "old field " + key + " is rejected");
+        }
+      });
+      if (!node.source) { issue(issues, id, "warn", "source is missing"); }
+      if (!schemaLevel) {
+        issue(issues, id, "error", "unknown level " + (node.level || "-"));
+        return;
+      }
+      var spec = node.spec;
+      if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+        issue(issues, id, "error", "spec must be an object");
+        return;
+      }
+      var fields = schemaLevel.fields || {};
+      Object.keys(fields).forEach(function (field) {
+        if (!Object.prototype.hasOwnProperty.call(spec, field)) {
+          issue(issues, id, "error", "missing spec field " + field);
+        }
+      });
+      Object.keys(spec).forEach(function (field) {
+        if (readingFields.indexOf(field) >= 0) {
+          issue(issues, id, "error", "reading field " + field + " cannot live in a spec");
+          return;
+        }
+        if (!Object.prototype.hasOwnProperty.call(fields, field)) {
+          issue(issues, id, "error", "unknown spec field " + field);
+          return;
+        }
+        validateFieldValue(issues, id, field, spec[field], fields[field]);
+      });
+    });
+    return { ok: issues.length === 0, issues: issues };
+  }
+
+  function packageList(explicit) {
+    if (explicit) { return explicit; }
+    return (root && root.RESEARCH_PACKAGES) || [];
+  }
+
+  function linkedPackages(nodeId, explicitPackages) {
+    return packageList(explicitPackages).filter(function (p) {
+      var matchedExperiments = (p.experiments || []).filter(function (exp) {
+        return exp && exp.sourceTask === nodeId;
+      });
+      var direct = p.sourceDirection === nodeId;
+      var task = (p.sourceTasks || []).some(function (m) { return m && m.id === nodeId; });
+      if (!direct && !task && !matchedExperiments.length) { return false; }
+      p.matchedExperiments = matchedExperiments;
+      return true;
+    });
+  }
+
+  function packageProvenanceHealth(projection, explicitPackages) {
+    var issues = [];
+    packageList(explicitPackages).forEach(function (p) {
+      var pkgId = p.id || p.name || "package";
+      if (p.sourceDirection && !projection[p.sourceDirection]) {
+        issue(issues, pkgId, "warn", "sourceDirection points to missing Scope node " + p.sourceDirection);
+      }
+      (p.sourceTasks || []).forEach(function (task) {
+        if (task && task.id && !projection[task.id]) {
+          issue(issues, pkgId, "warn", "sourceTasks points to missing Scope node " + task.id);
+        }
+      });
+      (p.experiments || []).forEach(function (exp) {
+        if (exp && exp.sourceTask && !projection[exp.sourceTask]) {
+          issue(issues, pkgId, "warn", "experiments[].sourceTask " + (exp.id || "-") +
+            " points to missing Scope node " + exp.sourceTask);
+        }
+      });
+    });
+    return { ok: issues.length === 0, issues: issues };
+  }
+
+  function labelForField(schemaLevel, key) {
+    var def = schemaField(schemaLevel, key);
+    return (def && def.label) || humanizeKey(key);
+  }
+
+  function orderedSpecKeys(node, schema) {
+    var spec = (node && node.spec) || {};
+    var schemaLevel = schemaForNode(node, schema);
+    var order = (schemaLevel && schemaLevel.order) || [];
+    var seen = {};
+    var keys = [];
+    order.forEach(function (key) {
+      if (Object.prototype.hasOwnProperty.call(spec, key)) {
+        keys.push(key);
+        seen[key] = true;
+      }
+    });
+    Object.keys(spec).sort(byKey).forEach(function (key) {
+      if (!seen[key]) { keys.push(key); }
+    });
+    return keys;
+  }
+
+  function valueSummary(value) {
+    if (value == null || value === "") { return ""; }
+    if (Array.isArray(value)) { return value.map(valueSummary).filter(Boolean).join("; "); }
+    if (typeof value === "object") {
+      if (value.name) { return String(value.name); }
+      return JSON.stringify(value);
+    }
+    return String(value);
+  }
+
+  function summarizeNode(node, schema) {
+    var schemaLevel = schemaForNode(node, schema);
+    var spec = (node && node.spec) || {};
+    var primary = (schemaLevel && schemaLevel.primary) || orderedSpecKeys(node, schema).slice(0, 1);
+    var parts = [];
+    primary.forEach(function (field) {
+      if (Object.prototype.hasOwnProperty.call(spec, field)) {
+        var text = valueSummary(spec[field]);
+        if (text) { parts.push({ field: field, label: labelForField(schemaLevel, field), value: text }); }
+      }
+    });
+    return {
+      id: node && node.id,
+      level: node && node.level,
+      title: parts.length ? parts[0].value : ((node && node.id) || "Scope node"),
+      parts: parts,
+    };
+  }
+
+  function currentUnderstanding(projection, triage, packages, schema) {
+    var tree = activeTree(projection || {});
+    var activeIds = Object.keys(tree.active);
+    var activeByLevel = {};
+    activeIds.forEach(function (id) {
+      var level = tree.active[id].level || "node";
+      activeByLevel[level] = (activeByLevel[level] || 0) + 1;
+    });
+    var linked = {};
+    activeIds.forEach(function (id) {
+      linkedPackages(id, packages).forEach(function (p) { linked[p.id || p.name] = true; });
+    });
+    return {
+      activeTotal: activeIds.length,
+      activeByLevel: activeByLevel,
+      pendingProposals: (triage && triage.pending ? triage.pending.length : 0),
+      acceptedProposals: (triage && triage.accepted ? triage.accepted.length : 0),
+      linkedPackages: Object.keys(linked).filter(Boolean).length,
+      rootSummaries: tree.roots.map(function (id) { return summarizeNode(tree.active[id], schema); }),
+    };
+  }
+
+  function flattenFields(prefix, value, out) {
+    out = out || {};
+    if (value == null || typeof value !== "object" || Array.isArray(value)) {
+      out[prefix] = JSON.stringify(value);
+      return out;
+    }
+    Object.keys(value).sort(byKey).forEach(function (key) {
+      flattenFields(prefix ? prefix + "." + key : key, value[key], out);
+    });
+    return out;
+  }
+
+  function diffNodes(before, after) {
+    var left = flattenFields("", before || {}, {});
+    var right = flattenFields("", after || {}, {});
+    var keys = {};
+    Object.keys(left).forEach(function (k) { keys[k] = true; });
+    Object.keys(right).forEach(function (k) { keys[k] = true; });
+    return Object.keys(keys).sort(byKey).filter(function (k) {
+      return left[k] !== right[k];
+    }).map(function (k) {
+      return {
+        field: k,
+        type: left[k] === undefined ? "added" : (right[k] === undefined ? "removed" : "changed"),
+        before: left[k],
+        after: right[k],
+      };
+    });
+  }
+
+  function historyTimeline(records) {
+    var prev = {};
+    var rows = [];
+    (records || []).forEach(function (r, idx) {
+      var nodeId = r && r.node_id;
+      var before = nodeId && prev[nodeId] ? prev[nodeId].node : null;
+      var row = mergeRecord(r || {}, { index: idx, diff: diffNodes(before, r && r.node) });
+      rows.push(row);
+      if (nodeId) { prev[nodeId] = r; }
+    });
+    return rows.reverse();
+  }
+
+  function buildSnapshot(transitions, triageRes, schema) {
+    var parsed = parseJsonl(transitions.text);
+    var triageParsed = parseJsonl(triageRes.text);
+    var projection = foldTransitions(parsed.records);
+    var triage = foldTriage(triageParsed.records);
+    return {
+      tStatus: transitions.status,
+      triageStatus: triageRes.status,
+      records: parsed.records,
+      errors: parsed.errors,
+      triageRecords: triageParsed.records,
+      triageErrors: triageParsed.errors,
+      projection: projection,
+      latest: latestRecords(parsed.records),
+      triage: triage,
+      schema: schema || {},
+      schemaHealth: schemaHealth(projection, schema || {}),
+    };
   }
 
   var logic = {
@@ -131,6 +440,12 @@
     isActive: isActive,
     activeTree: activeTree,
     foldTriage: foldTriage,
+    buildSnapshot: buildSnapshot,
+    schemaHealth: schemaHealth,
+    currentUnderstanding: currentUnderstanding,
+    linkedPackages: linkedPackages,
+    packageProvenanceHealth: packageProvenanceHealth,
+    historyTimeline: historyTimeline,
   };
 
   // ───────── DOM controller (browser only) ─────────
@@ -156,6 +471,7 @@
     prevSig: null,
     data: null,                 // last good { tStatus, records, errors, projection, latest, triage }
     lastRefresh: "-",
+    schema: null,
   };
 
   function $(sel, ctx) { return (ctx || document).querySelector(sel); }
@@ -197,10 +513,12 @@
 
   function renderSpec(node) {
     var spec = (node && node.spec) || {};
-    var keys = Object.keys(spec);
+    var schema = state.schema || {};
+    var schemaLevel = schemaForNode(node, schema);
+    var keys = orderedSpecKeys(node, schema);
     if (!keys.length) { return '<p class="unmeasured">No spec fields declared.</p>'; }
     return keys.map(function (k) {
-      return '<div class="scope-field"><div class="k">' + esc(humanizeKey(k)) + "</div>" +
+      return '<div class="scope-field"><div class="k">' + esc(labelForField(schemaLevel, k)) + "</div>" +
         renderValue(spec[k]) + "</div>";
     }).join("");
   }
@@ -210,22 +528,98 @@
     return '<span class="chip" data-status="' + esc(s) + '">' + esc(s) + "</span>";
   }
 
+  function combinedSchemaHealth(data) {
+    var base = (data && data.schemaHealth) || { ok: true, issues: [] };
+    var pkg = packageProvenanceHealth((data && data.projection) || {}, packageList());
+    var issues = (base.issues || []).concat(pkg.issues || []);
+    return { ok: issues.length === 0, issues: issues };
+  }
+
+  function renderUnderstanding(data) {
+    var host = $("[data-section='understanding']");
+    if (!host) { return; }
+    if (!data) {
+      host.innerHTML = '<div class="empty-state">Loading current understanding...</div>';
+      return;
+    }
+    var summary = currentUnderstanding(data.projection, data.triage, packageList(), data.schema);
+    var levelRows = Object.keys(summary.activeByLevel).sort(byKey).map(function (level) {
+      return '<div class="status-cell"><div class="k">' + esc(humanizeKey(level)) + '</div><div class="v">' +
+        esc(summary.activeByLevel[level]) + "</div></div>";
+    }).join("");
+    var roots = summary.rootSummaries.length
+      ? summary.rootSummaries.map(function (item) {
+          return '<li><code>' + esc(item.id || "-") + "</code> " + esc(item.title || "-") + "</li>";
+        }).join("")
+      : '<li>No active root node.</li>';
+    host.innerHTML = [
+      '<article class="scope-understanding-card">',
+      '<div class="scope-section-head"><div><div class="k">Current understanding</div>',
+      '<h2>What the agent currently treats as scope</h2></div></div>',
+      '<div class="status-strip scope-summary-strip">',
+      '<div class="status-cell"><div class="k">Active nodes</div><div class="v">' + esc(summary.activeTotal) + "</div></div>",
+      levelRows,
+      '<div class="status-cell"' + (summary.pendingProposals ? ' data-state="warn"' : "") + '><div class="k">Pending proposals</div><div class="v">' + esc(summary.pendingProposals) + "</div></div>",
+      '<div class="status-cell"' + (summary.acceptedProposals ? ' data-state="warn"' : "") + '><div class="k">Accepted proposals</div><div class="v">' + esc(summary.acceptedProposals) + "</div></div>",
+      '<div class="status-cell"><div class="k">Linked packages</div><div class="v">' + esc(summary.linkedPackages) + "</div></div>",
+      "</div>",
+      '<ul class="scope-list scope-root-summary">' + roots + "</ul>",
+      "</article>",
+    ].join("");
+  }
+
+  function renderSchemaHealth(data) {
+    var host = $("[data-section='schema-health']");
+    if (!host) { return; }
+    if (!data) {
+      host.innerHTML = '<div class="empty-state">Checking schema...</div>';
+      return;
+    }
+    var health = combinedSchemaHealth(data);
+    var issues = health.issues || [];
+    var issueHtml = issues.length
+      ? '<ul class="scope-list">' + issues.slice(0, 12).map(function (item) {
+          return '<li><span class="chip" data-status="' + esc(item.severity || "error") + '">' +
+            esc(item.severity || "error") + '</span> <code>' + esc(item.node_id || "-") + "</code> " +
+            esc(item.message || "") + "</li>";
+        }).join("") + "</ul>"
+      : '<p class="scope-value">All folded Scope nodes match the browser schema snapshot.</p>';
+    if (issues.length > 12) {
+      issueHtml += '<p class="scope-note">' + esc(issues.length - 12) + " more issues hidden; open Raw Log for the full source.</p>";
+    }
+    host.innerHTML = [
+      '<article class="scope-understanding-card" data-schema-ok="' + (health.ok ? "true" : "false") + '">',
+      '<div class="scope-section-head"><div><div class="k">Schema health</div>',
+      '<h2>' + (health.ok ? "Scope schema ok" : "Scope schema needs attention") + "</h2></div>",
+      statusChip(health.ok ? "OK" : "CHECK"),
+      "</div>",
+      issueHtml,
+      "</article>",
+    ].join("");
+  }
+
   // ── tree (Active Scope) ──
 
   function nodeCardHtml(id, tree, depth) {
     var node = tree.active[id];
     var children = tree.childrenOf[id] || [];
     var selected = state.selection && state.selection.kind === "node" && state.selection.id === id;
+    var summary = summarizeNode(node, state.schema || {});
+    var links = linkedPackages(id);
+    var packageSummary = links.length
+      ? links.length + " linked " + (links.length === 1 ? "package" : "packages")
+      : "No linked package";
     var head = [
       '<div class="scope-node-head">',
       "<div>",
       '<div class="k">' + esc(node.level || "node") + "</div>",
-      "<h3>" + esc(id) + "</h3>",
+      "<h3>" + esc(summary.title) + "</h3>",
+      '<p class="scope-node-id"><code>' + esc(id) + "</code></p>",
       "</div>",
       statusChip(node.status),
       "</div>",
     ].join("");
-    var summary = renderSpec(node);
+    var body = renderSpec(node);
     var childHtml = children.length
       ? '<div class="scope-children">' + children.map(function (cid) {
           return nodeCardHtml(cid, tree, depth + 1);
@@ -236,7 +630,9 @@
         (selected ? ' data-selected="true"' : "") +
         ' data-select-node="' + esc(id) + '" tabindex="0" role="button">',
       head,
-      '<div class="scope-node-fields">' + summary + "</div>",
+      '<div class="scope-impact-line">' + esc(packageSummary) + " &middot; " +
+        children.length + " active " + (children.length === 1 ? "child" : "children") + "</div>",
+      '<div class="scope-node-fields">' + body + "</div>",
       "</article>",
       childHtml,
     ].join("");
@@ -272,32 +668,94 @@
 
   // ── pending triage ──
 
+  function proposalTargetId(item) {
+    return item.node_id || item.target_node || (item.proposed_node && item.proposed_node.id) || "-";
+  }
+
+  function proposalDossierRows(item) {
+    var target = proposalTargetId(item);
+    return [
+      ["Change", esc(item.change || item.title || "Scope change proposal")],
+      ["Why", esc(item.rationale || item.cause || item.reason || "No rationale recorded.")],
+      ["Target", "<code>" + esc(target) + "</code>"],
+      ["Operation", esc(item.op || item.operation || "-")],
+      ["Gate", esc(item.gate || "-")],
+      ["Affected packages", packageLinkHtml(linkedPackages(target))],
+      ["Next action", esc(String(item.status || "").toLowerCase() === "accepted"
+        ? "Run scope-transition to commit or reject the accepted proposal."
+        : "Review the proposed node before disposition.")],
+    ];
+  }
+
+  function diffHtml(diff) {
+    if (!diff || !diff.length) { return '<p class="unmeasured">No field-level diff available.</p>'; }
+    return '<ul class="scope-list scope-diff-list">' + diff.slice(0, 10).map(function (d) {
+      return '<li><span class="chip" data-status="' + esc(d.type) + '">' + esc(d.type) +
+        '</span> <code>' + esc(d.field) + "</code></li>";
+    }).join("") + "</ul>";
+  }
+
+  function proposalDiff(item) {
+    var target = proposalTargetId(item);
+    var current = state.data && state.data.projection ? state.data.projection[target] : null;
+    return diffNodes(current, item.proposed_node || item.node || null);
+  }
+
   function proposalHtml(item) {
     var selected = state.selection && state.selection.kind === "triage" && state.selection.id === item.id;
-    var rows = Object.keys(item).filter(function (k) { return k !== "id" && k !== "status"; })
-      .map(function (k) {
-        return '<div class="k">' + esc(humanizeKey(k)) + "</div><div>" + renderValue(item[k]) + "</div>";
-      }).join("");
+    var rows = proposalDossierRows(item).map(function (r) {
+      return '<div class="k">' + esc(r[0]) + "</div><div>" + r[1] + "</div>";
+    }).join("");
     return [
       '<article class="scope-node scope-proposal"' + (selected ? ' data-selected="true"' : "") +
         ' data-select-triage="' + esc(item.id) + '" tabindex="0" role="button">',
       '<div class="scope-node-head"><div><div class="k">Proposal</div><h3>' + esc(item.id) + "</h3></div>" +
         statusChip(item.status || PENDING) + "</div>",
-      rows ? '<div class="kv-grid">' + rows + "</div>" : '<p class="unmeasured">No proposal fields recorded.</p>',
+      '<div class="kv-grid scope-dossier-grid">' + rows + "</div>",
+      '<div class="scope-drawer-section"><div class="scope-drawer-label">Current vs proposed</div>' +
+        diffHtml(proposalDiff(item)) + "</div>",
       "</article>",
     ].join("");
   }
 
   function renderTriage(panel, data) {
     var pending = data.triage.pending;
-    if (!pending.length) {
-      panel.innerHTML = '<div class="empty-state">No pending scope proposals. The agent may propose ' +
+    var accepted = data.triage.accepted || [];
+    var rejected = data.triage.rejected || [];
+    var other = data.triage.other || [];
+    var sections = [];
+    if (data.triageStatus !== "ok" && data.triageStatus !== "empty" && data.triageStatus !== "missing") {
+      sections.push('<div class="notice"><strong>Triage log is not readable.</strong> Pending decisions may be hidden.</div>');
+    }
+    if (data.triageErrors && data.triageErrors.length) {
+      sections.push('<div class="notice"><strong>Triage parse errors</strong><ul class="scope-list">' +
+        data.triageErrors.map(function (e) {
+          return "<li>line " + e.line + ": " + esc(e.message) + "</li>";
+        }).join("") + "</ul></div>");
+    }
+    if (!pending.length && !accepted.length && !rejected.length && !other.length) {
+      panel.innerHTML = sections.join("") + '<div class="empty-state">No scope proposals recorded. The agent may propose ' +
         "changes here; only the user disposes them.</div>";
       return;
     }
-    panel.innerHTML = '<p class="scope-note">These are suggestions awaiting your disposition. They are ' +
-      "<strong>not</strong> active scope.</p>" +
-      '<div class="scope-forest">' + pending.map(proposalHtml).join("") + "</div>";
+    sections.push('<p class="scope-note">Proposal records are suggestions, not active Scope, until a gated transition commits them.</p>');
+    if (pending.length) {
+      sections.push('<section class="scope-triage-bucket"><h2>Pending</h2><div class="scope-forest">' +
+        pending.map(proposalHtml).join("") + "</div></section>");
+    }
+    if (accepted.length) {
+      sections.push('<section class="scope-triage-bucket"><h2>Accepted - needs scope-transition</h2><div class="scope-forest">' +
+        accepted.map(proposalHtml).join("") + "</div></section>");
+    }
+    if (rejected.length) {
+      sections.push('<section class="scope-triage-bucket"><h2>Rejected</h2><div class="scope-forest">' +
+        rejected.map(proposalHtml).join("") + "</div></section>");
+    }
+    if (other.length) {
+      sections.push('<section class="scope-triage-bucket"><h2>Other disposed</h2><div class="scope-forest">' +
+        other.map(proposalHtml).join("") + "</div></section>");
+    }
+    panel.innerHTML = sections.join("");
   }
 
   // ── history ──
@@ -307,10 +765,10 @@
       panel.innerHTML = '<div class="empty-state">No transitions recorded yet.</div>';
       return;
     }
-    var groups = historyByNode(data.records);
-    var ids = Object.keys(groups).sort(byKey);
-    panel.innerHTML = ids.map(function (id) {
-      var items = groups[id].map(function (r) {
+    var rows = historyTimeline(data.records);
+    panel.innerHTML = [
+      '<section class="scope-history-group"><h2 class="scope-history-head">Recent changes</h2><div class="timeline">',
+      rows.map(function (r) {
         var selected = state.selection && state.selection.kind === "transaction" && state.selection.id === r.transaction_id;
         var meta = [];
         if (r.cause) { meta.push("<p class='card-text'>" + esc(r.cause) + "</p>"); }
@@ -323,15 +781,16 @@
           '<div class="timeline-body scope-history-row' + (selected ? " is-selected" : "") +
             '" data-select-txn="' + esc(r.transaction_id || "") + '" tabindex="0" role="button">',
           "<h3>" + esc(r.op || "transition") + "</h3>",
+          '<p class="scope-history-txn"><code>' + esc(r.node_id || "-") + "</code></p>",
           '<p class="scope-history-txn"><code>' + esc(r.transaction_id || "-") + "</code></p>",
           meta.join(""),
+          diffHtml(r.diff),
           "</div>",
           "</div>",
         ].join("");
-      }).join("");
-      return '<section class="scope-history-group"><h2 class="scope-history-head"><code>' + esc(id) +
-        '</code></h2><div class="timeline">' + items + "</div></section>";
-    }).join("");
+      }).join(""),
+      "</div></section>",
+    ].join("");
   }
 
   // ── raw log ──
@@ -339,35 +798,54 @@
   function renderRaw(panel, data) {
     var parts = [];
     if (data.errors.length) {
-      parts.push('<div class="notice"><strong>Parse errors</strong><ul class="scope-list">' +
+      parts.push('<div class="notice"><strong>Transition parse errors</strong><ul class="scope-list">' +
         data.errors.map(function (e) {
           return "<li>line " + e.line + ": " + esc(e.message) + "</li>";
         }).join("") + "</ul></div>");
     }
-    if (!data.records.length && !data.errors.length) {
+    if (data.triageErrors.length) {
+      parts.push('<div class="notice"><strong>Triage parse errors</strong><ul class="scope-list">' +
+        data.triageErrors.map(function (e) {
+          return "<li>line " + e.line + ": " + esc(e.message) + "</li>";
+        }).join("") + "</ul></div>");
+    }
+    if (!data.records.length && !data.errors.length && !data.triageRecords.length && !data.triageErrors.length) {
       panel.innerHTML = '<div class="empty-state">No records to show.</div>';
       return;
     }
     var body = data.records.map(function (r) {
       return esc(JSON.stringify(r, null, 2));
     }).join("\n\n");
-    parts.push('<div class="code-box"><code>' + body + "</code></div>");
+    var triageBody = data.triageRecords.map(function (r) {
+      return esc(JSON.stringify(r, null, 2));
+    }).join("\n\n");
+    parts.push('<h2 class="scope-history-head">Transitions</h2><div class="code-box"><code>' + body + "</code></div>");
+    parts.push('<h2 class="scope-history-head">Triage</h2><div class="code-box"><code>' + triageBody + "</code></div>");
     panel.innerHTML = parts.join("");
   }
 
   // ── detail drawer ──
 
-  function linkedPackages(nodeId) {
-    var pkgs = (typeof window !== "undefined" && window.RESEARCH_PACKAGES) || [];
-    return pkgs.filter(function (p) {
-      if (p.sourceDirection === nodeId) { return true; }
-      return (p.sourceTasks || []).some(function (m) { return m && m.id === nodeId; });
-    });
-  }
-
   function pkgHref(p) {
     if (p.detailPath) { return p.detailPath; }
     return "packages/" + encodeURIComponent(p.id) + "/index.html";
+  }
+
+  function packageLinkHtml(links) {
+    if (!links.length) { return '<span class="unmeasured">No package links found.</span>'; }
+    return '<ul class="scope-list scope-package-list">' + links.map(function (p) {
+      var exp = (p.matchedExperiments || []).map(function (e) {
+        return e.id ? e.id + (e.status ? " (" + e.status + ")" : "") : "";
+      }).filter(Boolean).join(", ");
+      var meta = [];
+      if (p.status) { meta.push("status " + p.status); }
+      if (p.activeGate) { meta.push("gate " + p.activeGate); }
+      if (p.nextRoute) { meta.push("next " + p.nextRoute); }
+      if (exp) { meta.push("experiments " + exp); }
+      return '<li><a href="' + esc(pkgHref(p)) + '">' + esc(p.name || p.id) + "</a>" +
+        (meta.length ? '<span class="scope-package-meta"> - ' + esc(meta.join("; ")) + "</span>" : "") +
+        "</li>";
+    }).join("") + "</ul>";
   }
 
   function drawerForNode(id, data) {
@@ -393,11 +871,7 @@
       if (rec[k] && rec[k].length) { prov.push([humanizeKey(k), renderValue(rec[k])]); }
     });
     var links = linkedPackages(id);
-    var linkHtml = links.length
-      ? '<ul class="scope-list">' + links.map(function (p) {
-          return '<li><a href="' + esc(pkgHref(p)) + '">' + esc(p.name || p.id) + "</a></li>";
-        }).join("") + "</ul>"
-      : '<span class="unmeasured">No package links found.</span>';
+    var linkHtml = packageLinkHtml(links);
     return [
       kvBlock(rows),
       '<div class="scope-drawer-section"><div class="scope-drawer-label">Spec</div>' +
@@ -415,6 +889,13 @@
       if (data.records[i].transaction_id === txnId) { rec = data.records[i]; break; }
     }
     if (!rec) { return '<p class="unmeasured">Transition ' + esc(txnId) + " not found.</p>"; }
+    var before = null;
+    for (var j = 0; j < data.records.length; j++) {
+      if (data.records[j].transaction_id === txnId) { break; }
+      if (data.records[j].node_id === rec.node_id) { before = data.records[j].node; }
+    }
+    var diff = diffNodes(before, rec.node);
+    var links = linkedPackages(rec.node_id);
     var rows = [
       ["Txn id", "<code>" + esc(rec.transaction_id) + "</code>"],
       ["Node id", "<code>" + esc(rec.node_id) + "</code>"],
@@ -430,10 +911,14 @@
     });
     return [
       kvBlock(rows),
+      '<div class="scope-drawer-section"><div class="scope-drawer-label">Field diff</div>' +
+        diffHtml(diff) + "</div>",
       rec.node
         ? '<div class="scope-drawer-section"><div class="scope-drawer-label">Node snapshot</div>' +
           renderSpec(rec.node) + "</div>"
         : "",
+      '<div class="scope-drawer-section"><div class="scope-drawer-label">Affected packages</div>' +
+        packageLinkHtml(links) + "</div>",
     ].join("");
   }
 
@@ -443,8 +928,14 @@
       if (p.id === id) { item = p; }
     });
     if (!item) { return '<p class="unmeasured">Proposal ' + esc(id) + " not found.</p>"; }
-    var rows = Object.keys(item).map(function (k) { return [humanizeKey(k), renderValue(item[k])]; });
-    return '<p class="scope-note">A proposal is a suggestion, never active scope.</p>' + kvBlock(rows);
+    var rows = proposalDossierRows(item);
+    var raw = Object.keys(item).map(function (k) { return [humanizeKey(k), renderValue(item[k])]; });
+    return '<p class="scope-note">A proposal is a suggestion, never active scope.</p>' +
+      kvBlock(rows) +
+      '<div class="scope-drawer-section"><div class="scope-drawer-label">Current vs proposed</div>' +
+        diffHtml(proposalDiff(item)) + "</div>" +
+      '<div class="scope-drawer-section"><div class="scope-drawer-label">Raw proposal</div>' +
+        kvBlock(raw) + "</div>";
   }
 
   function kvBlock(rows) {
@@ -482,12 +973,19 @@
     });
     var srcState = data.tStatus === "ok" ? "ok" :
       (data.tStatus === "empty" ? "empty" : (data.tStatus === "missing" ? "missing" : "unreachable"));
+    var triageState = data.triageStatus === "ok" ? "ok" :
+      (data.triageStatus === "empty" ? "empty" : (data.triageStatus === "missing" ? "missing" : "unreachable"));
+    var health = combinedSchemaHealth(data);
     var cells = [
       ["Scope source", "<span class='hint'>" + esc(state.transitionsPath) + "</span>", srcState],
+      ["Triage source", "<span class='hint'>" + esc(state.triagePath) + "</span>", triageState],
       ["Latest version", "v" + esc(latestVer), null],
       ["Latest txn", "<span class='hint'>" + esc(latestTxn) + "</span>", null],
       ["Pending proposals", esc(data.triage.pending.length), data.triage.pending.length ? "warn" : null],
-      ["Parse errors", esc(data.errors.length), data.errors.length ? "error" : null],
+      ["Accepted proposals", esc((data.triage.accepted || []).length), (data.triage.accepted || []).length ? "warn" : null],
+      ["Scope parse errors", esc(data.errors.length), data.errors.length ? "error" : null],
+      ["Triage parse errors", esc(data.triageErrors.length), data.triageErrors.length ? "error" : null],
+      ["Schema issues", esc((health.issues || []).length), health.ok ? null : "error"],
       ["Last refresh", "<span class='hint'>" + esc(state.lastRefresh) + "</span>", null],
     ];
     strip.innerHTML = cells.map(function (c) {
@@ -522,6 +1020,8 @@
   function renderTabs() {
     var data = state.data;
     if (!data) { return; }
+    renderUnderstanding(data);
+    renderSchemaHealth(data);
     var active = $("[data-tabpanel='active']");
     var triage = $("[data-tabpanel='triage']");
     var history = $("[data-tabpanel='history']");
@@ -549,16 +1049,7 @@
   }
 
   function build(transitions, triageRes) {
-    var parsed = parseJsonl(transitions.text);
-    var triageParsed = parseJsonl(triageRes.text);
-    return {
-      tStatus: transitions.status,
-      records: parsed.records,
-      errors: parsed.errors,
-      projection: foldTransitions(parsed.records),
-      latest: latestRecords(parsed.records),
-      triage: foldTriage(triageParsed.records),
-    };
+    return buildSnapshot(transitions, triageRes, state.schema || {});
   }
 
   function refresh() {
@@ -606,6 +1097,7 @@
     var body = document.body;
     state.transitionsPath = body.getAttribute("data-transitions") || state.transitionsPath;
     state.triagePath = body.getAttribute("data-triage") || state.triagePath;
+    state.schema = root.SCOPE_SCHEMA || {};
     document.addEventListener("click", onClick);
     document.addEventListener("keydown", onKey);
     setTab(state.tab);

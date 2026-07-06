@@ -233,6 +233,10 @@ never ratifies silently or materializes a package from a pending proposal. The n
 Direction, `/research-scope` for Task milestones, `/research-package` for package materialization, then
 `/research-run` to complete the package.
 
+Scope text is intentionally bounded for review: scalar prose fields are 20-100 words, list items are
+5-50 words, `config` is a short reference string, and `control_mode` is an enum. Results and readings
+never belong in Scope.
+
 ### 6 · (Optional) Enable the turn-end automation hook
 
 Fact propagation and the dashboard-server keepalive can run automatically at the **end of every turn** —

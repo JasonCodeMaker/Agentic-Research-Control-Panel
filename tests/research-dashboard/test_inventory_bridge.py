@@ -16,26 +16,15 @@ sys.path.insert(0, str(ROOT / "skills" / "research-dashboard" / "scripts"))
 import scope_ssot  # noqa: E402
 import render_inventory as ri  # noqa: E402
 from scope_ssot import RuleViolation  # noqa: E402
+from tests.scope_fixtures import direction_node, project_node  # noqa: E402
 
 
 def _project_node():
-    return {
-        "id": "project/main", "level": "project", "parents": [], "version": 1, "status": "ACTIVE",
-        "spec": {"goal": "trustworthy auto-research",
-                      "contributions": "typed gates + SSOT", "out_of_scope": "multi-project"},
-        "source": "txn-0",
-    }
+    return project_node(source="txn-0")
 
 
 def _direction_node(version=1, status="ACTIVE"):
-    return {
-        "id": "dir/contrastive-v2", "level": "direction", "parents": ["project/main"],
-        "version": version, "status": status,
-        "spec": {"hypothesis": "contrastive pretrain helps recall",
-                      "metric": {"name": "Recall@10", "dir": "higher"},
-                      "baselines": ["xpool"], "success_gate": "Recall@10 >= baseline + 2"},
-        "source": "txn-0",
-    }
+    return direction_node("dir/contrastive-v2", version=version, status=status, source="txn-0")
 
 
 def _log(tmp_path):
@@ -50,9 +39,9 @@ def _log(tmp_path):
 def test_profile_projects_project_node(tmp_path):
     proj = scope_ssot.fold(scope_ssot.read_log(_log(tmp_path)))
     inv = ri.build_inventory(proj)
-    assert inv["profile"]["goal"] == "trustworthy auto-research"
-    assert inv["profile"]["contributions"] == "typed gates + SSOT"
-    assert inv["profile"]["out_of_scope"] == "multi-project"
+    assert inv["profile"]["goal"].startswith("Build an auditable research workflow")
+    assert "typed Scope log" in inv["profile"]["contributions"][0]
+    assert "paper writing" in inv["profile"]["out_of_scope"][0]
 
 
 def test_card_status_matches_ssot_task_state(tmp_path):

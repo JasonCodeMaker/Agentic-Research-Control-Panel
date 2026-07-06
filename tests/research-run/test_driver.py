@@ -10,14 +10,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "skills" / "research-run" / "scripts"))
 import driver  # noqa: E402
+from tests.scope_fixtures import direction_node  # noqa: E402
 
-NODE = {
-    "id": "dir/2026-driver", "level": "direction", "parents": ["project/main"],
-    "version": 1, "status": "ACTIVE",
-    "spec": {"hypothesis": "X improves recall", "metric": {"name": "recall", "dir": "higher"},
-                  "baselines": ["b0"], "success_gate": "measured >= 0.80"},
-    "source": "txn-0",
-}
+NODE = direction_node("dir/2026-driver", source="txn-0")
 
 
 def _ok_return(role, *, mutations=None):

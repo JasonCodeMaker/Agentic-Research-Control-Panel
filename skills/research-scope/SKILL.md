@@ -81,13 +81,13 @@ A node has these required fields:
 
 Spec fields differ by level. Supply all fields for the relevant level, no others:
 
-| level | required spec fields |
+| level | required spec fields and form |
 |---|---|
-| `project` | `goal`, `contributions`, `out_of_scope` |
-| `direction` | `hypothesis`, `metric`, `baselines`, `success_gate` |
-| `task` | `experiment`, `config`, `gate`, `control_mode` |
+| `project` | `goal`: string, 20-100 words. `contributions`: non-empty list of strings, each 5-50 words. `out_of_scope`: non-empty list of strings, each 5-50 words. |
+| `direction` | `hypothesis`: string, 20-100 words. `metric`: non-empty object, or string with 20-100 words. `baselines`: non-empty list of strings, each 5-50 words. `success_gate`: string, 20-100 words. |
+| `task` | `experiment`: string, 20-100 words. `config`: non-empty reference string. `gate`: string, 20-100 words. `control_mode`: one of `SUPERVISED`, `CHECKPOINTED`, `DEFERRED`, `AUTONOMOUS`. |
 
-A spec must not contain readings (measured values, results, verdicts). Those live in results surfaces, not in scope.
+A spec must not contain readings (measured values, results, verdicts). Those live in results surfaces, not in scope. `config` is a ref/path and `control_mode` is an enum, so the 20-100 word scalar-text rule does not apply to them.
 
 Required gate per level — the `gate` field passed to `scope_ssot.propose_transition`:
 
@@ -114,7 +114,7 @@ If the log does not exist or is empty, there is no committed scope yet — the f
 Build the node dict according to the shape above, then call:
 
 ```python
-scope_ssot.validate_node(node)  # checks level + spec field legality only; id/version/parents/status/source must also be present (propose_transition relies on them)
+scope_ssot.validate_node(node)  # checks level, required spec fields, value forms, word counts, and reading-field exclusion
 ```
 
 Fix any `RuleViolation` before proceeding. Do not hand-edit log files to work around a violation.
@@ -215,10 +215,10 @@ python3 skills/research-scope/scripts/triage.py propose \
       "change": "Narrow retrieval target to zero-shot cross-modal setting only",
       "rationale": "In-distribution results are at ceiling; zero-shot gap is the open problem",
       "proposed_spec": {
-        "hypothesis": "Cross-modal zero-shot R@1 can reach 48 without supervised fine-tuning",
-        "metric": "R@1 on MSRVTT zero-shot split",
-        "baselines": ["CLIP-zero-shot=42.3"],
-        "success_gate": "R@1 >= 48 on held-out seed"
+        "hypothesis": "Cross-modal zero-shot retrieval can improve held-out Recall at one without supervised fine tuning by aligning text and video representations more consistently.",
+        "metric": {"name": "R@1", "split": "MSRVTT zero-shot", "dir": "higher"},
+        "baselines": ["CLIP zero-shot retrieval baseline on the same held-out split."],
+        "success_gate": "Recall at one must reach at least forty eight on the held-out seed before this Direction can be adopted safely."
       },
       "post_accept_actions": ["plan_validation_milestones"]
     }'

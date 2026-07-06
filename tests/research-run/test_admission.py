@@ -12,6 +12,7 @@ sys.path.insert(0, str(_PIPE / "skills" / "research-run" / "scripts"))
 sys.path.insert(0, str(_PIPE / "lib"))
 import admission  # noqa: E402
 import scope_ssot  # noqa: E402
+from tests.scope_fixtures import direction_node, project_node, task_node  # noqa: E402
 
 
 # ---- fixtures ----
@@ -29,28 +30,20 @@ def _log(root):
 
 def _project(root):
     scope_ssot.propose_transition(
-        {"id": "project/main", "level": "project", "parents": [], "version": 1, "status": "ACTIVE",
-         "spec": {"goal": "trustworthy auto research", "contributions": "SSOT+gates",
-                       "out_of_scope": "none"}, "source": "triage:p1"},
+        project_node(),
         op="create", gate="USER_ONLY", log_path=_log(root), trigger="t", cause="c")
 
 
 def _direction(root):
     scope_ssot.propose_transition(
-        {"id": "dir/d1", "level": "direction", "parents": ["project/main"], "version": 1,
-         "status": "ACTIVE",
-         "spec": {"hypothesis": "X improves recall", "metric": {"name": "recall", "dir": "higher"},
-                       "baselines": ["b0"], "success_gate": "measured >= 0.80"},
-         "source": "triage:d1"},
+        direction_node("dir/d1", source="triage:d1"),
         op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=_log(root), trigger="t", cause="c")
 
 
 def _task(root):
     scope_ssot.propose_transition(
-        {"id": "task/d1/m1", "level": "task", "parents": ["dir/d1"], "version": 1, "status": "ACTIVE",
-         "spec": {"experiment": "validate", "config": "scope:dir/d1#m1",
-                       "gate": "measured >= 0.80", "control_mode": "SUPERVISED"},
-         "source": "triage:m1"},
+        task_node("task/d1/m1", parent="dir/d1", source="triage:m1",
+                  config="scope:dir/d1#m1", control_mode="SUPERVISED"),
         op="create", gate="AGENT_DEFERRED_ACK", log_path=_log(root), trigger="t", cause="c")
 
 
@@ -138,11 +131,7 @@ def test_invalid_control_mode_rejected_for_readiness():
 def test_5_ready_package_enters_loop(tmp_path):
     _dashboard(tmp_path, inventory='window.RESEARCH_PACKAGES = [{id: "p1", sourceDirection: "dir/d1"}];\n')
     _project(tmp_path); _direction(tmp_path); _task(tmp_path)
-    node = {"id": "dir/d1", "level": "direction", "parents": ["project/main"], "version": 1,
-            "status": "ACTIVE",
-            "spec": {"hypothesis": "X improves recall", "metric": {"name": "recall", "dir": "higher"},
-                          "baselines": ["b0"], "success_gate": "measured >= 0.80"},
-            "source": "triage:d1"}
+    node = direction_node("dir/d1", source="triage:d1")
     adapters = {"scope": lambda ctx: {"agent_role": "scope", "assigned_scope": "dir/d1", "status": "ROLE_OK",
                                       "evidence": ["e"], "blockers": [], "recommended_next_action": "go"}}
     result = admission.run_front_door(tmp_path, pkg_id="p1", scope_node=node,

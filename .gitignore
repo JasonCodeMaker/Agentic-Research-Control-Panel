@@ -3,7 +3,7 @@
 /CLAUDE.md
 # research-op local audit logs and runtime state
 outputs/
-demo/
+/demo/
 .source
 
 # Python bytecode

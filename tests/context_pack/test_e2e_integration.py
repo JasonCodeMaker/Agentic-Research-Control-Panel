@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "skills" / "research-dashboard" / "scripts"))
 import context_pack.build as build  # noqa: E402
 import ensure_dashboard  # noqa: E402
 import scope_ssot  # noqa: E402
+from tests.scope_fixtures import direction_node  # noqa: E402
 
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node required")
 
@@ -50,9 +51,7 @@ def test_full_wiki_integration(tmp_path, monkeypatch):
 
     log = tmp_path / "outputs" / "_scope" / "transitions.jsonl"
     scope_ssot.propose_transition(
-        {"id": "dir/active", "level": "direction", "parents": ["project/main"], "version": 1,
-         "status": "ACTIVE", "spec": {"hypothesis": "active hypothesis", "metric": {"name": "R@1"},
-                                           "baselines": ["b"], "success_gate": "R@1>=48"}},
+        direction_node("dir/active", metric={"name": "R@1"}),
         op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log)
     # Land a project rule through the real single entry (research-op rule target).
     assert _op(tmp_path, "--pkg", "_project", "--op", "insert", "--target", "rule",
@@ -80,7 +79,7 @@ def test_full_wiki_integration(tmp_path, monkeypatch):
     build.build("research_html", "2026-06-03-active", transitions_path=str(log),
                 generated_at="2026-06-04T00:00:00Z")
     md = (tmp_path / "outputs" / "2026-06-03-active" / "context_pack.md").read_text(encoding="utf-8")
-    for needle in ("active hypothesis", "reproduce the baseline first", "mining",
+    for needle in ("Adding supervised contrastive pretraining", "reproduce the baseline first", "mining",
                    "Dense Passage Retrieval", "EXTENDS", "no zero-shot eval"):
         assert needle in md, needle
 

@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "skills" / "research-onboard" / "scripts"))
 
 import onboard  # noqa: E402
 import scope_ssot  # noqa: E402
+from tests.scope_fixtures import project_spec  # noqa: E402
 
 
 # --- workspace_state -------------------------------------------------------
@@ -84,11 +85,7 @@ def test_write_prior_knowledge(tmp_path):
 # --- build_project_proposal ------------------------------------------------
 
 def _good_spec():
-    return {
-        "goal": "Beat ResNet-18 on CIFAR-10 top-1 accuracy",
-        "contributions": ["mixup augmentation", "cosine schedule"],
-        "out_of_scope": ["no architecture search"],
-    }
+    return project_spec()
 
 
 def test_build_project_proposal_valid():

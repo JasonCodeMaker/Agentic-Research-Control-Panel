@@ -11,23 +11,11 @@ sys.path.insert(0, str(ROOT / "skills" / "research-scope" / "scripts"))
 import plan_milestones  # noqa: E402
 import scope_ssot  # noqa: E402
 import triage  # noqa: E402
+from tests.scope_fixtures import direction_node  # noqa: E402
 
 
 def _direction_node():
-    return {
-        "id": "dir/retrieval-v2",
-        "level": "direction",
-        "parents": ["project/main"],
-        "version": 2,
-        "status": "ACTIVE",
-        "spec": {
-            "hypothesis": "Contrastive retrieval improves zero-shot Recall@1",
-            "metric": {"name": "Recall@1", "dir": "higher"},
-            "baselines": ["CLIP zero-shot = 42.3"],
-            "success_gate": "Recall@1 >= 48",
-        },
-        "source": "accepted:t1",
-    }
+    return direction_node(version=2, source="accepted:t1")
 
 
 def _write_direction(log):

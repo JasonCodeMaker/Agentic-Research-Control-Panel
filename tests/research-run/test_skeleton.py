@@ -25,7 +25,7 @@ def test_walking_skeleton_smoke(tmp_path):
     # all six roles fired, in order
     assert [c.split(":")[0] for c in r["chain"]] == ["R1", "R2", "R3", "R4", "R5", "R6"]
     # the spec was read from the SSOT node, not invented
-    assert r["spec"]["success_gate"] == "measured >= 0.80"
+    assert "measured >= 0.80" in r["spec"]["success_gate"]
     assert r["verdict"]["result"] == "PASS"
     assert r["acquitted"] is True
     assert r["ack_token"] == "T1:supervised-ack"

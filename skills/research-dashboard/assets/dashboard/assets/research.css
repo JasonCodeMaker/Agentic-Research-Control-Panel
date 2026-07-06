@@ -709,6 +709,12 @@ body[data-page="live"] .details-panel {
   font-size: 16px;
 }
 
+.scope-node-id {
+  margin: -4px 0 8px;
+  color: var(--g600);
+  font-size: 11.5px;
+}
+
 .scope-node-head {
   display: flex;
   align-items: flex-start;
@@ -3004,6 +3010,39 @@ details[data-audience="agent"][open] > summary {
   margin-top: 8px;
 }
 
+.scope-understanding,
+.scope-schema-health {
+  margin-top: 14px;
+}
+
+.scope-understanding-card {
+  border: 1.5px solid var(--g300);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 16px 18px;
+}
+
+.scope-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+.scope-section-head h2 {
+  margin: 3px 0 0;
+  font-size: 18px;
+}
+
+.scope-summary-strip {
+  margin: 0;
+}
+
+.scope-root-summary {
+  margin-top: 12px;
+}
+
 .scope-panels {
   min-width: 0;
 }
@@ -3042,6 +3081,12 @@ details[data-audience="agent"][open] > summary {
   margin-top: 4px;
 }
 
+.scope-impact-line {
+  margin: 8px 0 10px;
+  color: var(--g600);
+  font-size: 12.5px;
+}
+
 /* Children indent under their parent via a left rail (depth from the graph). */
 .scope-children {
   display: grid;
@@ -3053,6 +3098,28 @@ details[data-audience="agent"][open] > summary {
 
 .scope-proposal {
   border-left: 4px solid var(--gold);
+}
+
+.scope-triage-bucket {
+  margin-top: 18px;
+}
+
+.scope-triage-bucket h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
+
+.scope-dossier-grid {
+  margin-top: 10px;
+}
+
+.scope-diff-list .chip {
+  margin-right: 6px;
+}
+
+.scope-package-meta {
+  color: var(--g600);
+  font-size: 12.5px;
 }
 
 .scope-subgrid {

@@ -17,26 +17,24 @@ sys.path.insert(0, str(ROOT / "skills" / "research-dashboard" / "scripts"))
 import scope_ssot  # noqa: E402
 import render_scope_projection as rsp  # noqa: E402
 from scope_ssot import RuleViolation  # noqa: E402
+from tests.scope_fixtures import direction_node  # noqa: E402
 
 
-def _direction_node(version=1, predicate="Recall@10 >= baseline + 2"):
-    return {
-        "id": "dir/contrastive-v2", "level": "direction", "parents": ["project/main"],
-        "version": version, "status": "ACTIVE",
-        "spec": {
-            "hypothesis": "contrastive pretrain helps recall",
-            "metric": {"name": "Recall@10", "dir": "higher"},
-            "baselines": ["xpool"], "success_gate": predicate,
-        },
-        "source": "txn-0",
-    }
+def _direction_node(version=1, predicate=None):
+    if predicate is None:
+        return direction_node("dir/contrastive-v2", version=version, source="txn-0")
+    return direction_node("dir/contrastive-v2", version=version, source="txn-0", success_gate=predicate)
 
 
 def _transitions(tmp_path):
     log = tmp_path / "_scope" / "transitions.jsonl"
     scope_ssot.propose_transition(_direction_node(1), op="create", gate="USER_CROSS_MODEL_AUDIT",
                                   log_path=log, trigger="t0", cause="init")
-    scope_ssot.propose_transition(_direction_node(2, "Recall@10 >= baseline + 3"), op="revise",
+    revised_gate = (
+        "Recall at ten must improve by at least three absolute points over the declared baseline "
+        "on the held out evaluation split."
+    )
+    scope_ssot.propose_transition(_direction_node(2, revised_gate), op="revise",
                                   gate="USER_CROSS_MODEL_AUDIT", log_path=log, trigger="exp#42",
                                   cause="sharpened")
     return log
@@ -66,7 +64,10 @@ def test_check_detects_manual_projection_drift(tmp_path):
     proj_path = tmp_path / "data" / "scope-projection.json"
     rsp.render(log, proj_path)
     tampered = json.loads(proj_path.read_text(encoding="utf-8"))
-    tampered["dir/contrastive-v2"]["spec"]["success_gate"] = "Recall@10 >= baseline + 0"
+    tampered["dir/contrastive-v2"]["spec"]["success_gate"] = (
+        "Recall at ten must improve by at least zero absolute points over the declared baseline "
+        "on the held out evaluation split."
+    )
     proj_path.write_text(json.dumps(tampered), encoding="utf-8")
     with pytest.raises(RuleViolation):
         rsp.check(log, proj_path)
