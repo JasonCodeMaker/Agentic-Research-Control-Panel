@@ -1,5 +1,6 @@
 .superpowers/
-./docs
+/docs/
+/tests/
 /CLAUDE.md
 # research-op local audit logs and runtime state
 outputs/

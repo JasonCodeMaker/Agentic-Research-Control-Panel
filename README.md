@@ -11,14 +11,14 @@ ratification gates**.
 
 **Current maturity, in one sentence.** The dashboard, Scope/Triage system, trust gates, Context Pack,
 self-evolution Rule Store, `/research-run` package runner, exp-live runtime envelope, fact-backed package
-surfaces, and deterministic dispatch contract are implemented and tested; `/research-auto` is the
+surfaces, and deterministic dispatch contract are implemented in the toolbox; `/research-auto` is the
 direction-level campaign conductor that composes them — given a Direction and a gate, it cycles
 brainstorm → design → run until the gate clears or an honest stop fires.
 
 **Contents** · [Why This Exists](#why-this-exists) · [Quick Start](#quick-start) ·
 [Research Lifecycle](#research-lifecycle) · [What `/research-run` Does](#what-research-run-does) ·
 [Trust Guarantees](#trust-guarantees) · [How It Works](#how-it-works) ·
-[Repository Layout](#repository-layout) · [Reference](#reference) · [Contributing](#contributing)
+[Repository Layout](#repository-layout) · [Reference](#reference)
 
 ---
 
@@ -52,8 +52,8 @@ Natural-language paragraphs explain the intent and guardrails. `bash` blocks are
 
 ### Prerequisites
 
-- **Python 3.13** on `PATH`. The skills' helper scripts target it and use only the standard library —
-  there is nothing to `pip install`. `pytest` is needed only to run the verification suite in step 2.
+- **Python 3.13** on `PATH`. The skills' helper scripts target it and use only the standard library,
+  so there is nothing to `pip install`.
 - **Node.js 22+** for dashboard JavaScript syntax checks and direct execution of `workflow.ts`.
 - An agent that loads skills from a directory: **Claude Code** (`~/.claude/skills/`) or
   **Codex** (`~/.codex/skills/`, with `AGENTS.md` at the project root).
@@ -95,16 +95,7 @@ research repo, resolve it through the installed symlink directory, e.g.
 `$HOME/.codex/skills/<name>/scripts/...` for Codex or `$HOME/.claude/skills/<name>/scripts/...` for
 Claude Code. Do not copy the toolbox into the target repo just to make relative script examples work.
 
-### 2 · Verify the toolbox
-
-```bash
-python3.13 -m pytest tests/                     # expect a passing suite
-```
-
-If `python3.13` is not on `PATH`, use any Python 3.13 interpreter — e.g.
-`conda run -n <env> python -m pytest tests/`.
-
-### 3 · Attach the pipeline to a research project
+### 2 · Attach the pipeline to a research project
 
 The skills are now callable, but each managed project also needs the operating **protocols**
 (`AGENTS.md` for Codex and `CLAUDE.md` for Claude Code / shared protocol text) at its repo root, with
@@ -129,7 +120,7 @@ section above the framework protocols:
 - compute constraints and available machines;
 - non-goals, safety constraints, or reviewer concerns.
 
-### 4 · Initialize and deploy the shared dashboard
+### 3 · Initialize and deploy the shared dashboard
 
 Run:
 
@@ -190,7 +181,7 @@ python research_html/scripts/serve_dashboard.py ensure --json   # start, or reus
 Leave the tab open while the agent works: the dashboard, lanes, learnings, scope, and Live Runs
 pages all update in place — no manual refresh, no full-page reload.
 
-### 5 · Onboard, form a package, then run it
+### 4 · Onboard, form a package, then run it
 
 The project's **global objective** is the first thing that must be locked in. `/research-run` will not run
 experiments until Project, Direction, Task, and package surfaces already exist, so use the formation
@@ -239,7 +230,7 @@ Scope text is intentionally bounded for review: scalar prose fields are 20-100 w
 5-50 words, `config` is a short reference string, and `control_mode` is an enum. Results and readings
 never belong in Scope.
 
-### 6 · (Optional) Enable the turn-end automation hook
+### 5 · (Optional) Enable the turn-end automation hook
 
 Fact propagation and the dashboard-server keepalive can run automatically at the **end of every turn** —
 no model tokens, no manual `ensure`. Both agents fire the same two scripts; only where you register them
@@ -297,7 +288,7 @@ decision, agent action, and durable output.
 
 | Phase | Operator action | Framework action | Durable output |
 | --- | --- | --- | --- |
-| **0 · Attach toolbox** | Install skills and attach protocols to the target repo. | Symlinks skills, preserves/merges protocol files, and verifies the toolbox. | The target repo now has the operating rules. |
+| **0 · Attach toolbox** | Install skills and attach protocols to the target repo. | Symlinks skills and preserves/merges protocol files. | The target repo now has the operating rules. |
 | **1 · Initialize workspace** | Run `/research-dashboard`, then `/research-onboard` if no Project node exists. | Scaffolds the live dashboard; for existing repos, analyzes project context into a prior-knowledge digest and Project proposal. | `research_html/`, optional `outputs/_scope/prior_knowledge.md`, dashboard lanes. |
 | **2 · Ratify project objective** | Inspect and approve/reject the `/research-onboard` or `/research-scope` Project proposal. | Proposes a Project node through Triage; commits only after human ratification. | Accepted Project in Scope SSOT, or a rejected proposal record. |
 | **3 · Form a research direction** | Approve/reject the Direction proposal in chat. | Runs the learning context gate, then uses brainstorm, evidence checks, and ranking to shape a Direction with a typed spec. | Direction node with hypothesis, metric, baselines, success gate. |
@@ -353,7 +344,7 @@ The boundary is deliberate:
   written by the run loop.
 
 What is live today: this admission state machine, the deterministic dispatch contract, `research-exp-live`
-runtime envelope, and fact-backed package surfaces are implemented and tested.
+runtime envelope, and fact-backed package surfaces are implemented in the toolbox.
 
 ### Control Mode
 
@@ -472,7 +463,7 @@ runtime poller against `/api/live`.
 
 **Serve the dashboard, do not file-watch it.** View the dashboard through the bundled
 `serve_dashboard.py` server, not a live-reload preview extension — a file-watching previewer reloads the
-whole page on every write, which is exactly what this model avoids. See **Quick Start step 4** for the
+whole page on every write, which is exactly what this model avoids. See **Quick Start step 3** for the
 serve command and the local / SSH-forward access paths.
 
 Useful commands:
@@ -553,11 +544,9 @@ Trustworthy-Research-Pipeline/
 ├── README.md        ← you are here
 ├── AGENTS.md        # Codex adapter for this toolbox and consuming projects
 ├── CLAUDE.md        # agent operating protocols (merged into the target research repo)
-├── workflow.ts  # executable in-package controller and run-ticket CLI
+├── workflow.ts      # executable in-package controller and run-ticket CLI
 ├── skills/          # composing skills — the toolbox the agent installs
-├── lib/             # validators, stores, runtime helpers, and fact helpers
-├── tests/           # pytest suite
-└── docs/            # design notes
+└── lib/             # validators, stores, runtime helpers, and fact helpers
 ```
 
 ---
@@ -593,20 +582,6 @@ Trustworthy-Research-Pipeline/
 | `lib/self_evolve` | Governed project self-learning memory. |
 
 ---
-
-## Contributing
-
-This is a research codebase; the bar is traceability and tests, not ceremony.
-
-- **Design before code.** New behavior is brainstormed and planned before any implementation.
-- **Test-Driven, always.** Every change ships with tests, and the agent should keep the full Python 3.13
-  pytest suite green.
-- **One mutation surface.** Package HTML is edited only through `research-op`; direct `Edit`/`Write` on a
-  package surface is a workflow violation.
-- **Surgical changes.** Touch only what the task needs and match the existing style; do not rewrite the
-  project-agnostic protocol bodies in `AGENTS.md` / `CLAUDE.md` — prepend, don't replace.
-
-The full operating contract is in [`CLAUDE.md`](CLAUDE.md).
 
 ## Acknowledgements
 

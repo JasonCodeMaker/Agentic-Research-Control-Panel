@@ -25,8 +25,8 @@ single-audience and skip the split. Pages whose decision drags in heavy
 agent-write content (`index.html`, `implementation.html`, `tracker.html`,
 `results.html`) get the split. Default for new pages = single audience.
 
-Companion spec:
-`docs/superpowers/specs/2026-05-24-trustworthy-pipeline-html-design.md`.
+This file is the release-facing package canon. Historical Superpowers design specs are developer-only
+notes and are not required to install or use the toolbox.
 
 ## Single-home rule
 
@@ -56,11 +56,9 @@ re-list it.
     optional `docs/launchers.md` runbook). Tracker rows link to the script.
 - Result gate table is owned by `results.html` (agent zone).
 - Chosen-route + considered-routes panel is owned by `tracker.html#chosen-route`
-  (agent zone). The standalone `next-action.html` is **retired** per the
-  page-7 canon of the HTML design spec
-  (`docs/superpowers/specs/2026-05-24-trustworthy-pipeline-html-design.md`).
-  Inbound links of the form `next-action.html#chosen-route` are rewritten
-  to `tracker.html#chosen-route`.
+  (agent zone). The standalone `next-action.html` is **retired** under the
+  current tracker-owned route canon. Inbound links of the form
+  `next-action.html#chosen-route` are rewritten to `tracker.html#chosen-route`.
 
 ## To-do checklist (strict format)
 

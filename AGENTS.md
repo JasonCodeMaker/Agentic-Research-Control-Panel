@@ -13,7 +13,7 @@ task, which source-of-truth layer to load, and when to stop for user ratificatio
 Before acting, classify the current working directory:
 
 - **Toolbox repo**: this repository, whose git root is the directory containing this file, `README.md`,
-  `CLAUDE.md`, `workflow.ts`, `skills/`, `lib/`, and `tests/`. The parent workspace is not the repo.
+  `CLAUDE.md`, `workflow.ts`, `skills/`, and `lib/`. The parent workspace is not the repo.
 - **Target research project**: a consuming ML/research repo where the pipeline has been attached. It may
   contain copied or merged `AGENTS.md`, `CLAUDE.md`, `research_html/`, `outputs/_scope/`, and project
   source/config/data files.
@@ -77,7 +77,8 @@ In a target research project, do not assume this toolbox source tree is vendored
   `$HOME/.codex/skills/<name>/scripts/...`.
 - If a command in `CLAUDE.md`, `workflow.ts`, or a skill body uses a relative `skills/...` path, adapt it
   to the installed skill path when running from the target project.
-- When editing this toolbox repo itself, use the local `skills/<name>/...` path and run the toolbox tests.
+- When editing this toolbox repo itself, use the local `skills/<name>/...` path and run the relevant
+  maintainer checks available in that checkout.
 
 ## Scope And Triage Contract
 
@@ -125,9 +126,9 @@ When modifying this toolbox repo:
   change them.
 - Read `README.md` and the relevant `skills/*/SKILL.md` before changing setup, dashboard, Scope, package,
   or operation behavior.
-- Update tests with behavior changes and run `python3.13 -m pytest tests/` before claiming toolbox
-  behavior changes are complete. For documentation-only changes, at minimum run a syntax/consistency check
-  appropriate to the touched files.
+- Behavior changes must be covered by maintainer-side verification before release. In release checkouts
+  where developer checks are intentionally absent, run syntax or contract checks appropriate to the
+  touched files before claiming toolbox behavior changes are complete.
 - Do not modify target-project artifacts while working on toolbox internals unless the user explicitly asks
   for an end-to-end consuming-project test.
 
