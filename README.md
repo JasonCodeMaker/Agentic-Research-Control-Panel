@@ -150,7 +150,7 @@ test -f research_html/live.html
 ```
 
 Run once per project. This creates `research_html/` — the shared surface where you and the agent read the
-same compiled state (lanes, Scope projection, package links, Context Pack, and the Live Runs page).
+same compiled state (lanes, Scope projection, package links, learnings, and the Live Runs page).
 
 **Deploy it — serve the dashboard, don't file-watch it.** `research_html/` is plain static files plus a
 small read-only server (`scripts/serve_dashboard.py`, scaffolded by this step). View it **through that
@@ -187,7 +187,7 @@ python research_html/scripts/serve_dashboard.py status --json   # health of the 
 python research_html/scripts/serve_dashboard.py ensure --json   # start, or reuse a healthy one
 ```
 
-Leave the tab open while the agent works: the dashboard, lanes, learnings, context, scope, and Live Runs
+Leave the tab open while the agent works: the dashboard, lanes, learnings, scope, and Live Runs
 pages all update in place — no manual refresh, no full-page reload.
 
 ### 5 · Onboard, form a package, then run it
@@ -201,7 +201,7 @@ commands first:
 | `/research-onboard` | **Recommended for an existing research repo.** The project already has README / configs / source / data notes / baselines, but no committed Project node. | Analyzes the workspace, writes `outputs/_scope/prior_knowledge.md`, drafts a Project objective, submits it as a pending Triage proposal, then stops for your ratification. |
 | `/research-brainstorm` | You have a vague or partial research idea. | Shapes pre-package ideas, grounds them with literature when needed, and proposes one Direction through Triage. |
 | `/research-scope` | You already know the exact Project/Direction/Task scope or need to revise it. | Builds typed Scope proposals and validation milestones for the Scope SSOT admission gate. |
-| `/research-package` | Direction and Task are committed, but no package exists yet. | Materializes package surfaces from committed Scope state only. |
+| `/research-package from-scope <direction-id>` | Direction and Task are committed, but no package exists yet. | Checks whether committed Scope is ready, then materializes package surfaces from that Scope state only. |
 | `/research-run` | A scoped package exists and should be executed to completion. | Runs readiness, implementation/review, launch/monitoring, artifact propagation, result verification, and terminal routing. |
 | `/research-auto` | You have a Direction and a measurable gate and want the loop driven end-to-end. | Campaign conductor: forms/awaits the Direction charter, then cycles ideate → design → `/research-run` → harvest until the gate clears, the cycle budget runs out, or a human decision is needed. |
 
@@ -230,8 +230,10 @@ Use the supervised / checkpoints / async / autonomous control mode for this Task
 Only ratified scope is committed to the Scope SSOT (`outputs/_scope/transitions.jsonl`); the framework
 never ratifies silently or materializes a package from a pending proposal. The normal path is:
 `/research-onboard` or `/research-scope` for Project, `/research-brainstorm` or `/research-scope` for
-Direction, `/research-scope` for Task milestones, `/research-package` for package materialization, then
-`/research-run` to complete the package.
+Direction, `/research-scope` for Task milestones, `/research-package from-scope <direction-id>` for
+package materialization, then `/research-run` to complete the package. If you start from a brainstorm
+and ask to convert it to a package, the agent first proposes the Direction and validation Tasks for your
+approval before any package files are created.
 
 Scope text is intentionally bounded for review: scalar prose fields are 20-100 words, list items are
 5-50 words, `config` is a short reference string, and `control_mode` is an enum. Results and readings
@@ -335,7 +337,7 @@ the command to execute the package. It runs an admission check before attempting
 | **B** | No committed Project | Hands off to `/research-onboard` or `/research-scope`. |
 | **C** | Project exists, no Direction | Hands off to `/research-brainstorm` or `/research-scope`. |
 | **D** | Direction exists, no Task | Hands off to `/research-scope` milestone planning. |
-| **E** | Direction+Task committed, no package | Hands off to `/research-package`. |
+| **E** | Direction+Task committed, no package | Hands off to `/research-package from-scope <direction-id>`. |
 | **F** | Package exists, readiness incomplete | Runs readiness at the selected dial; repairs or stops before unattended work. |
 | **G** | Project+Direction+Task+package ready | Enters the package execution loop. |
 
@@ -511,11 +513,10 @@ accepted and committed into the Scope SSOT.
 The Context Pack is the project's compiled memory and the agent's Scope Context Boot. It contains the
 active Project, Direction, related Tasks, package Scope provenance, global Scope version, active rules,
 relevant pending Scope proposals as advisory warnings, active rules, failed methods, adopted wins,
-knowledge registries, and gaps. It is deterministic and read-only:
+knowledge registries, and gaps. It is deterministic, read-only, and agent-facing:
 
-- agent face: `outputs/<pkg>/context_pack.md`;
-- human face: `research_html/context.html`;
-- durable core: `research_html/data/context-core.js`.
+- markdown face: `outputs/<pkg>/context_pack.md`;
+- structured face: `outputs/<pkg>/context_pack.json`.
 
 It never lands a rule by itself. Rules enter shared context only through governed Rule Store or
 `research-op` registry paths.

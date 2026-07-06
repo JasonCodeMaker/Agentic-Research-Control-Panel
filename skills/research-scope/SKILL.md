@@ -204,7 +204,18 @@ python3 skills/research-scope/scripts/plan_milestones.py \
     --triage outputs/_scope/triage.jsonl
 ```
 
-After the PM accepts/revises those milestone proposals and commits each Task/Milestone node with `research-op --op scope-transition`, ask: "Milestones are now committed. Generate the research package from the Direction plus accepted milestones?" On yes, invoke the materializer:
+After the PM accepts/revises those milestone proposals and commits each Task/Milestone node with `research-op --op scope-transition`, ask: "Milestones are now committed. Generate the research package from the Direction plus accepted milestones?" On yes, use `/research-package from-scope <direction-id>`. Script-level execution first checks readiness:
+
+```bash
+python3 skills/research-package/scripts/create_from_scope.py \
+    --check --json \
+    --direction-id <direction-node-id> \
+    --root research_html \
+    --transitions outputs/_scope/transitions.jsonl
+```
+
+If `materializable` is false, stop and hand off to the returned `nextSkill`. If it is true, invoke the
+materializer:
 
 ```bash
 python3 skills/research-package/scripts/create_from_scope.py \

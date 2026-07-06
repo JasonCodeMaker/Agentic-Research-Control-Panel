@@ -126,8 +126,10 @@ SSOT fold and ask). Route on `action.type`:
    `DEFERRED`/`AUTONOMOUS` commit each node via `research-op --op scope-transition`
    (`gate=AGENT_DEFERRED_ACK`, payload carrying a non-empty `deferred_ack`), after
    `conductor.validate_campaign_action` clears the action. Record each deferred ack in the ledger turn.
-2. Package: `create_from_scope.py --direction-id <id>` (committed transitions only). If a previous
-   campaign package for this direction went terminal, materialize the next one as
+2. Package: run the same path as `/research-package from-scope <id>`. First call
+   `create_from_scope.py --check --json --direction-id <id>` and stop if it returns a handoff. If
+   `materializable` is true, call `create_from_scope.py --direction-id <id>` (committed transitions
+   only). If a previous campaign package for this direction went terminal, materialize the next one as
    `--id <YYYY-MM-DD>-<slug>-c<N>` — fresh package, same committed scope; Context Pack and active
    rules carry the history forward.
 
@@ -234,6 +236,7 @@ away-mode ticks always leave a fresh PACK bundle.
 | `GateUnparseable` from status/gate-eval | The gate has no comparator clause | Route `ASK_USER`; never self-judge an unmeasurable gate |
 | `validate_campaign_action` returns rejected | The planned action smuggles authority (disposal, direction commit, gateless task commit) | Drop the action; take the Triage-pause path instead |
 | `append-cycle` raises ValueError | Cycle record incomplete or verdict/gate_eval illegal | Fill the missing field from facts; an unproven verdict cannot clear the gate |
+| `create_from_scope --check` reports a handoff | Direction or validation Tasks are missing or pending | Stop and surface the returned `nextSkill` and `nextAction` |
 | `create_from_scope` rejects | Pending-only scope or duplicate package id | Wait for ratification, or materialize with the `-c<N>` id |
 | research-op rejects an envelope | A package-state invariant fired | Read the structured rejection, repair the payload, retry; never patch files directly |
 | No legal next experiment | The scope's design space is exhausted | `HALT_NO_CANDIDATE` → propose metric/scope revise or archive through Triage |

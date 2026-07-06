@@ -208,6 +208,62 @@ def test_current_understanding_counts_active_scope_and_package_links():
     assert res["rootSummaries"][0]["id"] == "project/main"
 
 
+def test_package_readiness_guides_scope_first_package_creation():
+    projection = {
+        "project/main": {"id": "project/main", "level": "project", "status": "ACTIVE",
+                         "parents": [], "spec": {}},
+        "dir/a": {"id": "dir/a", "level": "direction", "status": "ACTIVE",
+                  "parents": ["project/main"], "spec": {}},
+        "dir/b": {"id": "dir/b", "level": "direction", "status": "ACTIVE",
+                  "parents": ["project/main"], "spec": {}},
+        "dir/c": {"id": "dir/c", "level": "direction", "status": "ACTIVE",
+                  "parents": ["project/main"], "spec": {}},
+        "task/a/m0": {"id": "task/a/m0", "level": "task", "status": "ACTIVE",
+                      "parents": ["dir/a"], "spec": {}},
+        "task/c/m0": {"id": "task/c/m0", "level": "task", "status": "ACTIVE",
+                      "parents": ["dir/c"], "spec": {}},
+    }
+    triage = {"pending": [
+        {"id": "task-b", "proposed_node": {"id": "task/b/m0", "parents": ["dir/b"]}},
+    ]}
+    packages = [{"id": "pkg-c", "sourceDirection": "dir/c"}]
+
+    res = _run(
+        "return SI.packageReadiness(%s, %s, %s);"
+        % (json.dumps(projection), json.dumps(triage), json.dumps(packages))
+    )
+
+    by_id = {item["directionId"]: item for item in res["items"]}
+    assert by_id["dir/a"]["state"] == "ready_to_materialize"
+    assert by_id["dir/a"]["nextAction"] == "/research-package from-scope dir/a"
+    assert by_id["dir/a"]["taskCount"] == 1
+    assert by_id["dir/b"]["state"] == "pending_tasks"
+    assert by_id["dir/b"]["pendingTaskCount"] == 1
+    assert by_id["dir/b"]["nextSkill"] == "/research-scope"
+    assert by_id["dir/c"]["state"] == "materialized"
+    assert by_id["dir/c"]["packageId"] == "pkg-c"
+    assert by_id["dir/c"]["nextAction"] == "/research-run pkg-c"
+
+
+def test_package_readiness_reports_missing_and_pending_direction():
+    projection = {
+        "project/main": {"id": "project/main", "level": "project", "status": "ACTIVE",
+                         "parents": [], "spec": {}},
+    }
+    triage = {"pending": [
+        {"id": "dir-pending", "proposed_node": {"id": "dir/new", "parents": ["project/main"]}},
+    ]}
+
+    res = _run(
+        "return SI.packageReadiness(%s, %s, []);"
+        % (json.dumps(projection), json.dumps(triage))
+    )
+
+    assert res["state"] == "pending_direction"
+    assert res["nextSkill"] == "/research-scope"
+    assert "Accept, revise, or reject" in res["nextAction"]
+
+
 def test_linked_packages_include_experiment_source_task():
     packages = [
         {"id": "pkg-a", "sourceDirection": "dir/a", "experiments": [{"id": "P0", "sourceTask": "task/t1"}]},

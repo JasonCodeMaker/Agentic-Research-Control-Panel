@@ -68,10 +68,6 @@ SCOPE_PROJECTION_JS = "window.RESEARCH_SCOPE_PROJECTION = {};\n"
 # research-packages.js) so a fresh scaffold never inherits another project's ideas.
 BRAINSTORMS_JS = "window.BRAINSTORMS = [];\n"
 
-# Durable Context Pack core for the Agent Context surface (context.html). Written
-# inline-empty; regenerated with real cross-package knowledge by lib/context_pack/build.py.
-CONTEXT_CORE_JS = 'window.RESEARCH_CONTEXT_CORE = {"stamp": {}, "sections": []};\n'
-
 RULES_PREFIX = "window.RESEARCH_RULES = "
 RULE_CARD_RE = re.compile(
     r'data-rule="([RT]\d+)"[^>]*data-kind="([^"]+)"[\s\S]*?<h3 class="title">([^<]+)</h3>')
@@ -125,8 +121,9 @@ def write_if_missing(path: Path, source: Path | None, text: str | None, force: b
 
 
 # data/ files that hold project state — never overwritten by --refresh-chrome.
-USER_DATA = {"data/research-packages.js", "data/brainstorms.js", "data/context-core.js",
+USER_DATA = {"data/research-packages.js", "data/brainstorms.js",
              "data/scope-projection.json", "data/scope-projection.js", "data/rules.js"}
+OBSOLETE_CONTEXT_SURFACE = ("context.html", "assets/research-context.js", "data/context-core.js")
 
 
 def copy_bundled_chrome(root: Path, force: bool, refresh: bool = False) -> list[Path]:
@@ -179,12 +176,14 @@ def write_brainstorms_store(root: Path, force: bool) -> list[Path]:
     return written
 
 
-def write_context_core_store(root: Path, force: bool) -> list[Path]:
-    """Write the empty durable Context Pack core if missing (Agent Context surface)."""
+def remove_obsolete_context_surface(root: Path) -> list[Path]:
+    """Delete the retired global Agent Context dashboard surface if present."""
     written: list[Path] = []
-    dst = root / "data" / "context-core.js"
-    if write_if_missing(dst, None, CONTEXT_CORE_JS, force):
-        written.append(dst)
+    for rel in OBSOLETE_CONTEXT_SURFACE:
+        path = root / rel
+        if path.exists():
+            path.unlink()
+            written.append(path)
     return written
 
 
@@ -249,12 +248,12 @@ def ensure_dashboard(root: Path, force: bool, refresh: bool = False) -> list[Pat
     written.extend(copy_bundled_chrome(root, force, refresh))
     written.extend(write_data_js(root, force))
     written.extend(write_brainstorms_store(root, force))
-    written.extend(write_context_core_store(root, force))
     written.extend(write_scope_projection_defaults(root, force))
     written.extend(copy_helper_scripts(root, force or refresh))
     written.extend(copy_rule_files(root, force or refresh))
     written.extend(write_rules_store(root))
     written.extend(ensure_live_nav(root))
+    written.extend(remove_obsolete_context_surface(root))
     return written
 
 

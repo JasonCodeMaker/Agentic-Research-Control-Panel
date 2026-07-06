@@ -71,7 +71,7 @@ Run admission is a prerequisite check, not a formation engine.
 | `NO_PROJECT` | no active `level=project` node | `HANDOFF_PROJECT` to `/research-onboard` or `/research-scope` |
 | `NO_DIRECTION` | project exists, no active direction | `HANDOFF_DIRECTION` to `/research-brainstorm` |
 | `NO_TASK` | direction exists, no active task | `HANDOFF_TASK` to `/research-scope` milestone planning |
-| `NO_PACKAGE` | committed direction+task, no package | `HANDOFF_PACKAGE` to `/research-package` |
+| `NO_PACKAGE` | committed direction+task, no package | `HANDOFF_PACKAGE` to `/research-package from-scope <direction-id>` |
 | `NOT_READY` | package exists, readiness incomplete | `RUN_READINESS` and close/record gaps |
 | `READY` | package is scoped, materialized, and ready | `ENTER_RUN_LOOP` |
 
@@ -89,8 +89,9 @@ Every action rendered with `root` carries `next_step` fields (`headline`, `next_
 
 1. **Run admission.** Admission folds `outputs/_scope/transitions.jsonl` and returns `scope_context`
    with `global_scope_version`, active Project, active Direction, related Tasks, and package binding. If
-   the action is a handoff, report the owning command and stop. Do not fill the gap inside
-   `/research-run`.
+   the action is a handoff, report the owning command from `next_step.next_action` and stop. For
+   `NO_PACKAGE`, that command is `/research-package from-scope <direction-id>`. Do not fill the gap
+   inside `/research-run`.
 
 2. **Load package state.** Read only the package needed for this run: inventory entry, task spine,
    `tracker.html`, `plan.html`, `results.html`, fact tables if present, and any open runtime state.

@@ -2,8 +2,6 @@
 
 Reads the pipeline's existing stores (read-only) and writes two artifacts:
   outputs/<pkg>/context_pack.{md,json}   — full per-direction pack (agent working context)
-  research_html/data/context-core.js     — durable, direction-independent project core
-                                            (drives the human surface)
 
 research-packages.js is read through the canonical node dumper; every other source
 degrades gracefully (missing → that section is simply absent from the pack).
@@ -428,7 +426,8 @@ def build(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/tra
         "papers_registry": papers_registry, "edges": edges, "gaps": gaps,
     }, budget_chars=budget_chars)
 
-    # Durable core: direction-independent cross-package knowledge only.
+    # Direction-independent cross-package knowledge. Returned for callers/tests,
+    # but no longer written to a dashboard context.html surface.
     core = assemble({
         "project_node": scope_context["project_node"],
         "direction_node": None, "active_pkg": None, "scope_version": scope_version,
@@ -442,9 +441,6 @@ def build(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/tra
     _write(Path("outputs") / pkg_id / "context_pack.md", render_md(full))
     _write(Path("outputs") / pkg_id / "context_pack.json",
            json.dumps(render_json(full), indent=2, ensure_ascii=False) + "\n")
-    _write(Path(root) / "data" / "context-core.js",
-           "window.RESEARCH_CONTEXT_CORE = "
-           + json.dumps(render_json(core), indent=2, ensure_ascii=False) + ";\n")
     return full, core
 
 
@@ -496,7 +492,7 @@ def main(argv=None) -> int:
                     triage_path=args.triage,
                     budget_chars=args.budget_chars, selfevolve_root=args.selfevolve_root)
     print(f"context_pack → outputs/{args.pkg}/context_pack.md "
-          f"({len(full.sections)} sections); core → {args.root}/data/context-core.js")
+          f"({len(full.sections)} sections)")
     return 0
 
 

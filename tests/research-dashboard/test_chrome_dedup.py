@@ -66,9 +66,11 @@ def test_homepage_separates_global_toolbar_from_page_nav(tmp_path):
     toolbar = _block(html, r'data-card="dashboard-toolbar"')
     nav = _block(html, r'class="dashboard-nav"')
 
-    for href in ("scope.html", "live.html", "learnings.html", "context.html"):
+    for href in ("scope.html", "live.html", "learnings.html"):
         assert f'href="{href}"' in toolbar
         assert f'href="{href}"' not in nav
+    assert 'href="context.html"' not in toolbar
+    assert 'href="context.html"' not in nav
 
     for href in ("#snapshot", "#lanes", "#packages", "#protocol", "#profile", "#rules"):
         assert f'href="{href}"' in nav

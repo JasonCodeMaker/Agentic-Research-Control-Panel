@@ -287,8 +287,8 @@ _NEXT_STEP = {
         "Use /research-scope to propose and ratify validation milestones before running experiments.",
         "/research-run will continue after the Task and package exist.", True),
     "HANDOFF_PACKAGE": (
-        "Direction and Task are committed, but no package exists yet.",
-        "Use /research-package to materialize the package from committed Scope state.",
+        "Direction and validation Tasks are committed, but no package exists yet.",
+        "Use /research-package from-scope <direction-id> to materialize the package from committed Scope.",
         "/research-run will continue once the package surfaces exist.", True),
     "ENTER_RUN_LOOP": (
         "Everything's ready — the package execution loop can start.",
@@ -333,6 +333,13 @@ def render_next_step(action, *, root=None):
                        "not the loop's.")
         offer = "Reply `accept` or `reject` (with edits if you want changes)."
         awaits_user = True
+    elif t == "HANDOFF_PACKAGE":
+        direction_id = action.get("sourceDirection")
+        headline = "Direction and validation Tasks are committed, but no package exists yet."
+        next_action = (f"/research-package from-scope {direction_id}"
+                       if direction_id else "/research-package from-scope <direction-id>")
+        offer = "/research-run will continue once the package surfaces exist."
+        awaits_user = True
     elif t in _NEXT_STEP:
         headline, next_action, offer, awaits_user = _NEXT_STEP[t]
     else:
@@ -370,6 +377,8 @@ def run_front_door(root, *, pkg_id=None, scope_node=None, role_sequence=None, ad
     scope_context = build_scope_context(root, pkg_id=pkg_id)
     action_context = dict(context or {})
     action_context["pending"] = scope_context.get("pending_scope", [])
+    if scope_context.get("direction"):
+        action_context.setdefault("direction_id", scope_context["direction"]["id"])
     if state in {"READY", "NOT_READY"} and scope_context.get("pending_scope"):
         actions = [{
             "type": "AWAIT_TRIAGE_DECISION",

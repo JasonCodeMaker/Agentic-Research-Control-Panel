@@ -40,11 +40,6 @@ def test_research_js_registers_a_renderer():
     assert result.returncode == 0, result.stderr
 
 
-def test_research_context_js_registers_a_renderer():
-    result = _require_with_dom_stubs(ASSETS / "research-context.js")
-    assert result.returncode == 0, result.stderr
-
-
 def test_scope_inspector_registers_refresh():
     src = (ASSETS / "scope-inspector.js").read_text(encoding="utf-8")
     assert "__researchRenderers" in src, "scope-inspector must register on the shared registry"
@@ -108,7 +103,6 @@ WIRED_SURFACES = [
     ("index.html", "assets/research.js", "assets/live-data.js"),
     ("learnings.html", "assets/research.js", "assets/live-data.js"),
     ("module.html", "assets/research.js", "assets/live-data.js"),
-    ("context.html", "assets/research-context.js", "assets/live-data.js"),
     ("scope.html", "assets/scope-inspector.js", "assets/live-data.js"),
     ("categories/in-progress/index.html", "../../assets/research.js", "../../assets/live-data.js"),
     ("categories/brainstorm/index.html", "../../assets/research.js", "../../assets/live-data.js"),

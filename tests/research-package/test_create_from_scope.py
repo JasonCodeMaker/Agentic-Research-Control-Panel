@@ -161,6 +161,84 @@ def test_pending_triage_without_committed_transition_cannot_materialize(tmp_path
     assert not (tmp_path / "research_html" / "packages" / "2026-06-03-retrieval-v2").exists()
 
 
+def test_check_reports_pending_direction_is_not_materializable(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    _dashboard(tmp_path)
+    triage = tmp_path / "outputs" / "_scope" / "triage.jsonl"
+    triage.parent.mkdir(parents=True)
+    triage.write_text(
+        json.dumps({
+            "id": "triage-dir",
+            "level": "direction",
+            "node_id": "dir/retrieval-v2",
+            "status": "pending",
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    rc = create_from_scope.main([
+        "--check",
+        "--direction-id", "dir/retrieval-v2",
+        "--id", "2026-06-03-retrieval-v2",
+        "--json",
+    ])
+
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["materializable"] is False
+    assert out["direction"]["state"] == "pending"
+    assert out["nextSkill"] == "/research-scope"
+    assert "Accept, revise, or reject" in out["nextAction"]
+    assert not (tmp_path / "research_html" / "packages" / "2026-06-03-retrieval-v2").exists()
+
+
+def test_check_reports_committed_direction_missing_tasks(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    _dashboard(tmp_path)
+    log, _ = _write_direction_log(tmp_path)
+
+    rc = create_from_scope.main([
+        "--check",
+        "--direction-id", "dir/retrieval-v2",
+        "--id", "2026-06-03-retrieval-v2",
+        "--transitions", str(log),
+        "--json",
+    ])
+
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["materializable"] is False
+    assert out["direction"]["state"] == "committed"
+    assert out["tasks"] == {"state": "missing", "count": 0}
+    assert out["nextSkill"] == "/research-scope"
+    assert "validation Tasks" in out["nextAction"]
+
+
+def test_check_reports_ready_to_materialize_from_scope(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    _dashboard(tmp_path)
+    log, _ = _write_direction_log(tmp_path)
+    _write_milestones(log)
+
+    rc = create_from_scope.main([
+        "--check",
+        "--direction-id", "dir/retrieval-v2",
+        "--id", "2026-06-03-retrieval-v2",
+        "--transitions", str(log),
+        "--json",
+    ])
+
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["materializable"] is True
+    assert out["direction"]["state"] == "committed"
+    assert out["tasks"]["state"] == "committed"
+    assert out["tasks"]["count"] == 2
+    assert out["package"] == {"state": "absent", "id": "2026-06-03-retrieval-v2"}
+    assert out["nextSkill"] == "/research-package"
+    assert out["nextAction"] == "/research-package from-scope dir/retrieval-v2"
+
+
 def test_committed_direction_without_milestones_cannot_materialize(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _dashboard(tmp_path)

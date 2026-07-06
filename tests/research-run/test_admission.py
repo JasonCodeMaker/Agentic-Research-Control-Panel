@@ -186,6 +186,19 @@ def test_no_package_hands_off_to_package_materializer(tmp_path):
     assert actions[0]["handoff"] == "/research-package"
 
 
+def test_no_package_next_step_names_from_scope_command(tmp_path):
+    _dashboard(tmp_path); _project(tmp_path); _direction(tmp_path); _task(tmp_path)
+
+    result = admission.run_front_door(tmp_path)
+
+    assert result["state"] == "NO_PACKAGE"
+    action = result["actions"][0]
+    assert action["type"] == "HANDOFF_PACKAGE"
+    assert action["sourceDirection"] == "dir/d1"
+    assert action["next_step"]["next_action"] == "/research-package from-scope dir/d1"
+    assert "Direction and validation Tasks are committed" in action["next_step"]["headline"]
+
+
 def test_readiness_default_control_mode_is_autonomous(tmp_path):
     _dashboard(tmp_path, inventory='window.RESEARCH_PACKAGES = [{id: "p1", sourceDirection: "dir/d1"}];\n')
     _project(tmp_path); _direction(tmp_path); _task(tmp_path)

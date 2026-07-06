@@ -259,6 +259,110 @@
     return (root && root.RESEARCH_PACKAGES) || [];
   }
 
+  function proposalParents(item) {
+    var proposed = item && item.proposed_node && typeof item.proposed_node === "object" ? item.proposed_node : {};
+    var parents = (item && item.parents) || proposed.parents || [];
+    return Array.isArray(parents) ? parents : [];
+  }
+
+  function pendingChildrenOf(pending, parentId) {
+    return (pending || []).filter(function (item) {
+      return proposalParents(item).indexOf(parentId) >= 0;
+    });
+  }
+
+  function packagesForOrigin(originId, explicitPackages) {
+    return packageList(explicitPackages).filter(function (p) {
+      return p && p.sourceDirection === originId;
+    });
+  }
+
+  function packageReadiness(projection, triage, packages) {
+    var tree = activeTree(projection || {});
+    var pending = (triage && triage.pending) || [];
+    if (!tree.roots.length) {
+      return {
+        state: "missing_project",
+        items: [],
+        nextSkill: "/research-onboard",
+        nextAction: "Create and ratify a Project before package work.",
+      };
+    }
+
+    var branches = [];
+    tree.roots.forEach(function (rootId) {
+      (tree.childrenOf[rootId] || []).forEach(function (id) { branches.push(id); });
+    });
+    branches.sort(byKey);
+
+    if (!branches.length) {
+      var pendingBranches = [];
+      tree.roots.forEach(function (rootId) {
+        pendingChildrenOf(pending, rootId).forEach(function (item) { pendingBranches.push(item); });
+      });
+      if (pendingBranches.length) {
+        return {
+          state: "pending_direction",
+          pendingCount: pendingBranches.length,
+          items: [],
+          nextSkill: "/research-scope",
+          nextAction: "Accept, revise, or reject the pending Direction before creating a package.",
+        };
+      }
+      return {
+        state: "missing_direction",
+        items: [],
+        nextSkill: "/research-brainstorm",
+        nextAction: "Shape and ratify a Direction before creating a package.",
+      };
+    }
+
+    var items = branches.map(function (id) {
+      var childIds = (tree.childrenOf[id] || []).slice().sort(byKey);
+      var pendingTasks = pendingChildrenOf(pending, id);
+      var linked = packagesForOrigin(id, packages);
+      if (linked.length) {
+        return {
+          directionId: id,
+          state: "materialized",
+          packageId: linked[0].id || linked[0].name || "",
+          packageCount: linked.length,
+          taskCount: childIds.length,
+          nextSkill: "/research-run",
+          nextAction: "/research-run " + (linked[0].id || linked[0].name || "<package-id>"),
+        };
+      }
+      if (childIds.length) {
+        return {
+          directionId: id,
+          state: "ready_to_materialize",
+          taskCount: childIds.length,
+          nextSkill: "/research-package",
+          nextAction: "/research-package from-scope " + id,
+        };
+      }
+      if (pendingTasks.length) {
+        return {
+          directionId: id,
+          state: "pending_tasks",
+          pendingTaskCount: pendingTasks.length,
+          taskCount: 0,
+          nextSkill: "/research-scope",
+          nextAction: "Accept, revise, or reject the pending validation Tasks before creating a package.",
+        };
+      }
+      return {
+        directionId: id,
+        state: "missing_tasks",
+        taskCount: 0,
+        nextSkill: "/research-scope",
+        nextAction: "Propose and ratify validation Tasks before creating a package.",
+      };
+    });
+
+    return { state: "directions", items: items, nextSkill: null, nextAction: null };
+  }
+
   function linkedPackages(nodeId, explicitPackages) {
     return packageList(explicitPackages).filter(function (p) {
       var matchedExperiments = (p.experiments || []).filter(function (exp) {
@@ -443,6 +547,7 @@
     buildSnapshot: buildSnapshot,
     schemaHealth: schemaHealth,
     currentUnderstanding: currentUnderstanding,
+    packageReadiness: packageReadiness,
     linkedPackages: linkedPackages,
     packageProvenanceHealth: packageProvenanceHealth,
     historyTimeline: historyTimeline,
@@ -564,6 +669,70 @@
       '<div class="status-cell"><div class="k">Linked packages</div><div class="v">' + esc(summary.linkedPackages) + "</div></div>",
       "</div>",
       '<ul class="scope-list scope-root-summary">' + roots + "</ul>",
+      "</article>",
+    ].join("");
+  }
+
+  function readinessTitle(stateValue) {
+    var labels = {
+      missing_project: "Project needed",
+      missing_direction: "Direction needed",
+      pending_direction: "Direction waiting",
+      missing_tasks: "Validation Tasks needed",
+      pending_tasks: "Validation Tasks waiting",
+      ready_to_materialize: "Ready to materialize",
+      materialized: "Package exists",
+    };
+    return labels[stateValue] || humanizeKey(stateValue);
+  }
+
+  function renderPackageReadiness(data) {
+    var host = $("[data-section='package-readiness']");
+    if (!host) { return; }
+    if (!data) {
+      host.innerHTML = '<div class="empty-state">Checking Package readiness...</div>';
+      return;
+    }
+    var readiness = packageReadiness(data.projection, data.triage, packageList());
+    var body = "";
+    if (readiness.items && readiness.items.length) {
+      body = '<div class="scope-forest">' + readiness.items.map(function (item) {
+        var facts = [
+          ["State", esc(readinessTitle(item.state))],
+          ["Validation Tasks", esc(item.taskCount != null ? item.taskCount : 0)],
+          ["Next skill", "<code>" + esc(item.nextSkill || "-") + "</code>"],
+          ["Next action", "<code>" + esc(item.nextAction || "-") + "</code>"],
+        ];
+        if (item.pendingTaskCount) { facts.splice(2, 0, ["Pending Tasks", esc(item.pendingTaskCount)]); }
+        if (item.packageId) { facts.splice(2, 0, ["Package", "<code>" + esc(item.packageId) + "</code>"]); }
+        var rows = facts.map(function (r) {
+          return '<div class="k">' + esc(r[0]) + "</div><div>" + r[1] + "</div>";
+        }).join("");
+        return [
+          '<article class="scope-node scope-readiness-node">',
+          '<div class="scope-node-head"><div><div class="k">Package readiness</div>',
+          '<h3><code>' + esc(item.directionId || "-") + "</code></h3></div>",
+          statusChip(readinessTitle(item.state)),
+          "</div>",
+          '<div class="kv-grid scope-dossier-grid">' + rows + "</div>",
+          "</article>",
+        ].join("");
+      }).join("") + "</div>";
+    } else {
+      body = '<div class="status-strip scope-summary-strip">' +
+        '<div class="status-cell"><div class="k">State</div><div class="v">' +
+        esc(readinessTitle(readiness.state)) + "</div></div>" +
+        '<div class="status-cell"><div class="k">Next skill</div><div class="v"><code>' +
+        esc(readiness.nextSkill || "-") + "</code></div></div>" +
+        '<div class="status-cell"><div class="k">Next action</div><div class="v"><code>' +
+        esc(readiness.nextAction || "-") + "</code></div></div>" +
+        "</div>";
+    }
+    host.innerHTML = [
+      '<article class="scope-understanding-card">',
+      '<div class="scope-section-head"><div><div class="k">Package readiness</div>',
+      '<h2>Can committed Scope become a package?</h2></div></div>',
+      body,
       "</article>",
     ].join("");
   }
@@ -1021,6 +1190,7 @@
     var data = state.data;
     if (!data) { return; }
     renderUnderstanding(data);
+    renderPackageReadiness(data);
     renderSchemaHealth(data);
     var active = $("[data-tabpanel='active']");
     var triage = $("[data-tabpanel='triage']");

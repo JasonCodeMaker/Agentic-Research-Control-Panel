@@ -80,6 +80,12 @@ def test_scope_declares_understanding_and_schema_health_surfaces():
     assert 'data-section="schema-health"' in html
 
 
+def test_scope_declares_package_readiness_surface():
+    html = _read(SCOPE_HTML)
+    assert 'data-section="package-readiness"' in html
+    assert "Package readiness" in html
+
+
 def test_scope_inspector_renders_decision_and_audit_labels():
     js = _read(INSPECTOR_JS)
     for label in (

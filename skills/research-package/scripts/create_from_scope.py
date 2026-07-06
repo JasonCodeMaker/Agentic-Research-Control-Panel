@@ -86,6 +86,39 @@ def _latest_record(direction_id: str, records: list[dict]) -> dict | None:
     return hist[-1] if hist else None
 
 
+def _read_triage(triage_path: str | Path) -> list[dict]:
+    path = Path(triage_path)
+    if not path.exists():
+        return []
+    latest = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        if rec.get("id"):
+            latest[rec["id"]] = {**latest.get(rec["id"], {}), **rec}
+    return [rec for rec in latest.values() if rec.get("status") == "pending"]
+
+
+def _proposal_target(item: dict) -> str | None:
+    proposed = item.get("proposed_node") if isinstance(item.get("proposed_node"), dict) else {}
+    return item.get("node_id") or proposed.get("id")
+
+
+def _proposal_parents(item: dict) -> list[str]:
+    proposed = item.get("proposed_node") if isinstance(item.get("proposed_node"), dict) else {}
+    parents = item.get("parents") or proposed.get("parents") or []
+    return parents if isinstance(parents, list) else []
+
+
+def _pending_direction_items(pending: list[dict], direction_id: str) -> list[dict]:
+    return [item for item in pending if _proposal_target(item) == direction_id]
+
+
+def _pending_task_items(pending: list[dict], direction_id: str) -> list[dict]:
+    return [item for item in pending if direction_id in _proposal_parents(item)]
+
+
 def _latest_records_by_node(records: list[dict]) -> dict[str, dict]:
     latest = {}
     for rec in records:
@@ -157,13 +190,147 @@ def _inventory_contains(root: Path, package_id: str) -> bool:
     return f'id: "{package_id}"' in text or f"id: '{package_id}'" in text
 
 
+def _package_state(root: Path, package_id: str) -> dict:
+    try:
+        inventoried = _inventory_contains(root, package_id)
+    except FileNotFoundError:
+        return {"state": "dashboard_missing", "id": package_id}
+    if inventoried or (root / "packages" / package_id).exists():
+        return {"state": "exists", "id": package_id}
+    return {"state": "absent", "id": package_id}
+
+
+def materialization_status(*, root: Path, direction_id: str, transitions: str | Path,
+                           triage: str | Path, package_id: str) -> dict:
+    """Explain whether a committed Scope Direction can become a package now."""
+    records = scope_ssot.read_log(transitions)
+    pending = _read_triage(triage)
+    record = _latest_record(direction_id, records)
+    package = _package_state(root, package_id)
+
+    if package["state"] == "dashboard_missing":
+        return {
+            "materializable": False,
+            "direction": {"state": "unknown", "id": direction_id},
+            "tasks": {"state": "unknown", "count": 0},
+            "package": package,
+            "nextSkill": "/research-dashboard",
+            "nextAction": "Run /research-dashboard before creating package surfaces.",
+        }
+
+    if record is None:
+        direction_pending = _pending_direction_items(pending, direction_id)
+        if direction_pending:
+            return {
+                "materializable": False,
+                "direction": {"state": "pending", "id": direction_id,
+                              "pending": [item["id"] for item in direction_pending]},
+                "tasks": {"state": "blocked", "count": 0},
+                "package": package,
+                "nextSkill": "/research-scope",
+                "nextAction": "Accept, revise, or reject the pending Direction before creating a package.",
+            }
+        return {
+            "materializable": False,
+            "direction": {"state": "missing", "id": direction_id},
+            "tasks": {"state": "blocked", "count": 0},
+            "package": package,
+            "nextSkill": "/research-brainstorm",
+            "nextAction": "Shape and ratify a Direction before creating a package.",
+        }
+
+    node = record.get("node") or {}
+    if node.get("level") != "direction":
+        return {
+            "materializable": False,
+            "direction": {"state": "wrong_level", "id": direction_id, "level": node.get("level")},
+            "tasks": {"state": "blocked", "count": 0},
+            "package": package,
+            "nextSkill": "/research-scope",
+            "nextAction": "Use a committed Direction id, not another Scope node id.",
+        }
+    if node.get("status") != "ACTIVE":
+        return {
+            "materializable": False,
+            "direction": {"state": "inactive", "id": direction_id, "status": node.get("status")},
+            "tasks": {"state": "blocked", "count": 0},
+            "package": package,
+            "nextSkill": "/research-scope",
+            "nextAction": "Reopen or revise the Direction before creating a package.",
+        }
+    scope_ssot.validate_node(node)
+
+    milestones = _child_milestones(direction_id, records)
+    if not milestones:
+        pending_tasks = _pending_task_items(pending, direction_id)
+        task_state = "pending" if pending_tasks else "missing"
+        tasks = {"state": task_state, "count": 0}
+        if pending_tasks:
+            tasks["pending"] = [item["id"] for item in pending_tasks]
+        action = ("Accept, revise, or reject the pending validation Tasks before creating a package."
+                  if pending_tasks else
+                  "Propose and ratify validation Tasks before creating a package.")
+        return {
+            "materializable": False,
+            "direction": {"state": "committed", "id": direction_id,
+                          "scopeVersion": record.get("scope_version"),
+                          "txn": record.get("transaction_id")},
+            "tasks": tasks,
+            "package": package,
+            "nextSkill": "/research-scope",
+            "nextAction": action,
+        }
+
+    if package["state"] == "exists":
+        return {
+            "materializable": False,
+            "direction": {"state": "committed", "id": direction_id,
+                          "scopeVersion": record.get("scope_version"),
+                          "txn": record.get("transaction_id")},
+            "tasks": {"state": "committed", "count": len(milestones),
+                      "ids": [item["node"]["id"] for item in milestones]},
+            "package": package,
+            "nextSkill": "/research-run",
+            "nextAction": f"/research-run {package_id}",
+        }
+
+    return {
+        "materializable": True,
+        "direction": {"state": "committed", "id": direction_id,
+                      "scopeVersion": record.get("scope_version"),
+                      "txn": record.get("transaction_id")},
+        "tasks": {"state": "committed", "count": len(milestones),
+                  "ids": [item["node"]["id"] for item in milestones]},
+        "package": package,
+        "nextSkill": "/research-package",
+        "nextAction": f"/research-package from-scope {direction_id}",
+    }
+
+
+def _print_check(status: dict, *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(status, ensure_ascii=False, sort_keys=True))
+        return
+    print(f"materializable: {str(status['materializable']).lower()}")
+    print(f"direction: {status['direction'].get('state')} {status['direction'].get('id')}")
+    print(f"tasks: {status['tasks'].get('state')} count={status['tasks'].get('count')}")
+    print(f"package: {status['package'].get('state')} {status['package'].get('id')}")
+    print(f"next: {status['nextAction']}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--check", action="store_true",
+                   help="report whether this Direction can be materialized without writing files")
+    p.add_argument("--json", action="store_true", dest="json_output",
+                   help="with --check, print machine-readable JSON")
     p.add_argument("--direction-id", required=True,
                    help="committed SSOT direction node id, e.g. dir/retrieval-v2")
     p.add_argument("--root", default="research_html", help="research_html root")
     p.add_argument("--transitions", default="outputs/_scope/transitions.jsonl",
                    help="committed Scope SSOT transition log")
+    p.add_argument("--triage", default="outputs/_scope/triage.jsonl",
+                   help="Scope Triage queue used only for --check diagnostics")
     p.add_argument("--id", default="", help="package id; default YYYY-MM-DD-<direction-slug>")
     p.add_argument("--name", default="", help="package name; default derived from direction id")
     p.add_argument("--category", default="in-progress",
@@ -194,6 +361,19 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     root = Path(args.root)
+    direction_slug = _slug_from_direction_id(args.direction_id)
+    package_id = args.id or create_research_package.default_id(direction_slug)
+    if args.check:
+        status = materialization_status(
+            root=root,
+            direction_id=args.direction_id,
+            transitions=args.transitions,
+            triage=args.triage,
+            package_id=package_id,
+        )
+        _print_check(status, as_json=args.json_output)
+        return 0
+
     records = scope_ssot.read_log(args.transitions)
     record = _latest_record(args.direction_id, records)
     if record is None:
@@ -209,8 +389,6 @@ def main(argv: list[str] | None = None) -> int:
 
     scope_ssot.validate_node(node)
     spec = node["spec"]
-    direction_slug = _slug_from_direction_id(args.direction_id)
-    package_id = args.id or create_research_package.default_id(direction_slug)
     if _inventory_contains(root, package_id) or (root / "packages" / package_id).exists():
         raise SystemExit(f"Package already exists or is already inventoried: {package_id}")
     milestones = _child_milestones(args.direction_id, records)

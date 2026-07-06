@@ -1,7 +1,7 @@
 ---
 name: research-package
 description: "Use when the user invokes /research-package or asks to create, initialize, draft, scaffold, or materially restructure a research package under research_html/packages, including materializing accepted Scope SSOT Directions, adding dashboard package entries, or large structural results.html edits."
-argument-hint: "<one-sentence description of the package goal, optionally followed by — category=<lane>, scope=<pages>>"
+argument-hint: "from-scope <direction-id> | manual <one-sentence package goal> [category=<lane>, scope=<pages>]"
 allowed-tools: Bash(*), Read, Edit, Write, Glob, Grep
 ---
 
@@ -44,9 +44,42 @@ test -f <cwd>/research_html/index.html && test -f <cwd>/research_html/data/resea
 
 If the check fails, stop and tell the user: "The research dashboard is not set up at `<cwd>/research_html/`. Run `/research-dashboard` first, then re-run `/research-package`." Do not silently scaffold a missing dashboard from this skill — `/research-dashboard` is the right tool.
 
+## Entry modes
+
+Prefer the Scope path:
+
+```text
+/research-package from-scope <direction-id>
+```
+
+Use it whenever a package comes from a Project/Direction/Task Scope chain, including when the user asks
+to convert a brainstormed Direction into a package. This mode reads committed Scope only. It never uses a
+pending Triage proposal as package authority.
+
+Use manual creation only for legacy or non-Scope packages:
+
+```text
+/research-package manual <package goal>
+```
+
+Manual creation must still fill the inventory contract, but it should not pretend to be Scope-backed.
+
 ## From accepted Scope Direction
 
 When the user asks to generate a package from a Scope SSOT Direction, use the materializer only after both the Direction and its high-level validation Milestones are committed in the Scope SSOT:
+
+First run the readiness diagnosis. It is read-only and gives the next owning skill when the package is
+not ready:
+
+```bash
+python3 skills/research-package/scripts/create_from_scope.py \
+  --check --json \
+  --direction-id <direction-node-id> \
+  --root research_html \
+  --transitions outputs/_scope/transitions.jsonl
+```
+
+Only when `materializable` is `true`, write the package:
 
 ```bash
 python3 skills/research-package/scripts/create_from_scope.py \
@@ -57,6 +90,8 @@ python3 skills/research-package/scripts/create_from_scope.py \
 
 Hard rules:
 
+- If `--check` reports `pending_direction`, `missing_direction`, `missing_tasks`, or `pending_tasks`,
+  stop and hand off to the reported `nextSkill`.
 - The materializer reads only committed `outputs/_scope/transitions.jsonl`; it never reads pending Triage proposals as package authority.
 - The Direction node must exist, be `level == "direction"`, and be `status == "ACTIVE"`.
 - At least one active child `level == "task"` milestone node must exist with the Direction as parent. Milestones are high-level validation objectives, not concrete package experiments.
@@ -265,6 +300,11 @@ python "$PACKAGE_SKILL/scripts/create_research_package.py" \
 From an accepted Scope Direction, prefer the materializer instead of manually copying spec fields:
 
 ```bash
+python3 skills/research-package/scripts/create_from_scope.py \
+  --check --json \
+  --direction-id dir/retrieval-v2 \
+  --id 2026-06-03-retrieval-v2
+
 python3 skills/research-package/scripts/create_from_scope.py \
   --direction-id dir/retrieval-v2 \
   --id 2026-06-03-retrieval-v2

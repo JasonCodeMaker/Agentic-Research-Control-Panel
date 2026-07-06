@@ -1,7 +1,7 @@
 """End-to-end: the whole wiki-integration composes.
 
-real research-op registry writes → build (Context Pack + durable core) → context.html render.
-Proves the mutation surface, the assembler, and the human surface all line up on the same data.
+real research-op registry writes → build Context Pack agent artifacts.
+Proves the mutation surface and assembler line up on the same data.
 """
 import json
 import shutil
@@ -23,7 +23,6 @@ from tests.scope_fixtures import direction_node  # noqa: E402
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node required")
 
 OP = ROOT / "skills" / "research-op" / "scripts" / "research_op.py"
-RENDER = ROOT / "skills" / "research-dashboard" / "assets" / "dashboard" / "assets" / "research-context.js"
 
 _PACKAGES_JS = '''window.RESEARCH_PACKAGES = [
   { id: "2026-06-03-active", name: "Active", category: "in-progress", status: "CONTEXT_LOADED",
@@ -75,26 +74,13 @@ def test_full_wiki_integration(tmp_path, monkeypatch):
     assert _op(tmp_path, "--pkg", "2026-06-03-active", "--op", "registry-add", "--target", "edge",
                "--payload", json.dumps({"from": "a", "to": "b", "type": "bogus"})).returncode == 2
 
-    # Phase 0/1: build the Context Pack + durable core
+    # Phase 0/1: build the Context Pack agent artifacts
     build.build("research_html", "2026-06-03-active", transitions_path=str(log),
                 generated_at="2026-06-04T00:00:00Z")
     md = (tmp_path / "outputs" / "2026-06-03-active" / "context_pack.md").read_text(encoding="utf-8")
+    payload = json.loads((tmp_path / "outputs" / "2026-06-03-active" / "context_pack.json").read_text(encoding="utf-8"))
     for needle in ("Adding supervised contrastive pretraining", "reproduce the baseline first", "mining",
                    "Dense Passage Retrieval", "EXTENDS", "no zero-shot eval"):
         assert needle in md, needle
-
-    # Phase 2: the human surface renders the same durable core
-    core_js = root / "data" / "context-core.js"
-    script = f'''
-      global.window = {{}};
-      var captured = "";
-      global.document = {{ readyState: "complete",
-        getElementById: function (id) {{ return id === "context-root" ? {{ set innerHTML(v) {{ captured = v; }} }} : null; }},
-        addEventListener: function () {{}} }};
-      const fs = require("fs");
-      eval(fs.readFileSync({json.dumps(str(core_js))}, "utf8"));
-      eval(fs.readFileSync({json.dumps(str(RENDER))}, "utf8"));
-      process.stdout.write(captured);
-    '''
-    rendered = subprocess.check_output(["node", "-e", script], text=True)
-    assert "mining" in rendered and "Dense Passage Retrieval" in rendered and "no zero-shot eval" in rendered
+    assert any(section["key"] == "failed_methods" for section in payload["sections"])
+    assert not (root / "data" / "context-core.js").exists()

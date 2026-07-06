@@ -17,6 +17,10 @@ The trust line is unchanged: ideas are not gated (they carry no claims, metrics,
 the SSOT only at **conversion**, where the synthesized Direction is *proposed* through Triage and the PM
 disposes. The agent never commits the SSOT.
 
+If the user says "convert this brainstorm to a research package", do not call `/research-package`
+directly. Convert means: propose a Direction, wait for ratification, propose validation Tasks, wait for
+ratification, then run `/research-package from-scope <direction-id>`.
+
 ## Resources
 
 **Pipeline root:** `/home/uqzzha35/Project/Trustworthy-Research-Pipeline/Trustworthy-Research-Pipeline`
@@ -158,8 +162,9 @@ This mirrors `research-scope`'s human-accept path:
 1. PM `triage.py dispose --decision accept`, then commits with `research-op --op scope-transition`
    (`gate=USER_CROSS_MODEL_AUDIT`). The Direction enters the SSOT.
 2. The existing chain takes over: `plan_milestones.py` proposes milestones; after they are committed,
-   `create_from_scope.py` materializes the package. Pass the consumed idea ids so they are frozen into the
-   package's `brainstorm.html` provenance sub-page and removed from the brainstorm lane:
+   `/research-package from-scope <direction-id>` materializes the package. Pass the consumed idea ids so
+   they are frozen into the package's `brainstorm.html` provenance sub-page and removed from the
+   brainstorm lane:
 
    ```bash
    python3 skills/research-package/scripts/create_from_scope.py \
@@ -171,7 +176,8 @@ This mirrors `research-scope`'s human-accept path:
 ## Scope (what this skill does NOT do)
 
 - Does not commit the SSOT — it only proposes a pending Direction Triage item.
-- Does not create packages or milestones — those are the existing `create_from_scope.py` / `plan_milestones.py`.
+- Does not create packages or milestones — those belong to `/research-scope` and
+  `/research-package from-scope <direction-id>`.
 - Ideas are not research-op surfaces — `add`/`remove` write `brainstorms.js` directly; they carry no gates.
 
 ## Output contract

@@ -80,7 +80,7 @@ def _setup(tmp_path):
     return root, log
 
 
-def test_build_writes_full_pack_and_durable_core(tmp_path, monkeypatch):
+def test_build_writes_full_pack_without_dashboard_context_core(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     root, log = _setup(tmp_path)
     triage = tmp_path / "outputs" / "_scope" / "triage.jsonl"
@@ -101,7 +101,6 @@ def test_build_writes_full_pack_and_durable_core(tmp_path, monkeypatch):
 
     md = (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.md").read_text(encoding="utf-8")
     pj = json.loads((tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.json").read_text(encoding="utf-8"))
-    core_js = (root / "data" / "context-core.js").read_text(encoding="utf-8")
 
     # full pack carries direction + project/package knowledge
     assert "Build an auditable research workflow" in md
@@ -116,12 +115,7 @@ def test_build_writes_full_pack_and_durable_core(tmp_path, monkeypatch):
     assert pj["stamp"]["global_scope_version"] == 3
     assert pj["stamp"]["sourceDirection"] == "dir/retrieval-v2"
     assert pj["stamp"]["pendingScope"] == ["triage-task-gate"]
-
-    # durable core is direction-independent: cross-package knowledge only
-    assert core_js.startswith("window.RESEARCH_CONTEXT_CORE")
-    assert "hard-negative mining" in core_js
-    assert "Always reproduce the baseline" in core_js
-    assert "Adding supervised contrastive pretraining" not in core_js    # direction is overlay, not core
+    assert not (root / "data" / "context-core.js").exists()
 
 
 def test_build_surfaces_knowledge_registries(tmp_path, monkeypatch):
@@ -142,10 +136,8 @@ def test_build_surfaces_knowledge_registries(tmp_path, monkeypatch):
                 generated_at="2026-06-04T00:00:00Z")
 
     md = (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.md").read_text(encoding="utf-8")
-    core_js = (root / "data" / "context-core.js").read_text(encoding="utf-8")
     for needle in ("Dense Passage Retrieval", "EXTENDS", "no zero-shot eval"):
         assert needle in md
-        assert needle in core_js  # registries are cross-package → in the durable core too
 
 
 def test_build_degrades_gracefully_without_optional_stores(tmp_path, monkeypatch):
@@ -163,7 +155,7 @@ def test_build_degrades_gracefully_without_optional_stores(tmp_path, monkeypatch
 
     md = (tmp_path / "outputs" / "2026-06-03-retrieval-v2" / "context_pack.md").read_text(encoding="utf-8")
     assert "hard-negative mining" in md          # cross-package failure still compiled from packages
-    assert (root / "data" / "context-core.js").exists()
+    assert not (root / "data" / "context-core.js").exists()
 
 
 def test_cli_main(tmp_path, monkeypatch):

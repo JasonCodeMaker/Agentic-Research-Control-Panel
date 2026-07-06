@@ -43,7 +43,7 @@ Source hierarchy: Scope owns intent; package `plan.html` owns executable gates; 
 measurements; package `results.html` owns verdicts; `research-packages.js` owns dashboard index state;
 `research_html/data/rules.js` owns the binding-rule corpus (mutated only via `research-op --target rule`;
 its `origin=mirror|selfevolve` rows are export-owned projections).
-Derived pages (`scope.html`, `context.html`, `learnings.html`, lane pages, `scope-projection.json/js`) are
+Derived pages (`scope.html`, `learnings.html`, lane pages, `scope-projection.json/js`) are
 read surfaces unless their owning skill says otherwise. For detailed surface ownership, read only the
 relevant skill/reference, especially `research-dashboard`, `research-package`, `research-op`, and
 `research-scope`.

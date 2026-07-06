@@ -3,7 +3,7 @@
 These are cross-package stores, not package surfaces — like the Scope SSOT transition log they
 bypass the (category, status) state-gate. Each `--op registry-add` validates (reject-before-write),
 dedups, and appends one JSONL line under research_html/data/<store>.jsonl. The Context Pack
-(lib/context_pack/build.py) reads these stores and surfaces them on context.html.
+(lib/context_pack/build.py) reads these stores into package-local agent artifacts.
 """
 
 import json
