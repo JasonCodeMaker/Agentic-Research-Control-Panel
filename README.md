@@ -10,7 +10,7 @@ goal fixed, the run visible, and every result tied to evidence you can inspect.
 [Quick Start](#quick-start) · [Example run](#a-complete-example-run) ·
 [How it works](#how-it-works) · [Reference](#reference)
 
-## The research loop
+## Overview
 
 Start from an empty workspace, or attach the pipeline to a repo that already has
 code, data, baselines, and experiment history.
@@ -251,7 +251,7 @@ This section should read like a short transcript, not a framework explanation.
 Replace the placeholder dataset and metric with a real demo when one is ready.
 
 ```text
-In an existing retrieval repo:
+In an existing research repo:
 
 User:
 /research-dashboard
@@ -446,26 +446,6 @@ outputs/_scope/                        # approved and pending research intent
 outputs/_live/                         # global run index
 outputs/<pkg>/                         # package runtime records and artifacts
 outputs/_selfevolve/                   # governed project memory
-```
-
-### Useful checks
-
-From a managed research workspace:
-
-```bash
-PIPELINE=/path/to/Trustworthy-Research-Pipeline
-
-python3.13 research_html/scripts/serve_dashboard.py status --json
-python3.13 research_html/scripts/learning_context_gate.py --root research_html --json
-python3.13 "$PIPELINE/skills/research-op/scripts/research_op.py" --pkg <id> --op check --scope fact-alignment
-python3.13 "$PIPELINE/skills/research-package/scripts/render_package_projection.py" --pkg <id> --page all
-```
-
-If the skills are installed globally, resolve script paths through the symlinked
-skill directory, for example:
-
-```bash
-python3.13 "$HOME/.codex/skills/research-op/scripts/research_op.py" --pkg <id> --op check --scope all
 ```
 
 ## Acknowledgements
