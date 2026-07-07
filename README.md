@@ -22,10 +22,10 @@ state still belongs to the project instead of the chat.
 
 - 🎯 Objective drift: Several sessions in, can you see whether the agent is
   still bound to the objective, metric, and baseline you approved?
-- 👀 Run visibility: While a run is executing, can you inspect what it is doing
+- 👀 Run visibility: While an auto-research pipeline is executing, can you inspect what it is doing
   instead of trusting its summary?
 - 📎 Evidence traceability: When it reports a metric, can you trace that number
-  to an artifact without rereading the chat?
+  to an artifact and verify that the result is real and reproducible?
 - 🧠 Project memory: Can the next session inherit what this run proved or ruled
   out?
 
