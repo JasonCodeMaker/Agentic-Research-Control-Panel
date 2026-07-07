@@ -5,7 +5,7 @@
 
 Agents run the loop. You govern the research.
 
-A local control layer for coding agents that run ML experiments in real repos,
+A local control layer for coding agents that run research experiments in real repos,
 with approved objectives, visible runs, evidence-backed results, and project
 memory you can inspect.
 
@@ -29,8 +29,7 @@ state still belongs to the project instead of the chat.
 - 🧠 Project memory: Can the next session inherit what this run proved or ruled
   out?
 
-Chat is the wrong source of truth for research work. Trustworthy Research
-Pipeline keeps the working state in the repo, where the human and the agent can
+Chat is the wrong source of truth for research work. This project keeps the working state in the repo, where the human and the agent can
 inspect the same objective, run state, evidence, result, and decision.
 
 Each cycle moves through an approved objective, a scoped package, a visible run,
