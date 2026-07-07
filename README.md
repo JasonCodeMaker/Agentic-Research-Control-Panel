@@ -1,81 +1,68 @@
-# Trustworthy Auto-Research Pipeline
+# Trustworthy Research Pipeline
 
+A live control panel for human-governed auto-research.
 
-> A project-management layer for autonomous ML research. You attach it to a research repo, define the
-> objective, form a scoped package, and let `/research-run` complete that package through experiments,
-> verified results, and project memory — with every claim gated by evidence instead of trust.
+Run agent-assisted experiments in your own research workspace, while keeping the
+goal fixed, the run visible, and every result tied to evidence you can inspect.
 
-This repo is the **toolbox**, not the research project itself. Its skills run from inside the ML project
-you want to manage. The agent can propose and execute work; **you own the objective and the
-ratification gates**.
+![Trustworthy Research Pipeline control panel](asset/readme-control-panel.png)
 
-**Current maturity, in one sentence.** The dashboard, Scope/Triage system, trust gates, Context Pack,
-self-evolution Rule Store, `/research-run` package runner, exp-live runtime envelope, fact-backed package
-surfaces, and deterministic dispatch contract are implemented in the toolbox; `/research-auto` is the
-direction-level campaign conductor that composes them — given a Direction and a gate, it cycles
-brainstorm → design → run until the gate clears or an honest stop fires.
+[Quick Start](#quick-start) · [Example run](#a-complete-example-run) ·
+[How it works](#how-it-works) · [Reference](#reference)
 
-**Contents** · [Why This Exists](#why-this-exists) · [Quick Start](#quick-start) ·
-[Research Lifecycle](#research-lifecycle) · [What `/research-run` Does](#what-research-run-does) ·
-[Trust Guarantees](#trust-guarantees) · [How It Works](#how-it-works) ·
-[Repository Layout](#repository-layout) · [Reference](#reference)
+## The research loop
 
----
+Start from an empty workspace, or attach the pipeline to a repo that already has
+code, data, baselines, and experiment history.
 
-## Why This Exists
+Trustworthy Research Pipeline gives the agent a shared control panel before it
+starts changing research state: an approved objective, a scoped package, a
+visible run, an evidence-backed result, and a human decision.
 
-Autonomous research agents tend to fail in three specific ways, and this pipeline is built to prevent
-each one:
-
-| # | Failure mode | What the pipeline does about it |
-| --- | --- | --- |
-| **1** | **Context pollution + hallucination** lead the agent to deceive or ignore instructions. | Typed interfaces, multi-agent context isolation, mandatory Test-Driven implementation, and a deliberately small workflow surface. |
-| **2** | **No HCI alignment** between the model's working context and the user's. | A live, real-time HTML dashboard where the user and the agent read the same compiled state. |
-| **3** | **No personalized project self-learning.** | A governed rule store, a self-reflection loop, and durable project memory (the Context Pack). |
-
-Every capability in this repo traces back to one of these three problems; the
-[trust guarantees](#trust-guarantees) below are how they are enforced in code rather than promised in
-prose.
-
----
+That is the loop. The agent can propose and execute work, but the research goal,
+run state, evidence, and final call stay visible in the project.
 
 ## Quick Start
 
-Setup installs **two things at two scopes**:
+Setup has two layers:
 
-1. **The skills** — the `/research-*` commands. Install them once at the **global** scope (visible in every
-   project) *or* per-repo at the **project** scope.
-2. **The protocols + dashboard** — attached **per research project** you want to manage.
+1. Install the skills so Claude Code or Codex can see the `/research-*`
+   commands.
+2. Attach the protocols and dashboard inside each research workspace you want
+   to manage.
 
-Natural-language paragraphs explain the intent and guardrails. `bash` blocks are exact setup commands.
-`text` blocks are slash commands or natural-language instructions.
+`/research-onboard` is an optional next step for workspaces that do not yet have an approved Project objective.
 
-### Prerequisites
+### 1. Install the skills
 
-- **Python 3.13** on `PATH`. The skills' helper scripts target it and use only the standard library,
-  so there is nothing to `pip install`.
-- **Node.js 22+** for dashboard JavaScript syntax checks and direct execution of `workflow.ts`.
-- An agent that loads skills from a directory: **Claude Code** (`~/.claude/skills/`) or
-  **Codex** (`~/.codex/skills/`, with `AGENTS.md` at the project root).
+Skills must be symlinked from this toolbox repo. Do not copy them: the helper
+scripts resolve shared `lib/` code relative to this checkout.
 
-### 1 · Install the skills (symlink — never copy)
+Run the install command from the Trustworthy Research Pipeline repo, not from
+the research workspace you want to manage. Set `DEST` to one of the paths below.
 
-Each skill's helper scripts resolve the shared `lib/` *relative to this repo*, so the skills must be
-**symlinked** into the skills directory. A plain copy placed outside the repo cannot find `lib/` and will
-fail at runtime. Pick a scope by setting `DEST`:
+#### Global Level
 
-| Scope | `DEST` value | Skills become visible in |
-| --- | --- | --- |
-| **Global** (recommended) | `$HOME/.claude/skills` | every project on this machine |
-| **Project** | `/path/to/your-project/.claude/skills` | that one repo only |
-| Codex (global) | `$HOME/.codex/skills` | every project on this machine |
+Use this when you want the `/research-*` commands available across projects on
+the same machine.
 
-Run from the toolbox repo root, after setting `DEST` to your chosen scope:
+- Claude Code: set `DEST="$HOME/.claude/skills"`.
+- Codex: set `DEST="$HOME/.codex/skills"`.
+
+#### Project Level
+
+Use this when one workspace should carry its own agent setup.
+
+- Claude Code: set `DEST="/path/to/your-research-workspace/.claude/skills"`.
+- Codex: keep the skills in `$HOME/.codex/skills` and put project-specific
+  rules in the workspace's `AGENTS.md`. Codex project-level behavior is handled
+  by step 2, not by a separate `<workspace>/.codex/skills` directory.
 
 ```bash
-cd /path/to/Trustworthy-Research-Pipeline      # the toolbox repo (the dir holding skills/ and lib/)
+cd /path/to/Trustworthy-Research-Pipeline
 REPO="$(pwd)"
-DEST="$HOME/.claude/skills"                     # Claude Code; use "$HOME/.codex/skills" for Codex
+DEST="$HOME/.claude/skills"
+
 mkdir -p "$DEST"
 for src in "$REPO"/skills/*/; do
   name="$(basename "$src")"
@@ -84,508 +71,407 @@ for src in "$REPO"/skills/*/; do
   fi
   ln -sfn "${src%/}" "$DEST/$name"
 done
-ls -l "$DEST" | grep research                   # expect research symlinks: 'l…' lines with '-> …/skills/<name>'
+
+ls -l "$DEST" | grep research
 ```
 
-Then reload the agent (restart Claude Code, or open a new Codex session) so it discovers the skills,
-type `/research-` and confirm the commands autocomplete.
+Expected: the listed entries are symlinks that point back into this toolbox
+repo. Use `DEST="$HOME/.codex/skills"` for the Codex global install, or the
+project-local Claude Code path for a one-workspace Claude Code install. Restart
+Claude Code or open a new Codex session, then type `/research-` to confirm the
+commands are visible.
 
-When a protocol or skill body shows a script path like `skills/<name>/scripts/...` from inside a managed
-research repo, resolve it through the installed symlink directory, e.g.
-`$HOME/.codex/skills/<name>/scripts/...` for Codex or `$HOME/.claude/skills/<name>/scripts/...` for
-Claude Code. Do not copy the toolbox into the target repo just to make relative script examples work.
+### 2. Attach the protocols to a research workspace
 
-### 2 · Attach the pipeline to a research project
-
-The skills are now callable, but each managed project also needs the operating **protocols**
-(`AGENTS.md` for Codex and `CLAUDE.md` for Claude Code / shared protocol text) at its repo root, with
-your project context prepended above the universal sections. The package controller stays in the toolbox
-as executable TypeScript (`workflow.ts`) and is called through the installed skills.
+Run this inside the workspace you want the agent to work on. It can be empty or
+already contain research code.
 
 ```bash
-cd /path/to/your-research-project
-PIPELINE=/path/to/Trustworthy-Research-Pipeline   # the toolbox repo (the dir holding AGENTS.md)
-mkdir -p outputs/_scope outputs/_selfevolve
+cd /path/to/your-research-workspace
+PIPELINE=/path/to/Trustworthy-Research-Pipeline
 
+mkdir -p outputs/_scope outputs/_selfevolve
 test -f AGENTS.md || cp "$PIPELINE/AGENTS.md" AGENTS.md
-test -f CLAUDE.md  || cp "$PIPELINE/CLAUDE.md"  CLAUDE.md
+test -f CLAUDE.md  || cp "$PIPELINE/CLAUDE.md" CLAUDE.md
 ```
 
-If any file already exists, keep it and merge the framework protocols instead of overwriting. `AGENTS.md`
-is the Codex adapter; `CLAUDE.md` remains the full shared operating contract. Add the project-specific
-section above the framework protocols:
+Expected: your research workspace now has the operating protocol files the agent
+will read before doing research work. If either file already exists, merge the
+Trustworthy Research Pipeline protocol into the existing project instructions
+instead of overwriting them.
 
-- project name and objective;
-- datasets, baselines, metrics, and success criteria;
-- compute constraints and available machines;
-- non-goals, safety constraints, or reviewer concerns.
+Use `AGENTS.md` for Codex-facing project rules. Use `CLAUDE.md` for Claude Code
+and for the shared research operating protocol.
 
-### 3 · Initialize and deploy the shared dashboard
+### 3. Create the control panel
 
-Run:
+Ask the agent from inside your research workspace:
 
 ```text
 /research-dashboard
 ```
 
-For transparent setup, this command scaffolds and validates the dashboard with:
+Expected: `research_html/` appears in your workspace.
+
+Serve it locally:
 
 ```bash
-cd /path/to/your-research-project
-PIPELINE=/path/to/Trustworthy-Research-Pipeline
-python3.13 "$PIPELINE/skills/research-dashboard/scripts/ensure_dashboard.py" --root research_html
-node --check research_html/assets/research.js
-node --check research_html/data/research-packages.js
-test -f research_html/index.html
-test -f research_html/live.html
-```
-
-Run once per project. This creates `research_html/` — the shared surface where you and the agent read the
-same compiled state (lanes, Scope projection, package links, learnings, and the Live Runs page).
-
-**Deploy it — serve the dashboard, don't file-watch it.** `research_html/` is plain static files plus a
-small read-only server (`scripts/serve_dashboard.py`, scaffolded by this step). View it **through that
-server**, not a live-reload preview extension (VSCode Live Preview / Live Server): a file-watcher reloads
-the whole page every time the agent writes, losing your scroll position. The bundled server injects no
-reload — every surface refreshes its data in place on a ~3 s poll.
-
-**1. Start the server** — from the project root. It runs on the workstation, bound to localhost:
-
-```bash
-python research_html/scripts/serve_dashboard.py ensure \
+python3.13 research_html/scripts/serve_dashboard.py ensure \
   --host 127.0.0.1 --port 8904 --max-port 8904 --json
 ```
 
-It prints a JSON line with `url` and `live_url`. `ensure` reuses an already-healthy server (safe to
-re-run) and launches it in a background `tmux` session that outlives the command. Passing equal
-`--port`/`--max-port` pins the port to `8904`, so a forwarded URL stays stable across restarts.
+Open:
 
-**2. Open it in your browser:**
-
-- **Local** (browser on the same machine as the server): open
-  `http://127.0.0.1:8904/research_html/index.html`.
-- **Remote workstation over SSH** (the common case): the server stays on the workstation; forward the
-  port to your machine, then open that same URL locally.
-  - **VSCode Remote-SSH** forwards `8904` automatically — just open the URL (check the **Ports** panel if
-    it does not appear).
-  - **Plain terminal:** run `ssh -L 8904:127.0.0.1:8904 <user>@<workstation>` in a separate shell, then
-    open `http://127.0.0.1:8904/research_html/index.html`.
-
-**3. Check or repair it anytime:**
-
-```bash
-python research_html/scripts/serve_dashboard.py status --json   # health of the recorded server
-python research_html/scripts/serve_dashboard.py ensure --json   # start, or reuse a healthy one
+```text
+http://127.0.0.1:8904/research_html/index.html
 ```
 
-Leave the tab open while the agent works: the dashboard, lanes, learnings, scope, and Live Runs
-pages all update in place — no manual refresh, no full-page reload.
+Setup ends here. The workspace now has the skills, project protocols, and shared
+dashboard surface.
 
-### 4 · Onboard, form a package, then run it
+### Optional. Onboard the workspace
 
-The project's **global objective** is the first thing that must be locked in. `/research-run` will not run
-experiments until Project, Direction, Task, and package surfaces already exist, so use the formation
-commands first:
-
-| Entry point | Use when | What it does |
-| --- | --- | --- |
-| `/research-onboard` | **Recommended for an existing research repo.** The project already has README / configs / source / data notes / baselines, but no committed Project node. | Analyzes the workspace, writes `outputs/_scope/prior_knowledge.md`, drafts a Project objective, submits it as a pending Triage proposal, then stops for your ratification. |
-| `/research-brainstorm` | You have a vague or partial research idea. | Shapes pre-package ideas, grounds them with literature when needed, and proposes one Direction through Triage. |
-| `/research-scope` | You already know the exact Project/Direction/Task scope or need to revise it. | Builds typed Scope proposals and validation milestones for the Scope SSOT admission gate. |
-| `/research-package from-scope <direction-id>` | Direction and Task are committed, but no package exists yet. | Checks whether committed Scope is ready, then materializes package surfaces from that Scope state only. |
-| `/research-run` | A scoped package exists and should be executed to completion. | Runs readiness, implementation/review, launch/monitoring, artifact propagation, result verification, and terminal routing. |
-| `/research-auto` | You have a Direction and a measurable gate and want the loop driven end-to-end. | Campaign conductor: forms/awaits the Direction charter, then cycles ideate → design → `/research-run` → harvest until the gate clears, the cycle budget runs out, or a human decision is needed. |
-
-For an **existing project**, the normal setup path is:
+Run this only when the workspace has no approved Project objective and you want
+the agent to help create one.
 
 ```text
 /research-onboard
 ```
 
-The onboarder reads the project content it finds (typically `README.md`, `CLAUDE.md`, configs, source
-tree, dataset notes, baselines, or reported metrics), writes a compact prior-knowledge digest for later
-roles, and proposes a Project node through Triage. It does **not** commit the Scope SSOT and does not
-create a package. Inspect the proposal in chat, then accept/reject/revise it:
+Expected: for an empty workspace, the agent scaffolds a small research project
+and asks you for the objective. For an existing workspace, it reads the project
+files, writes a compact prior-knowledge digest, and proposes a project
+objective. In both cases, it should ask you to accept, reject, or revise the
+objective before it becomes active.
 
-Unlike the scaffolding in steps 3–4, this is **interactive, not a one-shot command**: the framework only
-*proposes* (the proposal lands as a pending Triage item), and you ratify in chat — you never hand-write
-Scope entries:
+Example reply:
 
 ```text
 Accept this proposal.
-Reject this proposal because …
-Revise the objective / Direction to focus on …
-Use the supervised / checkpoints / async / autonomous control mode for this Task.
 ```
 
-Only ratified scope is committed to the Scope SSOT (`outputs/_scope/transitions.jsonl`); the framework
-never ratifies silently or materializes a package from a pending proposal. The normal path is:
-`/research-onboard` or `/research-scope` for Project, `/research-brainstorm` or `/research-scope` for
-Direction, `/research-scope` for Task milestones, `/research-package from-scope <direction-id>` for
-package materialization, then `/research-run` to complete the package. If you start from a brainstorm
-and ask to convert it to a package, the agent first proposes the Direction and validation Tasks for your
-approval before any package files are created.
+Onboarding stops at the Project proposal. It does not start a research campaign,
+commit Scope by itself, or create research packages. Start `/research-auto`
+later, when you are ready to run a gated campaign.
 
-Scope text is intentionally bounded for review: scalar prose fields are 20-100 words, list items are
-5-50 words, `config` is a short reference string, and `control_mode` is an enum. Results and readings
-never belong in Scope.
+## How it works
 
-### 5 · (Optional) Enable the turn-end automation hook
+Setup gives the workspace a shared control surface. After that, the pipeline
+turns research work into four states: idea, committed intent, executable
+package, and verified run. Each state has one command that owns it.
 
-Fact propagation and the dashboard-server keepalive can run automatically at the **end of every turn** —
-no model tokens, no manual `ensure`. Both agents fire the same two scripts; only where you register them
-differs. Both pass the event as JSON on **stdin** and honor `"decision":"block"`, so the scripts under
-`.../hooks/` are shared — copy them from
-[`stop-fact-propagation-hook.md`](skills/research-dashboard/references/stop-fact-propagation-hook.md)
-(the `Stop` script renders the Scope projection, runs `propagate_apply.py`, lints, and re-ensures the
-server; the `PostToolUse` script logs touched files), then `chmod +x` them.
+### 1. Shape an idea
 
-**Claude Code** — add to `.claude/settings.json` (paths use `$CLAUDE_PROJECT_DIR`):
-
-```json
-{
-  "hooks": {
-    "PostToolUse": [
-      { "matcher": "Write|Edit",
-        "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/log_touched_file.sh", "timeout": 5 }] }
-    ],
-    "Stop": [
-      { "hooks": [{ "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/stop_fact_propagation.sh", "timeout": 120 }] }
-    ]
-  }
-}
-```
-
-**Codex** — add to `<repo>/.codex/config.toml` (Codex lifecycle hooks; project-local hooks load once the
-`.codex/` layer is trusted). Put the same scripts under `.codex/hooks/` and point `command` at an absolute
-path or one Codex resolves from the project root:
-
-```toml
-[[hooks.PostToolUse]]
-matcher = "^(Write|Edit)$"
-[[hooks.PostToolUse.hooks]]
-type = "command"
-command = ".codex/hooks/log_touched_file.sh"
-timeout = 5
-
-[[hooks.Stop]]
-[[hooks.Stop.hooks]]
-type = "command"
-command = ".codex/hooks/stop_fact_propagation.sh"
-timeout = 120
-```
-
-> Codex's `PostToolUse` payload field names can differ from Claude Code's. If touched-file detection
-> misses, adjust the `jq` paths in `log_touched_file.sh` per Codex's hooks input-field reference — the
-> `Stop` step (propagation + server keepalive) does not depend on those fields.
-
----
-
-## Research Lifecycle
-
-The pipeline is easiest to understand as a research project lifecycle. Each phase has a clear input, user
-decision, agent action, and durable output.
-
-| Phase | Operator action | Framework action | Durable output |
-| --- | --- | --- | --- |
-| **0 · Attach toolbox** | Install skills and attach protocols to the target repo. | Symlinks skills and preserves/merges protocol files. | The target repo now has the operating rules. |
-| **1 · Initialize workspace** | Run `/research-dashboard`, then `/research-onboard` if no Project node exists. | Scaffolds the live dashboard; for existing repos, analyzes project context into a prior-knowledge digest and Project proposal. | `research_html/`, optional `outputs/_scope/prior_knowledge.md`, dashboard lanes. |
-| **2 · Ratify project objective** | Inspect and approve/reject the `/research-onboard` or `/research-scope` Project proposal. | Proposes a Project node through Triage; commits only after human ratification. | Accepted Project in Scope SSOT, or a rejected proposal record. |
-| **3 · Form a research direction** | Approve/reject the Direction proposal in chat. | Runs the learning context gate, then uses brainstorm, evidence checks, and ranking to shape a Direction with a typed spec. | Direction node with hypothesis, metric, baselines, success gate. |
-| **4 · Create an executable task** | Approve/reject the Task proposal; optionally change the control mode. | Runs the learning context gate, then proposes a Task with experiment, config, gate, and control mode. Default mode is `AUTONOMOUS`. | Task node and, once committed, a materialized package. |
-| **5 · Execute the research package** | Run `/research-run`; supervise according to the dial. | Loads the learning gate and fresh Context Pack, runs readiness, implements/reviews if needed, launches and monitors experiments, propagates artifacts, verifies results, and routes the package until terminal. | Runtime artifacts, audit log, verdicts, package state updates. |
-| **6 · Decide the outcome** | Review dashboard/PACK/verdict in chat; approve terminal decisions or scope changes. | Files Triage proposals when goals should change; never edits the objective silently. | Success/fail/archive state, or a versioned Scope revision. |
-| **7 · Learn for the next cycle** | Promote accepted lessons through the governed Rule Store path. | Keeps durable rules under explicit authority and exports active rules into project context. | Active project rules exported into the Context Pack. |
-
-**Completion means:** one research package reaches a terminal, evidence-backed state: success, fail, or
-archive. A success is not a self-declared win; it is a package whose metric/verifier gates clear against
-the committed Scope spec.
-
-During day-to-day use, the runtime and fact storage appear through the same surfaces you already read:
-
-| Surface you use | What it shows | What to trust |
-| --- | --- | --- |
-| `research_html/live.html` | Open, stale, failed, and recent terminal wrapper-launched runs. | It reads runtime files first, so use it before raw tmux scrollback for routine status. |
-| Package `tracker.html` | Live checks, resource allocation, runtime roots, and log paths. | For fact-backed packages, repeated tracker rows come from `live_checks.csv` and `resource_allocation.csv`. |
-| Package `results.html` | Result gates, task-specific result tables, headline metrics, and verdict support. | Fact-backed result tables are rendered from normalized CSV cell facts; repeated result values should point back to the same CSV row id. |
-| `research_html/learnings.html` | Decision view over tried methods: reuse, do-not-repeat, reopen condition, promoted rule, and Scope impact. | Read it before proposing new work; it is derived and must not be edited directly. |
-| `research_html/scripts/learning_context_gate.py --json` | Machine-readable summary of packages, active rules, failed methods, adopted wins, unresolved methods, and open gaps. | Run before brainstorm, Scope proposal, package materialization, or execution; malformed rules fail closed. |
-| Dashboard `methodsTried[]` | The compact method/result summary shown on package cards and lint surfaces. | For fact-backed packages, it is a compatibility projection from `methods_tried.csv`. |
-| `research-op check --scope fact-alignment` | Missing sources, stale projections, manual PASS rows, and migration state. | Treat errors here as evidence that a page or registry view no longer matches its fact source. |
-
-Legacy packages still work. A package becomes fact-backed only when
-`research_html/data/packages/<pkg>/` exists. Until then, the dashboard can continue reading old HTML and
-registry fields as compatibility inputs.
-
----
-
-## What `/research-run` Does
-
-After dashboard init, Scope ratification, Task creation, and package materialization, `/research-run` is
-the command to execute the package. It runs an admission check before attempting experiments:
-
-| State | Condition | What happens |
-| --- | --- | --- |
-| **A** | Dashboard missing | Stops and tells you to run `/research-dashboard`. |
-| **B** | No committed Project | Hands off to `/research-onboard` or `/research-scope`. |
-| **C** | Project exists, no Direction | Hands off to `/research-brainstorm` or `/research-scope`. |
-| **D** | Direction exists, no Task | Hands off to `/research-scope` milestone planning. |
-| **E** | Direction+Task committed, no package | Hands off to `/research-package from-scope <direction-id>`. |
-| **F** | Package exists, readiness incomplete | Runs readiness at the selected dial; repairs or stops before unattended work. |
-| **G** | Project+Direction+Task+package ready | Enters the package execution loop. |
-
-The boundary is deliberate:
-
-- `/research-run` does **not** propose Project, Direction, or Task nodes.
-- `/research-run` does **not** materialize packages.
-- `/research-run` completes an existing package by executing its current task spine and routing every
-  package mutation through `research-op`.
-- Scope changes discovered during execution are handed back to `/research-scope`; they are never silently
-  written by the run loop.
-
-What is live today: this admission state machine, the deterministic dispatch contract, `research-exp-live`
-runtime envelope, and fact-backed package surfaces are implemented in the toolbox.
-
-### Control Mode
-
-The control mode sets how often the agent pauses for acknowledgement. It does **not** weaken correctness gates.
-Task proposals set `control_mode` in Scope; `/research-run` reads that mode when deciding readiness and PACK
-requirements.
-
-| Level | Agent pauses for you at | Extra expectation |
-| --- | --- | --- |
-| `supervised` | Every gate. | Maximum interaction. |
-| `checkpoints` | Terminal checkpoints. | Fewer interruptions. |
-| `async` | No routine pauses. | PACK narrative must be maintained. |
-| `autonomous` | No routine pauses. | PACK narrative plus stronger independent verification. |
-
-If a Project or Direction scope change invalidates downstream assumptions, affected Tasks auto-revert to
-`supervised` and lock until re-grounded.
-
----
-
-## Trust Guarantees
-
-The contribution is the trust record, not just the agent loop.
-
-- **Reject-before-write.** Package surfaces are mutated through `research-op`; invalid writes are rejected
-  before touching disk and logged.
-- **User-owned objective.** Intent lives in the versioned Scope SSOT. The agent proposes; the user
-  ratifies.
-- **Evidence-backed record.** Durable claims should point to package facts, registries, or fetched
-  sources before they reach shared context.
-- **No self-graded success.** Verdicts are checked against the committed success gate, with
-  producer/judge separation.
-- **Independent ranking.** Idea ranking is scored by independent sub-agents; the proposer does not rank
-  its own work.
-- **Human-gated self-learning.** The Rule Store promotes lessons only through governed transitions,
-  approval gates, and active-rule export into the registry.
-- **Shared project memory.** The Context Pack is a deterministic projection of project knowledge, so the
-  agent and user read the same compiled context.
-
----
-
-## How It Works
-
-### Main artifacts
-
-| Artifact | Meaning |
-| --- | --- |
-| `research_html/` | Live dashboard: lanes, context page, Scope projection, package links, Live Runs page. |
-| `research_html/data/research-packages.js` | Dashboard registry: package cards, status, task spine, and compatibility projections. |
-| `research_html/data/rules.js` | Unified rules registry: every binding rule as one typed row (`universal` R/T mirror · `project` · `package`); mutated only via `research-op --target rule`. |
-| `research_html/data/packages/<pkg>.facts.js` | Package content facts and page projection metadata for fact-backed packages. |
-| `research_html/data/packages/<pkg>/tables/*.csv` | Canonical package table facts: result gates, normalized result-table cells, tracker live checks, resource allocation, and methods tried. |
-| `outputs/_scope/transitions.jsonl` | Canonical Scope SSOT transition log. |
-| `outputs/_scope/triage.jsonl` | Pending and disposed objective proposals. |
-| `outputs/_live/runs.jsonl` | Global index of wrapper-launched experiment runs. |
-| `outputs/<pkg>/` | Per-package runtime records, audit logs, Context Pack, experiment artifacts. |
-| `outputs/<pkg>/runs/<run_id>/status.json` | Raw live-run state for wrapper-launched experiments. |
-| `outputs/_selfevolve/` | Governed self-learning memory. |
-
-### Data storage architecture
-
-The fact-backed path separates raw evidence, canonical facts, and rendered pages:
+Use `/research-brainstorm` when the research idea is still rough.
 
 ```text
-outputs/<pkg>/
-  runs/<run_id>/
-    status.json          # raw live-run truth for wrapper-launched runs
-    events.jsonl         # parsed metrics, progress, phases, anomalies
-    log.txt              # bounded raw log fallback
-  _actions.jsonl         # research-op audit trail
-  context_pack.md        # package memory projection
-
-outputs/_live/
-  runs.jsonl             # global run launch/terminal index
-
-research_html/data/
-  research-packages.js   # dashboard registry and compatibility projections
-  rules.js               # unified rules registry (universal mirror + project + package rows)
-  packages/
-    <pkg>.facts.js       # content facts and projection revisions
-    <pkg>/
-      tables/
-        result_gate.csv
-        result_table_<exp_id>.csv
-        live_checks.csv
-        resource_allocation.csv
-        methods_tried.csv
-      extractors/
-        <exp_id>.json
-
-research_html/packages/<pkg>/
-  results.html           # projection from result facts
-  tracker.html           # projection from tracker facts
-  index.html / plan.html / analysis.html / docs/
+/research-brainstorm "Can a cheaper reranker improve validation recall?"
 ```
 
-The authority order is:
+Brainstorming is intentionally cheap. It creates dashboard ideas and readable
+idea pages, but it does not create packages or change the approved research
+scope. When an idea is ready, the agent converts it into a Direction proposal.
+You still decide whether that Direction becomes part of the project.
 
-1. Runtime artifacts under `outputs/<pkg>/...` are raw experimental evidence.
-2. Extractors and `research-op` convert evidence or accepted user actions into JS/CSV facts.
-3. `research_html/data/packages/<pkg>.facts.js` stores repeated content facts and page projection metadata.
-4. CSV files store repeated table facts.
-5. HTML pages render those facts; for fact-backed sections, HTML is not the source of truth.
+### 2. Commit the research intent
 
-`outputs/_scope/transitions.jsonl` remains the Scope SSOT, and
-`outputs/<pkg>/runs/<run_id>/status.json` remains the live-run source. The package fact layer does not
-replace either one; it stores package-surface facts derived from them.
+Use `/research-scope` when the goal, direction, task, or success gate needs to
+be defined or changed.
 
-**How surfaces refresh (one model for every page).** HTML surfaces are static shells that never get
-rewritten during a run. Each shell declares its data files with the `<script src="data/*.js">` tags it
-already has; the shared `research_html/assets/live-data.js` poller re-fetches those files every 3 s with
-`{cache:'no-store'}`, hashes each response, and only when a file's content changed re-evaluates it (the
-data files assign `window.X = …`, so re-eval is safe) and invokes every repaint function registered on
-`window.__researchRenderers`. Updates are in-place DOM repaints — never full-page reloads — so scroll
-position and text selection survive while the agent writes. `live.html` uses the same model with its own
-runtime poller against `/api/live`.
+```text
+/research-scope "Define a Direction for validating the reranker idea against the current baseline"
+```
 
-**Serve the dashboard, do not file-watch it.** View the dashboard through the bundled
-`serve_dashboard.py` server, not a live-reload preview extension — a file-watching previewer reloads the
-whole page on every write, which is exactly what this model avoids. See **Quick Start step 3** for the
-serve command and the local / SSH-forward access paths.
+Scope is the contract for the work. Project, Direction, and Task entries live in
+the Scope log only after ratification. The agent can propose a change, but it
+cannot silently move the research goal, rewrite the metric, or declare a new
+task as approved. Pending proposals stay in Triage until you accept, reject, or
+revise them.
 
-Useful commands:
+Use `/research-onboard` before this step only when the workspace has no approved
+Project objective yet. Onboarding proposes that first Project objective; it does
+not start a campaign.
+
+### 3. Create an executable package
+
+Use `/research-package` after a Direction and its validation Tasks are already
+accepted.
+
+```text
+/research-package from-scope <direction-id>
+```
+
+A package is the working unit the dashboard can track. It contains the plan,
+task spine, status, evidence slots, result pages, and agent context for one
+piece of research work. The package materializer reads committed Scope only. It
+will not turn a pending idea or pending Triage item into executable work.
+
+### 4. Run and verify the package
+
+Use `/research-run` when the package exists and should advance.
+
+```text
+/research-run "Continue the active package"
+```
+
+The runner does not invent research direction. It executes the next legal step
+inside an already scoped package: readiness checks, implementation or review,
+launch, live monitoring, artifact propagation, result verification, and terminal
+routing. If the dashboard, Project, Direction, Task, or package is missing,
+`/research-run` stops and tells you which earlier command owns the missing
+piece.
+
+Results count only when they pass the package gate with evidence. Runtime
+artifacts feed facts, facts feed package pages, and the final decision remains
+visible in the control panel.
+
+### 5. Let the loop continue
+
+Use `/research-auto` when you want the agent to keep cycling within one approved
+Direction until a measurable gate clears or a real stop condition appears.
+
+```text
+/research-auto "Improve validation recall" --gate "MRR@10 improves by 2 points"
+```
+
+`/research-auto` is the campaign conductor. It delegates formation to
+`/research-brainstorm` and `/research-scope`, package creation to
+`/research-package`, execution to `/research-run`, and learning capture to the
+analysis and rule paths. It does not add a shortcut around approval: Direction
+changes, scope changes, terminal adoption, and unresolved blockers still surface
+as human decisions.
+
+The opening screenshot shows the same loop in the interface: the dashboard gives
+the project-level view, and the package lane shows the method candidate,
+reference run, current status, gate, metric, and next route.
+
+## A complete example run
+
+This section should read like a short transcript, not a framework explanation.
+Replace the placeholder dataset and metric with a real demo when one is ready.
+
+```text
+In an existing retrieval repo:
+
+User:
+/research-dashboard
+
+Expected:
+research_html/ exists and the dashboard opens locally.
+
+User:
+/research-onboard
+
+Agent:
+I found the repo goal, datasets, baseline, and likely validation metric.
+Here is the proposed project objective.
+
+User:
+Accept this proposal.
+
+Expected:
+The approved objective appears in the control panel.
+
+User:
+/research-auto "Improve baseline retrieval on the validation split" --gate "MRR@10 improves by 2 points"
+
+Expected:
+A research package is created.
+A live run appears in the dashboard.
+The result page records the metric, evidence, and verdict.
+
+User:
+Accept the result, revise the direction, or stop.
+
+Expected:
+The decision is recorded, and the useful lesson is available to the next run.
+```
+
+## What gets saved
+
+After one loop, the repo should have more than logs and chat text. The useful
+state is saved where the next agent and the human can read it.
+
+| You see | What it means |
+| --- | --- |
+| Approved goal | The research question the agent is allowed to pursue. |
+| Research package | One unit of work with plan, run state, result, and decision. |
+| Live run | The experiment or command currently running, with status outside chat memory. |
+| Result package | The answer to whether the work helped, tied to evidence. |
+| Decision record | The human call: accept, revise, stop, archive, or continue. |
+| Lesson for next run | What should be reused or avoided later. |
+
+The internal names are Scope, Package, Live Run, Result, and Learning. The README
+uses those names only after the user has seen the loop.
+
+## Where you stay in control
+
+The pipeline keeps agent-assisted research tied to visible human decisions.
+
+- You approve the research goal before work starts.
+- You can watch active and recent runs in the control panel.
+- You inspect the result package before deciding what counts.
+- The agent records evidence instead of asking you to trust a chat summary.
+- Useful lessons are carried into the next cycle deliberately.
+
+Under the hood, Scope/Triage owns the approved research intent, result packages
+tie claims back to evidence, and the Context Pack carries project memory forward.
+Those details matter, but they should support the workflow rather than become
+the first thing a new user has to learn.
+
+## Where this fits
+
+AI research agents can propose and run work. Experiment trackers can record
+metrics after a run. Trustworthy Research Pipeline sits between them: it keeps
+the research goal, live state, evidence, decision, and next-cycle learning in
+one place.
+
+- Pair it with agent frameworks when you want their actions to land in a
+  visible research workflow.
+- Pair it with MLflow, Weights and Biases, DVC, or similar tools when those
+  tools already track raw runs and metrics.
+- Use it for experiment-driven research where code, data, and decisions all
+  need to stay connected.
+- Use it when you want agents to move faster while the research agenda stays
+  visible and deliberate.
+
+## Detailed setup
+
+### Prerequisites
+
+- Python 3.13 on `PATH`. The helper scripts use the standard library.
+- Node.js 22 or newer for dashboard JavaScript checks and `workflow.ts`.
+- Claude Code or Codex with skill loading enabled:
+  - Claude Code: `$HOME/.claude/skills` globally, or
+    `<workspace>/.claude/skills` for one workspace.
+  - Codex: `$HOME/.codex/skills`, with project behavior controlled by
+    `AGENTS.md` at the workspace root.
+
+### Skill installation notes
+
+Install skills by symlink. Do not copy them out of the toolbox repo, because
+the scripts resolve shared `lib/` code relative to this checkout.
+
+For Claude Code project-local installs, set `DEST` to the target workspace's
+`.claude/skills` directory. For Codex, keep the shared skills under
+`$HOME/.codex/skills` and put project-specific operating rules in `AGENTS.md`.
+
+### Protocol notes
+
+`AGENTS.md` is the Codex-facing adapter. `CLAUDE.md` is the shared research
+operating protocol. If your target repo already has either file, merge the
+Trustworthy Research Pipeline protocol into it instead of overwriting the
+project's existing instructions.
+
+Good project-specific context to place above the shared protocol:
+
+- project objective and non-goals;
+- datasets, baselines, metrics, and success criteria;
+- compute constraints and available machines;
+- reviewer concerns or safety constraints.
+
+### Dashboard server notes
+
+`research_html/` is plain static files plus a small local server. Use the
+bundled server rather than a file-watching live preview extension, because live
+preview extensions often reload the whole page while the agent writes.
+
+Check or restart the server:
 
 ```bash
-python skills/research-package/scripts/render_package_projection.py --pkg <id> --page all
-python skills/research-dashboard/assets/dashboard/scripts/audit_fact_migration.py --pkg <id>
-python skills/research-op/scripts/research_op.py --pkg <id> --op check --scope fact-alignment
+python3.13 research_html/scripts/serve_dashboard.py status --json
+python3.13 research_html/scripts/serve_dashboard.py ensure --json
 ```
 
-### Skill layering and the Mutation Rule
+For a remote workstation, forward the dashboard port:
 
-The surfaces are scaffolded once, then mutated through a single door:
+```bash
+ssh -L 8904:127.0.0.1:8904 <user>@<workstation>
+```
+
+Then open:
 
 ```text
-research-dashboard  (once/project)  -> scaffolds research_html/
-research-package    (once/package)  -> scaffolds one direction package
-research-analysis   (mid-frequency) -> writes Rules + Insights
-research-op         (every write)   -> validates and logs all mutations
+http://127.0.0.1:8904/research_html/index.html
 ```
 
-**The Mutation Rule:** after scaffolding, every edit to a package surface routes through `research-op`.
-Direct edits to package HTML are workflow violations. `research-op` enforces the state matrix, target
-invariants, and append-only audit trail.
+## Status
 
-### State model
+The dashboard, Scope/Triage system, package runner, live-run envelope,
+fact-backed package surfaces, Context Pack, and Rule Store are implemented in
+the toolbox. `/research-auto` composes them into a direction-level campaign
+loop.
 
-Each package sits in a legal `(category, status)` state. The dashboard has four lanes:
-
-- **brainstorm** for pre-package ideas;
-- **in-progress** for active packages;
-- **success** for acquitted packages;
-- **fail** for negative or blocked outcomes.
-
-Brainstorm ideas are not Scope nodes. A Direction/Task becomes durable only after the Triage proposal is
-accepted and committed into the Scope SSOT.
-
-### Context Pack
-
-The Context Pack is the project's compiled memory and the agent's Scope Context Boot. It contains the
-active Project, Direction, related Tasks, package Scope provenance, global Scope version, active project
-rules, active package binding rules, relevant pending Scope proposals as advisory warnings, failed
-methods, adopted wins, knowledge registries, and gaps. It is deterministic, read-only, and agent-facing:
-
-- markdown face: `outputs/<pkg>/context_pack.md`;
-- structured face: `outputs/<pkg>/context_pack.json`.
-
-It never lands a rule by itself. Rules enter shared context only through governed Rule Store or
-`research-op` registry paths. The freshness stamp includes a learning fingerprint over package inventory,
-rules, knowledge registries, fact-backed `methods_tried.csv` files, and the self-evolve rule transition
-log, so learning changes rebuild the pack even when Scope has not changed.
-
-### Self-evolution memory
-
-Self-learning has two stores:
-
-| Store | What it holds | Lifecycle |
-| --- | --- | --- |
-| **Rule Store** | Anti-regression lessons and advisory project rules. | Live, in-band. |
-| **Skill Store** | Generated executable skills. | Built and tested, but gated/off by default. |
-
-A rule moves through:
-
-```text
-observed -> candidate -> validating -> provisional -> active
-                                      -> superseded / invalidated / archived_reopenable
-```
-
-Only active rules enter the Context Pack. Aging lowers retrieval priority; it does not silently delete
-rules.
-
----
-
-## Repository Layout
-
-```text
-Trustworthy-Research-Pipeline/
-├── README.md        ← you are here
-├── AGENTS.md        # Codex adapter for this toolbox and consuming projects
-├── CLAUDE.md        # agent operating protocols (merged into the target research repo)
-├── workflow.ts      # executable in-package controller and run-ticket CLI
-├── skills/          # composing skills — the toolbox the agent installs
-└── lib/             # validators, stores, runtime helpers, and fact helpers
-```
-
----
-
+The current product boundary is the control panel and governance layer around
+agent-assisted research work in a new or existing research workspace.
 
 ## Reference
 
-### Skills
+### Daily commands
 
-| Skill | Role |
-| --- | --- |
-| `research-dashboard` | Project-level dashboard scaffold. |
-| `research-onboard` | Empty-workspace skeleton or existing-repo analysis into a Project proposal. |
-| `research-brainstorm` | Explicit escape hatch for pre-package idea exploration. |
-| `research-scope` | Scope SSOT and Triage admission gate. |
-| `research-package` | Package scaffold materialized from committed Scope. |
-| `research-run` | Package execution controller; completes an existing scoped package. |
-| `research-auto` | Direction-campaign conductor; cycles the other skills until the Direction gate clears. |
-| `research-exp-live` | Structured launch/monitor/resume envelope for long-running experiment commands. |
-| `research-analysis` | Per-package Rules + Insights page. |
-| `research-op` | Single mutation surface: validate, reject-before-write, audit. |
+| Command | Use when | Output |
+| --- | --- | --- |
+| `/research-dashboard` | A workspace needs the shared control panel. | `research_html/` scaffold and validation. |
+| `/research-onboard` | A workspace has no approved Project objective. | Empty-project scaffold or prior-knowledge digest, then a Project proposal. |
+| `/research-brainstorm` | The research idea is still rough. | Brainstorm item and Direction proposal. |
+| `/research-scope` | Project, Direction, Task, or scope revision needs approval. | Pending proposal and Scope transition after acceptance. |
+| `/research-package from-scope <direction-id>` | An approved Direction/Task should become executable. | Package pages and dashboard entry. |
+| `/research-run` | A scoped package should advance toward a terminal outcome. | Runtime artifacts, evidence propagation, verification, verdict routing. |
+| `/research-auto` | One Direction should be pursued until a measurable gate clears or an honest stop fires. | Campaign ledger, package cycles, gate evaluation. |
+| `/research-analysis` | A package needs human-curated rules or insights. | `analysis.html` updates through governed writes. |
+| `/research-op` | Package, registry, rule, event, or Scope mutation must be applied safely. | Reject-before-write validation and audit log. |
+| `/research-exp-live` | A long experiment needs structured launch, monitoring, resume, or harvest. | `status.json`, run index, live checks. |
+| `/research-resource` | Compute servers or GPU allocations need typed tracking. | Resource registry and allocation ledger. |
 
-### Libraries
+### Main files and directories
 
-| Library | Role |
-| --- | --- |
-| `lib/scope_ssot` | Versioned intent store: Project -> Direction -> Task. |
-| `lib/verifier` | Cross-model jury and independence table. |
-| `lib/ranking` | Independent multi-agent ranking. |
-| `lib/exp_live` | Runtime envelope for wrapper-launched experiment commands. |
-| `lib/package_facts` | JS/CSV fact helpers and projection freshness checks. |
-| `lib/context_pack` | Deterministic project-memory projection. |
-| `lib/self_evolve` | Governed project self-learning memory. |
+```text
+Trustworthy-Research-Pipeline/
+|-- README.md
+|-- AGENTS.md
+|-- CLAUDE.md
+|-- workflow.ts
+|-- skills/
+|-- lib/
+```
 
----
+In a managed research workspace, the main generated surfaces are:
+
+```text
+research_html/                         # dashboard and package pages
+research_html/live.html                # live runs page
+research_html/packages/<pkg>/          # package pages
+research_html/data/packages/<pkg>/     # fact-backed package tables
+outputs/_scope/                        # approved and pending research intent
+outputs/_live/                         # global run index
+outputs/<pkg>/                         # package runtime records and artifacts
+outputs/_selfevolve/                   # governed project memory
+```
+
+### Useful checks
+
+From a managed research workspace:
+
+```bash
+PIPELINE=/path/to/Trustworthy-Research-Pipeline
+
+python3.13 research_html/scripts/serve_dashboard.py status --json
+python3.13 research_html/scripts/learning_context_gate.py --root research_html --json
+python3.13 "$PIPELINE/skills/research-op/scripts/research_op.py" --pkg <id> --op check --scope fact-alignment
+python3.13 "$PIPELINE/skills/research-package/scripts/render_package_projection.py" --pkg <id> --page all
+```
+
+If the skills are installed globally, resolve script paths through the symlinked
+skill directory, for example:
+
+```bash
+python3.13 "$HOME/.codex/skills/research-op/scripts/research_op.py" --pkg <id> --op check --scope all
+```
 
 ## Acknowledgements
 
-The design was informed by — but does not vendor — prior art studied as references:
-[ARIS · Auto-claude-code-research-in-sleep](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep),
-[academic-research-skills](https://github.com/Imbad0202/academic-research-skills), and the Superpowers
-skill methodology. They were studied, not imported — this pipeline's trust contracts are its own.
+The design was informed by prior work on auto-research agents, research skill
+systems, and agent workflow methodology. This repo does not vendor those
+projects. Its contribution is the governed control panel around agent-assisted
+research: approved goals, visible runs, evidence-backed result packages, human
+decisions, and reusable project memory.
