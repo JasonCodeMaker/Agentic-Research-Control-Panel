@@ -1,9 +1,13 @@
-# Trustworthy Research Pipeline
+<h1>
+  <img src="asset/arc-logo-circle.png" alt="ARC logo" width="48" />
+  Agentic Research Control Panel (ARC)
+</h1>
 
-A live control panel for human-governed auto-research.
+Agents run the loop. You govern the research.
 
-Run agent-assisted experiments in your own research workspace, while keeping the
-goal fixed, the run visible, and every result tied to evidence you can inspect.
+A local control layer for coding agents that run ML experiments in real repos,
+with approved objectives, visible runs, evidence-backed results, and project
+memory you can inspect.
 
 ![Trustworthy Research Pipeline control panel](asset/readme-control-panel.png)
 
@@ -12,15 +16,29 @@ goal fixed, the run visible, and every result tied to evidence you can inspect.
 
 ## Overview
 
-Start from an empty workspace, or attach the pipeline to a repo that already has
-code, data, baselines, and experiment history.
+When a coding agent runs experiment after experiment in a real research repo,
+the code may execute just fine. The harder question is whether the research
+state still belongs to the project instead of the chat.
 
-Trustworthy Research Pipeline gives the agent a shared control panel before it
-starts changing research state: an approved objective, a scoped package, a
-visible run, an evidence-backed result, and a human decision.
+- 🎯 Objective drift: Several sessions in, can you see whether the agent is
+  still bound to the objective, metric, and baseline you approved?
+- 👀 Run visibility: While a run is executing, can you inspect what it is doing
+  instead of trusting its summary?
+- 📎 Evidence traceability: When it reports a metric, can you trace that number
+  to an artifact without rereading the chat?
+- 🧠 Project memory: Can the next session inherit what this run proved or ruled
+  out?
 
-That is the loop. The agent can propose and execute work, but the research goal,
-run state, evidence, and final call stay visible in the project.
+Chat is the wrong source of truth for research work. Trustworthy Research
+Pipeline keeps the working state in the repo, where the human and the agent can
+inspect the same objective, run state, evidence, result, and decision.
+
+Each cycle moves through an approved objective, a scoped package, a visible run,
+an evidence-backed result, a human decision, and project memory. A scoped package
+is a bounded, approved unit of work.
+
+Start from an empty workspace or attach it to an existing ML/research repo.
+Quick Start shows the setup path.
 
 ## Quick Start
 
@@ -103,7 +121,7 @@ instead of overwriting them.
 Use `AGENTS.md` for Codex-facing project rules. Use `CLAUDE.md` for Claude Code
 and for the shared research operating protocol.
 
-### 3. Create the control panel
+### 3. Deploy and open the control panel
 
 Ask the agent from inside your research workspace:
 
@@ -113,26 +131,35 @@ Ask the agent from inside your research workspace:
 
 Expected: `research_html/` appears in your workspace.
 
-Serve it locally:
+Start the local dashboard server:
 
 ```bash
 python3.13 research_html/scripts/serve_dashboard.py ensure \
   --host 127.0.0.1 --port 8904 --max-port 8904 --json
 ```
 
-Open:
+Deployment result: open the control panel.
+
+[Open the local control panel](http://127.0.0.1:8904/research_html/index.html)
+
+Keep this tab open while the agent works. From this point on, the dashboard is
+the shared interface for project scope, package status, live runs, evidence,
+results, and human decisions.
+
+Plain URL:
 
 ```text
 http://127.0.0.1:8904/research_html/index.html
 ```
 
-Setup ends here. The workspace now has the skills, project protocols, and shared
-dashboard surface.
+Setup ends here. The workspace now has the skills, project protocols, and the
+interface where you will monitor and ratify research work.
 
-### Optional. Onboard the workspace
+### [Optional] Onboard the workspace
 
 Run this only when the workspace has no approved Project objective and you want
-the agent to help create one.
+the agent to help create one. Keep the control panel open before running this
+command.
 
 ```text
 /research-onboard
@@ -334,66 +361,6 @@ one place.
   need to stay connected.
 - Use it when you want agents to move faster while the research agenda stays
   visible and deliberate.
-
-## Detailed setup
-
-### Prerequisites
-
-- Python 3.13 on `PATH`. The helper scripts use the standard library.
-- Node.js 22 or newer for dashboard JavaScript checks and `workflow.ts`.
-- Claude Code or Codex with skill loading enabled:
-  - Claude Code: `$HOME/.claude/skills` globally, or
-    `<workspace>/.claude/skills` for one workspace.
-  - Codex: `$HOME/.codex/skills`, with project behavior controlled by
-    `AGENTS.md` at the workspace root.
-
-### Skill installation notes
-
-Install skills by symlink. Do not copy them out of the toolbox repo, because
-the scripts resolve shared `lib/` code relative to this checkout.
-
-For Claude Code project-local installs, set `DEST` to the target workspace's
-`.claude/skills` directory. For Codex, keep the shared skills under
-`$HOME/.codex/skills` and put project-specific operating rules in `AGENTS.md`.
-
-### Protocol notes
-
-`AGENTS.md` is the Codex-facing adapter. `CLAUDE.md` is the shared research
-operating protocol. If your target repo already has either file, merge the
-Trustworthy Research Pipeline protocol into it instead of overwriting the
-project's existing instructions.
-
-Good project-specific context to place above the shared protocol:
-
-- project objective and non-goals;
-- datasets, baselines, metrics, and success criteria;
-- compute constraints and available machines;
-- reviewer concerns or safety constraints.
-
-### Dashboard server notes
-
-`research_html/` is plain static files plus a small local server. Use the
-bundled server rather than a file-watching live preview extension, because live
-preview extensions often reload the whole page while the agent writes.
-
-Check or restart the server:
-
-```bash
-python3.13 research_html/scripts/serve_dashboard.py status --json
-python3.13 research_html/scripts/serve_dashboard.py ensure --json
-```
-
-For a remote workstation, forward the dashboard port:
-
-```bash
-ssh -L 8904:127.0.0.1:8904 <user>@<workstation>
-```
-
-Then open:
-
-```text
-http://127.0.0.1:8904/research_html/index.html
-```
 
 ## Status
 
