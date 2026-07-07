@@ -185,14 +185,95 @@
     target.innerHTML = projectProfileHtml();
   }
 
+  function ruleKindLabel(kind) {
+    var labels = {
+      form: "HTML form rules",
+      trust: "Trust rules",
+      constraint: "Project constraints",
+      binding: "Package bindings",
+      lesson: "Package lessons",
+    };
+    return labels[kind] || (kind ? kind + " rules" : "Rules");
+  }
+
+  function ruleKindDescription(kind) {
+    var descriptions = {
+      form: "Page structure, stable anchors, linking, legibility, and HTML surface rules.",
+      trust: "Research-content rules for claims, evidence, validity, gates, status, and package pages.",
+      constraint: "Project-level constraints added through the governed rule registry.",
+      binding: "Package-level binding rules that apply to a specific research package.",
+      lesson: "Package-level lessons promoted from completed or archived work.",
+    };
+    return descriptions[kind] || "Rules registered under this kind.";
+  }
+
+  function sortedRuleKinds(rows) {
+    var preferred = ["form", "trust", "constraint", "binding", "lesson"];
+    var seen = {};
+    rows.forEach(function (rule) {
+      if (rule.kind) seen[rule.kind] = true;
+    });
+    var ordered = preferred.filter(function (kind) { return seen[kind]; });
+    Object.keys(seen).sort().forEach(function (kind) {
+      if (ordered.indexOf(kind) < 0) ordered.push(kind);
+    });
+    return ordered;
+  }
+
   function ruleRowHtml(rule) {
+    var source = rule.source || "";
     return [
-      '<article class="rule-row" data-rule-id="' + htmlEscape(rule.id) + '" data-rule-status="' + htmlEscape(rule.status) + '">',
-      "<code>" + htmlEscape(rule.id) + "</code>",
-      "<div><strong>" + htmlEscape(rule.title) + "</strong>",
+      '<article class="rule-row" data-rule-id="' + htmlEscape(rule.id) + '" data-rule-kind="' + htmlEscape(rule.kind) + '" data-rule-status="' + htmlEscape(rule.status) + '">',
+      '<div class="rule-id-stack">',
+      '<code class="rule-id">' + htmlEscape(rule.id) + "</code>",
+      '<span class="rule-kind-pill">' + htmlEscape(rule.kind || "rule") + "</span>",
+      "</div>",
+      '<div class="rule-main">',
+      "<h4>" + htmlEscape(rule.title) + "</h4>",
       rule.text ? "<p>" + htmlEscape(rule.text) + "</p>" : "",
+      '<div class="rule-meta-row">',
+      source ? '<a class="rule-source-link" href="' + htmlEscape(source) + '">' + htmlEscape(source) + "</a>" : '<span class="rule-source-link muted">No source</span>',
+      '<span class="rule-state">' + htmlEscape(rule.origin || "local") + "</span>",
+      '<span class="rule-state">' + htmlEscape(rule.status || "UNKNOWN") + "</span>",
+      "</div>",
       "</div></article>",
     ].join("");
+  }
+
+  function ruleKindSectionHtml(kind, rows) {
+    return [
+      '<section class="rule-kind-section" data-rule-kind="' + htmlEscape(kind) + '">',
+      '<header class="rule-kind-header">',
+      "<div>",
+      "<h3>" + htmlEscape(ruleKindLabel(kind)) + "</h3>",
+      "<p>" + htmlEscape(ruleKindDescription(kind)) + "</p>",
+      "</div>",
+      '<span class="rule-count">' + rows.length + "</span>",
+      "</header>",
+      '<div class="rule-list">',
+      rows.map(ruleRowHtml).join(""),
+      "</div>",
+      "</section>",
+    ].join("");
+  }
+
+  function rulesEmptyStateHtml(group) {
+    return [
+      '<div class="rules-empty-state">',
+      "<h3>No active " + htmlEscape(group.emptyName) + " yet</h3>",
+      "<p>" + htmlEscape(group.emptyText) + "</p>",
+      "</div>",
+    ].join("");
+  }
+
+  function rulesGroupBodyHtml(group, rows) {
+    if (!rows.length) return rulesEmptyStateHtml(group);
+    var kinds = sortedRuleKinds(rows);
+    return kinds.map(function (kind) {
+      return ruleKindSectionHtml(kind, rows.filter(function (rule) {
+        return rule.kind === kind;
+      }));
+    }).join("");
   }
 
   function renderRulesRegistry() {
@@ -202,19 +283,50 @@
     if (!target) return;
     var rules = rulesRegistry();
     var groups = [
-      { title: "Universal (write-locked)", open: false, match: function (r) { return r.level === "universal"; } },
-      { title: "Project rules", open: true, match: function (r) { return r.level === "project" && r.status === "ACTIVE"; } },
-      { title: "Package rules", open: true, match: function (r) { return r.level === "package" && r.status === "ACTIVE"; } },
+      {
+        title: "Universal rules",
+        label: "write-locked mirror",
+        open: false,
+        emptyName: "universal rules",
+        emptyText: "The bundled universal rule mirror is missing. Run the dashboard lint before editing package content.",
+        match: function (r) { return r.level === "universal"; },
+      },
+      {
+        title: "Project rules",
+        label: "active project constraints",
+        open: true,
+        emptyName: "project rules",
+        emptyText: "Project-level rules appear here after they are added through research-op. This project currently has only the universal rule set.",
+        match: function (r) { return r.level === "project" && r.status === "ACTIVE"; },
+      },
+      {
+        title: "Package rules",
+        label: "active package bindings and lessons",
+        open: true,
+        emptyName: "package rules",
+        emptyText: "Package-level rules appear here after research packages exist and promote binding rules or lessons.",
+        match: function (r) { return r.level === "package" && r.status === "ACTIVE"; },
+      },
     ];
-    target.innerHTML = groups.map(function (group) {
+    target.innerHTML = [
+      '<div class="rules-registry-shell">',
+      groups.map(function (group) {
       var rows = rules.filter(group.match);
       return [
         '<details class="details-panel rules-group"' + (group.open ? " open" : "") + ">",
-        "<summary>" + htmlEscape(group.title) + " (" + rows.length + ")</summary>",
-        rows.length ? rows.map(ruleRowHtml).join("") : '<p class="card-text">None.</p>',
+        "<summary>",
+        '<span class="rules-summary-main"><span class="rules-summary-title">' + htmlEscape(group.title) + "</span>",
+        '<span class="rules-summary-meta">' + htmlEscape(group.label) + "</span></span>",
+        '<span class="rules-summary-count">' + rows.length + "</span>",
+        "</summary>",
+        '<div class="rules-group-body">',
+        rulesGroupBodyHtml(group, rows),
+        "</div>",
         "</details>",
       ].join("");
-    }).join("");
+      }).join(""),
+      "</div>",
+    ].join("");
   }
 
   function renderScopeProjection() {

@@ -65,11 +65,12 @@ Both-audience content is written once, inline, without the blockquote or `<detai
    node --check <root>/data/research-packages.js
    ```
 
-   Then grep for the six required content `data-section` anchors (the index also carries `masthead` and `nav` chrome anchors, which the check ignores) and the two rule-file links in `<root>/index.html`:
+   Then grep for the six required content `data-section` anchors (the index also carries `masthead` and `nav` chrome anchors, which the check ignores), the section-level Rule Registry heading/slot, and the two rule-file links rendered by `<root>/assets/research.js`:
 
    ```bash
    grep -E 'data-section="(snapshot|lanes|packages|protocol|profile|rules)"' <root>/index.html
-   grep -E 'rules/html-rules.html|rules/trustworthy-research-rules.html' <root>/index.html
+   grep -E '<h2>Rule Registry</h2>|id="rules-registry-root"' <root>/index.html
+   grep -E 'rules/html-rules.html|rules/trustworthy-research-rules.html' <root>/assets/research.js
    ```
 
    For the autonomous live-run view, verify the server script is valid, then

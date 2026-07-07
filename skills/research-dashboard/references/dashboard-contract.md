@@ -76,11 +76,11 @@ Required dashboard sections (each must carry the matching `data-section` anchor)
   allowed routes (schema.js), protocol link cards (workflow.ts / CLAUDE.md /
   rule files), and the tag legend. No protocol prose is stored here.
 - `profile`: a `#project-profile-root` slot for project-specific specialization.
-- `rules`: two cards with `data-card="rule-link-html"` and
-  `data-card="rule-link-trust"` that link `rules/html-rules.html` and
-  `rules/trustworthy-research-rules.html` and explain the difference, plus the
-  `#rules-registry-root` slot rendered from `data/rules.js` by
-  `renderRulesRegistry()` — the one surface answering "which rules bind me".
+- `rules`: a section-level `Rule Registry` heading and lead, matching the
+  `packages` section format, followed by the `#rules-registry-root` slot
+  rendered from `data/rules.js` by `renderRulesRegistry()`. The registry
+  groups universal rows by rule kind (`form`, `trust`) and uses the same
+  grouped/empty-state component for future project and package rule rows.
 
 Lane pages mirror the same chrome contract: the masthead carries
 `data-section="masthead"`, the package grid carries `data-section="lane"`,
