@@ -123,7 +123,7 @@ SSOT fold and ask). Route on `action.type`:
 1. Milestones: if the Direction has no active task children, run
    `plan_milestones.py --direction-id <id> --control-mode <dial> --dry-run` to shape them, then
    commit per the dial — at `SUPERVISED`/`CHECKPOINTED` submit through Triage and **pause**; at
-   `DEFERRED`/`AUTONOMOUS` commit each node via `research-op --op scope-transition`
+   `DEFERRED`/`AUTONOMOUS` commit each node via `research-op --pkg _scope --op scope-transition`
    (`gate=AGENT_DEFERRED_ACK`, payload carrying a non-empty `deferred_ack`), after
    `conductor.validate_campaign_action` clears the action. Record each deferred ack in the ledger turn.
 2. Package: run the same path as `/research-package from-scope <id>`. First call

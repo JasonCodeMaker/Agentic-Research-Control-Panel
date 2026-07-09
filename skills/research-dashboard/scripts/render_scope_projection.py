@@ -6,6 +6,7 @@ truth. `render` is the only writer; `check` rejects any projection that drifts f
 """
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -76,7 +77,12 @@ def assert_consistent(projection, records):
 def _write_projection_js(json_path, projection):
     js_path = Path(json_path).with_suffix(".js")
     payload = json.dumps(projection, indent=2, sort_keys=True, ensure_ascii=False)
-    js_path.write_text("window.RESEARCH_SCOPE_PROJECTION = " + payload + ";\n", encoding="utf-8")
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+    js_path.write_text(
+        "window.RESEARCH_SCOPE_PROJECTION = " + payload + ";\n"
+        + "// projection-sha256: " + digest + "\n",
+        encoding="utf-8",
+    )
 
 
 def render(transitions_path, projection_path):

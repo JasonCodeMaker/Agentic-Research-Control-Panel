@@ -1,6 +1,6 @@
 ---
 name: research-scope
-description: "R1 scope + the Task/Objective surface — the scope role. Use when defining or revising a project/direction/task's intent, or when execution discovers a needed scope change. The agent may only PROPOSE a scope change: it lands as a pending Triage item (scripts/triage.py), never a direct SSOT write. The human accepts via research-op's scope-transition op or rejects. Reads/writes intent through lib/scope_ssot; all SSOT writes route through research-op. Never invokes git."
+description: "Use when defining or revising Project, Direction, or Task Scope intent, or when execution discovers a needed scope change. The agent only proposes through Triage and must show every proposed Scope clearly to the PM with the next ratification step; accepted Scope writes route through research-op's scope-transition op. Never invokes git."
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
 disable-model-invocation: false
 ---
@@ -10,6 +10,10 @@ disable-model-invocation: false
 The agent proposes; the PM disposes. This separation is how "user-monitored" and "autonomous" coexist:
 the Scope SSOT is never mutated by agent action alone — every write is either a user-committed
 `scope-transition` (accepted Triage item) or rejected with the SSOT left untouched.
+
+The PM visibility invariant is mandatory: **never ask the PM to accept, reject, or revise a Scope
+proposal without showing the exact Scope content first.** Every Project, Direction, or Task proposal
+must be presented as a clear review block that names the current state and the next PM action.
 
 > If the user has only a vague idea and cannot yet state a clear Direction spec
 > (`hypothesis / metric / baselines / success_gate`), use **`/research-brainstorm`** first — it shapes
@@ -56,12 +60,18 @@ python3 skills/research-scope/scripts/triage.py dispose \
     --decision ACCEPTED|REJECTED
 ```
 
-On accept, the human then commits the transition (agent does NOT do this). The payload must carry all seven node fields **plus** `op` (one of `create` / `revise` / `supersede` / `reopen` / `archive`) and `gate` (the required gate for the node's level — see the gate table below); `research_op.py` reads `op` and `gate` out of the payload and passes them to `scope_ssot.propose_transition`, which rejects a missing/illegal `op` or a mismatched `gate`:
+On accept, the human then commits the transition (agent does NOT do this). Prefer committing from the
+accepted Triage item so the SSOT payload is bound to what the PM saw:
 ```bash
 python3 skills/research-op/scripts/research_op.py \
-    --pkg <pkg-id> --op scope-transition \
-    --payload '{"id":"dir-retrieval-v2","level":"direction","parents":[],"version":1,"status":"ACTIVE","spec":{...},"source":"...","op":"create","gate":"USER_CROSS_MODEL_AUDIT"}'
+    --pkg _scope --op scope-transition --from-triage <item-id>
 ```
+
+The explicit payload form is available for structured callers, but then the payload must carry all
+seven node fields **plus** `op` (one of `create` / `revise` / `supersede` / `reopen` / `archive`) and
+`gate` (the required gate for the node's level — see the gate table below); `research_op.py` reads
+`op` and `gate` out of the payload and passes them to `scope_ssot.propose_transition`, which rejects a
+missing/illegal `op` or a mismatched `gate`.
 
 ## Node shape
 
@@ -83,7 +93,7 @@ Spec fields differ by level. Supply all fields for the relevant level, no others
 
 | level | required spec fields and form |
 |---|---|
-| `project` | `goal`: string, 20-100 words. `contributions`: non-empty list of strings, each 5-50 words. `out_of_scope`: non-empty list of strings, each 5-50 words. |
+| `project` | `goal`: string, 3-100 words so exact short objectives can be ratified. `contributions`: non-empty list of strings, each 5-50 words. `out_of_scope`: non-empty list of strings, each 5-50 words. |
 | `direction` | `hypothesis`: string, 20-100 words. `metric`: non-empty object, or string with 20-100 words. `baselines`: non-empty list of strings, each 5-50 words. `success_gate`: string, 20-100 words. |
 | `task` | `experiment`: string, 20-100 words. `config`: non-empty reference string. `gate`: string, 20-100 words. `control_mode`: one of `SUPERVISED`, `CHECKPOINTED`, `DEFERRED`, `AUTONOMOUS`. |
 
@@ -196,12 +206,30 @@ python3 skills/research-scope/scripts/triage.py pending \
 ```
 
 Display the pending list. Do not proceed further. The agent's work ends here — scope commitment is the human PM's decision.
+Use this PM-facing format for every proposed Scope item:
+
+```markdown
+**Scope Review**
+- Status: Pending Triage, not yet committed
+- Level: project | direction | task
+- Node: <node id>
+- Parents: <parent ids, or [] for a Project>
+- Operation / Gate: <create|revise|...> / <required gate>
+- Spec: <each spec field exactly as it would enter the Scope node>
+- Rationale: <why this Scope change is proposed>
+- Post-Accept Actions: <planned follow-up, or []>
+- Next Step: ACCEPT to ratify via `research-op --pkg _scope --op scope-transition --from-triage <item-id>`, REVISE with field changes, or REJECT to archive
+```
+
+If the user supplied exact text for any spec field, show that text verbatim. Agent-authored
+interpretation or rationale must be visibly separate from the spec content that would enter the SSOT.
 
 **Human accept path (PM action, not agent):**
 
-1. PM runs `triage.py dispose --decision accept`.
-2. PM commits via `research-op --op scope-transition` with gate matching the node's level.
-3. The transition is appended to `outputs/_scope/transitions.jsonl`.
+1. PM runs `triage.py dispose --decision ACCEPTED`.
+2. PM commits via `research-op --pkg _scope --op scope-transition --from-triage <item-id>`.
+3. The transition is appended to `outputs/_scope/transitions.jsonl`, then the dashboard
+   projection is refreshed when `research_html/data/` exists.
 4. If the accepted item has `post_accept_actions` containing `plan_validation_milestones`, ask one short confirmation: "Direction is now committed. Propose high-level validation milestones for it?" On yes, invoke `plan_milestones.py` with the committed direction node id. On no, stop and report that `plan_milestones.py --direction-id <direction-id>` can be run later.
 
 Milestone proposal command:
@@ -213,7 +241,7 @@ python3 skills/research-scope/scripts/plan_milestones.py \
     --triage outputs/_scope/triage.jsonl
 ```
 
-After the PM accepts/revises those milestone proposals and commits each Task/Milestone node with `research-op --op scope-transition`, ask: "Milestones are now committed. Generate the research package from the Direction plus accepted milestones?" On yes, use `/research-package from-scope <direction-id>`. Script-level execution first checks readiness:
+After the PM accepts/revises those milestone proposals and commits each Task/Milestone node with `research-op --pkg _scope --op scope-transition --from-triage <item-id>`, ask: "Milestones are now committed. Generate the research package from the Direction plus accepted milestones?" On yes, use `/research-package from-scope <direction-id>`. Script-level execution first checks readiness:
 
 ```bash
 python3 skills/research-package/scripts/create_from_scope.py \
@@ -261,13 +289,13 @@ python3 skills/research-scope/scripts/triage.py propose \
 |---|---|---|
 | `outputs/_scope/triage.jsonl` | Agent (propose) + PM (dispose) | Pending and disposed Triage items, including optional post-accept milestone-planning intent, one JSON object per line |
 | `outputs/_scope/transitions.jsonl` | PM only (via research-op scope-transition) | Committed scope transitions, one JSON object per line |
-| `outputs/<pkg>/_actions.jsonl` | research-op | Audit line for every scope-transition op |
+| `outputs/_scope/_actions.jsonl` | research-op | Audit line for synthetic `_scope` scope-transition ops |
 
 The agent appends to `triage.jsonl` only. It never writes to `transitions.jsonl` directly.
 
 ## Done condition
 
-The skill is done when the pending Triage item is visible in `triage.jsonl`, has been shown to the user, and any direction-level milestone-planning QA has been answered and recorded in `post_accept_actions`. The scope change is not yet in effect — it takes effect only after PM acceptance and the `research-op --op scope-transition` commit. Package files are created only after the Direction and its accepted high-level validation milestones are committed.
+The skill is done when the pending Triage item is visible in `triage.jsonl`, has been shown to the user, and any direction-level milestone-planning QA has been answered and recorded in `post_accept_actions`. The scope change is not yet in effect — it takes effect only after PM acceptance and the `research-op --pkg _scope --op scope-transition --from-triage <item-id>` commit. Package files are created only after the Direction and its accepted high-level validation milestones are committed.
 
 ## Error path
 

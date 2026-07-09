@@ -34,6 +34,17 @@ DEFAULT_PORT = 8904
 DEFAULT_MAX_PORT = 8999
 
 
+def should_disable_cache(path: str) -> bool:
+    """True for live API and self-refreshing dashboard data files."""
+    parsed = urllib.parse.urlsplit(path)
+    clean = parsed.path
+    return (
+        clean.startswith("/api/")
+        or clean.endswith("/assets/live-data.js")
+        or ("/data/" in clean and clean.endswith((".js", ".json")))
+    )
+
+
 def default_repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
@@ -183,8 +194,9 @@ class DashboardHandler(SimpleHTTPRequestHandler):
         super().__init__(*args, directory=str(repo_root), **kwargs)
 
     def end_headers(self) -> None:
-        if self.path.startswith("/api/"):
+        if should_disable_cache(self.path):
             self.send_header("Cache-Control", "no-store")
+        if self.path.startswith("/api/"):
             self.send_header("Access-Control-Allow-Origin", "*")
         super().end_headers()
 

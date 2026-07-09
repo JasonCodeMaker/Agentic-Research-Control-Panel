@@ -23,7 +23,8 @@ python skills/research-op/scripts/research_op.py --pkg <id> --event CHAIN_DONE -
 python skills/research-op/scripts/research_op.py --pkg <id> --op check --scope all
 python skills/research-op/scripts/research_op.py --pkg <id> --op check --scope scope-alignment
 python skills/research-op/scripts/research_op.py --pkg <id> --op scan-events
-python skills/research-op/scripts/research_op.py --pkg <id> --op scope-transition \
+python skills/research-op/scripts/research_op.py --pkg _scope --op scope-transition --from-triage <triage-id>
+python skills/research-op/scripts/research_op.py --pkg _scope --op scope-transition \
   --payload '{"id":"dir/<id>","level":"direction","parents":["project/main"],"version":1,"status":"ACTIVE","spec":{...},"source":"txn-0","op":"create","gate":"USER_CROSS_MODEL_AUDIT"}'
 # Project-level knowledge registries (papers / edges / gaps) — durable cross-package stores
 python skills/research-op/scripts/research_op.py --pkg <id> --op registry-add --target paper \
@@ -62,6 +63,9 @@ python skills/research-op/scripts/research_op.py --nl 'update: set status of 202
 | Inventory entry exists | `grep -q "id: '<id>'" research_html/data/research-packages.js` |
 | Runtime root resolved | `RESEARCH_RUNTIME_ROOT` env or default `outputs/<id>/` exists |
 
+These package preconditions do not apply to `--pkg _scope --op scope-transition`; Scope transitions
+are project-level and can create the first Project node before any package exists.
+
 ## Op surface
 
 Primitives: `insert · update · delete · check`. Composite events: `CHAIN_DONE · CHECKPOINT_SAVED · SENTINEL_WRITE · PHASE_MARKER · CANDIDATE_SUBMITTED`. Full legality matrix in [references/matrix.md](references/matrix.md). Per-event surface map in [references/composite-events.md](references/composite-events.md).
@@ -69,7 +73,7 @@ Primitives: `insert · update · delete · check`. Composite events: `CHAIN_DONE
 Three ops live outside the `(category, status)` matrix (they are project-level, not package surfaces):
 
 - `scan-events` — read-only artifact scan (no state-gate, no validation) that lists newly-locked facts for the per-turn propagation cycle.
-- `scope-transition` — the one gated writer for the Scope SSOT, used by `research-scope` after human ratification. It is gated by the node **level** (project / direction / task), *not* the package state machine, and appends one transition to `outputs/_scope/transitions.jsonl`. The payload carries the node fields (`id, level, parents, version, status, spec, source`) plus the transition meta (`op, gate, trigger, cause, invalidates, reopens, dial_revert`).
+- `scope-transition` — the one gated writer for the Scope SSOT, used by `research-scope` after human ratification. Invoke it with `--pkg _scope`, preferably `--from-triage <triage-id>` so the committed payload is the accepted proposal snapshot. It is gated by the node **level** (project / direction / task), *not* the package state machine, and appends one transition to `outputs/_scope/transitions.jsonl`. When `research_html/data/` exists, it also refreshes and checks `research_html/data/scope-projection.json/js`. The explicit payload form carries the node fields (`id, level, parents, version, status, spec, source`) plus the transition meta (`op, gate, trigger, cause, invalidates, reopens, dial_revert`).
 - `registry-add` — the gated writer for the project-level **knowledge registries** (`--target paper | edge | gap`), the durable cross-package stores the Context Pack reads. Gated by per-target reject-before-write validators (`registry.py`), not the package state machine; dedups and appends one line to `research_html/data/{papers,edges,gaps}.jsonl`. Payloads: **paper** = `{id|arxiv|source_id (≥1 required), title (required), url, pkg}`; **edge** = `{from (required), to (required), type ∈ extends|contradicts|addresses_gap|invalidates (required), evidence}`; **gap** = `{id (required), summary (required), status}`. A duplicate is a silent idempotent skip (still audited). `--pkg` is the adding context (must exist) and is recorded on the audit line.
 - `--target rule` with `--pkg _project` — the project-level half of the **unified rules registry** (`data/rules.js`). Package-level rule rows flow the normal state-gated path (`--pkg <pkg-id>`, matrix rows I12/U14/D9); project-level rows use the synthetic `_project` context and require a non-empty `payload.ack` (the distinct human action supplied by the governed caller). `level=universal` is write-locked everywhere (the R/T mirror); `origin ∈ {mirror, selfevolve}` rows are export-owned. `--op check --target rule` wraps `learnings_lint.py lint-rules`. Retired targets `package-invariant` / `analysis-rule` reject with a pointer to this target.
 

@@ -115,9 +115,7 @@ Terminal transitions (any status change that crosses a lane boundary) require us
   `research_html` pages for in-context learning, not as mutation targets or final proof.
 - **Runtime truth wins.** Validate live runs, logs, outputs, summaries, and artifact roots before changing
   state. Recalled content is unverified (T3).
-- **Use live-run artifacts.** For long-running experiment commands, use the project live-run skill when
-  available. Routine live state comes from structured runtime artifacts, not ad hoc raw scrollback parsing;
-  raw logs are bounded debug fallback.
+- **Use live-run artifacts.** For long-running experiment commands, use the project live-run skill when available. Routine live state comes from structured runtime artifacts, not ad hoc raw scrollback parsing; raw logs are bounded debug fallback.
 - **Use the resource registry.** When a project resource registry (`outputs/_resources/servers.json`) exists,
   server connection/capacity facts and experiment placement come from it and its allocation ledger via the
   resource skill — not from recalled prose; occupancy claims cite ledger entries.

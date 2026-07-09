@@ -1,6 +1,6 @@
 ---
 name: research-onboard
-description: "The steps 1->3 on-ramp: bridge a raw workspace into the Scope SSOT. Use right after /research-dashboard when no Project node exists yet, or whenever the user types /research-onboard, asks to bootstrap / initialize / set up a research project, or asks the agent to analyze a workspace and propose a project objective. Two cases: an EMPTY workspace gets an in-place deep-learning skeleton plus AGENTS.md / CLAUDE.md stubs, then a goal elicited by dialogue; an EXISTING workspace gets analyzed (README / AGENTS.md / CLAUDE.md / configs / src / data / baselines) into a prior-knowledge artifact plus a drafted objective. Both end by proposing a Project node through Triage for the human to ratify. Project-agnostic. The agent only PROPOSES — it never commits the SSOT and never creates packages."
+description: "Use when bridging a raw or existing workspace into the Scope SSOT with /research-onboard: detect/scaffold or analyze the workspace, write prior knowledge, draft a Project objective, and create a PM-ratifiable Project Scope proposal. Always show the proposed Scope clearly to the PM with the next ratification step. The skill only proposes through Triage; it never commits the SSOT or creates packages."
 argument-hint: "[<cwd, defaults to .>]"
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
 disable-model-invocation: false
@@ -16,6 +16,10 @@ user at an empty dashboard with no help. This skill closes that gap. It turns "I
 The trust invariant is unchanged: **the agent proposes; the PM disposes.** This skill submits a pending
 Triage item through the same `triage.py` gate `research-scope` uses; the human accepts and commits the
 `scope-transition`. Onboarding never mutates `transitions.jsonl`.
+
+The PM visibility invariant is also mandatory: **never ask the PM to accept, reject, or revise a Scope
+proposal without showing the exact Scope content first.** Every candidate or pending Project Scope must
+be presented as a clear review block that names the current state and the next PM action.
 
 ## Resources
 
@@ -87,18 +91,38 @@ Read the content entries `detect` reported — typically `README.md`, any `AGENT
 - **a candidate objective** — `goal`, `contributions`, `out_of_scope` inferred from what you read.
   Keep these as *intent*, never readings (no measured values inside the spec). Provenance lists the
   files you read, e.g. `read:README.md,AGENTS.md,CLAUDE.md,configs/train.yaml`.
-  `goal` is a 20-100 word string; `contributions` and `out_of_scope` are non-empty lists where each
+  `goal` is a 3-100 word string so an exact short Project objective can be ratified; `contributions` and `out_of_scope` are non-empty lists where each
   item is 5-50 words.
 
 Confirm the drafted objective with the user before proposing — they may correct the goal. This is the
 HCI-alignment moment (核心问题 #2): the agent shows its inferred understanding and the user steers it.
+Do not call `triage.py propose` until this clear review has been shown and the user has confirmed that
+the displayed content is the proposal they want to ratify.
+
+Use this PM-facing format whenever showing a candidate or pending Project Scope:
+
+```markdown
+**Project Scope Review**
+- Status: Candidate, not yet proposed to Triage | Pending Triage, not yet committed
+- Level: project
+- Node: project/<slug>
+- Objective / Goal: <exact text that would enter the Project node>
+- Contributions: <each proposed contribution exactly as it would enter the Project node>
+- Out of Scope: <each boundary exactly as it would enter the Project node>
+- Provenance: <user dialogue and/or files read>
+- Next Step: <CONFIRM to submit to Triage, REVISE with changes, or REJECT the draft; if already pending, ACCEPT to ratify or REJECT to archive>
+```
+
+If the user supplied an exact objective, show it verbatim in `Objective / Goal`. Any inferred wording,
+interpretation, or rationale must be shown separately and cannot replace the user's exact objective
+unless the PM explicitly accepts that rewritten text.
 
 **3. Build the validated Project proposal.**
 
 ```bash
 python3 skills/research-onboard/scripts/onboard.py build-proposal \
     --node-id project/<slug> \
-    --spec '{"goal":"<20-100 word project goal>","contributions":["<5-50 word contribution>"],"out_of_scope":["<5-50 word boundary>"]}' \
+    --spec '{"goal":"<3-100 word project goal>","contributions":["<5-50 word contribution>"],"out_of_scope":["<5-50 word boundary>"]}' \
     --source '<dialogue or files read>'
 ```
 
@@ -114,15 +138,20 @@ python3 skills/research-scope/scripts/triage.py propose --log outputs/_scope/tri
 python3 skills/research-scope/scripts/triage.py pending --log outputs/_scope/triage.jsonl
 ```
 
-Show the pending item and stop. Onboarding is done — committing the objective is the PM's decision.
+Show the pending item using the same **Project Scope Review** format, including the exact next PM
+action. Then stop. Onboarding is done — committing the objective is the PM's decision.
 
 ## Hand-off (PM action, not agent)
 
-This mirrors `research-scope`'s human-accept path. The PM:
+This mirrors `research-scope`'s human-accept path. Tell the PM which one applies:
 
-1. `triage.py dispose --decision accept`.
-2. Commits the Project node with `research-op --op scope-transition` and `gate=USER_ONLY` (the project gate).
-3. Once the Project is committed, the journey advances to **step 3** — forming a Direction under the
+1. **Accept**: dispose the Triage item with `--decision ACCEPTED`, then commit the Project node with
+   `research-op --pkg _scope --op scope-transition --from-triage <item-id>` (the Project gate is
+   carried by the accepted proposal).
+2. **Revise**: say what field should change; the agent updates the proposal and shows the full
+   **Project Scope Review** again before any new Triage proposal.
+3. **Reject**: dispose or archive the Triage item; no Scope SSOT transition is written.
+4. Once the Project is committed, the journey advances to **step 3** — forming a Direction under the
    ratified Project. If the user only has a vague idea, route through **`/research-brainstorm`** (shape it,
    ground uncertainties, converge to a Direction proposal). If they already have a
    clear Direction (`hypothesis / metric / baselines / success_gate`), `/research-scope` proposes it
@@ -146,7 +175,8 @@ This mirrors `research-scope`'s human-accept path. The PM:
 
 ## Done condition
 
-A pending **project**-level Triage item is visible in `triage.jsonl` and has been shown to the user;
-for an empty workspace the skeleton is scaffolded; for an existing one `prior_knowledge.md` is written.
+A pending **project**-level Triage item is visible in `triage.jsonl` and has been shown to the user in
+the **Project Scope Review** format with an explicit next step; for an empty workspace the skeleton is
+scaffolded; for an existing one `prior_knowledge.md` is written.
 The objective is not yet in effect — it takes effect only after PM acceptance and the
-`research-op --op scope-transition` commit.
+`research-op --pkg _scope --op scope-transition --from-triage <item-id>` commit.

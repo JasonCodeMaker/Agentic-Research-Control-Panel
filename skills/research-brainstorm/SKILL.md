@@ -169,8 +169,9 @@ ratifying the Direction is the PM's decision.
 
 This mirrors `research-scope`'s human-accept path:
 
-1. PM `triage.py dispose --decision accept`, then commits with `research-op --op scope-transition`
-   (`gate=USER_CROSS_MODEL_AUDIT`). The Direction enters the SSOT.
+1. PM runs `triage.py dispose --decision ACCEPTED`, then commits with
+   `research-op --pkg _scope --op scope-transition --from-triage <item-id>`. The accepted
+   Direction proposal enters the SSOT.
 2. The existing chain takes over: `plan_milestones.py` proposes milestones; after they are committed,
    `/research-package from-scope <direction-id>` materializes the package. Pass the consumed idea ids so
    they are frozen into the package's `brainstorm.html` provenance sub-page and removed from the
@@ -204,4 +205,4 @@ This mirrors `research-scope`'s human-accept path:
 The shaped idea(s) are on the brainstorm lane, each has a readable HTML page linked by `detailPath`, and —
 when the user is ready — a conversion-ready Direction is a pending Triage item carrying its
 `source_brainstorms`, shown to the user. The Direction is not yet in effect; it takes effect only after PM
-acceptance and the `research-op --op scope-transition` commit.
+acceptance and the `research-op --pkg _scope --op scope-transition --from-triage <item-id>` commit.

@@ -145,6 +145,11 @@ Keep this tab open while the agent works. From this point on, the dashboard is
 the shared interface for project scope, package status, live runs, evidence,
 results, and human decisions.
 
+The page should be served through `research_html/scripts/serve_dashboard.py`,
+not a file-watching preview. Dashboard data files are refreshed in place by
+`research_html/assets/live-data.js`, so Scope projection and package status
+updates repaint without a full page reload.
+
 Plain URL:
 
 ```text
@@ -153,6 +158,11 @@ http://127.0.0.1:8904/research_html/index.html
 
 Setup ends here. The workspace now has the skills, project protocols, and the
 interface where you will monitor and ratify research work.
+
+Optional turn-end automation can keep dashboard facts synchronized after agent
+edits. Claude Code projects register the Stop hook in `.claude/settings.json`;
+Codex projects use the equivalent `[[hooks.Stop]]` lifecycle hook. The complete
+hook recipe lives in `skills/research-dashboard/references/stop-fact-propagation-hook.md`.
 
 ### [Optional] Onboard the workspace
 

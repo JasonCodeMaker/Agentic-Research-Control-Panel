@@ -38,6 +38,7 @@ REF_FIELDS = {
 
 CONTROL_MODES = frozenset({"SUPERVISED", "CHECKPOINTED", "DEFERRED", "AUTONOMOUS"})
 SCALAR_TEXT_WORDS = (20, 100)
+PROJECT_GOAL_WORDS = (3, 100)
 LIST_ITEM_WORDS = (5, 50)
 WORD_RE = re.compile(r"[A-Za-z0-9]+(?:[@._:/+-][A-Za-z0-9]+)*|[\u4e00-\u9fff]")
 
@@ -131,6 +132,12 @@ def _check_word_range(*, field, text, bounds):
         raise RuleViolation(f"spec field {field!r} must be {low}-{high} words, got {count}")
 
 
+def _scalar_text_bounds(level, field):
+    if level == "project" and field == "goal":
+        return PROJECT_GOAL_WORDS
+    return SCALAR_TEXT_WORDS
+
+
 def _validate_spec_value(level, field, value):
     if field in LIST_TEXT_FIELDS.get(level, frozenset()):
         if not isinstance(value, list) or not value:
@@ -150,7 +157,7 @@ def _validate_spec_value(level, field, value):
         return
     if field in SCALAR_TEXT_FIELDS.get(level, frozenset()):
         if isinstance(value, str):
-            _check_word_range(field=field, text=value, bounds=SCALAR_TEXT_WORDS)
+            _check_word_range(field=field, text=value, bounds=_scalar_text_bounds(level, field))
         elif field != "metric":
             raise RuleViolation(f"spec field {field!r} must be a string")
         elif not isinstance(value, dict) or not value:
@@ -178,7 +185,8 @@ def scope_schema():
             elif field == "metric":
                 entry.update({"kind": "metric", "minWords": SCALAR_TEXT_WORDS[0], "maxWords": SCALAR_TEXT_WORDS[1]})
             else:
-                entry.update({"kind": "text", "minWords": SCALAR_TEXT_WORDS[0], "maxWords": SCALAR_TEXT_WORDS[1]})
+                bounds = _scalar_text_bounds(level, field)
+                entry.update({"kind": "text", "minWords": bounds[0], "maxWords": bounds[1]})
             spec[field] = entry
         levels[level] = {
             "order": ordered,

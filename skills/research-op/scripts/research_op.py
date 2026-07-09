@@ -5,6 +5,8 @@ MVP supports `--op check`. Insert/Update/Delete + composite events arrive in Pha
 """
 
 import argparse
+import hashlib
+import importlib.util
 import json
 import re
 import sys
@@ -43,6 +45,88 @@ def _read_inventory(pkg: str) -> dict:
     return {"category": m_cat.group(1), "status": m_stat.group(1)}
 
 
+def _refresh_scope_projection(log_path: Path) -> list[str]:
+    """Refresh dashboard scope projection when dashboard data exists in this workspace."""
+    projection_path = Path("research_html/data/scope-projection.json")
+    if not projection_path.parent.exists():
+        return []
+    renderer_path = (
+        Path(__file__).resolve().parents[3]
+        / "skills" / "research-dashboard" / "scripts" / "render_scope_projection.py"
+    )
+    if not renderer_path.exists():
+        return []
+    spec = importlib.util.spec_from_file_location("render_scope_projection_for_research_op", renderer_path)
+    if spec is None or spec.loader is None:
+        return []
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.render(log_path, projection_path)
+    module.check(log_path, projection_path)
+    return [str(projection_path), str(projection_path.with_suffix(".js"))]
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _triage_proposal_hash(item: dict) -> str:
+    content = {
+        k: v for k, v in item.items()
+        if k not in {"status", "proposal_hash", "accepted_proposal", "disposed_at", "decision"}
+    }
+    encoded = json.dumps(content, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _scope_payload_from_triage(triage_log: Path, item_id: str) -> dict:
+    records = _read_jsonl(triage_log)
+    accepted = next(
+        (rec for rec in reversed(records)
+         if rec.get("id") == item_id and rec.get("status") == "accepted"),
+        None,
+    )
+    if accepted is None:
+        raise SystemExit(f"accepted triage item not found: {item_id}")
+    proposal = accepted.get("accepted_proposal")
+    if not isinstance(proposal, dict):
+        proposal = next(
+            (rec for rec in reversed(records)
+             if rec.get("id") == item_id and rec.get("status") == "pending"),
+            None,
+        )
+    if not isinstance(proposal, dict):
+        raise SystemExit(f"accepted triage item has no proposal snapshot: {item_id}")
+    if accepted.get("proposal_hash") and _triage_proposal_hash(proposal) != accepted.get("proposal_hash"):
+        raise SystemExit(f"accepted triage proposal hash mismatch: {item_id}")
+    node = proposal.get("proposed_node")
+    if not isinstance(node, dict):
+        raise SystemExit(f"accepted triage item has no proposed_node: {item_id}")
+    payload = {k: node[k] for k in ("id", "level", "parents", "version", "status", "spec", "source") if k in node}
+    for key in ("op", "gate", "invalidates", "reopens", "dial_revert"):
+        if key in proposal:
+            payload[key] = proposal[key]
+    payload["trigger"] = f"triage:{item_id}"
+    payload["cause"] = proposal.get("change") or proposal.get("rationale") or accepted.get("decision")
+    payload["_triage_id"] = item_id
+    if accepted.get("proposal_hash"):
+        payload["_proposal_hash"] = accepted["proposal_hash"]
+    return payload
+
+
+def _existing_triage_commit(log_path: Path, item_id: str, node: dict, payload: dict) -> dict | None:
+    trigger = f"triage:{item_id}"
+    for rec in _read_jsonl(log_path):
+        if rec.get("trigger") != trigger:
+            continue
+        if rec.get("node") == node and rec.get("op") == payload.get("op") and rec.get("gate") == payload.get("gate"):
+            return rec
+        raise SystemExit(f"triage item already committed with different payload: {item_id}")
+    return None
+
+
 def main() -> int:
     p = argparse.ArgumentParser(prog="research-op")
     p.add_argument("--pkg", help="package id under research_html/packages/ (required unless --nl)")
@@ -59,6 +143,9 @@ def main() -> int:
     p.add_argument("--target", help="target name from references/matrix.md (required for insert/update/delete)")
     p.add_argument("--scope", default="package", help="check scope: package | all")
     p.add_argument("--payload", default="{}", help="JSON payload for insert/update/delete")
+    p.add_argument("--from-triage", help="accepted Triage item id to commit via scope-transition")
+    p.add_argument("--triage-log", default="outputs/_scope/triage.jsonl",
+                   help="Triage log path for --from-triage")
     p.add_argument("--nl", help="natural-language form: e.g. 'update: set status of <pkg> to BLOCKED'")
     args = p.parse_args()
 
@@ -209,26 +296,53 @@ def main() -> int:
         print(f"{args.op} OK pkg={args.pkg} target=rule files=['{path}']")
         return 0
 
-    state = _read_inventory(args.pkg)
-
-    # Scan-events path (read-only, no state-gate, no validation).
-    if args.op == "scan-events":
-        import scan_events  # noqa: E402
-        found = scan_events.scan(args.pkg)
-        for ev in found:
-            print(json.dumps(ev))
-        # Caller is expected to invoke --event for each; bump only after the agent confirms.
-        return 0
-
     # Scope-transition path — the one gated writer for the Scope SSOT. Gated by node level
     # (not the package (category, status) state machine), so it bypasses the state-gate.
+    # The first Project node has no package inventory by design, so this must run before
+    # _read_inventory. Use --pkg _scope for project-level onboarding commits.
     if args.op == "scope-transition":
         sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
         import scope_ssot  # noqa: E402
-        payload = json.loads(args.payload)
+        payload = (
+            _scope_payload_from_triage(Path(args.triage_log), args.from_triage)
+            if args.from_triage else json.loads(args.payload)
+        )
         node = {k: payload[k] for k in ("id", "level", "parents", "version", "status",
                                         "spec", "source") if k in payload}
         log_path = audit.runtime_root("_scope") / "transitions.jsonl"
+        state = {}
+        if args.from_triage:
+            existing = _existing_triage_commit(log_path, args.from_triage, node, payload)
+            if existing:
+                try:
+                    projection_files = _refresh_scope_projection(log_path)
+                except Exception as e:
+                    audit.append(args.pkg, op="scope-transition", target=node.get("id"), event=None,
+                                 state_before=state, state_after={"node": node},
+                                 validation="POST_COMMIT_PROJECTION_FAILED", rule="scope-projection-refresh",
+                                 files_touched=[str(log_path)], payload=payload,
+                                 user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
+                    print(json.dumps({
+                        "rejected": False,
+                        "committed": True,
+                        "phase": "scope-projection-refresh",
+                        "rule": "scope-projection-refresh",
+                        "pkg": args.pkg,
+                        "op": "scope-transition",
+                        "node_id": node.get("id"),
+                        "detail": str(e),
+                    }, indent=2))
+                    return 2
+                audit.append(args.pkg, op="scope-transition", target=node.get("id"), event=None,
+                             state_before=state, state_after={"node": node},
+                             validation="IDEMPOTENT", rule=None,
+                             files_touched=projection_files, payload=payload,
+                             user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
+                print(
+                    "scope-transition already committed "
+                    f"node={node.get('id')} txn={existing.get('transaction_id')}"
+                )
+                return 0
         try:
             record = scope_ssot.propose_transition(
                 node, op=payload.get("op"), gate=payload.get("gate"), log_path=log_path,
@@ -247,12 +361,43 @@ def main() -> int:
                 "detail": str(e),
             }, indent=2))
             return 2
+        try:
+            projection_files = _refresh_scope_projection(log_path)
+        except Exception as e:  # projection is derived; the Scope transition already committed.
+            audit.append(args.pkg, op="scope-transition", target=node.get("id"), event=None,
+                         state_before=state, state_after={"node": node},
+                         validation="POST_COMMIT_PROJECTION_FAILED", rule="scope-projection-refresh",
+                         files_touched=[str(log_path)], payload=payload,
+                         user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
+            print(json.dumps({
+                "rejected": False,
+                "committed": True,
+                "phase": "scope-projection-refresh",
+                "rule": "scope-projection-refresh",
+                "pkg": args.pkg,
+                "op": "scope-transition",
+                "node_id": node.get("id"),
+                "detail": str(e),
+            }, indent=2))
+            return 2
+        files_touched = [str(log_path), *projection_files]
         audit.append(args.pkg, op="scope-transition", target=node.get("id"), event=None,
-                     state_before=state, state_after=state,
+                     state_before=state, state_after={"node": node},
                      validation="PASSED", rule=None,
-                     files_touched=[str(log_path)], payload=payload,
+                     files_touched=files_touched, payload=payload,
                      user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
         print(f"scope-transition OK node={node.get('id')} txn={record['transaction_id']}")
+        return 0
+
+    state = _read_inventory(args.pkg)
+
+    # Scan-events path (read-only, no state-gate, no validation).
+    if args.op == "scan-events":
+        import scan_events  # noqa: E402
+        found = scan_events.scan(args.pkg)
+        for ev in found:
+            print(json.dumps(ev))
+        # Caller is expected to invoke --event for each; bump only after the agent confirms.
         return 0
 
     # Registry-add path — project-level knowledge stores (papers / edges / gaps). Like

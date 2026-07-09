@@ -30,6 +30,15 @@
     return srcList.filter(isDataSource);
   }
 
+  function applyFetchedData(url, text, lastHash, evaluator) {
+    if (text == null) return false;
+    var h = hashText(text);
+    if (lastHash[url] === h) return false;       // unchanged
+    lastHash[url] = h;
+    try { evaluator(text); return true; }        // re-assign window.X globals in global scope
+    catch (err) { return false; }
+  }
+
   if (typeof document !== "undefined" && typeof window !== "undefined" && typeof fetch === "function") {
     var lastHash = {};
     var started = false;
@@ -57,14 +66,7 @@
       return fetch(url, { cache: "no-store" })
         .then(function (res) { return res.ok ? res.text() : null; })
         .then(function (text) {
-          if (text == null) return false;
-          var h = hashText(text);
-          if (lastHash[url] === h) return false;       // unchanged
-          var firstSeen = !(url in lastHash);
-          lastHash[url] = h;
-          if (firstSeen) return false;                 // baseline; page already painted on load
-          try { (0, eval)(text); return true; }        // re-assign window.X globals in global scope
-          catch (err) { return false; }
+          return applyFetchedData(url, text, lastHash, function (body) { (0, eval)(body); });
         })
         .catch(function () { return false; });
     }
@@ -95,6 +97,7 @@
       hashText: hashText,
       isDataSource: isDataSource,
       dataSourceUrls: dataSourceUrls,
+      applyFetchedData: applyFetchedData,
       POLL_MS: POLL_MS,
     };
   }

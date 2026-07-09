@@ -3,9 +3,41 @@
 
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
 
-from lib import scope_ssot
+def _candidate_roots() -> list[Path]:
+    here = Path(__file__).resolve()
+    roots: list[Path] = []
+    for env_name in ("TRUSTWORTHY_PIPELINE_ROOT", "PIPELINE_ROOT"):
+        value = os.environ.get(env_name)
+        if value:
+            roots.append(Path(value).expanduser().resolve())
+    roots.append(Path.cwd().resolve())
+    roots.extend(here.parents)
+    home = Path.home()
+    for skill in (
+        home / ".codex" / "skills" / "research-dashboard",
+        home / ".claude" / "skills" / "research-dashboard",
+    ):
+        if skill.exists():
+            resolved = skill.resolve()
+            if len(resolved.parents) >= 2:
+                roots.append(resolved.parents[1])
+    return roots
+
+
+def _load_scope_ssot():
+    for root in _candidate_roots():
+        if (root / "lib" / "scope_ssot" / "__init__.py").exists():
+            sys.path.insert(0, str(root))
+            from lib import scope_ssot  # noqa: WPS433
+            return scope_ssot
+    raise ModuleNotFoundError("could not locate Trustworthy Research Pipeline lib/scope_ssot")
+
+
+scope_ssot = _load_scope_ssot()
 
 
 def render_js() -> str:

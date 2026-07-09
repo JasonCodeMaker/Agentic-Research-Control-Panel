@@ -53,7 +53,7 @@
             "kind": "text",
             "label": "Goal",
             "maxWords": 100,
-            "minWords": 20
+            "minWords": 3
           },
           "out_of_scope": {
             "kind": "list",
