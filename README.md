@@ -1,82 +1,107 @@
-<h1>
-  <img src="asset/arc-logo-circle.png" alt="ARC logo" width="48" />
-  Agentic Research Control Panel (ARC)
-</h1>
+<div align="center">
 
-Agents run the loop. You govern the research.
+<img src="asset/arc-logo-circle.png" alt="ARC logo" width="1000" />
 
-A local control layer for coding agents that run research experiments in real repos,
-with approved objectives, visible runs, evidence-backed results, and project
-memory you can inspect.
+# Agentic Research Control Panel (ARC)
 
-![Trustworthy Research Pipeline control panel](asset/readme-control-panel.png)
+**Agents run the loop. You govern the research.**
 
-[Quick Start](#quick-start) · [Example run](#a-complete-example-run) ·
-[How it works](#how-it-works) · [Reference](#reference)
+A local control layer for coding agents that run research experiments in real repos,<br />
+with approved objectives, visible runs, evidence-backed results, and project memory you can inspect.
 
-## Overview
+[Why ARC?](#why-arc) ·
+[Research Loop](#the-research-loop) ·
+[Quick Start](#quick-start) ·
+[Example Run](#a-complete-example-run) ·
+[Command Reference](#command-reference)
+
+<br />
+
+<img src="asset/arc-terminal-demo.gif" alt="ARC research workflow terminal demonstration" width="900" />
+
+</div>
+
+<p align="center">
+  <img src="asset/readme-control-panel.png"
+       alt="Trustworthy Research Pipeline control panel"
+       width="95%" />
+</p>
+
+<p align="center">
+  <sub>A shared control surface for project scope, package status, live runs, evidence, results, and human decisions.</sub>
+</p>
+
+---
+
+## Why ARC?
 
 When a coding agent runs experiment after experiment in a real research repo,
 the code may execute just fine. The harder question is whether the research
 state still belongs to the project instead of the chat.
 
-- 🎯 Objective drift: Several sessions in, can you see whether the agent is
-  still bound to the objective, metric, and baseline you approved?
-- 👀 Run visibility: While an auto-research pipeline is executing, can you inspect what it is doing
-  instead of trusting its summary?
-- 📎 Evidence traceability: When it reports a metric, can you trace that number
-  to an artifact and verify that the result is real and reproducible?
-- 🧠 Project memory: Can the next session inherit what this run proved or ruled
-  out?
+| Challenge | Question ARC keeps visible |
+| --- | --- |
+| 🎯 **Objective drift** | Several sessions in, can you see whether the agent is still bound to the objective, metric, and baseline you approved? |
+| 👀 **Run visibility** | While an auto-research pipeline is executing, can you inspect what it is doing instead of trusting its summary? |
+| 📎 **Evidence traceability** | When it reports a metric, can you trace that number to an artifact and verify that the result is real and reproducible? |
+| 🧠 **Project memory** | Can the next session inherit what this run proved or ruled out? |
 
-Chat is the wrong source of truth for research work. This project keeps the working state in the repo, where the human and the agent can
-inspect the same objective, run state, evidence, result, and decision.
+Chat is the wrong source of truth for research work. This project keeps the
+working state in the repo, where the human and the agent can inspect the same
+objective, run state, evidence, result, and decision.
+
+Start from an empty workspace or attach ARC to an existing ML or research repo.
+
+## The Research Loop
 
 Each cycle moves through an approved objective, a scoped package, a visible run,
 an evidence-backed result, a human decision, and project memory. A scoped package
 is a bounded, approved unit of work.
 
-Start from an empty workspace or attach it to an existing ML/research repo.
-Quick Start shows the setup path.
+<img src="asset/arc-workflow.png" alt="ARC logo" width="1000" />
+
+
+| Stage | Command |
+| --- | --- |
+| Shape an idea | `/research-brainstorm` |
+| Approve research intent | `/research-scope` |
+| Create an executable unit | `/research-package` |
+| Run and verify it | `/research-run` |
+| Continue within an approved direction | `/research-auto` |
+
+---
 
 ## Quick Start
 
 Setup has two layers:
 
-1. Install the skills so Claude Code or Codex can see the `/research-*`
-   commands.
-2. Attach the protocols and dashboard inside each research workspace you want
-   to manage.
+1. Install the skills so Claude Code or Codex can see the `/research-*` commands.
+2. Attach the protocols and dashboard inside each research workspace you want to manage.
 
-`/research-onboard` is an optional next step for workspaces that do not yet have an approved Project objective.
+`/research-onboard` is an optional next step for workspaces that do not yet have
+an approved Project objective.
 
 ### 1. Install the skills
 
 Skills must be symlinked from this toolbox repo. Do not copy them: the helper
 scripts resolve shared `lib/` code relative to this checkout.
 
-Run the install command from the Trustworthy Research Pipeline repo, not from
-the research workspace you want to manage. Set `DEST` to one of the paths below.
+> [!IMPORTANT]
+> Run the install command from the Agentic Research Control Panel (ARC) repo, not from
+> the research workspace you want to manage.
 
-#### Global Level
+Set `DEST` to the appropriate location:
 
-Use this when you want the `/research-*` commands available across projects on
-the same machine.
+| Installation | Claude Code | Codex |
+| --- | --- | --- |
+| **Global** | `DEST="$HOME/.claude/skills"` | `DEST="$HOME/.codex/skills"` |
+| **Project level** | `DEST="/path/to/your-research-workspace/.claude/skills"` | Keep skills in `$HOME/.codex/skills` and place project-specific rules in the workspace's `AGENTS.md`. |
 
-- Claude Code: set `DEST="$HOME/.claude/skills"`.
-- Codex: set `DEST="$HOME/.codex/skills"`.
-
-#### Project Level
-
-Use this when one workspace should carry its own agent setup.
-
-- Claude Code: set `DEST="/path/to/your-research-workspace/.claude/skills"`.
-- Codex: keep the skills in `$HOME/.codex/skills` and put project-specific
-  rules in the workspace's `AGENTS.md`. Codex project-level behavior is handled
-  by step 2, not by a separate `<workspace>/.codex/skills` directory.
+Codex project-level behavior is handled by step 2, not by a separate
+`<workspace>/.codex/skills` directory.
 
 ```bash
-cd /path/to/Trustworthy-Research-Pipeline
+cd /path/to/Agentic-Research-Control-Panel
 REPO="$(pwd)"
 DEST="$HOME/.claude/skills"
 
@@ -92,11 +117,12 @@ done
 ls -l "$DEST" | grep research
 ```
 
-Expected: the listed entries are symlinks that point back into this toolbox
+**Expected:** the listed entries are symlinks that point back into this toolbox
 repo. Use `DEST="$HOME/.codex/skills"` for the Codex global install, or the
-project-local Claude Code path for a one-workspace Claude Code install. Restart
-Claude Code or open a new Codex session, then type `/research-` to confirm the
-commands are visible.
+project-local Claude Code path for a one-workspace Claude Code install.
+
+Restart Claude Code or open a new Codex session, then type `/research-` to
+confirm the commands are visible.
 
 ### 2. Attach the protocols to a research workspace
 
@@ -105,17 +131,19 @@ already contain research code.
 
 ```bash
 cd /path/to/your-research-workspace
-PIPELINE=/path/to/Trustworthy-Research-Pipeline
+PIPELINE=/path/to/Agentic-Research-Control-Panel
 
 mkdir -p outputs/_scope outputs/_selfevolve
 test -f AGENTS.md || cp "$PIPELINE/AGENTS.md" AGENTS.md
 test -f CLAUDE.md  || cp "$PIPELINE/CLAUDE.md" CLAUDE.md
 ```
 
-Expected: your research workspace now has the operating protocol files the agent
-will read before doing research work. If either file already exists, merge the
-Trustworthy Research Pipeline protocol into the existing project instructions
-instead of overwriting them.
+**Expected:** your research workspace now has the operating protocol files the
+agent will read before doing research work.
+
+> [!NOTE]
+> If either file already exists, merge the ARC protocol
+> into the existing project instructions instead of overwriting it.
 
 Use `AGENTS.md` for Codex-facing project rules. Use `CLAUDE.md` for Claude Code
 and for the shared research operating protocol.
@@ -128,7 +156,7 @@ Ask the agent from inside your research workspace:
 /research-dashboard
 ```
 
-Expected: `research_html/` appears in your workspace.
+**Expected:** `research_html/` appears in your workspace.
 
 Start the local dashboard server:
 
@@ -137,34 +165,44 @@ python3.13 research_html/scripts/serve_dashboard.py ensure \
   --host 127.0.0.1 --port 8904 --max-port 8904 --json
 ```
 
-Deployment result: open the control panel.
+Open the control panel:
 
-[Open the local control panel](http://127.0.0.1:8904/research_html/index.html)
+[http://127.0.0.1:8904/research_html/index.html](http://127.0.0.1:8904/research_html/index.html)
 
 Keep this tab open while the agent works. From this point on, the dashboard is
 the shared interface for project scope, package status, live runs, evidence,
 results, and human decisions.
 
-The page should be served through `research_html/scripts/serve_dashboard.py`,
-not a file-watching preview. Dashboard data files are refreshed in place by
-`research_html/assets/live-data.js`, so Scope projection and package status
-updates repaint without a full page reload.
-
-Plain URL:
-
-```text
-http://127.0.0.1:8904/research_html/index.html
-```
+> [!IMPORTANT]
+> Serve the page through `research_html/scripts/serve_dashboard.py`, not a
+> file-watching preview. Dashboard data files are refreshed in place by
+> `research_html/assets/live-data.js`, so Scope projection and package status
+> updates repaint without a full page reload.
 
 Setup ends here. The workspace now has the skills, project protocols, and the
 interface where you will monitor and ratify research work.
 
+<details>
+<summary><strong>Optional: keep dashboard facts synchronized after agent edits</strong></summary>
+
+<br />
+
 Optional turn-end automation can keep dashboard facts synchronized after agent
 edits. Claude Code projects register the Stop hook in `.claude/settings.json`;
-Codex projects use the equivalent `[[hooks.Stop]]` lifecycle hook. The complete
-hook recipe lives in `skills/research-dashboard/references/stop-fact-propagation-hook.md`.
+Codex projects use the equivalent `[[hooks.Stop]]` lifecycle hook.
 
-### [Optional] Onboard the workspace
+The complete hook recipe lives in:
+
+```text
+skills/research-dashboard/references/stop-fact-propagation-hook.md
+```
+
+</details>
+
+<details>
+<summary><strong>Optional: onboard a workspace without an approved Project objective</strong></summary>
+
+<br />
 
 Run this only when the workspace has no approved Project objective and you want
 the agent to help create one. Keep the control panel open before running this
@@ -174,9 +212,9 @@ command.
 /research-onboard
 ```
 
-Expected: for an empty workspace, the agent scaffolds a small research project
-and asks you for the objective. For an existing workspace, it reads the project
-files, writes a compact prior-knowledge digest, and proposes a project
+**Expected:** for an empty workspace, the agent scaffolds a small research
+project and asks you for the objective. For an existing workspace, it reads the
+project files, writes a compact prior-knowledge digest, and proposes a Project
 objective. In both cases, it should ask you to accept, reject, or revise the
 objective before it becomes active.
 
@@ -190,11 +228,15 @@ Onboarding stops at the Project proposal. It does not start a research campaign,
 commit Scope by itself, or create research packages. Start `/research-auto`
 later, when you are ready to run a gated campaign.
 
-## How it works
+</details>
+
+---
+
+## How ARC Works
 
 Setup gives the workspace a shared control surface. After that, the pipeline
-turns research work into four states: idea, committed intent, executable
-package, and verified run. Each state has one command that owns it.
+turns research work into four states: idea, committed intent, executable package,
+and verified run. Each state has one command that owns it.
 
 ### 1. Shape an idea
 
@@ -273,74 +315,81 @@ Direction until a measurable gate clears or a real stop condition appears.
 `/research-auto` is the campaign conductor. It delegates formation to
 `/research-brainstorm` and `/research-scope`, package creation to
 `/research-package`, execution to `/research-run`, and learning capture to the
-analysis and rule paths. It does not add a shortcut around approval: Direction
-changes, scope changes, terminal adoption, and unresolved blockers still surface
-as human decisions.
+analysis and rule paths.
+
+It does not add a shortcut around approval. Direction changes, scope changes,
+terminal adoption, and unresolved blockers still surface as human decisions.
 
 The opening screenshot shows the same loop in the interface: the dashboard gives
 the project-level view, and the package lane shows the method candidate,
 reference run, current status, gate, metric, and next route.
 
-## A complete example run
+---
 
-This section should read like a short transcript, not a framework explanation.
-Replace the placeholder dataset and metric with a real demo when one is ready.
+## A Complete Example Run
+
+> [!NOTE]
+> This section uses a placeholder dataset and metric. Replace them with a real
+> demonstration when one is ready.
 
 ```text
 In an existing research repo:
 
 User:
-/research-dashboard
+  /research-dashboard
 
 Expected:
-research_html/ exists and the dashboard opens locally.
+  research_html/ exists and the dashboard opens locally.
 
 User:
-/research-onboard
+  /research-onboard
 
 Agent:
-I found the repo goal, datasets, baseline, and likely validation metric.
-Here is the proposed project objective.
+  I found the repo goal, datasets, baseline, and likely validation metric.
+  Here is the proposed project objective.
 
 User:
-Accept this proposal.
+  Accept this proposal.
 
 Expected:
-The approved objective appears in the control panel.
+  The approved objective appears in the control panel.
 
 User:
-/research-auto "Improve baseline retrieval on the validation split" --gate "MRR@10 improves by 2 points"
+  /research-auto "Improve baseline retrieval on the validation split" \
+    --gate "MRR@10 improves by 2 points"
 
 Expected:
-A research package is created.
-A live run appears in the dashboard.
-The result page records the metric, evidence, and verdict.
+  A research package is created.
+  A live run appears in the dashboard.
+  The result page records the metric, evidence, and verdict.
 
 User:
-Accept the result, revise the direction, or stop.
+  Accept the result, revise the direction, or stop.
 
 Expected:
-The decision is recorded, and the useful lesson is available to the next run.
+  The decision is recorded, and the useful lesson is available to the next run.
 ```
 
-## What gets saved
+---
+
+## What ARC Preserves
 
 After one loop, the repo should have more than logs and chat text. The useful
 state is saved where the next agent and the human can read it.
 
 | You see | What it means |
 | --- | --- |
-| Approved goal | The research question the agent is allowed to pursue. |
-| Research package | One unit of work with plan, run state, result, and decision. |
-| Live run | The experiment or command currently running, with status outside chat memory. |
-| Result package | The answer to whether the work helped, tied to evidence. |
-| Decision record | The human call: accept, revise, stop, archive, or continue. |
-| Lesson for next run | What should be reused or avoided later. |
+| **Approved goal** | The research question the agent is allowed to pursue. |
+| **Research package** | One unit of work with plan, run state, result, and decision. |
+| **Live run** | The experiment or command currently running, with status outside chat memory. |
+| **Result package** | The answer to whether the work helped, tied to evidence. |
+| **Decision record** | The human call: accept, revise, stop, archive, or continue. |
+| **Lesson for next run** | What should be reused or avoided later. |
 
-The internal names are Scope, Package, Live Run, Result, and Learning. The README
-uses those names only after the user has seen the loop.
+The internal names are Scope, Package, Live Run, Result, and Learning. This
+README uses those names only after the user has seen the loop.
 
-## Where you stay in control
+## Human Control Points
 
 The pipeline keeps agent-assisted research tied to visible human decisions.
 
@@ -355,19 +404,19 @@ tie claims back to evidence, and the Context Pack carries project memory forward
 Those details matter, but they should support the workflow rather than become
 the first thing a new user has to learn.
 
-## Where this fits
+## How ARC Fits Your Stack
 
 AI research agents can propose and run work. Experiment trackers can record
-metrics after a run. Trustworthy Research Pipeline sits between them: it keeps
+metrics after a run. ARC sits between them: it keeps
 the research goal, live state, evidence, decision, and next-cycle learning in
 one place.
 
-- Pair it with agent frameworks when you want their actions to land in a
-  visible research workflow.
-- Pair it with MLflow, Weights and Biases, DVC, or similar tools when those
-  tools already track raw runs and metrics.
-- Use it for experiment-driven research where code, data, and decisions all
-  need to stay connected.
+- Pair it with agent frameworks when you want their actions to land in a visible
+  research workflow.
+- Pair it with MLflow, Weights and Biases, DVC, or similar tools when those tools
+  already track raw runs and metrics.
+- Use it for experiment-driven research where code, data, and decisions all need
+  to stay connected.
 - Use it when you want agents to move faster while the research agenda stays
   visible and deliberate.
 
@@ -381,7 +430,9 @@ loop.
 The current product boundary is the control panel and governance layer around
 agent-assisted research work in a new or existing research workspace.
 
-## Reference
+---
+
+## Command Reference
 
 ### Daily commands
 
@@ -391,7 +442,7 @@ agent-assisted research work in a new or existing research workspace.
 | `/research-onboard` | A workspace has no approved Project objective. | Empty-project scaffold or prior-knowledge digest, then a Project proposal. |
 | `/research-brainstorm` | The research idea is still rough. | Brainstorm item and Direction proposal. |
 | `/research-scope` | Project, Direction, Task, or scope revision needs approval. | Pending proposal and Scope transition after acceptance. |
-| `/research-package from-scope <direction-id>` | An approved Direction/Task should become executable. | Package pages and dashboard entry. |
+| `/research-package from-scope <direction-id>` | An approved Direction or Task should become executable. | Package pages and dashboard entry. |
 | `/research-run` | A scoped package should advance toward a terminal outcome. | Runtime artifacts, evidence propagation, verification, verdict routing. |
 | `/research-auto` | One Direction should be pursued until a measurable gate clears or an honest stop fires. | Campaign ledger, package cycles, gate evaluation. |
 | `/research-analysis` | A package needs human-curated rules or insights. | `analysis.html` updates through governed writes. |
@@ -402,7 +453,7 @@ agent-assisted research work in a new or existing research workspace.
 ### Main files and directories
 
 ```text
-Trustworthy-Research-Pipeline/
+Agentic-Research-Control-Panel/
 |-- README.md
 |-- AGENTS.md
 |-- CLAUDE.md
