@@ -22,7 +22,7 @@
       margin: 0;
     }
 
-    /* ----- Lifecycle rail: where a brainstorm idea sits in the pipeline ----- */
+    /* ----- Lifecycle rail: where a Brainstorm document sits in the pipeline ----- */
     .bi-rail {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -86,120 +86,6 @@
     }
     .bi-rail-step[data-current] .bi-rail-driver {
       border-color: var(--rose);
-      color: var(--clay-text);
-    }
-
-    /* ----- Idea cards: the bland flush-text card gets real padding zones ----- */
-    .brainstorm-idea {
-      min-height: 0;
-      border-left: 3px solid var(--clay);
-      gap: 0;
-    }
-    .brainstorm-idea.package-link-card:hover { border-left-color: var(--clay-dark); }
-    .bi-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 14px 20px;
-      border-bottom: 1.5px solid var(--g200);
-      background: var(--g100);
-    }
-    .bi-kicker {
-      color: var(--clay-text);
-      font-family: var(--mono);
-      font-size: 11px;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-    }
-    .bi-date {
-      color: var(--g500);
-      font-family: var(--mono);
-      font-size: 11.5px;
-      font-variant-numeric: tabular-nums;
-    }
-    .bi-body {
-      display: flex;
-      flex: 1;
-      flex-direction: column;
-      gap: 12px;
-      padding: 18px 20px 16px;
-    }
-    .bi-title {
-      margin: 0;
-      font-family: var(--serif);
-      font-size: 20px;
-      font-weight: 500;
-      line-height: 1.18;
-      letter-spacing: -0.01em;
-      text-wrap: balance;
-    }
-    .bi-idea {
-      margin: 0;
-      max-width: 60ch;
-      color: var(--g700);
-      font-size: 14px;
-      line-height: 1.55;
-      text-wrap: pretty;
-    }
-    .bi-meta {
-      display: grid;
-      gap: 8px;
-      margin: 4px 0 0;
-      padding-top: 12px;
-      border-top: 1.5px solid var(--g200);
-    }
-    .bi-meta-row { margin: 0; }
-    .bi-meta-row dt {
-      color: var(--g500);
-      font-family: var(--mono);
-      font-size: 10.5px;
-      letter-spacing: 0.07em;
-      text-transform: uppercase;
-    }
-    .bi-meta-row dd {
-      margin: 3px 0 0;
-      color: var(--slate);
-      font-size: 13.5px;
-      line-height: 1.4;
-    }
-    .bi-metric {
-      font-variant-numeric: tabular-nums;
-      color: var(--olive-text);
-    }
-    .bi-ungrounded { color: var(--g500); font-style: italic; }
-    .bi-ungrounded code,
-    .bi-empty-cmd code,
-    .bi-rail-note code {
-      font-family: var(--mono);
-      font-size: 0.92em;
-    }
-    .bi-foot {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      margin-top: auto;
-      padding: 12px 20px;
-      border-top: 1.5px solid var(--g200);
-      background: var(--ivory);
-    }
-    .bi-id {
-      font-family: var(--mono);
-      font-size: 11px;
-      color: var(--g600);
-      letter-spacing: 0.02em;
-    }
-    .bi-stage {
-      font-family: var(--mono);
-      font-size: 10.5px;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      color: var(--g500);
-    }
-    .bi-cta {
-      font-family: var(--mono);
-      font-size: 11.5px;
       color: var(--clay-text);
     }
 
@@ -277,21 +163,21 @@
         <a class="pill" href="../../index.html">Dashboard</a>
         <a class="pill" href="../../rules/html-rules.html">HTML Rules</a>
         <a class="pill" href="../../rules/trustworthy-research-rules.html">Trust Rules</a>
-        <span class="tag" id="category-count">0 ideas</span>
+        <span class="tag" id="category-count">0 documents</span>
       </div>
     </header>
 
-    <section class="bi-rail" data-section="lifecycle" aria-label="How a brainstorm idea becomes research">
-      <div class="bi-rail-step" data-current data-stage="idea">
+    <section class="bi-rail" data-section="lifecycle" aria-label="How a Brainstorm document becomes governed research">
+      <div class="bi-rail-step" data-current data-stage="brainstorm">
         <div class="bi-rail-k">Stage 1 · you are here</div>
-        <h2 class="bi-rail-name">Idea</h2>
-        <p class="bi-rail-note">A one-sentence hunch. Cheap, ungated, pre-SSOT.</p>
+        <h2 class="bi-rail-name">Brainstorm</h2>
+        <p class="bi-rail-note">One broad direction, revised in place as a full pre-package draft.</p>
         <span class="bi-rail-driver">/research-brainstorm</span>
       </div>
       <div class="bi-rail-step" data-stage="direction">
         <div class="bi-rail-k">Stage 2</div>
         <h2 class="bi-rail-name">Direction</h2>
-        <p class="bi-rail-note">A ratified objective + spec, accepted through Triage.</p>
+        <p class="bi-rail-note">Promoted only by explicit user decision, then accepted through Triage.</p>
         <span class="bi-rail-driver">/research-scope</span>
       </div>
       <div class="bi-rail-step" data-stage="package">
@@ -310,8 +196,8 @@
 
     <section class="ideas-section" data-section="ideas">
       <div class="category-link-bar">
-        <h2>Pre-package ideas</h2>
-        <span class="tag" id="brainstorm-ideas-count">0 ideas</span>
+        <h2>Pre-package documents</h2>
+        <span class="tag" id="brainstorm-ideas-count">0 documents</span>
       </div>
       <div class="package-grid" id="brainstorm-ideas-root"></div>
     </section>

@@ -38,6 +38,7 @@ HTML_FILES = (
     "scope.html",
     "learnings.html",
     "module.html",
+    "brainstorm/2026-07-20-fixture-brainstorm.html",
     "packages/fixture/index.html",
     "packages/fixture/plan.html",
     "packages/fixture/implementation.html",
@@ -46,13 +47,14 @@ HTML_FILES = (
     "packages/fixture/tracker.html",
     "packages/fixture/docs/index.html",
 )
-CSS_FILES = ("assets/research.css", "assets/toc.css")
+CSS_FILES = ("assets/research.css", "assets/toc.css", "assets/brainstorm.css")
 VISUAL_PAGES = (
     "index.html",
     "live.html",
     "scope.html",
     "learnings.html",
     "module.html?package=fixture&module=plan",
+    "brainstorm/2026-07-20-fixture-brainstorm.html",
     "packages/fixture/index.html",
     "packages/fixture/plan.html",
     "packages/fixture/implementation.html",
@@ -422,6 +424,58 @@ def _seed_fixture(paths: ResearchPaths) -> None:
         },
         actor=ACTOR,
         idempotency_key="interface-fixture:direction",
+        expected_version=0,
+    )
+    brainstorm_body = store.write_note(
+        (
+            '<section class="doc-section" id="core-question">'
+            '<h2><span class="section-number">01 </span>'
+            '<span>Core question</span></h2>'
+            '<p>Can one governed draft preserve a broad direction while its '
+            'dependent stages are refined?</p>'
+            '<div class="doc-callout"><strong>Authority boundary</strong>'
+            '<p>This document cannot authorize execution.</p></div></section>'
+            '<section class="doc-section wide" id="stages">'
+            '<h2><span class="section-number">02 </span>'
+            '<span>Dependent stages</span></h2>'
+            '<div class="table-wrap"><table class="doc-table">'
+            '<caption>One direction, several stages</caption><thead><tr>'
+            '<th scope="col">Stage</th><th scope="col">Decision</th>'
+            '</tr></thead><tbody><tr><td>Reproduction</td>'
+            '<td>Verify the mechanism.</td></tr><tr><td>Migration</td>'
+            '<td>Test the same claim in the target task.</td></tr></tbody>'
+            '</table></div></section>'
+        ),
+        mime="text/html;profile=brainstorm-fragment",
+        title="fixture Brainstorm body",
+    )
+    store.commit(
+        event_type="BrainstormCreated",
+        aggregate_type="brainstorm",
+        aggregate_id="fixture-brainstorm",
+        payload={
+            "record": {
+                "id": "fixture-brainstorm",
+                "title": "One revisable Brainstorm document",
+                "idea": "Keep one broad direction in one governed draft.",
+                "abstract": (
+                    "Test the document contract that keeps related reproduction, "
+                    "migration, audit, and risk work together until explicit promotion."
+                ),
+                "idea_snapshot": [
+                    {"label": "Core question", "value": "Can one draft stay coherent?"},
+                    {"label": "Authority", "value": "Pre-package only"},
+                ],
+                "document_note": brainstorm_body,
+                "created_at": "2026-07-20T00:00:00+00:00",
+                "updated_at": "2026-07-20T00:00:00+00:00",
+                "page_language": "en",
+                "status": "ACTIVE",
+                "detailPath": "brainstorm/2026-07-20-fixture-brainstorm.html",
+            }
+        },
+        actor=ACTOR,
+        idempotency_key="interface-fixture:brainstorm",
         expected_version=0,
     )
     store.commit(

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="$language">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="$meta_description">
+  <title>Brainstorm | $title</title>
+  <link rel="stylesheet" href="../assets/research.css">
+  <link rel="stylesheet" href="../assets/toc.css">
+  <link rel="stylesheet" href="../assets/brainstorm.css">
+  <script src="../assets/toc.js" defer></script>
+</head>
+<body data-page="brainstorm-document" data-brainstorm-status="$status_value">
+  <a class="skip-link" href="#brainstorm-content">$skip_label</a>
+  <div class="shell brainstorm-shell">
+    <nav class="doc-topbar" aria-label="Brainstorm navigation">
+      <a href="../categories/brainstorm/index.html">&larr; Research items / Brainstorm</a>
+      <div class="doc-status-line">
+        <span class="doc-status $status_class">$status_label</span>
+        <span>$revision_label</span>
+        <time datetime="$updated_datetime">$updated_label</time>
+      </div>
+    </nav>
+
+    <header class="doc-masthead">
+      <div>
+        <p class="doc-kicker">$kicker</p>
+        <h1 class="doc-title">$title</h1>
+        <p class="doc-deck">$deck</p>
+      </div>
+      <div class="doc-id-block">
+        <strong>$document_id_label</strong>
+        <code>$idea_id</code>
+      </div>
+    </header>
+
+    $archive_notice
+
+    <div class="doc-intro">
+      <section class="intro-panel" id="abstract">
+        <p class="section-label">Abstract / TLDR</p>
+        <h2>$abstract_heading</h2>
+        <div class="intro-copy">$abstract_html</div>
+      </section>
+      <section class="intro-panel" id="idea-snapshot">
+        <p class="section-label">Idea Snapshot</p>
+        <h2>$snapshot_heading</h2>
+        $snapshot_html
+      </section>
+    </div>
+
+    <div class="doc-layout" id="brainstorm-content">
+      <aside class="doc-sidebar" aria-label="Table of contents">
+        <nav class="docs-toc" data-docs-toc data-docs-toc-min="1"></nav>
+        <p class="toc-context">$toc_context</p>
+      </aside>
+      <main class="doc-article">
+        $body_html
+      </main>
+    </div>
+
+    <footer class="doc-footer">
+      <span>$footer_left</span>
+      <span>$footer_right</span>
+    </footer>
+  </div>
+</body>
+</html>

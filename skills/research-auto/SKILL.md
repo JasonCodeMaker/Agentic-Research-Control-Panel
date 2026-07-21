@@ -1,9 +1,7 @@
 ---
 name: research-auto
 description: "Use when the user invokes /research-auto or asks to run an autonomous research campaign over one committed Direction toward a measurable gate."
-argument-hint: "<direction text or direction-id> --gate \"<measurable gate>\" [--dial SUPERVISED|CHECKPOINTED|DEFERRED|AUTONOMOUS] [--max-cycles N]"
 allowed-tools: Bash(python3 *), Read, Grep, Glob, Agent
-disable-model-invocation: false
 ---
 
 # research-auto
@@ -176,8 +174,11 @@ python3 skills/research-auto/scripts/conductor.py status \
 Handle `action.type`:
 
 - `FORM_DIRECTION`: invoke `/research-brainstorm`, then submit the Direction, gate, dial, and cycle
-  budget through Triage. Pause for ratification.
-- `AWAIT_RATIFICATION`: show the pending proposal and pause.
+  budget through Triage. Use the single semantic review from `research-scope`
+  and pause for ratification.
+- `AWAIT_RATIFICATION`: if the semantic review has not been shown, show it
+  once through `research-scope`; otherwise report that the user decision is
+  still pending without repeating the proposal or exposing its id and hash.
 - `ASK_USER`: ask for a gate with one comparator clause.
 - any other route: the committed charter is usable.
 

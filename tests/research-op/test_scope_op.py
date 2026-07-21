@@ -381,6 +381,147 @@ def test_scope_transition_from_proposal_is_idempotent(tmp_path):
     assert len(EventStore(paths).events()) == 3
 
 
+def test_scope_accept_combines_user_disposition_and_bound_commit(tmp_path):
+    paths = _paths(tmp_path)
+    item = _proposal_item()
+    proposed = _triage(
+        [
+            "--research-root",
+            ".research",
+            "propose",
+            "--item",
+            json.dumps(item),
+            "--receipt",
+        ],
+        cwd=tmp_path,
+    )
+    assert proposed.returncode == 0, proposed.stdout + proposed.stderr
+    receipt = json.loads(proposed.stdout)
+    args = [
+        "--pkg",
+        "_scope",
+        "--op",
+        "scope-accept",
+        "--from-triage",
+        receipt["id"],
+        "--proposal-hash",
+        receipt["proposal_hash"],
+        "--actor-type",
+        "user",
+        "--actor-id",
+        "test-pm",
+        "--research-root",
+        ".research",
+    ]
+
+    first = _run(args, cwd=tmp_path)
+    second = _run(args, cwd=tmp_path)
+
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert second.returncode == 0, second.stdout + second.stderr
+    first_receipt = json.loads(first.stdout)
+    second_receipt = json.loads(second.stdout)
+    assert first_receipt["op"] == "scope-accept"
+    assert first_receipt["scope_id"] == "project/composed-video-retrieval"
+    assert first_receipt["idempotent"] is False
+    assert "record" not in first_receipt
+    assert second_receipt["idempotent"] is True
+    assert EventStore(paths).state()["aggregates"]["project"][
+        "project/composed-video-retrieval"
+    ]["status"] == "ACTIVE"
+    assert [event["event_type"] for event in EventStore(paths).events()] == [
+        "ProposalSubmitted",
+        "ProposalAccepted",
+        "ScopeCommitted",
+    ]
+
+
+def test_scope_accept_requires_explicit_user_actor(tmp_path):
+    paths = _paths(tmp_path)
+    item = _proposal_item()
+    proposed = _triage(
+        [
+            "--research-root",
+            ".research",
+            "propose",
+            "--item",
+            json.dumps(item),
+            "--receipt",
+        ],
+        cwd=tmp_path,
+    )
+    receipt = json.loads(proposed.stdout)
+
+    result = _run(
+        [
+            "--pkg",
+            "_scope",
+            "--op",
+            "scope-accept",
+            "--from-triage",
+            receipt["id"],
+            "--proposal-hash",
+            receipt["proposal_hash"],
+            "--research-root",
+            ".research",
+        ],
+        cwd=tmp_path,
+    )
+
+    assert result.returncode == 2
+    assert json.loads(result.stdout)["rule"] == "proposal-disposition-user-required"
+    assert EventStore(paths).state()["aggregates"]["project"] == {}
+    assert [row["id"] for row in management.pending_proposals(paths)] == [
+        item["id"]
+    ]
+
+
+def test_scope_accept_resumes_after_acceptance_precedes_failed_commit(tmp_path):
+    paths = _paths(tmp_path)
+    item = _proposal_item()
+    proposed = _triage(
+        [
+            "--research-root",
+            ".research",
+            "propose",
+            "--item",
+            json.dumps(item),
+            "--receipt",
+        ],
+        cwd=tmp_path,
+    )
+    receipt = json.loads(proposed.stdout)
+    base = [
+        "--pkg",
+        "_scope",
+        "--op",
+        "scope-accept",
+        "--from-triage",
+        receipt["id"],
+        "--proposal-hash",
+        receipt["proposal_hash"],
+        "--actor-type",
+        "user",
+        "--actor-id",
+        "test-pm",
+        "--research-root",
+        ".research",
+    ]
+
+    failed = _run([*base, "--expected-version", "1"], cwd=tmp_path)
+    resumed = _run(base, cwd=tmp_path)
+
+    assert failed.returncode == 2
+    assert json.loads(failed.stdout)["rule"] == "expected-version-conflict"
+    assert resumed.returncode == 0, resumed.stdout + resumed.stderr
+    assert EventStore(paths).state()["aggregates"]["proposal"][item["id"]][
+        "disposition"
+    ] == "ACCEPTED"
+    assert EventStore(paths).state()["aggregates"]["project"][
+        "project/composed-video-retrieval"
+    ]["status"] == "ACTIVE"
+
+
 def test_scope_transition_rejects_tampered_proposal_event(tmp_path):
     paths = _paths(tmp_path)
     item_id = _accept_proposal(tmp_path)

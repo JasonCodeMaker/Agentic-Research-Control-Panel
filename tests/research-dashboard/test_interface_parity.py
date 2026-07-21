@@ -17,13 +17,13 @@ from lib.interface.parity import (
 
 def test_frozen_dom_and_css_contract():
     result = check_contract(include_visual=False)
-    assert result.dom_files == 12
-    assert result.css_files == 2
+    assert result.dom_files == 13
+    assert result.css_files == 3
 
 
 def test_frozen_visual_contract():
     result = check_contract(include_visual=True)
-    assert result.visual_pages == 12
+    assert result.visual_pages == 13
 
 
 def test_contract_covers_every_frozen_page_and_exact_render_environment():

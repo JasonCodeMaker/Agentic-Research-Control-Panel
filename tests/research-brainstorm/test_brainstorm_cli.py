@@ -27,6 +27,38 @@ def test_cli_add_then_list(tmp_path, capsys):
     assert (tmp_path / ".research" / "interface" / added["detailPath"]).is_file()
 
 
+def test_cli_add_and_revise_document_body(tmp_path, capsys):
+    first = tmp_path / "first.html"
+    second = tmp_path / "second.html"
+    first.write_text("<section><h2>Initial draft</h2><p>v1</p></section>", encoding="utf-8")
+    second.write_text("<section><h2>Refined draft</h2><p>v2</p></section>", encoding="utf-8")
+    snapshot = [{"label": "Core question", "value": "Does it transfer?"}]
+
+    rc = brainstorm.main([
+        "add", "--workspace", str(tmp_path), "--id", "doc-one",
+        "--title", "Document one", "--idea", "Broad direction",
+        "--abstract", "Initial TLDR", "--snapshot", json.dumps(snapshot),
+        "--body-file", str(first),
+    ])
+    assert rc == 0
+    added = json.loads(capsys.readouterr().out)
+
+    rc = brainstorm.main([
+        "revise", "--workspace", str(tmp_path), "--id", "doc-one",
+        "--abstract", "Audited TLDR", "--body-file", str(second),
+    ])
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out)["revised"] is True
+
+    rendered = (
+        tmp_path / ".research" / "interface" / added["detailPath"]
+    ).read_text(encoding="utf-8")
+    assert "Audited TLDR" in rendered
+    assert "Refined draft" in rendered
+    assert "Initial draft" not in rendered
+    assert "Revision 2" in rendered
+
+
 def test_cli_remove(tmp_path, capsys):
     brainstorm.main(["add", "--workspace", str(tmp_path), "--title", "Idea", "--idea", "x", "--id", "bs-1"])
     capsys.readouterr()
@@ -34,6 +66,21 @@ def test_cli_remove(tmp_path, capsys):
     assert rc == 0
     capsys.readouterr()
     brainstorm.main(["list", "--workspace", str(tmp_path)])
+    assert json.loads(capsys.readouterr().out) == []
+
+
+def test_cli_delete_archived_duplicate(tmp_path, capsys):
+    brainstorm.main(["add", "--workspace", str(tmp_path), "--title", "Idea", "--idea", "x", "--id", "bs-1"])
+    capsys.readouterr()
+    brainstorm.main(["remove", "--workspace", str(tmp_path), "--id", "bs-1"])
+    capsys.readouterr()
+    rc = brainstorm.main([
+        "delete", "--workspace", str(tmp_path), "--id", "bs-1",
+        "--reason", "merged into canonical document", "--actor-id", "reviewer",
+    ])
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out)["deleted"] is True
+    brainstorm.main(["list", "--workspace", str(tmp_path), "--include-archived"])
     assert json.loads(capsys.readouterr().out) == []
 
 

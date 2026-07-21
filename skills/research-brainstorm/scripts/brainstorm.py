@@ -26,6 +26,7 @@ RESEARCH_OP_SCRIPTS = PIPELINE_ROOT / "skills" / "research-op" / "scripts"
 if str(RESEARCH_OP_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(RESEARCH_OP_SCRIPTS))
 
+from lib.interface.project import validate_brainstorm_document_fragment  # noqa: E402
 from lib.research_state import ResearchPaths, StateQuery  # noqa: E402
 from lib.research_state.io import canonical_json  # noqa: E402
 import management  # noqa: E402
@@ -87,6 +88,27 @@ def read_brainstorms(
     )["data"]["items"]
 
 
+def _materialize_document_note(
+    paths: ResearchPaths,
+    record: dict[str, Any],
+    *,
+    idea_id: str,
+) -> None:
+    """Replace transient document_html input with one verified NoteRef."""
+    if "document_html" not in record:
+        return
+    raw = record.pop("document_html")
+    if not isinstance(raw, str):
+        raise ValueError("document_html must be a string")
+    body = validate_brainstorm_document_fragment(raw)
+    record["document_note"] = management.write_note(
+        paths,
+        body,
+        mime="text/html;profile=brainstorm-fragment",
+        title=f"Brainstorm body: {idea_id}",
+    )
+
+
 def add_brainstorm(
     root: ResearchPaths | str | Path | None,
     record: dict[str, Any],
@@ -108,9 +130,11 @@ def add_brainstorm(
     entry = copy.deepcopy(record)
     entry["id"] = idea_id
     entry.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+    entry.setdefault("updated_at", entry["created_at"])
     entry.setdefault("page_language", "en")
     entry.setdefault("status", "ACTIVE")
     entry.setdefault("detailPath", brainstorm_detail_path(entry))
+    _materialize_document_note(paths, entry, idea_id=idea_id)
     management.create_brainstorm(
         paths,
         idea_id,
@@ -145,14 +169,19 @@ def revise_brainstorm(
         raise KeyError(f"unknown brainstorm: {idea_id}")
     if current.get("status") == "ARCHIVED":
         raise ValueError(f"cannot revise archived brainstorm: {idea_id}")
+    revision = copy.deepcopy(patch)
+    revision.setdefault("updated_at", datetime.now(timezone.utc).isoformat())
+    _materialize_document_note(paths, revision, idea_id=idea_id)
     version = int(view["versions"].get(idea_id, 0))
     event = management.revise_brainstorm(
         paths,
         idea_id,
-        patch,
+        revision,
         expected_version=version,
         actor=actor or {"type": "agent", "id": "research-brainstorm"},
-        idempotency_key=f"brainstorm:revise:{idea_id}:v{version + 1}:{_digest(patch)}",
+        idempotency_key=(
+            f"brainstorm:revise:{idea_id}:v{version + 1}:{_digest(revision)}"
+        ),
     )
     return event
 
@@ -162,6 +191,7 @@ def remove_brainstorm(
     idea_id: str,
     *,
     reason: str = "removed from active brainstorm lane",
+    merged_into: str | None = None,
     actor: dict[str, str] | None = None,
 ) -> bool:
     """Archive one idea semantically; never delete history or interface files."""
@@ -178,6 +208,20 @@ def remove_brainstorm(
         "archived_at": datetime.now(timezone.utc).isoformat(),
         "archive_reason": reason,
     }
+    if merged_into:
+        if merged_into == idea_id:
+            raise ValueError("a Brainstorm cannot be merged into itself")
+        target_view = StateQuery(paths).brainstorms(
+            idea_id=merged_into,
+            include_archived=True,
+        )["data"]
+        target = target_view["items"][0] if target_view["items"] else None
+        if not isinstance(target, dict) or target.get("status") == "ARCHIVED":
+            raise ValueError(f"merged-into Brainstorm must be ACTIVE: {merged_into}")
+        patch["merged_into"] = merged_into
+        patch["merged_detail_path"] = target.get("detailPath") or brainstorm_detail_path(
+            target
+        )
     management.archive_brainstorm(
         paths,
         idea_id,
@@ -185,6 +229,34 @@ def remove_brainstorm(
         expected_version=version,
         actor=actor or {"type": "agent", "id": "research-brainstorm"},
         idempotency_key=f"brainstorm:archive:{idea_id}",
+    )
+    return True
+
+
+def discard_brainstorm(
+    root: ResearchPaths | str | Path | None,
+    idea_id: str,
+    *,
+    reason: str,
+    actor: dict[str, str],
+) -> bool:
+    """Remove one archived duplicate from current state, preserving event history."""
+    paths = _coerce_paths(root)
+    view = StateQuery(paths).brainstorms(
+        idea_id=idea_id,
+        include_archived=True,
+    )["data"]
+    current = view["items"][0] if view["items"] else None
+    if not isinstance(current, dict):
+        return False
+    version = int(view["versions"].get(idea_id, 0))
+    management.discard_brainstorm(
+        paths,
+        idea_id,
+        reason=reason,
+        expected_version=version,
+        actor=actor,
+        idempotency_key=f"brainstorm:discard:{idea_id}:v{version + 1}",
     )
     return True
 
@@ -290,6 +362,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_location_arguments(add)
     add.add_argument("--title", required=True)
     add.add_argument("--idea", required=True)
+    add.add_argument("--abstract")
+    add.add_argument("--snapshot", help="JSON string, object, or list")
+    add.add_argument("--body-file", help="HTML fragment for the free-form document body")
     add.add_argument("--id")
     add.add_argument("--rough-metric")
     add.add_argument("--lit-refs", help="JSON list of source refs")
@@ -302,12 +377,22 @@ def build_parser() -> argparse.ArgumentParser:
     revise = sub.add_parser("revise")
     _add_location_arguments(revise)
     revise.add_argument("--id", required=True)
-    revise.add_argument("--patch", required=True, help="JSON object")
+    revise.add_argument("--patch", default="{}", help="JSON object")
+    revise.add_argument("--abstract")
+    revise.add_argument("--snapshot", help="JSON string, object, or list")
+    revise.add_argument("--body-file", help="HTML fragment for the free-form document body")
 
     remove = sub.add_parser("remove")
     _add_location_arguments(remove)
     remove.add_argument("--id", required=True)
     remove.add_argument("--reason", default="removed from active brainstorm lane")
+    remove.add_argument("--merged-into")
+
+    delete = sub.add_parser("delete")
+    _add_location_arguments(delete)
+    delete.add_argument("--id", required=True)
+    delete.add_argument("--reason", required=True)
+    delete.add_argument("--actor-id", required=True)
 
     project = sub.add_parser("check-project")
     _add_location_arguments(project)
@@ -330,6 +415,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "add":
         paths = _paths_from_args(args)
         record: dict[str, Any] = {"title": args.title, "idea": args.idea}
+        if args.abstract:
+            record["abstract"] = args.abstract
+        if args.snapshot:
+            record["idea_snapshot"] = json.loads(args.snapshot)
+        if args.body_file:
+            record["document_html"] = Path(args.body_file).read_text(encoding="utf-8")
         if args.id:
             record["id"] = args.id
         if args.rough_metric:
@@ -359,10 +450,19 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
     elif args.cmd == "revise":
+        patch = json.loads(args.patch)
+        if not isinstance(patch, dict):
+            raise ValueError("--patch must be a JSON object")
+        if args.abstract:
+            patch["abstract"] = args.abstract
+        if args.snapshot:
+            patch["idea_snapshot"] = json.loads(args.snapshot)
+        if args.body_file:
+            patch["document_html"] = Path(args.body_file).read_text(encoding="utf-8")
         event = revise_brainstorm(
             _paths_from_args(args),
             args.id,
-            json.loads(args.patch),
+            patch,
         )
         print(json.dumps({"revised": True, "event_id": event["event_id"]}))
     elif args.cmd == "remove":
@@ -373,6 +473,20 @@ def main(argv: list[str] | None = None) -> int:
                         _paths_from_args(args),
                         args.id,
                         reason=args.reason,
+                        merged_into=args.merged_into,
+                    )
+                }
+            )
+        )
+    elif args.cmd == "delete":
+        print(
+            json.dumps(
+                {
+                    "deleted": discard_brainstorm(
+                        _paths_from_args(args),
+                        args.id,
+                        reason=args.reason,
+                        actor={"type": "user", "id": args.actor_id},
                     )
                 }
             )

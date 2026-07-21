@@ -144,6 +144,7 @@ def _parser() -> argparse.ArgumentParser:
             "update",
             "delete",
             "scan-events",
+            "scope-accept",
             "scope-transition",
             "registry-add",
             "evolution-observe",
@@ -163,6 +164,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--scope", default="package")
     parser.add_argument("--payload", default="{}")
     parser.add_argument("--from-triage")
+    parser.add_argument("--proposal-hash")
     parser.add_argument("--workspace", default=".")
     parser.add_argument("--research-root")
     parser.add_argument("--idempotency-key")
@@ -271,6 +273,83 @@ def _scope_transition(args: argparse.Namespace, paths, payload) -> int:
                 "aggregate_version": event["aggregate_version"],
                 "idempotent": idempotent,
                 "record": record,
+                **_interface_fields([event]),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def _scope_accept(args: argparse.Namespace, paths, payload) -> int:
+    """Accept one visible proposal and commit its bound Scope snapshot."""
+    actor = {"type": args.actor_type, "id": args.actor_id}
+    if args.pkg != "_scope":
+        return _error(
+            ValueError("scope-accept requires --pkg _scope"),
+            phase="scope-accept",
+            package_id=args.pkg,
+            operation=args.op,
+            paths=paths,
+            payload=payload,
+            actor=actor,
+            idempotency_key=args.idempotency_key,
+        )
+    try:
+        if not args.from_triage:
+            raise ValueError(
+                "scope-accept requires --from-triage <pending-proposal-id>"
+            )
+        if not args.proposal_hash:
+            raise ValueError(
+                "scope-accept requires --proposal-hash <visible-proposal-hash>"
+            )
+        disposition, _accepted_event = management.dispose_proposal(
+            paths,
+            args.from_triage,
+            "ACCEPTED",
+            args.proposal_hash,
+            actor=actor,
+        )
+        accepted_payload, causation_id = management.accepted_scope_payload(
+            paths,
+            args.from_triage,
+        )
+        event, record, idempotent = management.commit_scope_transition(
+            paths,
+            accepted_payload,
+            actor=actor,
+            idempotency_key=args.idempotency_key,
+            expected_version=args.expected_version,
+            causation_id=causation_id,
+        )
+    except Exception as exc:
+        return _error(
+            exc,
+            phase="scope-accept",
+            package_id=args.pkg,
+            operation=args.op,
+            paths=paths,
+            payload={
+                "proposal_id": args.from_triage,
+                "proposal_hash": args.proposal_hash,
+            },
+            actor=actor,
+            idempotency_key=args.idempotency_key,
+        )
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "op": "scope-accept",
+                "disposition": disposition,
+                "proposal_id": args.from_triage,
+                "scope_id": record.get("id"),
+                "level": record.get("level"),
+                "event_id": event["event_id"],
+                "aggregate_version": event["aggregate_version"],
+                "idempotent": idempotent,
                 **_interface_fields([event]),
             },
             indent=2,
@@ -564,6 +643,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.op and args.op.startswith("evolution-"):
         return _evolution(args, payload, paths)
+    if args.op == "scope-accept":
+        return _scope_accept(args, paths, payload)
     if args.op == "scope-transition":
         return _scope_transition(args, paths, payload)
     if args.op == "registry-add":

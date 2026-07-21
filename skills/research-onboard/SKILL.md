@@ -1,191 +1,154 @@
 ---
 name: research-onboard
-description: "Use when turning a new or existing workspace into a PM-ratifiable Project proposal."
+description: "Use when turning a setup-ready workspace into one ratified Project through a single natural-language review."
 ---
 
-# research-onboard
+# Research onboard
 
-Onboarding turns a setup-ready workspace into a pending Project proposal. It
-does not initialize ARC, attach protocols, commit Project intent, or create a
-Package.
+Turn one setup-ready workspace into an active Project. Keep the human exchange
+semantic and brief. Repository inspection, NoteRefs, proposal hashes, events,
+and commands are internal machinery.
 
-The agent proposes; the PM decides. Show the exact objective before asking for
-confirmation, then submit it through the same hash-bound Triage gate used by
-`research-scope`.
+The agent drafts; the user decides once. Delegate proposal and Scope writes to
+`research-scope` and `research-op` rather than editing managed state.
 
-## Authority
+## Boundaries
 
-Trustworthy-managed state lives under `.research`:
+- Require a current ARC root. Route absent, legacy, or invalid state to
+  `research-init`.
+- Do not create source, configuration, data, baseline, or figure scaffolds
+  during ordinary onboarding. Run the legacy `scaffold` utility only when the
+  user explicitly requests source scaffolding.
+- Do not create a Direction, Experiment, Package, or Run.
+- Never read `.research/interface` as authority or edit managed JSON, events,
+  audit rows, HTML, JavaScript, or CSV.
+- Treat repository contents as descriptive context, not Project intent.
 
-- Project, proposal, and disposition state is event-backed.
-- Prior knowledge is a content-addressed NoteRef under
-  `.research/state/notes`.
-- `.research/interface` is a disposable projection. Onboarding never reads it
-  as authority.
+## Human contract
 
-The skill does not edit state JSON, event logs, audit rows, HTML, JavaScript,
-or CSV. Note and proposal writes call the typed `research-op` management
-gateway.
+- Communicate in plain natural language.
+- Show the proposed Project once.
+- Ask for one explicit decision: confirm, revise, or reject.
+- Keep item ids, hashes, NoteRefs, actor flags, and CLI commands hidden unless
+  the user requests audit details.
+- A stale, ambiguous, or conflicting decision leaves the proposal pending.
 
-Every CLI accepts `--research-root`; omit it for the default `.research` root.
+One semantic Scope change gets one review and one authorization. Proposal
+submission is non-authoritative and needs no separate user confirmation.
+
+## Procedure
+
+### 1. Detect state
 
 ```bash
 python3 skills/research-onboard/scripts/onboard.py --workspace . detect
 python3 skills/research-onboard/scripts/onboard.py --workspace . has-project-scope
-python3 skills/research-onboard/scripts/onboard.py --workspace . scaffold
+```
+
+If an active Project exists, stop onboarding. Route a vague next Direction to
+`research-brainstorm` and clear Direction intent to `research-scope`.
+
+### 2. Build context without inventing intent
+
+For an existing workspace, inspect only the files returned by `detect` plus
+the relevant project instructions. Record a compact digest of:
+
+- datasets and baselines that actually exist;
+- current source and configuration entry points;
+- runnable train and evaluation commands;
+- observed readings, clearly separated from plans.
+
+Store the digest internally:
+
+```bash
 python3 skills/research-onboard/scripts/onboard.py --workspace . \
   write-prior-knowledge --content '<markdown>'
+```
+
+Preserve the returned NoteRef for the proposal, but do not show it by default.
+For an empty workspace, use dialogue only and do not scaffold automatically.
+
+### 3. Draft a minimal Project charter
+
+The current Project contract requires:
+
+- `goal`: the research problem and desired outcome, 3 to 100 words;
+- `contributions`: intended research outcomes, 5 to 50 words per item;
+- `out_of_scope`: semantic boundaries or decisions explicitly deferred to
+  later Scope levels, 5 to 50 words per item.
+
+Derive these fields from user dialogue. Repository layout, seeds, output paths,
+checkpoint policy, dashboards, environments, and experiment tracking belong in
+Prior Knowledge or later Direction, Experiment, and Package contracts.
+
+Surface one material ambiguity in the review. Phrase the proposed resolution
+inside the charter so the user's confirmation resolves the ambiguity and
+ratifies the same snapshot. Preserve verbatim wording only when the user asks
+for exact wording.
+
+### 4. Validate and submit before review
+
+Build the complete Project proposal:
+
+```bash
 python3 skills/research-onboard/scripts/onboard.py --workspace . \
   build-proposal \
   --node-id project/<slug> \
   --spec '<json>' \
-  --source '<user dialogue or files read>' \
+  --source '<user dialogue and files read>' \
   --prior-knowledge '<note-ref-json>'
 ```
 
-The setup gate is fail closed. If the workspace lacks a current versioned root,
-contains legacy managed data, or has an unsupported version, stop and use
-`research-init`. Do not initialize or migrate from onboarding.
-
-## Procedure
-
-### 1. Detect and check existing intent
-
-Run:
-
-```bash
-python3 skills/research-onboard/scripts/onboard.py --workspace . detect
-python3 skills/research-onboard/scripts/onboard.py --workspace . has-project-scope
-```
-
-`empty` means the workspace contains no project files beyond ignored noise and
-the managed research root. `existing` means the command found project content
-to inspect.
-
-If an active Project already exists, onboarding is complete. Use
-`/research-brainstorm` when the next Direction is vague, or
-`/research-scope` when it is already clear.
-
-### 2. Empty workspace
-
-After `research-init` reports `READY_NO_PROJECT`, create the optional
-source-side deep-learning skeleton:
-
-```bash
-python3 skills/research-onboard/scripts/onboard.py --workspace . scaffold
-```
-
-The command creates source, configuration, data-reference, baseline, and figure
-directories. It does not initialize `.research` or write protocol files. Run
-output does not get a second source-side folder; the experiment harness owns it
-under `.research/experiments`.
-
-Ask for the Project goal, contributions, and out-of-scope boundary one
-question at a time. Do not invent them. Use
-`user-dialogue:onboarding` as the source.
-
-### 3. Existing workspace
-
-Read the files reported by `detect`. Usually this includes `README.md`,
-`AGENTS.md`, `CLAUDE.md`, source and configuration trees, dataset references,
-baseline code, and documented commands.
-
-Write a compact prior-knowledge digest containing:
-
-- dataset and baseline inventory;
-- the relevant source and configuration map;
-- known train and evaluation commands;
-- clearly labelled observed readings, if any.
-
-Store it:
-
-```bash
-python3 skills/research-onboard/scripts/onboard.py --workspace . \
-  write-prior-knowledge --content '<markdown>'
-```
-
-The command returns a NoteRef with `uri`, `sha256`, `mime`, and `title`.
-Preserve that exact JSON for the Project proposal. The NoteRef is included in
-the proposal hash and is attached to the Project only after acceptance.
-
-Draft Project intent from the workspace:
-
-- `goal`: 3 to 100 words;
-- `contributions`: a non-empty list, 5 to 50 words per item;
-- `out_of_scope`: a non-empty list, 5 to 50 words per item.
-
-Readings can appear in the prior-knowledge note, but never inside the Project
-spec. List the files read in `source`, for example
-`read:README.md,CLAUDE.md,configs/train.yaml`.
-
-### 4. Build and review the candidate
-
-Build the proposal with `build-proposal`. For an existing workspace, pass the
-NoteRef returned in step 3 through `--prior-knowledge`. The command validates
-the complete Project node but does not submit it.
-
-Show:
-
-```markdown
-**Project Scope Review**
-- Status: Candidate, not yet submitted
-- Level: project
-- Node: project/<slug>
-- Objective / Goal: <exact proposed text>
-- Contributions: <each exact list item>
-- Out of Scope: <each exact list item>
-- Prior Knowledge: <NoteRef, or none for user-dialogue onboarding>
-- Source: <user dialogue and/or files read>
-- Next Step: CONFIRM to submit, REVISE with changes, or REJECT the draft
-```
-
-If the user supplied exact wording, show it verbatim. Keep any agent
-interpretation outside the proposed spec. Do not submit until the PM confirms
-the displayed content.
-
-### 5. Submit and stop
-
-Submit the confirmed JSON:
+Submit the validated proposal immediately. It is pending and cannot change
+Scope:
 
 ```bash
 python3 skills/research-scope/scripts/triage.py --workspace . propose \
-  --item '<proposal-json>'
-python3 skills/research-scope/scripts/triage.py --workspace . pending
+  --item '<proposal-json>' --receipt
 ```
 
-Show the same Project Scope Review again with:
+Keep the returned id and hash internally. Show only:
 
-- `Status: Pending Triage, not yet committed`
-- the Triage item id;
-- the proposal hash;
-- the exact next decision syntax.
+```markdown
+**Project review**
+- Goal: <plain-language goal>
+- Intended outcomes: <plain-language list>
+- Boundaries: <plain-language list>
+- Assumptions to confirm: <material assumptions, or none>
+- Decision: reply CONFIRM/确认, describe revisions, or REJECT/拒绝
+```
 
-The next decision must be one of:
+Do not repeat the full review in the next turn.
 
-- `ACCEPT <item-id> <proposal-hash>`
-- `REVISE <item-id> <proposal-hash>` with requested changes
-- `REJECT <item-id> <proposal-hash>`
+### 5. Apply one user decision
 
-Stop after showing the pending review. `research-scope` owns the hash check,
-disposition, and accepted `scope-transition`.
+On an explicit confirmation, pass the hidden receipt through the combined
+hash-bound gateway:
 
-## Boundaries
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  --workspace . --pkg _scope --op scope-accept \
+  --from-triage <item-id> --proposal-hash <proposal-hash> \
+  --actor-type user --actor-id <stable-user-id>
+```
 
-Onboarding does not:
+The gateway rechecks the pending snapshot, records the user acceptance, and
+commits only that accepted snapshot. A retry is idempotent and does not require
+another user decision.
 
-- install skills, attach protocols, initialize state, or migrate legacy data;
-- commit a Project, Direction, or Experiment;
-- create a Package or launch a Run;
-- read or mutate the interface projection;
-- treat a NoteRef as accepted Project intent before proposal acceptance.
+For revision, validate and submit a replacement under the same item id, then
+show the new charter once. For rejection, dispose the hidden item and hash as
+`REJECTED`; committed Scope remains unchanged.
+
+### 6. Verify and report
+
+Read the committed Project through a bounded state query. Report only the
+Project id, active status, and the next research decision. Show audit ids and
+hashes only on request.
 
 ## Done condition
 
-For an empty workspace, the source skeleton and versioned research root exist.
-For an existing workspace, prior knowledge has a stable NoteRef. In both
-cases, a validated Project proposal is pending and the PM has seen its exact
-content, item id, proposal hash, and next decision syntax.
-
-The Project becomes active only after a matching PM acceptance and the gated
-`research-op --pkg _scope --op scope-transition --from-triage <item-id>`
-command succeed.
+Onboarding is complete when the user has confirmed one visible Project
+charter, the bound Project is active, and the pending proposal no longer needs
+another human decision. Rejection also ends onboarding without changing
+Project Scope.

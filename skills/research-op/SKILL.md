@@ -3,7 +3,6 @@ name: research-op
 description: "Use when a governed research-state query, package mutation, Scope commit, knowledge registration, run reconciliation, or self-evolve transition is required."
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
 context: fork
-disable-model-invocation: false
 ---
 
 # Research operation gateway
@@ -122,9 +121,10 @@ The status command then references `terminal_decision_id`; success additionally
 references `verifier_decision_id` and supplies `terminationMessage` plus
 `adoptionPath`. A free-form `ack` string has no authority.
 
-For natural-language requests, translate the intent into this structured shape
-and show the user the command preview when the change is consequential.
-`--nl` deliberately does not parse prose; it exits with a translation prompt.
+For natural-language requests, translate intent into this structured shape and
+show the semantic change in plain language. Keep CLI, ids, hashes, and payloads
+internal unless the user requests audit details. `--nl` deliberately does not
+parse prose; it exits with a translation prompt.
 
 Never use a Package mutation to create or revise `Experiment.spec`.
 `experiments-row insert` accepts `scope_experiment_id`, `local_id`, and
@@ -139,8 +139,28 @@ The formal hierarchy is:
 Project -> Direction -> Experiment.spec
 ```
 
-Project, Direction, and Experiment changes retain their distinct gates. To
-commit an accepted proposal:
+Project, Direction, and Experiment changes retain their distinct gates. For an
+ordinary conversational approval, use one call that records the user decision
+and commits the exact bound snapshot:
+
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  --workspace <workspace> \
+  --pkg _scope \
+  --op scope-accept \
+  --from-triage <proposal-id> \
+  --proposal-hash <proposal-hash> \
+  --actor-type user \
+  --actor-id <stable-user-id>
+```
+
+`scope-accept` preserves separate `ProposalAccepted` and semantic Scope events.
+It rechecks the pending hash, user actor, accepted snapshot, causation, Scope
+version, and idempotency. Retrying the same accepted proposal is safe and does
+not require another user decision.
+
+The lower-level compatibility path commits a proposal whose disposition was
+already recorded:
 
 ```bash
 python3 skills/research-op/scripts/research_op.py \

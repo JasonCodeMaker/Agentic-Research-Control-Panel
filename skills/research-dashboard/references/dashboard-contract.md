@@ -60,6 +60,18 @@ The generated root keeps these human-facing pages:
 - `categories/success/index.html`
 - `categories/fail/index.html`
 
+Each state-backed Brainstorm also keeps one stable generated route:
+
+- `brainstorm/<created-date>-<brainstorm-id>.html`
+
+That route is a complete document-style page. The renderer combines the shared
+`templates/brainstorm-document.html` shell and `assets/brainstorm.css` with the
+current content-addressed `document_note` body fragment. Title, Abstract / TLDR,
+Idea Snapshot, generated ToC, lifecycle metadata, and revision provenance are
+shell responsibilities. Section names and research content remain free-form.
+Migrated `detail_note` pages are compatibility overrides, not the authoring
+model for new documents.
+
 Each projected package keeps:
 
 - `packages/<package>/plan.html`
@@ -131,6 +143,7 @@ regression-protected:
 - DOM hierarchy and contract-bearing `id`, `class`, `href`, `src`, `name`,
   `type`, and `role` attributes;
 - `assets/research.css` and `assets/toc.css`;
+- the shared Brainstorm document shell and `assets/brainstorm.css`;
 - the fixed viewport and Chromium major;
 - screenshot perceptual hashes for the global, module, and representative
   package pages.
@@ -142,10 +155,9 @@ The checked baseline is
 python3 -m lib.interface.parity check
 ```
 
-The current contract covers 11 DOM pages, 2 CSS files, and 7 visual pages,
-including `module.html?pkg=fixture&module=plan`. `--no-visual` is an
-intermediate check only. Do not update the baseline to hide an accidental UI
-change.
+The exact protected page counts are recorded by the parity fixture and checked
+against `lib.interface.parity`. `--no-visual` is an intermediate check only. Do
+not update the baseline to hide an accidental UI change.
 
 State plumbing and narrowly necessary path or serve guidance may change without
 a redesign. Any change to page composition, navigation, module routing, DOM

@@ -7,7 +7,9 @@ import html
 import json
 import re
 from dataclasses import dataclass
-from pathlib import PurePosixPath
+from functools import lru_cache
+from pathlib import Path, PurePosixPath
+from string import Template
 from typing import Any, Iterable, Mapping
 
 from lib.research_state.policy import STATES
@@ -19,8 +21,8 @@ CATEGORIES = [
         "id": "brainstorm",
         "title": "Brainstorm",
         "summary": (
-            "Pre-package ideas (not packages, not in the SSOT). "
-            "Convert one or more into a Direction + package."
+            "Revisable pre-package documents (not Directions or Packages). "
+            "Promote one only after an explicit user decision."
         ),
         "href": "categories/brainstorm/",
     },
@@ -43,6 +45,20 @@ CATEGORIES = [
         "href": "categories/fail/",
     },
 ]
+
+BRAINSTORM_TEMPLATE = (
+    Path(__file__).resolve().parents[2]
+    / "skills"
+    / "research-dashboard"
+    / "templates"
+    / "brainstorm-document.html"
+)
+
+_BRAINSTORM_FRAGMENT_FORBIDDEN = re.compile(
+    r"<!doctype|</?(?:html|head|body|script|style|link|iframe|object|embed|nav)\b",
+    re.IGNORECASE,
+)
+_BRAINSTORM_FRAGMENT_HANDLER = re.compile(r"\son[a-z]+\s*=", re.IGNORECASE)
 
 TAG_ROLES = {
     "brainstorm": {
@@ -303,6 +319,9 @@ def rule_views(
 
 def brainstorm_views(state: Mapping[str, Any]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    versions = state.get("aggregate_versions", {})
+    if not isinstance(versions, Mapping):
+        versions = {}
     for brainstorm_id, row in _bucket(state, "brainstorm").items():
         if not isinstance(row, Mapping):
             continue
@@ -316,11 +335,15 @@ def brainstorm_views(state: Mapping[str, Any]) -> list[dict[str, Any]]:
             projected["detailPath"] = (
                 f"brainstorm/{date_prefix}{projected['id']}.html"
             )
+        projected.setdefault(
+            "revision",
+            int(versions.get(f"brainstorm/{brainstorm_id}", 1)),
+        )
         rows.append(projected)
     return sorted(rows, key=lambda row: str(row.get("id", "")))
 
 
-def _brainstorm_detail_path(record: Mapping[str, Any]) -> str:
+def brainstorm_detail_path(record: Mapping[str, Any]) -> str:
     raw = str(record.get("detailPath") or "")
     relative = PurePosixPath(raw)
     if (
@@ -334,97 +357,245 @@ def _brainstorm_detail_path(record: Mapping[str, Any]) -> str:
     return relative.as_posix()
 
 
-def render_brainstorm_page(record: Mapping[str, Any]) -> str:
-    """Render the existing compact brainstorm detail layout from one aggregate."""
-    idea_id = html.escape(str(record.get("id") or ""), quote=True)
-    title = html.escape(str(record.get("title") or idea_id), quote=True)
-    idea = html.escape(str(record.get("idea") or ""), quote=True)
-    rough_metric = html.escape(
-        str(record.get("rough_metric") or "Not specified yet"), quote=True
-    )
-    created = html.escape(str(record.get("created_at") or "")[:10], quote=True)
-    language = html.escape(str(record.get("page_language") or "en"), quote=True)
+def validate_brainstorm_document_fragment(text: str) -> str:
+    """Validate one free-form body without allowing it to replace the shell."""
+    if not isinstance(text, str) or not text.strip():
+        raise ValueError("brainstorm document body must be a non-empty HTML fragment")
+    if _BRAINSTORM_FRAGMENT_FORBIDDEN.search(text):
+        raise ValueError(
+            "brainstorm document body must not contain page-shell or executable tags"
+        )
+    if _BRAINSTORM_FRAGMENT_HANDLER.search(text):
+        raise ValueError("brainstorm document body must not contain inline event handlers")
+    if not re.search(r"<h2\b", text, re.IGNORECASE):
+        raise ValueError("brainstorm document body must contain at least one h2 section")
+    return text.strip()
+
+
+@lru_cache(maxsize=1)
+def _brainstorm_template_text() -> str:
+    if not BRAINSTORM_TEMPLATE.is_file():
+        raise FileNotFoundError(f"missing Brainstorm document template: {BRAINSTORM_TEMPLATE}")
+    return BRAINSTORM_TEMPLATE.read_text(encoding="utf-8")
+
+
+def _paragraphs(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return '<p class="snapshot-copy">Not specified yet.</p>'
+    blocks = [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
+    return "\n".join(f"<p>{html.escape(part)}</p>" for part in blocks)
+
+
+def _snapshot_html(record: Mapping[str, Any], *, chinese: bool) -> str:
+    raw = record.get("idea_snapshot")
+    rows: list[tuple[str, str]] = []
+    if isinstance(raw, Mapping):
+        rows = [(str(label), str(value)) for label, value in raw.items()]
+    elif isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, Mapping) and item.get("label") is not None:
+                rows.append((str(item["label"]), str(item.get("value") or "")))
+            elif item is not None:
+                rows.append(("", str(item)))
+    elif raw is not None:
+        return f'<p class="snapshot-copy">{html.escape(str(raw))}</p>'
+
+    if not rows:
+        idea = str(record.get("idea") or "").strip()
+        metric = str(record.get("rough_metric") or "").strip()
+        if idea:
+            rows.append(("当前想法" if chinese else "Working idea", idea))
+        if metric:
+            rows.append(("粗略指标" if chinese else "Rough metric", metric))
+        if not rows:
+            rows.append(("状态" if chinese else "Status", "Draft"))
+
+    rendered = []
+    for label, value in rows:
+        rendered.append(
+            "<div>"
+            f"<dt>{html.escape(label or ('要点' if chinese else 'Point'))}</dt>"
+            f"<dd>{html.escape(value)}</dd>"
+            "</div>"
+        )
+    return '<dl class="snapshot-list">' + "".join(rendered) + "</dl>"
+
+
+def _default_brainstorm_body(record: Mapping[str, Any], *, chinese: bool) -> str:
+    idea = html.escape(str(record.get("idea") or "Not specified yet."))
+    rough_metric = str(record.get("rough_metric") or "").strip()
     refs = record.get("lit_refs") if isinstance(record.get("lit_refs"), list) else []
+    title = "工作草案" if chinese else "Working draft"
+    body = [
+        '<section class="doc-section" id="working-draft">',
+        f'<h2><span class="section-number">01 </span><span>{title}</span></h2>',
+        f"<p>{idea}</p>",
+    ]
+    if rough_metric:
+        label = "当前粗略指标" if chinese else "Current rough metric"
+        body.extend(
+            [
+                '<div class="doc-callout neutral">',
+                f"<strong>{label}</strong>",
+                f"<p>{html.escape(rough_metric)}</p>",
+                "</div>",
+            ]
+        )
+    body.append("</section>")
     if refs:
-        refs_html = "\n".join(
-            f"              <li>{html.escape(str(ref), quote=True)}</li>"
+        grounding = "依据与来源" if chinese else "Grounding"
+        items = "".join(
+            f"<li><code>{html.escape(str(ref))}</code><span></span></li>"
             for ref in refs
         )
-    else:
-        refs_html = (
-            '              <li class="muted">'
-            "No literature grounding recorded yet.</li>"
+        body.extend(
+            [
+                '<section class="doc-section" id="grounding">',
+                f'<h2><span class="section-number">02 </span><span>{grounding}</span></h2>',
+                f'<ul class="source-list">{items}</ul>',
+                "</section>",
+            ]
         )
-    date_label = f" - {created}" if created else ""
-    return f"""<!doctype html>
-<html lang="{language}">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Brainstorm - {title}</title>
-  <link rel="stylesheet" href="../assets/research.css">
-  <style>
-    .callout {{ border-left: 4px solid var(--clay); background: #fbf4ea; padding: 12px 16px; margin: 16px 0; font-size: 14px; }}
-    .callout.note {{ border-left-color: #56708e; background: #eef2f8; }}
-    .tagline {{ color: var(--g500); font-family: var(--mono); font-size: 11px; letter-spacing: 0.10em; text-transform: uppercase; }}
-    .field-grid {{ display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 12px 18px; margin-top: 16px; }}
-    .field-grid dt {{ color: var(--g500); font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }}
-    .field-grid dd {{ margin: 0; color: var(--slate); }}
-    .muted {{ color: var(--g500); font-style: italic; }}
-    @media (max-width: 720px) {{ .field-grid {{ grid-template-columns: 1fr; }} }}
-  </style>
-</head>
-<body data-page="brainstorm">
-  <div class="shell">
-    <div class="callout note" style="margin:0 0 18px;">
-      <span class="tagline">pre-package idea{date_label}</span>
-      <p style="margin:6px 0 0;">This is an automatically generated brainstorm page. It is readable by default, but it is not a ratified Direction, not a package, and not an SSOT change.</p>
-    </div>
-
-    <header class="masthead" data-section="masthead">
-      <div class="eyebrow">Brainstorm &middot; pre-package idea</div>
-      <h1>{title}</h1>
-      <p class="lead">{idea}</p>
-      <div class="toolbar">
-        <a class="pill" href="../categories/brainstorm/index.html">Brainstorm lane</a>
-        <a class="pill" href="../index.html">Dashboard</a>
-      </div>
-    </header>
-
-    <main>
-      <section data-section="idea">
-        <article class="module-card">
-          <h2>Idea Snapshot</h2>
-          <dl class="field-grid">
-            <dt>Idea ID</dt>
-            <dd><code>{idea_id}</code></dd>
-            <dt>Rough metric</dt>
-            <dd>{rough_metric}</dd>
-            <dt>Grounding</dt>
-            <dd>
-              <ul style="margin:0; padding-left:18px;">
-{refs_html}
-              </ul>
-            </dd>
-            <dt>Next decision</dt>
-            <dd>Shape this hunch into a typed spec only when the user is ready: <code>{{hypothesis, metric, baselines, success_gate}}</code>. Submit any Direction through Triage; do not commit the SSOT from this page.</dd>
-          </dl>
-        </article>
-      </section>
-    </main>
-  </div>
-</body>
-</html>
-"""
+    return "\n".join(body)
 
 
-def brainstorm_pages(rows: Iterable[Mapping[str, Any]]) -> dict[str, str]:
+def _archive_notice(record: Mapping[str, Any], *, chinese: bool) -> str:
+    if str(record.get("status") or "").upper() != "ARCHIVED":
+        return ""
+    reason = html.escape(
+        str(record.get("archive_reason") or ("已归档" if chinese else "Archived"))
+    )
+    merged_into = str(record.get("merged_into") or "").strip()
+    merged_path = str(record.get("merged_detail_path") or "").strip()
+    target = ""
+    if merged_into and merged_path:
+        relative = PurePosixPath(merged_path)
+        if (
+            relative.is_absolute()
+            or len(relative.parts) != 2
+            or relative.parts[0] != "brainstorm"
+            or relative.suffix.lower() != ".html"
+        ):
+            raise ValueError(f"unsafe merged Brainstorm detailPath: {merged_path!r}")
+        label = "主 Brainstorm" if chinese else "canonical Brainstorm"
+        target = (
+            f' <a href="./{html.escape(relative.name, quote=True)}">{label}</a>:'
+            f" <code>{html.escape(merged_into)}</code>."
+        )
+    elif merged_into:
+        target = f" <code>{html.escape(merged_into)}</code>."
+    heading = "已归档阶段记录" if chinese else "Archived stage record"
+    return (
+        '<div class="archive-notice" role="note">'
+        f"<strong>{heading}</strong><p>{reason}{target}</p></div>"
+    )
+
+
+def render_brainstorm_page(
+    record: Mapping[str, Any],
+    *,
+    document_html: str | None = None,
+    template_text: str | None = None,
+) -> str:
+    """Render one full document-style Brainstorm from governed state."""
+    language_raw = str(record.get("page_language") or "en")
+    language = html.escape(language_raw, quote=True)
+    chinese = language_raw.lower().startswith("zh")
+    idea_id_raw = str(record.get("id") or "")
+    idea_id = html.escape(idea_id_raw)
+    title_raw = str(record.get("title") or idea_id_raw)
+    title = html.escape(title_raw)
+    idea_raw = str(record.get("idea") or "").strip()
+    abstract_raw = str(record.get("abstract") or idea_raw or title_raw).strip()
+    status_value = str(record.get("status") or "ACTIVE").upper()
+    archived = status_value == "ARCHIVED"
+    updated_raw = str(
+        record.get("updated_at")
+        or record.get("archived_at")
+        or record.get("created_at")
+        or ""
+    )
+    updated_date = updated_raw[:10]
+    revision = int(record.get("revision") or 1)
+    body_html = (
+        validate_brainstorm_document_fragment(document_html)
+        if document_html is not None
+        else _default_brainstorm_body(record, chinese=chinese)
+    )
+
+    labels = (
+        {
+            "skip": "跳到正文",
+            "abstract": "这份草案在解决什么",
+            "snapshot": "当前想法快照",
+            "toc": "这是可持续修订的研究草案，不是已批准的 Direction，也不授权实验执行。",
+            "footer_left": "Brainstorm · 可持续修订的 pre-package proposal",
+            "status_active": "活跃草案",
+            "status_archived": "已归档",
+            "revision": "修订版本",
+            "kicker": "Brainstorm 文档 · pre-package draft",
+            "document_id": "文档 ID",
+            "footer_right": "由受治理状态生成 · 界面只读",
+        }
+        if chinese
+        else {
+            "skip": "Skip to content",
+            "abstract": "What this draft is exploring",
+            "snapshot": "Current idea snapshot",
+            "toc": "This revisable research draft is not a ratified Direction and cannot authorize execution.",
+            "footer_left": "Brainstorm · revisable pre-package proposal",
+            "status_active": "Active draft",
+            "status_archived": "Archived",
+            "revision": "Revision",
+            "kicker": "Brainstorm document · pre-package draft",
+            "document_id": "Document ID",
+            "footer_right": "Generated from governed state · interface remains read-only",
+        }
+    )
+    mapping = {
+        "language": language,
+        "meta_description": html.escape(abstract_raw[:280], quote=True),
+        "title": title,
+        "status_value": html.escape(status_value.lower(), quote=True),
+        "status_class": "archived" if archived else "active",
+        "status_label": labels["status_archived"] if archived else labels["status_active"],
+        "revision_label": f'{labels["revision"]} {revision}',
+        "updated_datetime": html.escape(updated_raw, quote=True),
+        "updated_label": html.escape(updated_date),
+        "skip_label": labels["skip"],
+        "kicker": labels["kicker"],
+        "deck": html.escape(abstract_raw),
+        "idea_id": idea_id,
+        "document_id_label": labels["document_id"],
+        "archive_notice": _archive_notice(record, chinese=chinese),
+        "abstract_heading": labels["abstract"],
+        "abstract_html": _paragraphs(abstract_raw),
+        "snapshot_heading": labels["snapshot"],
+        "snapshot_html": _snapshot_html(record, chinese=chinese),
+        "toc_context": labels["toc"],
+        "body_html": body_html,
+        "footer_left": labels["footer_left"],
+        "footer_right": labels["footer_right"],
+    }
+    return Template(template_text or _brainstorm_template_text()).substitute(mapping)
+
+
+def brainstorm_pages(
+    rows: Iterable[Mapping[str, Any]],
+    *,
+    document_html_by_id: Mapping[str, str] | None = None,
+) -> dict[str, str]:
     pages: dict[str, str] = {}
+    documents = document_html_by_id or {}
     for record in rows:
-        relative = _brainstorm_detail_path(record)
+        relative = brainstorm_detail_path(record)
         if relative in pages:
             raise ValueError(f"duplicate brainstorm detailPath: {relative}")
-        pages[relative] = render_brainstorm_page(record)
+        pages[relative] = render_brainstorm_page(
+            record,
+            document_html=documents.get(str(record.get("id") or "")),
+        )
     return pages
 
 

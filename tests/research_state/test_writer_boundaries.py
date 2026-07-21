@@ -134,7 +134,7 @@ def test_event_store_commit_callers_are_explicitly_allowlisted():
                 "lib/interface/parity.py",
                 "_seed_fixture",
                 "commit",
-            ): 4,
+            ): 5,
         }
     )
     _assert_allowlist(actual, expected)

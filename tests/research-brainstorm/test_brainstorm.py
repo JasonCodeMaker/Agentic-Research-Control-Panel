@@ -1,4 +1,4 @@
-"""research-brainstorm Phase 1: the pre-package idea store + direction-proposal builder."""
+"""State-backed Brainstorm documents and explicit Direction promotion."""
 
 import sys
 from pathlib import Path
@@ -12,7 +12,13 @@ sys.path.insert(0, str(ROOT / "skills" / "research-brainstorm" / "scripts"))
 import brainstorm  # noqa: E402
 import scope_ssot  # noqa: E402
 from lib.interface import build_interface  # noqa: E402
-from lib.research_state import EventStore, ResearchPaths, UpgradeRequired  # noqa: E402
+from lib.research_state import (  # noqa: E402
+    CommandRejected,
+    EventStore,
+    ResearchPaths,
+    StateQuery,
+    UpgradeRequired,
+)
 from tests.scope_fixtures import direction_spec, project_spec  # noqa: E402
 
 
@@ -55,10 +61,168 @@ def test_interface_builder_generates_english_detail_page(tmp_path):
     assert page.exists()
     html = page.read_text(encoding="utf-8")
     assert '<html lang="en">' in html
+    assert 'data-page="brainstorm-document"' in html
+    assert '<link rel="stylesheet" href="../assets/brainstorm.css">' in html
+    assert "Abstract / TLDR" in html
+    assert "Idea Snapshot" in html
+    assert "data-docs-toc" in html
     assert "Candidate pool audit" in html
     assert "Compare stage-1 GT visibility against reranker conversion." in html
     assert "CanHit@100 and X-Pool R@10" in html
     assert "local candidate CSV" in html
+    assert "<style>" not in html
+
+
+def _document_body(label: str) -> str:
+    return f"""
+<section class="doc-section" id="core-question">
+  <h2><span class="section-number">01 </span><span>{label}</span></h2>
+  <p>Keep the core question observable.</p>
+</section>
+<section class="doc-section wide" id="comparison">
+  <h2><span class="section-number">02 </span><span>Comparison</span></h2>
+  <div class="table-wrap"><table class="doc-table">
+    <caption>Candidate stages</caption>
+    <thead><tr><th scope="col">Stage</th><th scope="col">Question</th></tr></thead>
+    <tbody><tr><td>Reproduction</td><td>Does the baseline run?</td></tr></tbody>
+  </table></div>
+  <figure class="research-figure"><figcaption>Figure 1. One governed document.</figcaption></figure>
+</section>
+""".strip()
+
+
+def test_add_stores_free_form_document_note_and_renders_shared_shell(tmp_path):
+    body = _document_body("Core question")
+    bid = brainstorm.add_brainstorm(
+        tmp_path,
+        {
+            "id": "one-direction",
+            "title": "One broad direction",
+            "idea": "Unify related stages.",
+            "abstract": "One revisable proposal for the shared core question.",
+            "idea_snapshot": [
+                {"label": "Core question", "value": "Can the same mechanism transfer?"},
+                {"label": "Current state", "value": "Draft"},
+            ],
+            "document_html": body,
+            "page_language": "en",
+        },
+    )
+
+    item = brainstorm.read_brainstorms(tmp_path)[0]
+    assert item["id"] == bid
+    assert "document_html" not in item
+    note = item["document_note"]
+    assert note["mime"] == "text/html;profile=brainstorm-fragment"
+    note_path = tmp_path / ".research" / note["uri"]
+    assert note_path.read_text(encoding="utf-8") == body
+
+    page = tmp_path / ".research" / "interface" / item["detailPath"]
+    rendered = page.read_text(encoding="utf-8")
+    assert "One revisable proposal for the shared core question." in rendered
+    assert "Can the same mechanism transfer?" in rendered
+    assert "Candidate stages" in rendered
+    assert "Figure 1. One governed document." in rendered
+    assert 'data-page="brainstorm-document"' in rendered
+    assert "Revision 1" in rendered
+
+
+def test_revise_updates_same_brainstorm_document_in_place(tmp_path):
+    bid = brainstorm.add_brainstorm(
+        tmp_path,
+        {
+            "id": "same-draft",
+            "title": "Same draft",
+            "idea": "Initial framing",
+            "document_html": _document_body("Initial section"),
+        },
+    )
+    first = brainstorm.read_brainstorms(tmp_path)[0]
+    first_sha = first["document_note"]["sha256"]
+
+    brainstorm.revise_brainstorm(
+        tmp_path,
+        bid,
+        {
+            "abstract": "Refined after user audit.",
+            "document_html": _document_body("Revised section"),
+        },
+    )
+
+    items = brainstorm.read_brainstorms(tmp_path)
+    assert [item["id"] for item in items] == [bid]
+    assert items[0]["document_note"]["sha256"] != first_sha
+    assert items[0]["abstract"] == "Refined after user audit."
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    assert StateQuery(paths).brainstorms()["data"]["versions"][bid] == 2
+    rendered = (paths.interface / items[0]["detailPath"]).read_text(encoding="utf-8")
+    assert "Revised section" in rendered
+    assert "Initial section" not in rendered
+    assert "Revision 2" in rendered
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<!doctype html><html><body><h2>Full page</h2></body></html>",
+        "<section><h2>Executable</h2><script>alert(1)</script></section>",
+        "<section><p>No section heading</p></section>",
+        '<section onclick="alert(1)"><h2>Handler</h2></section>',
+    ],
+)
+def test_document_fragment_rejects_shell_and_executable_markup(tmp_path, body):
+    with pytest.raises(ValueError):
+        brainstorm.add_brainstorm(
+            tmp_path,
+            {"title": "Invalid body", "idea": "x", "document_html": body},
+        )
+    assert brainstorm.read_brainstorms(tmp_path) == []
+
+
+def test_archive_can_link_a_merged_fragment_to_canonical_brainstorm(tmp_path):
+    canonical = brainstorm.add_brainstorm(
+        tmp_path,
+        {"id": "canonical", "title": "Canonical", "idea": "whole direction"},
+    )
+    fragment = brainstorm.add_brainstorm(
+        tmp_path,
+        {"id": "fragment", "title": "Fragment", "idea": "one stage"},
+    )
+
+    assert brainstorm.remove_brainstorm(
+        tmp_path,
+        fragment,
+        reason="merged as the migration stage",
+        merged_into=canonical,
+    )
+    archived = next(
+        item
+        for item in brainstorm.read_brainstorms(tmp_path, include_archived=True)
+        if item["id"] == fragment
+    )
+    assert archived["status"] == "ARCHIVED"
+    assert archived["merged_into"] == canonical
+    rendered = (
+        tmp_path / ".research" / "interface" / archived["detailPath"]
+    ).read_text(encoding="utf-8")
+    assert "Archived stage record" in rendered
+    assert "merged as the migration stage" in rendered
+    assert canonical in rendered
+    assert 'href="./' in rendered
+
+
+def test_skill_contract_keeps_one_free_form_document_until_explicit_promotion():
+    skill = (ROOT / "skills" / "research-brainstorm" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    contract = (
+        ROOT / "skills" / "research-brainstorm" / "references" / "document-contract.md"
+    ).read_text(encoding="utf-8")
+    assert "One broad research direction maps to one Brainstorm by default" in skill
+    assert "Refine the same Brainstorm in place" in skill
+    assert "user explicitly asks to proceed" in skill
+    assert "Keep the body free-form" in skill
+    assert "not a research schema" in contract
 
 
 def test_add_dedupes_ids_from_same_title(tmp_path):
@@ -73,6 +237,42 @@ def test_remove_is_idempotent(tmp_path):
     assert brainstorm.remove_brainstorm(tmp_path, bid) is True
     assert brainstorm.read_brainstorms(tmp_path) == []
     assert brainstorm.remove_brainstorm(tmp_path, bid) is False  # already gone, no error
+
+
+def test_discard_requires_archived_record_and_explicit_user(tmp_path):
+    bid = brainstorm.add_brainstorm(tmp_path, {"title": "Duplicate", "idea": "x"})
+    with pytest.raises(CommandRejected, match="only an archived Brainstorm"):
+        brainstorm.discard_brainstorm(
+            tmp_path,
+            bid,
+            reason="duplicate",
+            actor={"type": "user", "id": "reviewer"},
+        )
+
+    assert brainstorm.remove_brainstorm(tmp_path, bid)
+    with pytest.raises(CommandRejected, match="explicit user actor"):
+        brainstorm.discard_brainstorm(
+            tmp_path,
+            bid,
+            reason="duplicate",
+            actor={"type": "agent", "id": "test"},
+        )
+
+    item = brainstorm.read_brainstorms(tmp_path, include_archived=True)[0]
+    page = tmp_path / ".research" / "interface" / item["detailPath"]
+    assert page.is_file()
+    assert brainstorm.discard_brainstorm(
+        tmp_path,
+        bid,
+        reason="content retained in canonical Brainstorm",
+        actor={"type": "user", "id": "reviewer"},
+    )
+    assert brainstorm.read_brainstorms(tmp_path, include_archived=True) == []
+    assert not page.exists()
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    events = EventStore(paths).events()
+    assert [event["event_type"] for event in events][-1] == "AggregateRemoved"
+    assert any(event["event_type"] == "BrainstormCreated" for event in events)
 
 
 def test_consume_returns_records_and_removes(tmp_path):

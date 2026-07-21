@@ -135,6 +135,9 @@ Keep the current human layout and navigation:
 - Global pages remain `index.html`, `live.html`, `scope.html`, and
   `learnings.html`.
 - The four category pages remain separate pages.
+- Each Brainstorm detail route is a full document assembled from the shared
+  `templates/brainstorm-document.html` shell, `assets/brainstorm.css`, and an
+  optional state-backed `document_note` HTML fragment.
 - Each package keeps its own plan, implementation, results, analysis, tracker,
   and docs pages.
 - `module.html` remains available. Preserve the existing
@@ -145,6 +148,10 @@ Keep the current human layout and navigation:
 Do not consolidate these pages into a single-page application. Do not remove
 the module route. Do not redesign the UI as part of a storage or authority
 change.
+
+Brainstorm `detail_note` remains a compatibility override for migrated
+self-contained pages. New and revised Brainstorms use `document_note`; do not
+copy the outer page, navigation, ToC, scripts, or CSS into that fragment.
 
 The DOM hierarchy, contract-bearing attributes, CSS bytes, viewport, browser
 major, and screenshot baselines are frozen by

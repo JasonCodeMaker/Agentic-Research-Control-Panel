@@ -19,6 +19,7 @@ from lib.self_evolve.dashboard import build_projection as self_evolution_project
 from .package import package_view_models, read_note_text, render_package_pages
 from .project import (
     acknowledged_run_ids,
+    brainstorm_detail_path,
     brainstorm_pages,
     brainstorm_views,
     live_run_views,
@@ -312,20 +313,42 @@ def _build_interface_unlocked(
             rule_sources,
             self_evolution,
         )
-        rendered_brainstorms = brainstorm_pages(brainstorms)
         for record in brainstorms:
-            relative = next(iter(brainstorm_pages([record])))
-            fallback = rendered_brainstorms[relative]
+            relative = brainstorm_detail_path(record)
             detail_note = record.get("detail_note")
             if detail_note is not None and not isinstance(detail_note, Mapping):
                 raise ValueError(
                     f"brainstorm {record.get('id')!r} has malformed detail_note"
                 )
-            text = (
-                read_note_text(paths, detail_note)
-                if isinstance(detail_note, Mapping)
-                else fallback
-            )
+            if isinstance(detail_note, Mapping):
+                # Compatibility path for migrated, self-contained legacy pages.
+                text = read_note_text(paths, detail_note)
+            else:
+                document_note = record.get("document_note")
+                if document_note is not None and not isinstance(document_note, Mapping):
+                    raise ValueError(
+                        f"brainstorm {record.get('id')!r} has malformed document_note"
+                    )
+                document_html = None
+                if isinstance(document_note, Mapping):
+                    mime = str(document_note.get("mime") or "")
+                    if not mime.startswith("text/html"):
+                        raise ValueError(
+                            f"brainstorm {record.get('id')!r} document_note must be text/html"
+                        )
+                    document_html = read_note_text(paths, document_note)
+                text = next(
+                    iter(
+                        brainstorm_pages(
+                            [record],
+                            document_html_by_id=(
+                                {str(record.get("id") or ""): document_html}
+                                if document_html is not None
+                                else None
+                            ),
+                        ).values()
+                    )
+                )
             text = _rewrite_static_asset(Path(relative), text)
             _write_text(stage, relative, text)
         for package in packages:

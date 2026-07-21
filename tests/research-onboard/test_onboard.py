@@ -192,11 +192,14 @@ def test_has_project_scope_true_after_commit(tmp_path):
 
 def test_skill_requires_clear_scope_review_and_next_step():
     text = SKILL.read_text(encoding="utf-8")
-    assert "The agent proposes; the PM decides." in text
-    assert "**Project Scope Review**" in text
-    assert "Next Step:" in text
+    assert "The agent drafts; the user decides once." in text
+    assert "**Project review**" in text
+    assert "CONFIRM/确认" in text
     assert "3 to 100 words" in text
-    assert "scope-transition" in text
-    assert "--from-triage <item-id>" in text
-    assert ".research/state/notes" in text
+    assert "--receipt" in text
+    assert "--op scope-accept" in text
+    assert "Keep item ids, hashes, NoteRefs" in text
+    assert "do not scaffold automatically" in text
+    assert "Candidate, not yet submitted" not in text
+    assert "ACCEPT <item-id>" not in text
     assert ".research/interface" in text

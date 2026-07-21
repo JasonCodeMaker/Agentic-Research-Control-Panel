@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import shutil
 import subprocess
 import sys
 import threading
@@ -458,6 +459,97 @@ def test_brainstorm_detail_note_overrides_template_with_path_only_rewrite(
     assert "outputs/" not in page
 
 
+def test_brainstorm_document_note_is_wrapped_by_shared_document_shell(
+    tmp_path: Path,
+) -> None:
+    paths, store = _workspace(tmp_path)
+    body = (
+        '<section class="doc-section wide" id="audit">'
+        '<h2><span class="section-number">01 </span><span>Causal audit</span></h2>'
+        '<div class="table-wrap"><table class="doc-table">'
+        '<caption>Claim boundary</caption><thead><tr>'
+        '<th scope="col">Observable</th><th scope="col">Not observable</th>'
+        '</tr></thead><tbody><tr><td>Query</td><td>Hidden goal</td></tr></tbody>'
+        '</table></div><figure class="research-figure">'
+        '<figcaption>Figure 1. Shared question and dependent stages.</figcaption>'
+        '</figure></section>'
+    )
+    note = store.write_note(
+        body,
+        mime="text/html;profile=brainstorm-fragment",
+        title="projection brainstorm body",
+    )
+    store.commit(
+        event_type="AggregatePatched",
+        aggregate_type="brainstorm",
+        aggregate_id="projection-idea",
+        payload={
+            "patch": {
+                "abstract": "One full draft, revised in place.",
+                "idea_snapshot": {
+                    "Core question": "Can the claim be observed?",
+                    "Authority": "Pre-package only",
+                },
+                "document_note": note,
+            }
+        },
+        actor=ACTOR,
+        idempotency_key="interface-test:brainstorm-document-note",
+    )
+
+    result = build_interface(paths)
+    page = (
+        result.root / "brainstorm" / "2026-07-20-projection-idea.html"
+    ).read_text(encoding="utf-8")
+    assert 'data-page="brainstorm-document"' in page
+    assert '<link rel="stylesheet" href="../assets/brainstorm.css">' in page
+    assert "Abstract / TLDR" in page
+    assert "Idea Snapshot" in page
+    assert "data-docs-toc" in page
+    assert "One full draft, revised in place." in page
+    assert "Can the claim be observed?" in page
+    assert "Claim boundary" in page
+    assert "Figure 1. Shared question and dependent stages." in page
+    assert "Revision 2" in page
+    assert "<style>" not in page
+    assert (result.root / "assets" / "brainstorm.css").read_bytes() == (
+        REPO
+        / "skills"
+        / "research-dashboard"
+        / "assets"
+        / "dashboard"
+        / "assets"
+        / "brainstorm.css"
+    ).read_bytes()
+
+
+def test_invalid_brainstorm_document_note_preserves_previous_interface(
+    tmp_path: Path,
+) -> None:
+    paths, store = _workspace(tmp_path)
+    build_interface(paths)
+    expected = _tree_hash(paths.interface)
+    note = store.write_note(
+        "<!doctype html><html><body><h2>Full page</h2></body></html>",
+        mime="text/html;profile=brainstorm-fragment",
+        title="invalid full page",
+    )
+    store.commit(
+        event_type="AggregatePatched",
+        aggregate_type="brainstorm",
+        aggregate_id="projection-idea",
+        payload={"patch": {"document_note": note}},
+        actor=ACTOR,
+        idempotency_key="interface-test:invalid-brainstorm-document-note",
+    )
+
+    with pytest.raises(ValueError, match="page-shell"):
+        build_interface(paths)
+    assert _tree_hash(paths.interface) == expected
+    assert not list(paths.root.glob(".interface-build-*"))
+    assert not list(paths.root.glob(".interface-backup-*"))
+
+
 def test_package_interface_note_restores_human_html(tmp_path: Path) -> None:
     paths, store = _workspace(tmp_path)
     note = store.write_note(
@@ -527,6 +619,54 @@ def test_projection_has_no_python_script_surface(tmp_path: Path) -> None:
         ".research/state/events.jsonl (projected scope transitions)</code> directly"
         not in scope_html
     )
+
+
+def test_dashboard_checked_brainstorm_lane_renders_brainstorm_cards(
+    tmp_path: Path,
+) -> None:
+    paths, _ = _workspace(tmp_path)
+    build_interface(paths)
+    executable = shutil.which("chromium") or shutil.which("chromium-browser")
+    if not executable:
+        pytest.skip("dashboard browser test requires Chromium")
+
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", 0), make_handler(paths, started_at=0.0)
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        rendered = subprocess.run(
+            [
+                executable,
+                "--headless=new",
+                "--no-sandbox",
+                "--disable-background-networking",
+                "--virtual-time-budget=2000",
+                "--dump-dom",
+                f"http://127.0.0.1:{port}/index.html",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        ).stdout
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+    assert 'name="lane" value="brainstorm" checked' in rendered
+    assert 'data-brainstorm-id="projection-idea"' in rendered
+    assert 'data-card-kind="brainstorm"' in rendered
+    assert 'data-card-kind="package"' in rendered
+    assert "Projection idea" in rendered
+    assert rendered.count('<header class="card-top">') == 2
+    assert rendered.count('<div class="card-body">') == 2
+    assert rendered.count('<footer class="card-footer">') == 2
+    assert 'class="bi-top"' not in rendered
+    assert 'class="bi-body"' not in rendered
 
 
 def test_scope_projection_preserves_formal_experiment_contract(

@@ -40,7 +40,7 @@
 
   function normalizeCategory(category) {
     // Package category is one of the lane facets (in-progress / success / fail).
-    // Brainstorm is no longer a package category (it is the ideas-only lane), so
+    // Brainstorm is no longer a package category (it is the pre-package document lane), so
     // there is no brainstorm fallback here; a category-less package matches no lane.
     return String(category || "").toLowerCase();
   }
@@ -712,7 +712,7 @@
 
   function terminalTileHtml(pkg) {
     // Brainstorm is no longer a package category, so no Direction tile is rendered
-    // for packages; pre-package ideas live on the ideas-only brainstorm lane.
+    // for packages; pre-package documents live on the Brainstorm lane.
     return postmortemTileHtml(pkg) + adoptionTileHtml(pkg);
   }
 
@@ -722,25 +722,26 @@
     return '<time data-field="last-updated" datetime="' + htmlEscape(iso) + '">' + htmlEscape(iso) + "</time>";
   }
 
+  // One card anatomy for every item shown in a package grid. Data semantics
+  // remain type-specific, but layout, hierarchy, interaction, and spacing do not.
+  function researchItemCardHtml(card) {
+    return [
+      card.open,
+      '<header class="card-top">' + card.headerHtml + "</header>",
+      '<div class="card-body">',
+      '<h3 class="card-title">' + htmlEscape(card.title) + "</h3>",
+      card.bodyHtml,
+      "</div>",
+      '<footer class="card-footer">' + card.footerHtml + "</footer>",
+      card.close,
+    ].join("");
+  }
+
   function packageCardHtml(pkg) {
     var status = packageStatus(pkg) || "unmeasured";
     var cat = normalizeCategory(pkg.category);
     var isTerminal = cat === "success" || cat === "fail";
-    return [
-      '<a class="package-card package-link-card" href="' + htmlEscape(relativeDetailPath(pkg)) + '"',
-      ' data-package-id="' + htmlEscape(pkg.id) + '"',
-      ' data-category="' + htmlEscape(cat) + '"',
-      ' data-route="' + htmlEscape(pkg.nextRoute || "unmeasured") + '"',
-      ' data-status="' + htmlEscape(status) + '"',
-      ' data-status-family="' + htmlEscape(statusFamily(status)) + '"',
-      ' data-workflow-state="' + htmlEscape(status) + '">',
-      '<div class="card-top">',
-      tagBadgeHtml(pkg),
-      statusPillHtml(pkg),
-      missingFieldsChipHtml(pkg),
-      "</div>",
-      '<div class="card-body">',
-      '<h3 class="card-title">' + htmlEscape(pkg.name) + "</h3>",
+    var body = [
       tagSummaryHtml(pkg),
       '<p class="card-text"><strong>Problem:</strong> ' + htmlEscape(pkg.problem) + "</p>",
       '<p class="card-text"><strong>Objective:</strong> ' + htmlEscape(pkg.objective) + "</p>",
@@ -750,17 +751,33 @@
         '<p class="card-text card-strip"><span><strong>Gate:</strong> ' + fieldOrUnmeasured(pkg.activeGate) + "</span> ",
         '<span><strong>Metric vs gate:</strong> ' + fieldOrUnmeasured(pkg.primaryMetricVsGate) + "</span></p>",
       ].join("") : "",
-      '<p class="card-text card-strip"><span><strong>Next route:</strong> ' + chipHtml("route", pkg.nextRoute) + "</span> ",
-      '<span><strong>Updated:</strong> ' + lastUpdatedHtml(pkg) + "</span></p>",
-      "</div>",
-      "</a>",
     ].join("");
+    return researchItemCardHtml({
+      open: [
+        '<a class="package-card package-link-card" href="' + htmlEscape(relativeDetailPath(pkg)) + '"',
+        ' data-card-kind="package"',
+        ' data-package-id="' + htmlEscape(pkg.id) + '"',
+        ' data-category="' + htmlEscape(cat) + '"',
+        ' data-route="' + htmlEscape(pkg.nextRoute || "unmeasured") + '"',
+        ' data-status="' + htmlEscape(status) + '"',
+        ' data-status-family="' + htmlEscape(statusFamily(status)) + '"',
+        ' data-workflow-state="' + htmlEscape(status) + '">',
+      ].join(""),
+      close: "</a>",
+      title: pkg.name,
+      headerHtml: tagBadgeHtml(pkg) + statusPillHtml(pkg) + missingFieldsChipHtml(pkg),
+      bodyHtml: body,
+      footerHtml: [
+        '<span class="card-footer-meta"><strong>Next route:</strong> ' + chipHtml("route", pkg.nextRoute) + "</span>",
+        '<span class="card-footer-meta"><strong>Updated:</strong> ' + lastUpdatedHtml(pkg) + "</span>",
+      ].join(""),
+    });
   }
 
   function renderCategoryPage() {
     var root = byId("category-package-root");
     if (!root || !window.RESEARCH_CATEGORY_ID) return;
-    // Brainstorm lane is ideas-only (renderBrainstorms); it holds no packages.
+    // Brainstorm lane is document-only (renderBrainstorms); it holds no packages.
     if (window.RESEARCH_CATEGORY_ID === "brainstorm") return;
 
     var category = categoryById(window.RESEARCH_CATEGORY_ID);
@@ -781,77 +798,78 @@
   }
 
   function brainstormCardHtml(idea) {
-    // Link the card to its doc when the idea carries a detailPath; doc-less ideas render as a static article.
+    // Link the card to its document when it has a detailPath; legacy rows may remain static.
     var hasDoc = !!idea.detailPath;
     var open = hasDoc
-      ? '<a class="package-card package-link-card brainstorm-idea" href="' + htmlEscape(relativeDetailPath(idea)) + '" data-brainstorm-id="' + htmlEscape(idea.id) + '">'
-      : '<article class="package-card brainstorm-idea" data-brainstorm-id="' + htmlEscape(idea.id) + '">';
-    var created = idea.created_at ? String(idea.created_at).slice(0, 10) : "";
+      ? '<a class="package-card package-link-card" href="' + htmlEscape(relativeDetailPath(idea)) + '" data-card-kind="brainstorm" data-category="brainstorm" data-brainstorm-id="' + htmlEscape(idea.id) + '">'
+      : '<article class="package-card" data-card-kind="brainstorm" data-category="brainstorm" data-brainstorm-id="' + htmlEscape(idea.id) + '">';
+    var updatedAt = idea.updated_at || idea.created_at || "";
+    var updated = updatedAt ? String(updatedAt).slice(0, 10) : "";
     var refs = Array.isArray(idea.lit_refs) ? idea.lit_refs : [];
     var meta = [];
     if (idea.rough_metric) {
       meta.push(
-        '<div class="bi-meta-row" data-field="rough-metric"><dt>Rough metric</dt>' +
-        '<dd class="bi-metric">' + htmlEscape(idea.rough_metric) + "</dd></div>"
+        '<div class="card-fact" data-field="rough-metric"><dt>Rough metric</dt>' +
+        '<dd class="card-metric">' + htmlEscape(idea.rough_metric) + "</dd></div>"
       );
     }
     meta.push(
-      '<div class="bi-meta-row" data-field="grounding"><dt>Grounding</dt><dd>' +
+      '<div class="card-fact" data-field="grounding"><dt>Grounding</dt><dd>' +
       (refs.length
         ? htmlEscape(refs.join(" · "))
-        : '<span class="bi-ungrounded">not grounded yet</span>') +
+        : '<span class="card-muted">not grounded yet</span>') +
       "</dd></div>"
     );
-    return [
-      open,
-      '<header class="bi-top">',
-      '<span class="bi-kicker">Pre-package idea</span>',
-      created ? '<time class="bi-date" datetime="' + htmlEscape(idea.created_at) + '">' + htmlEscape(created) + "</time>" : "",
-      "</header>",
-      '<div class="bi-body">',
-      '<h3 class="bi-title">' + htmlEscape(idea.title || idea.id) + "</h3>",
-      idea.idea ? '<p class="bi-idea">' + htmlEscape(idea.idea) + "</p>" : "",
-      '<dl class="bi-meta">' + meta.join("") + "</dl>",
-      "</div>",
-      '<footer class="bi-foot">',
-      '<span class="bi-id">' + htmlEscape(idea.id) + "</span>",
-      hasDoc ? '<span class="bi-cta">Open idea &rarr;</span>' : '<span class="bi-stage">brainstorm lane</span>',
-      "</footer>",
-      hasDoc ? "</a>" : "</article>",
-    ].join("");
+    return researchItemCardHtml({
+      open: open,
+      close: hasDoc ? "</a>" : "</article>",
+      title: idea.title || idea.id,
+      headerHtml: [
+        '<span class="status card-kind">Brainstorm draft</span>',
+        updated ? '<time class="card-date" datetime="' + htmlEscape(updatedAt) + '">' + htmlEscape(updated) + "</time>" : "",
+      ].join(""),
+      bodyHtml: [
+        (idea.abstract || idea.idea) ? '<p class="card-text card-summary">' + htmlEscape(idea.abstract || idea.idea) + "</p>" : "",
+        '<dl class="card-facts">' + meta.join("") + "</dl>",
+      ].join(""),
+      footerHtml: [
+        '<code class="card-id">' + htmlEscape(idea.id) + "</code>",
+        hasDoc ? '<span class="card-action">Open document &rarr;</span>' : '<span class="card-footer-meta">Brainstorm lane</span>',
+      ].join(""),
+    });
   }
 
-  // Composed empty / getting-started state for the ideas-only brainstorm lane.
+  // Composed empty / getting-started state for the Brainstorm document lane.
   function brainstormEmptyHtml() {
     return [
       '<div class="bi-empty" data-section="getting-started">',
-      "<h3>No ideas captured yet</h3>",
-      "<p>This lane is for cheap, pre-package hunches &mdash; one sentence is enough. An idea earns its place if it names a concrete change and the rough metric you would expect to move.</p>",
+      "<h3>No Brainstorm documents yet</h3>",
+      "<p>Start one revisable pre-package draft for a broad research direction. Keep related reproduction, migration, audit, ablation, and risk work as Sections or Stages in that document.</p>",
       '<ul class="bi-empty-eg">',
       "<li><span>title</span>Share one RQ-VAE codebook across the video and text towers</li>",
       "<li><span>rough metric</span>R@1 +1.5 on MSR-VTT 1k-A, same codebook size</li>",
       "</ul>",
-      '<p class="bi-empty-cmd">Capture the first one with <code>/research-brainstorm</code></p>',
+      '<p class="bi-empty-cmd">Draft the first document with <code>/research-brainstorm</code></p>',
       "</div>",
     ].join("");
   }
 
-  // Brainstorm lane = pre-package ideas (not packages, not in the SSOT), read
+  // Brainstorm lane = pre-package documents (not Directions or Packages), read
   // from window.BRAINSTORMS (data/brainstorms.js). Managed by /research-brainstorm.
   function renderBrainstorms() {
     var root = byId("brainstorm-ideas-root");
     if (!root || window.RESEARCH_CATEGORY_ID !== "brainstorm") return;
     var ideas = window.BRAINSTORMS || [];
-    // Ideas-only lane: renderCategoryPage() bails for brainstorm, so the masthead
+    // Document-only lane: renderCategoryPage() bails for brainstorm, so the masthead
     // lead + count would otherwise stay blank / "0 packages". Fill them here.
     var summary = byId("category-summary");
     if (summary && !summary.textContent.trim()) {
-      summary.textContent = "Cheap, pre-package, pre-SSOT ideas live here. Each is a hunch worth a sentence — not a committed direction and not gated. Shape one with /research-brainstorm, then convert it through Triage into a ratified Direction with its own package.";
+      summary.textContent = "Each broad research direction lives as one continuously revised pre-package document. It remains outside Direction and Package authority until the user explicitly promotes it through Triage and Scope.";
     }
     var laneCount = byId("category-count");
-    if (laneCount) laneCount.textContent = ideas.length + " idea" + (ideas.length === 1 ? "" : "s");
+    if (laneCount) laneCount.textContent = ideas.length + " document" + (ideas.length === 1 ? "" : "s");
     var count = byId("brainstorm-ideas-count");
-    if (count) count.textContent = String(ideas.length) + " idea" + (ideas.length === 1 ? "" : "s");
+    if (count) count.textContent = String(ideas.length) + " document" + (ideas.length === 1 ? "" : "s");
     root.innerHTML = ideas.length
       ? ideas.map(brainstormCardHtml).join("")
       : brainstormEmptyHtml();
@@ -1135,7 +1153,7 @@
 
   // Page slugs match the physical filenames created by create_research_package.py
   // (Python is authoritative). The landing page slug is "index" (index.html), not
-  // "overview". Brainstorm is not a stage page (the brainstorm lane is ideas-only).
+  // "overview". Brainstorm is not a stage page (it is a pre-package document lane).
   var STAGE_PAGES = [
     { slug: "index", label: "Overview", href: "index.html" },
     { slug: "plan", label: "Plan", href: "plan.html" },
@@ -1328,24 +1346,52 @@
     var route = form && form.elements.route ? form.elements.route.value : "all";
     var statusFilter = form && form.elements.status ? form.elements.status.value : "all";
     var sort = form && form.elements.sort ? form.elements.sort.value : "recency";
-    // Lane filter is always required: no lane selected → no packages rendered.
-    var items = (lanes && lanes.length)
+    // Lane filter is always required: no lane selected → no cards rendered.
+    var packageItems = (lanes && lanes.length)
       ? packages().filter(function (p) { return lanes.indexOf(normalizeCategory(p.category)) >= 0; })
       : [];
-    if (route !== "all") items = items.filter(function (p) { return (p.nextRoute || "unmeasured") === route; });
-    if (statusFilter !== "all") items = items.filter(function (p) { return (packageStatus(p) || "unmeasured") === statusFilter; });
+    if (route !== "all") packageItems = packageItems.filter(function (p) { return (p.nextRoute || "unmeasured") === route; });
+    if (statusFilter !== "all") packageItems = packageItems.filter(function (p) { return (packageStatus(p) || "unmeasured") === statusFilter; });
+
+    var items = packageItems.map(function (pkg) {
+      return {
+        kind: "package",
+        lane: normalizeCategory(pkg.category),
+        status: packageStatus(pkg) || "unmeasured",
+        updated: pkg.lastUpdated || "",
+        value: pkg,
+      };
+    });
+    // Brainstorms are pre-package ideas, so they have neither package status nor
+    // nextRoute. Include them for the selected lane only while those package-only
+    // facets remain at "all"; never invent package metadata for an idea.
+    if (lanes.indexOf("brainstorm") >= 0 && route === "all" && statusFilter === "all") {
+      items = items.concat((window.BRAINSTORMS || []).map(function (idea) {
+        return {
+          kind: "brainstorm",
+          lane: "brainstorm",
+          status: "brainstorm",
+          updated: idea.updated_at || idea.created_at || "",
+          value: idea,
+        };
+      }));
+    }
     if (sort === "recency") {
-      items.sort(function (a, b) { return String(b.lastUpdated || "").localeCompare(String(a.lastUpdated || "")); });
+      items.sort(function (a, b) { return String(b.updated).localeCompare(String(a.updated)); });
     } else if (sort === "status") {
-      items.sort(function (a, b) { return String(packageStatus(a)).localeCompare(String(packageStatus(b))); });
+      items.sort(function (a, b) { return String(a.status).localeCompare(String(b.status)); });
     } else {
-      items.sort(function (a, b) { return String(a.category).localeCompare(String(b.category)); });
+      items.sort(function (a, b) { return String(a.lane).localeCompare(String(b.lane)); });
     }
     var emptyMessage = (!lanes || lanes.length === 0)
       ? 'Select a lane above (brain-storm / in-progress / success / fail) to list packages.'
-      : 'No packages match the current filters.';
+      : 'No research items match the current filters.';
     root.innerHTML = items.length
-      ? items.map(packageCardHtml).join("")
+      ? items.map(function (item) {
+        return item.kind === "brainstorm"
+          ? brainstormCardHtml(item.value)
+          : packageCardHtml(item.value);
+      }).join("")
       : '<div class="empty-state">' + emptyMessage + "</div>";
   }
 

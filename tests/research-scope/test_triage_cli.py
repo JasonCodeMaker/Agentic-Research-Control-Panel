@@ -69,3 +69,28 @@ def test_triage_cli_propose_pending_dispose(tmp_path):
 
     r = _run([*base, "pending"])
     assert json.loads(r.stdout) == []
+
+
+def test_triage_cli_propose_can_return_compact_review_receipt(tmp_path):
+    item = proposal_item(
+        direction_node(node_id="dir/receipt", source="triage:receipt"),
+        proposal_id="receipt-1",
+    )
+    r = _run(
+        [
+            "--workspace",
+            str(tmp_path),
+            "propose",
+            "--item",
+            json.dumps(item),
+            "--receipt",
+        ]
+    )
+
+    assert r.returncode == 0, r.stderr
+    receipt = json.loads(r.stdout)
+    assert receipt == {
+        "id": "receipt-1",
+        "proposal_hash": receipt["proposal_hash"],
+    }
+    assert len(receipt["proposal_hash"]) == 64

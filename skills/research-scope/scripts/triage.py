@@ -48,6 +48,15 @@ def propose(paths, item):
     return record["id"]
 
 
+def propose_receipt(paths, item):
+    """Submit a proposal and return the compact binding needed for review."""
+    record, _event = management.submit_proposal(paths, item)
+    return {
+        "id": record["id"],
+        "proposal_hash": record["proposal_hash"],
+    }
+
+
 def _read(paths):
     return management.proposal_records(paths)
 
@@ -91,6 +100,11 @@ def main(argv=None):
         required=True,
         help="JSON object; must include an 'id'",
     )
+    pp.add_argument(
+        "--receipt",
+        action="store_true",
+        help="return only the submitted proposal id and content hash as JSON",
+    )
     sub.add_parser("pending")
     pd = sub.add_parser("dispose")
     pd.add_argument("--id", required=True)
@@ -118,7 +132,11 @@ def main(argv=None):
     )
     try:
         if args.cmd == "propose":
-            print(propose(paths, json.loads(args.item)))
+            item = json.loads(args.item)
+            if args.receipt:
+                print(json.dumps(propose_receipt(paths, item), ensure_ascii=False))
+            else:
+                print(propose(paths, item))
         elif args.cmd == "pending":
             print(json.dumps(pending(paths), ensure_ascii=False))
         elif args.cmd == "dispose":

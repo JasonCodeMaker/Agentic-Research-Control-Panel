@@ -627,6 +627,50 @@ def archive_brainstorm(
     )
 
 
+def discard_brainstorm(
+    paths: ResearchPaths,
+    idea_id: str,
+    *,
+    reason: str,
+    expected_version: int,
+    actor: dict[str, str],
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Remove an archived duplicate from current state while retaining history."""
+    store = EventStore(paths)
+    state = store.state()
+    current = state["aggregates"]["brainstorm"].get(idea_id)
+    if not isinstance(current, dict):
+        raise CommandRejected(
+            "brainstorm-not-found",
+            f"unknown Brainstorm: {idea_id}",
+        )
+    if current.get("status") != "ARCHIVED":
+        raise CommandRejected(
+            "brainstorm-archive-required",
+            "only an archived Brainstorm may be removed from the current catalogue",
+        )
+    if actor.get("type") != "user":
+        raise CommandRejected(
+            "brainstorm-discard-user-required",
+            "discarding an archived Brainstorm requires an explicit user actor",
+        )
+    return _commit(
+        store,
+        event_type="AggregateRemoved",
+        aggregate_type="brainstorm",
+        aggregate_id=idea_id,
+        payload={
+            "reason": reason,
+            "event_history_retained": True,
+        },
+        actor=copy.deepcopy(actor),
+        idempotency_key=idempotency_key,
+        expected_version=expected_version,
+        entry_skill="research-op/brainstorm",
+    )
+
+
 def update_campaign(
     paths: ResearchPaths,
     campaign_id: str,
@@ -4386,6 +4430,7 @@ for _audited_command_name in (
     "create_brainstorm",
     "revise_brainstorm",
     "archive_brainstorm",
+    "discard_brainstorm",
     "update_campaign",
     "register_resource",
     "update_resource_allocation",
