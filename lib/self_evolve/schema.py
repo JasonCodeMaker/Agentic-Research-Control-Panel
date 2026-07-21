@@ -17,6 +17,15 @@ APPROVAL_SCHEMA = "selfevolve.approval.v1"
 
 APPROVAL_OPERATIONS = ("INSTALL", "RESTORATION", "ROLLBACK")
 APPROVAL_DECISIONS = ("APPROVED", "REJECTED")
+EVIDENCE_KINDS = (
+    "FILE",
+    "LOG_RANGE",
+    "METRIC",
+    "TABLE_CELL",
+    "CHECKPOINT",
+    "EXTERNAL_URI",
+    "NOTE",
+)
 
 RISK_CLASSES = ("R0_OBSERVE", "R1_CONTEXT", "R2_SHADOW", "R3_PROJECT_EXEC", "R4_TRUST_BOUNDARY")
 ORACLE_RESULTS = ("ORACLE_PASS", "ORACLE_FAIL", "ORACLE_INCONCLUSIVE", "ORACLE_ERROR")
@@ -146,4 +155,40 @@ def validate_evidence(ev):
     oracle = ev.get("oracle", {})
     if oracle.get("result") not in ORACLE_RESULTS:
         raise SchemaViolation(f"evidence: oracle.result must be one of {ORACLE_RESULTS}")
+    return True
+
+
+def validate_evidence_ref(ref, what="evidence_ref"):
+    """Validate the durable pointer used by Learning, Decision, and Rule records."""
+    if not isinstance(ref, dict):
+        raise SchemaViolation(f"{what}: must be an object")
+    _require(
+        ref,
+        (
+            "uri",
+            "sha256",
+            "size_bytes",
+            "kind",
+            "package_id",
+            "experiment_id",
+            "run_id",
+        ),
+        what,
+    )
+    digest = str(ref["sha256"]).removeprefix("sha256:")
+    if len(digest) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in digest):
+        raise SchemaViolation(f"{what}: sha256 must be a 64-character hexadecimal digest")
+    if not isinstance(ref["size_bytes"], int) or ref["size_bytes"] < 0:
+        raise SchemaViolation(f"{what}: size_bytes must be a non-negative integer")
+    if ref["kind"] not in EVIDENCE_KINDS:
+        raise SchemaViolation(f"{what}: kind must be one of {EVIDENCE_KINDS}")
+    return True
+
+
+def validate_evidence_refs(refs, what="evidence_refs"):
+    """Require at least one valid EvidenceRef."""
+    if not isinstance(refs, list) or not refs:
+        raise SchemaViolation(f"{what}: must be a non-empty list")
+    for index, ref in enumerate(refs):
+        validate_evidence_ref(ref, f"{what}[{index}]")
     return True

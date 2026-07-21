@@ -1,15 +1,27 @@
-"""evolution-* ops — the v1 Rule Store mutation handlers (plan §9.7).
+"""Self-evolve mutation handlers.
 
-Project-level, like scope-transition/registry-add: no owning package, so they bypass the
-package (category, status) state machine. Reject-before-write; the caller audits + prints.
-`run()` returns (status, files, message); rejections raise EvolutionReject.
+Project memory is committed as Learning, Decision, and Rule events in the
+shared management store.  Generated Skill bundles and their install lifecycle
+remain in ``<project>/.agents/self-evolve`` outside workspace ``.research``.
 """
 
 import json
 import os
 from pathlib import Path
 
-from self_evolve import schema, lifecycle, store, sandbox, bundle, skill_lifecycle, install
+from lib.research_state import CommandRejected, ResearchPaths
+from lib.self_evolve import (
+    bundle,
+    install,
+    lifecycle,
+    sandbox,
+    schema,
+    skill_lifecycle,
+    state as memory,
+    store,
+)
+
+import management
 
 EVOLUTION_OPS = ("evolution-observe", "evolution-create", "evolution-evidence-add",
                  "evolution-transition", "evolution-project", "evolution-check",
@@ -28,20 +40,12 @@ class EvolutionReject(Exception):
         super().__init__(detail)
 
 
-def _rules_log(root):
-    return Path(root) / "rules" / "transitions.jsonl"
-
-
 def _skills_log(root):
     return Path(root) / "skills" / "transitions.jsonl"
 
 
 def _approvals_log(root):
     return Path(root) / "approvals" / "approvals.jsonl"
-
-
-def _events_log(root):
-    return Path(root) / "events" / "events.jsonl"
 
 
 def _append_jsonl(path, obj):
@@ -57,15 +61,33 @@ def _write_json(path, obj):
 
 def run(op, payload, root, project_root=None):
     """Dispatch one evolution op. Returns (status, files, message)."""
-    root = Path(root)
-    project_root = Path(project_root) if project_root is not None else Path.cwd()
+    supplied_root = root
+    paths = memory.resolve_paths(root)
+    project_root = (
+        Path(project_root).resolve()
+        if project_root is not None
+        else paths.workspace
+    )
+    # A caller may explicitly supply an external self-evolve tool directory.
+    # ResearchPaths callers use the canonical user/tool-side location.
+    supplied_is_paths = isinstance(supplied_root, ResearchPaths) or (
+        hasattr(supplied_root, "workspace")
+        and hasattr(supplied_root, "root")
+        and hasattr(supplied_root, "events")
+        and hasattr(supplied_root, "current")
+    )
+    skill_root = (
+        project_root / ".agents" / "self-evolve"
+        if supplied_is_paths
+        or Path(supplied_root).expanduser().resolve() == paths.root
+        else Path(supplied_root).expanduser().resolve()
+    )
     handlers = {
-        "evolution-observe": _observe,
-        "evolution-create": _create,
-        "evolution-evidence-add": _evidence_add,
-        "evolution-transition": _transition,
-        "evolution-project": _project,
-        "evolution-check": _check,
+        "evolution-observe": lambda value: _observe(value, paths),
+        "evolution-evidence-add": lambda value: _evidence_add(value, paths),
+        "evolution-transition": lambda value: _transition(value, paths, skill_root),
+        "evolution-project": lambda value: _project(value, paths, skill_root),
+        "evolution-check": lambda value: _check(value, paths, skill_root),
     }
     deploy_handlers = {
         "evolution-approve": _approve,
@@ -73,10 +95,14 @@ def run(op, payload, root, project_root=None):
         "evolution-suspend-skill": _suspend_skill,
         "evolution-rollback-skill": _rollback_skill,
     }
+    if op == "evolution-create":
+        if "manifest" in payload:
+            return _create_skill(payload, skill_root)
+        return _create_rule(payload, paths)
     if op in handlers:
-        return handlers[op](payload, root)
+        return handlers[op](payload)
     if op in deploy_handlers:
-        return deploy_handlers[op](payload, root, project_root)
+        return deploy_handlers[op](payload, skill_root, project_root)
     raise EvolutionReject("unknown-op", f"unknown evolution op: {op}")
 
 
@@ -85,20 +111,30 @@ def _observe(payload, root):
         schema.validate_event(payload)
     except schema.SchemaViolation as e:
         raise EvolutionReject("event-schema", str(e))
-    log = _events_log(root)
-    if log.exists():
-        for line in log.read_text(encoding="utf-8").splitlines():
-            if line.strip() and json.loads(line).get("idempotency_key") == payload["idempotency_key"]:
-                return "skipped", [], f"duplicate event {payload['event_id']}"
-    _append_jsonl(log, payload)
-    return "PASSED",[str(log)], f"observed {payload['type']} {payload['event_id']}"
-
-
-def _create(payload, root):
-    """Seal a Rule (bare rule dict) or a Skill candidate ({manifest, files})."""
-    if "manifest" in payload:
-        return _create_skill(payload, root)
-    return _create_rule(payload, root)
+    learning_id = str(payload.get("learning_id") or f"learning:{payload['event_id']}")
+    record = {
+        "id": learning_id,
+        "observation": payload.get("observation") or payload.get("subject") or payload["type"],
+        "signal_type": payload["type"],
+        "source": payload["source"],
+        "source_event_id": payload["event_id"],
+        "scope": payload.get("scope"),
+        "evidence_refs": payload.get("evidence_refs"),
+        "status": "OBSERVED",
+    }
+    try:
+        event = management.commit_evolution_learning(
+            root,
+            record,
+            idempotency_key=payload["idempotency_key"],
+        )
+    except CommandRejected as exc:
+        raise EvolutionReject(exc.rule, exc.detail) from exc
+    return (
+        "PASSED",
+        [str(root.events), str(root.current)],
+        f"observed {payload['type']} as {learning_id} ({event['event_id']})",
+    )
 
 
 def _create_skill(payload, root):
@@ -148,26 +184,29 @@ def _create_rule(payload, root):
         schema.validate_rule(rule)
     except schema.SchemaViolation as e:
         raise EvolutionReject("rule-schema", str(e))
-    cand = Path(root) / "rules" / "candidates" / rule["id"] / rule["version"] / "rule.json"
-    t = {
-        "schema_version": schema.TRANSITION_SCHEMA,
-        "transition_id": f"trn-create-{rule['id']}-{rule['version']}",
-        "store": "rule", "entity_id": rule["id"], "entity_version": rule["version"],
-        "expected_from_state": "OBSERVED", "to_state": "CANDIDATE", "op": "create",
-        "risk_class": rule["risk_class"],
-        "idempotency_key": f"create:{rule['id']}:{rule['version']}",
-        "evidence_refs": [], "approval_ref": None,
+    learning_id = memory.learning_aggregate_id(rule["id"], rule["version"])
+    learning = {
+        "id": learning_id,
+        "observation": rule.get("description") or rule["content"],
+        "candidate_rule": rule,
+        "scope": rule["scope"],
+        "evidence_refs": rule.get("evidence_refs"),
+        "status": "CANDIDATE",
+        "origin": "selfevolve",
     }
-    schema.validate_transition(t)
-    lifecycle.validate_edge("OBSERVED", "CANDIDATE")
     try:
-        _, skipped = store.append_transition(_rules_log(root), t)
-    except store.ConcurrencyConflict as e:
-        raise EvolutionReject("concurrency", str(e))
-    if skipped:
-        return "skipped", [], f"candidate {rule['id']}@{rule['version']} already exists"
-    _write_json(cand, rule)
-    return "PASSED",[str(cand), str(_rules_log(root))], f"candidate {rule['id']}@{rule['version']} created"
+        event = management.commit_evolution_learning(
+            root,
+            learning,
+            idempotency_key=f"create:{rule['id']}:{rule['version']}",
+        )
+    except CommandRejected as exc:
+        raise EvolutionReject(exc.rule, exc.detail) from exc
+    return (
+        "PASSED",
+        [str(root.events), str(root.current)],
+        f"candidate Learning {learning_id} created ({event['event_id']})",
+    )
 
 
 def _evidence_add(payload, root):
@@ -175,20 +214,45 @@ def _evidence_add(payload, root):
         schema.validate_evidence(payload)
     except schema.SchemaViolation as e:
         raise EvolutionReject("evidence-schema", str(e))
-    p = (Path(root) / "evidence" / payload["entity_id"] / payload["entity_version"]
-         / f"{payload['evidence_id']}.json")
-    _write_json(p, payload)
-    return "PASSED",[str(p)], f"evidence {payload['evidence_id']} = {payload['oracle']['result']}"
+    learning_id = memory.learning_aggregate_id(
+        payload["entity_id"], payload["entity_version"]
+    )
+    decision = {
+        "id": str(payload["evidence_id"]),
+        "decision_type": "ORACLE",
+        "subject_id": learning_id,
+        "oracle": payload["oracle"],
+        "outcome": payload["oracle"]["result"],
+        "stage": payload["stage"],
+        "evidence_refs": payload.get("evidence_refs"),
+    }
+    try:
+        event = management.commit_evolution_decision(
+            root,
+            decision,
+            idempotency_key=str(
+                payload.get("idempotency_key")
+                or f"oracle:{learning_id}:{payload['evidence_id']}"
+            ),
+        )
+    except CommandRejected as exc:
+        raise EvolutionReject(exc.rule, exc.detail) from exc
+    return (
+        "PASSED",
+        [str(root.events), str(root.current)],
+        f"oracle Decision {payload['evidence_id']} = "
+        f"{payload['oracle']['result']} ({event['event_id']})",
+    )
 
 
-def _transition(payload, root):
+def _transition(payload, root, skill_root=None):
     t = payload
     try:
         schema.validate_transition(t)
     except schema.SchemaViolation as e:
         raise EvolutionReject("transition-schema", str(e))
     if t["store"] == "skill":
-        return _transition_skill(t, root)
+        return _transition_skill(t, skill_root)
     try:
         lifecycle.validate_edge(t["expected_from_state"], t["to_state"])
     except lifecycle.IllegalTransition as e:
@@ -197,16 +261,110 @@ def _transition(payload, root):
     if t["to_state"] == "RULE_ACTIVE" and t["risk_class"] in _R3R4 and not t.get("approval_ref"):
         raise EvolutionReject("needs-approval",
                               f"{t['risk_class']} promotion to active requires approval_ref")
-    try:
-        _, skipped = store.append_transition(_rules_log(root), t)
-    except store.ConcurrencyConflict as e:
-        raise EvolutionReject("concurrency", str(e))
-    if skipped:
-        return "skipped", [], f"{t['entity_id']}@{t['entity_version']} -> {t['to_state']} (already applied)"
-    files = [str(_rules_log(root))]
+    current = memory.lifecycle_state(root, t["entity_id"], t["entity_version"])
+    if current != t["expected_from_state"]:
+        raise EvolutionReject(
+            "concurrency",
+            f"{t['entity_id']}@{t['entity_version']}: "
+            f"expected_from_state={t['expected_from_state']!r} but current={current!r}",
+        )
+    learning_id = memory.learning_aggregate_id(t["entity_id"], t["entity_version"])
+    decision_id = str(t["transition_id"])
+    retiring = t["expected_from_state"] == "RULE_ACTIVE" and t["to_state"] in {
+        "RULE_SUPERSEDED",
+        "INVALIDATED",
+    }
+    candidate = None
     if t["to_state"] == "RULE_ACTIVE":
-        files += _seal_release(root, t["entity_id"], t["entity_version"])
-    return "PASSED",files, f"{t['entity_id']}@{t['entity_version']} -> {t['to_state']}"
+        state = memory.management_state(root)
+        learning = state["aggregates"]["learning"].get(learning_id)
+        candidate = (
+            learning.get("candidate_rule")
+            if isinstance(learning, dict)
+            and isinstance(learning.get("candidate_rule"), dict)
+            else None
+        )
+        if candidate is None:
+            raise EvolutionReject(
+                "promotion-candidate-missing",
+                f"Learning {learning_id} has no immutable candidate_rule",
+            )
+        try:
+            memory.preflight_promotion(
+                root,
+                learning_id=learning_id,
+                rule=candidate,
+                admission=t.get("admission"),
+            )
+        except CommandRejected as exc:
+            raise EvolutionReject(exc.rule, exc.detail) from exc
+    elif retiring:
+        try:
+            memory.preflight_retirement(
+                root,
+                rule_id=t["entity_id"],
+                version=t["entity_version"],
+            )
+        except CommandRejected as exc:
+            raise EvolutionReject(exc.rule, exc.detail) from exc
+    subject_id = (
+        memory.rule_aggregate_id(t["entity_id"], t["entity_version"])
+        if retiring
+        else learning_id
+    )
+    decision = {
+        "id": decision_id,
+        "decision_type": (
+            "ADMISSION" if t["to_state"] == "RULE_ACTIVE" else "RULE_LIFECYCLE"
+        ),
+        "subject_id": subject_id,
+        "from_state": t["expected_from_state"],
+        "to_state": t["to_state"],
+        "outcome": t.get("admission") or t["to_state"],
+        "admission": t.get("admission"),
+        "risk_class": t["risk_class"],
+        "approval_ref": t.get("approval_ref"),
+        "reason": t.get("reason"),
+        "evidence_refs": t.get("evidence_refs"),
+    }
+    try:
+        management.commit_evolution_decision(
+            root,
+            decision,
+            idempotency_key=f"decision:{t['idempotency_key']}",
+        )
+    except CommandRejected as exc:
+        raise EvolutionReject(exc.rule, exc.detail) from exc
+    files = [str(root.events), str(root.current)]
+    if t["to_state"] == "RULE_ACTIVE":
+        assert candidate is not None
+        try:
+            management.commit_evolution_rule_promotion(
+                root,
+                learning_id=learning_id,
+                decision_id=decision_id,
+                rule=candidate,
+                idempotency_key=f"promote:{t['idempotency_key']}",
+            )
+        except CommandRejected as exc:
+            raise EvolutionReject(exc.rule, exc.detail) from exc
+    elif retiring:
+        try:
+            management.commit_evolution_rule_retirement(
+                root,
+                rule_id=t["entity_id"],
+                version=t["entity_version"],
+                decision_id=decision_id,
+                lifecycle_state=t["to_state"],
+                idempotency_key=f"retire:{t['idempotency_key']}",
+            )
+        except CommandRejected as exc:
+            raise EvolutionReject(exc.rule, exc.detail) from exc
+    return (
+        "PASSED",
+        files,
+        f"{t['entity_id']}@{t['entity_version']} -> {t['to_state']}",
+    )
 
 
 def _transition_skill(t, root):
@@ -350,45 +508,49 @@ def _rollback_skill(payload, root, project_root):
     return "PASSED",[str(_skills_log(root))], f"rolled back to {eid}@{target_ver} ({reason})"
 
 
-def _seal_release(root, eid, ver):
-    src = Path(root) / "rules" / "candidates" / eid / ver / "rule.json"
-    if not src.exists():
-        return []
-    dst = Path(root) / "rules" / "releases" / eid / ver / "rule.json"
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-    return [str(dst)]
-
-
 def _fold_states(log):
     return {f"{eid}@{ver}": st for (eid, ver), st in store.fold(store.read_log(log)).items()}
 
 
-def _project(payload, root):
-    rules = _fold_states(_rules_log(root))
-    skills = _fold_states(_skills_log(root))
-    p = Path(root) / "projections" / "current-state.json"
-    _write_json(p, {"rules": rules, "skills": skills})
-    return "PASSED",[str(p)], f"projected {len(rules)} rule + {len(skills)} skill versions"
+def _project(payload, root, skill_root):
+    """Build an ephemeral consistency view; no project-memory projection is persisted."""
+    state = memory.management_state(root)
+    rules = {
+        key: value.get("lifecycle_state") or value.get("status")
+        for key, value in sorted(state["aggregates"]["rule"].items())
+    }
+    skills = _fold_states(_skills_log(skill_root))
+    return (
+        "PASSED",
+        [],
+        f"projected {len(rules)} rule + {len(skills)} skill versions in memory",
+    )
 
 
-def _check(payload, root):
-    rules = store.fold(store.read_log(_rules_log(root)))
-    skills = store.fold(store.read_log(_skills_log(root)))
+def _check(payload, root, skill_root):
+    state = memory.management_state(root)
+    skills = store.fold(store.read_log(_skills_log(skill_root)))
     problems = []
-    proj = Path(root) / "projections" / "current-state.json"
-    if proj.exists():
-        got = json.loads(proj.read_text(encoding="utf-8"))
-        if {f"{e}@{v}": s for (e, v), s in rules.items()} != got.get("rules", {}):
-            problems.append("projection-drift:rules")
-        if {f"{e}@{v}": s for (e, v), s in skills.items()} != got.get("skills", {}):
-            problems.append("projection-drift:skills")
-    for (eid, ver) in rules:
-        if not (Path(root) / "rules" / "candidates" / eid / ver / "rule.json").exists():
-            problems.append(f"missing-rule-candidate:{eid}@{ver}")
     for (eid, ver) in skills:
-        if not (Path(root) / "skills" / "candidates" / eid / ver / "manifest.json").exists():
+        if not (Path(skill_root) / "skills" / "candidates" / eid / ver / "manifest.json").exists():
             problems.append(f"missing-skill-candidate:{eid}@{ver}")
+    for rule_id, rule in state["aggregates"]["rule"].items():
+        if rule.get("origin") == "selfevolve":
+            source = rule.get("source_learning_id")
+            decision = rule.get("promotion_decision_id")
+            if source not in state["aggregates"]["learning"]:
+                problems.append(f"missing-rule-learning:{rule_id}")
+            if decision not in state["aggregates"]["decision"]:
+                problems.append(f"missing-rule-decision:{rule_id}")
+            try:
+                schema.validate_evidence_refs(rule.get("evidence_refs"))
+            except schema.SchemaViolation:
+                problems.append(f"missing-rule-evidence:{rule_id}")
     if problems:
         raise EvolutionReject("consistency", "; ".join(problems))
-    return "PASSED",[], f"consistent: {len(rules)} rule + {len(skills)} skill versions"
+    return (
+        "PASSED",
+        [],
+        f"consistent: {len(state['aggregates']['rule'])} rule + "
+        f"{len(skills)} skill versions",
+    )

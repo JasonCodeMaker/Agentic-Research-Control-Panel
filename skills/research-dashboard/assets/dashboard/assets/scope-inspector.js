@@ -319,7 +319,7 @@
 
     var items = branches.map(function (id) {
       var childIds = (tree.childrenOf[id] || []).slice().sort(byKey);
-      var pendingTasks = pendingChildrenOf(pending, id);
+      var pendingExperiments = pendingChildrenOf(pending, id);
       var linked = packagesForOrigin(id, packages);
       if (linked.length) {
         return {
@@ -327,7 +327,7 @@
           state: "materialized",
           packageId: linked[0].id || linked[0].name || "",
           packageCount: linked.length,
-          taskCount: childIds.length,
+          experimentCount: childIds.length,
           nextSkill: "/research-run",
           nextAction: "/research-run " + (linked[0].id || linked[0].name || "<package-id>"),
         };
@@ -336,25 +336,25 @@
         return {
           directionId: id,
           state: "ready_to_materialize",
-          taskCount: childIds.length,
+          experimentCount: childIds.length,
           nextSkill: "/research-package",
           nextAction: "/research-package from-scope " + id,
         };
       }
-      if (pendingTasks.length) {
+      if (pendingExperiments.length) {
         return {
           directionId: id,
-          state: "pending_tasks",
-          pendingTaskCount: pendingTasks.length,
-          taskCount: 0,
+          state: "pending_experiments",
+          pendingExperimentCount: pendingExperiments.length,
+          experimentCount: 0,
           nextSkill: "/research-scope",
           nextAction: "Accept, revise, or reject the pending validation Tasks before creating a package.",
         };
       }
       return {
         directionId: id,
-        state: "missing_tasks",
-        taskCount: 0,
+        state: "missing_experiments",
+        experimentCount: 0,
         nextSkill: "/research-scope",
         nextAction: "Propose and ratify validation Tasks before creating a package.",
       };
@@ -365,12 +365,18 @@
 
   function linkedPackages(nodeId, explicitPackages) {
     return packageList(explicitPackages).filter(function (p) {
+      var sourceMatch = (p.sourceExperiments || []).some(function (item) {
+        return item && item.id === nodeId;
+      });
       var matchedExperiments = (p.experiments || []).filter(function (exp) {
-        return exp && exp.sourceTask === nodeId;
+        return exp && (
+          exp.id === nodeId ||
+          exp.scope_experiment_id === nodeId ||
+          (Array.isArray(exp.aliases) && exp.aliases.indexOf(nodeId) >= 0)
+        );
       });
       var direct = p.sourceDirection === nodeId;
-      var task = (p.sourceTasks || []).some(function (m) { return m && m.id === nodeId; });
-      if (!direct && !task && !matchedExperiments.length) { return false; }
+      if (!direct && !sourceMatch && !matchedExperiments.length) { return false; }
       p.matchedExperiments = matchedExperiments;
       return true;
     });
@@ -383,15 +389,23 @@
       if (p.sourceDirection && !projection[p.sourceDirection]) {
         issue(issues, pkgId, "warn", "sourceDirection points to missing Scope node " + p.sourceDirection);
       }
-      (p.sourceTasks || []).forEach(function (task) {
-        if (task && task.id && !projection[task.id]) {
-          issue(issues, pkgId, "warn", "sourceTasks points to missing Scope node " + task.id);
+      (p.sourceExperiments || []).forEach(function (sourceExperiment) {
+        if (sourceExperiment && sourceExperiment.id && !projection[sourceExperiment.id]) {
+          issue(issues, pkgId, "warn", "sourceExperiments points to missing Scope node " + sourceExperiment.id);
         }
-      });
-      (p.experiments || []).forEach(function (exp) {
-        if (exp && exp.sourceTask && !projection[exp.sourceTask]) {
-          issue(issues, pkgId, "warn", "experiments[].sourceTask " + (exp.id || "-") +
-            " points to missing Scope node " + exp.sourceTask);
+        if (sourceExperiment && sourceExperiment.id) {
+          var linked = (p.experiments || []).some(function (exp) {
+            return exp && (
+              exp.id === sourceExperiment.id ||
+              exp.scope_experiment_id === sourceExperiment.id ||
+              (Array.isArray(exp.aliases) &&
+                exp.aliases.indexOf(sourceExperiment.id) >= 0)
+            );
+          });
+          if (!linked) {
+            issue(issues, pkgId, "warn", "sourceExperiments " + sourceExperiment.id +
+              " has no experiments[] canonical-id link");
+          }
         }
       });
     });
@@ -571,8 +585,8 @@
   var state = {
     tab: "active",              // UI tab id (active|triage|history|raw) — lowercase carve-out; unrelated to the ACTIVE node status
     selection: null,            // { kind: "node"|"transaction"|"triage", id: "..." }
-    transitionsPath: "../outputs/_scope/transitions.jsonl",
-    triagePath: "../outputs/_scope/triage.jsonl",
+    transitionsPath: "data/scope-transitions.jsonl",
+    triagePath: "data/scope-triage.jsonl",
     prevSig: null,
     data: null,                 // last good { tStatus, records, errors, projection, latest, triage }
     lastRefresh: "-",
@@ -678,8 +692,8 @@
       missing_project: "Project needed",
       missing_direction: "Direction needed",
       pending_direction: "Direction waiting",
-      missing_tasks: "Validation Tasks needed",
-      pending_tasks: "Validation Tasks waiting",
+      missing_experiments: "Validation Tasks needed",
+      pending_experiments: "Validation Tasks waiting",
       ready_to_materialize: "Ready to materialize",
       materialized: "Package exists",
     };
@@ -699,11 +713,11 @@
       body = '<div class="scope-forest">' + readiness.items.map(function (item) {
         var facts = [
           ["State", esc(readinessTitle(item.state))],
-          ["Validation Tasks", esc(item.taskCount != null ? item.taskCount : 0)],
+          ["Validation Tasks", esc(item.experimentCount != null ? item.experimentCount : 0)],
           ["Next skill", "<code>" + esc(item.nextSkill || "-") + "</code>"],
           ["Next action", "<code>" + esc(item.nextAction || "-") + "</code>"],
         ];
-        if (item.pendingTaskCount) { facts.splice(2, 0, ["Pending Tasks", esc(item.pendingTaskCount)]); }
+        if (item.pendingExperimentCount) { facts.splice(2, 0, ["Pending Tasks", esc(item.pendingExperimentCount)]); }
         if (item.packageId) { facts.splice(2, 0, ["Package", "<code>" + esc(item.packageId) + "</code>"]); }
         var rows = facts.map(function (r) {
           return '<div class="k">' + esc(r[0]) + "</div><div>" + r[1] + "</div>";
@@ -1165,8 +1179,8 @@
 
   function cannotReadNotice() {
     return '<div class="notice"><strong>Cannot read ' + esc(state.transitionsPath) + ".</strong> " +
-      "Serve from repo root with <code>python -m http.server</code> and open " +
-      "<code>/research_html/scope.html</code>. Opening the file directly with a " +
+      "Serve from repo root with <code>python -m lib.interface.serve --workspace . ensure</code> and open " +
+      "<code>/scope.html</code>. Opening the file directly with a " +
       "<code>file://</code> URL blocks local fetches in most browsers.</div>";
   }
 

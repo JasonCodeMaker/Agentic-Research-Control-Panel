@@ -1,120 +1,259 @@
 ---
 name: research-op
-description: "Use when the user invokes /research-op or needs guarded changes to an existing research package or Scope SSOT: row/card/section edits, inventory field updates, checks/lints, artifact event fanout, registry additions, scope transitions, or natural-language status fixes."
+description: "Use when a governed research-state query, package mutation, Scope commit, knowledge registration, run reconciliation, or self-evolve transition is required."
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
 context: fork
 disable-model-invocation: false
 ---
 
-# research-op
+# Research operation gateway
 
-## Purpose
+`research-op` is the only management-state command gateway. It validates a
+command, appends one domain event, folds current state, and records the attempt
+in `.research/audit/actions.jsonl`.
 
-The single mutation surface for existing research packages. Replaces direct Edit/Write on package files. Enforces the (category, status, op, target) legality matrix and per-target invariants before any byte hits disk. Appends one audit line per op to a local jsonl log.
+It does not write run telemetry. The experiment harness may write only inside
+its assigned `.research/experiments/<package>/<experiment>/<run>/` directory.
+After a successful management commit, the gateway rebuilds
+`.research/interface/` from canonical state.
 
-## Invocation
+## Authority
 
-Two shapes — structured (autonomous) and natural-language (user).
-
-```bash
-# Structured (agent + workflow.ts + scan-events callers)
-python skills/research-op/scripts/research_op.py --pkg <id> --op insert --target methodsTried --payload '{...}'
-python skills/research-op/scripts/research_op.py --pkg <id> --event CHAIN_DONE --payload '{"artifact": "..."}'
-python skills/research-op/scripts/research_op.py --pkg <id> --op check --scope all
-python skills/research-op/scripts/research_op.py --pkg <id> --op check --scope scope-alignment
-python skills/research-op/scripts/research_op.py --pkg <id> --op scan-events
-python skills/research-op/scripts/research_op.py --pkg _scope --op scope-transition --from-triage <triage-id>
-python skills/research-op/scripts/research_op.py --pkg _scope --op scope-transition \
-  --payload '{"id":"dir/<id>","level":"direction","parents":["project/main"],"version":1,"status":"ACTIVE","spec":{...},"source":"txn-0","op":"create","gate":"USER_CROSS_MODEL_AUDIT"}'
-# Project-level knowledge registries (papers / edges / gaps) — durable cross-package stores
-python skills/research-op/scripts/research_op.py --pkg <id> --op registry-add --target paper \
-  --payload '{"id":"dpr2020","title":"Dense Passage Retrieval","url":"https://arxiv.org/abs/2004.04906"}'
-python skills/research-op/scripts/research_op.py --pkg <id> --op registry-add --target edge \
-  --payload '{"from":"paper:dpr2020","to":"paper:ours","type":"extends","evidence":"we adapt its dual-encoder"}'
-python skills/research-op/scripts/research_op.py --pkg <id> --op registry-add --target gap \
-  --payload '{"id":"G1","summary":"no zero-shot benchmark for this domain"}'
-# Unified rules registry (data/rules.js) — package rules via the package path,
-# project rules via the synthetic _project context (needs a human ack), check anywhere
-python skills/research-op/scripts/research_op.py --pkg <id> --op insert --target rule \
-  --payload '{"level":"package","kind":"binding","slug":"one-notebook","title":"One notebook per figure","text":"Every figure gets its own notebook.","rationale":"reproducibility","addedAt":"2026-06-11"}'
-python skills/research-op/scripts/research_op.py --pkg _project --op insert --target rule \
-  --payload '{"level":"project","kind":"constraint","slug":"no-eval-leak","title":"No eval leakage","text":"Never train on the eval split.","rationale":"validity","addedAt":"2026-06-11","ack":"<verbatim human approval>"}'
-python skills/research-op/scripts/research_op.py --pkg _project --op check --target rule
-
-# Natural-language (user manual fixes)
-python skills/research-op/scripts/research_op.py --nl 'update: set status of 2026-05-15-panda-baselines to BLOCKED, reason: GPU contention'
+```text
+user or research skill
+  -> research-op
+  -> schema + policy + expected-version check
+  -> .research/state/events.jsonl
+  -> .research/state/current.json
+  -> .research/audit/actions.jsonl
 ```
 
-## Natural-language handling
+Rejected commands change no domain state, but they still receive an audit
+outcome. Never work around a rejection by editing `events.jsonl`,
+`current.json`, generated JS, or HTML.
 
-`--nl` is an escape hatch: the CLI does **not** parse prose — it returns exit 4 and asks for the structured form. Parsing is the agent's job, done here in the body, so the agent stays the one translator (no brittle regex in the script). To handle an NL fix:
+`RESEARCH_ROOT` defaults to `.research`. Use `--research-root` for the only
+supported override.
 
-1. Pick the **op** from the leading verb: `set`/`update` → `update`, `add`/`insert` → `insert`, `remove`/`delete` → `delete`, `check`/`lint` → `check`.
-2. Read the **package id** (the `YYYY-MM-DD-slug` token in the prose).
-3. Read the **target** and the **new value(s)**: e.g. "status of X to BLOCKED" → target `status`, payload `{"to":"BLOCKED"}`; a trailing `reason: …` clause becomes an extra payload field.
-4. Echo one preview line back to the user before running: `→ --pkg <id> --op <op> --target <target> --payload <json>`.
-5. Run that structured command. On reject, follow [On reject](#on-reject).
+## Bounded queries
 
-## Preconditions
+These commands return typed data with `source_seq` and `source_hash`:
 
-| Precondition | Check |
-| --- | --- |
-| Package exists | `test -f research_html/packages/<id>/index.html` |
-| Inventory entry exists | `grep -q "id: '<id>'" research_html/data/research-packages.js` |
-| Runtime root resolved | `RESEARCH_RUNTIME_ROOT` env or default `outputs/<id>/` exists |
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  show package <package-id> --workspace <workspace>
 
-These package preconditions do not apply to `--pkg _scope --op scope-transition`; Scope transitions
-are project-level and can create the first Project node before any package exists.
+python3 skills/research-op/scripts/research_op.py \
+  context <package-id> --phase <phase> --workspace <workspace>
 
-## Op surface
+python3 skills/research-op/scripts/research_op.py \
+  history package/<package-id> --workspace <workspace>
 
-Primitives: `insert · update · delete · check`. Composite events: `CHAIN_DONE · CHECKPOINT_SAVED · SENTINEL_WRITE · PHASE_MARKER · CANDIDATE_SUBMITTED`. Full legality matrix in [references/matrix.md](references/matrix.md). Per-event surface map in [references/composite-events.md](references/composite-events.md).
+python3 skills/research-op/scripts/research_op.py \
+  audit <command-id> --workspace <workspace>
+```
 
-Three ops live outside the `(category, status)` matrix (they are project-level, not package surfaces):
+Prefer `context` for agent work. Do not load the complete `current.json` or
+read `.research/interface/` to infer package state.
 
-- `scan-events` — read-only artifact scan (no state-gate, no validation) that lists newly-locked facts for the per-turn propagation cycle.
-- `scope-transition` — the one gated writer for the Scope SSOT, used by `research-scope` after human ratification. Invoke it with `--pkg _scope`, preferably `--from-triage <triage-id>` so the committed payload is the accepted proposal snapshot. It is gated by the node **level** (project / direction / task), *not* the package state machine, and appends one transition to `outputs/_scope/transitions.jsonl`. When `research_html/data/` exists, it also refreshes and checks `research_html/data/scope-projection.json/js`. The explicit payload form carries the node fields (`id, level, parents, version, status, spec, source`) plus the transition meta (`op, gate, trigger, cause, invalidates, reopens, dial_revert`).
-- `registry-add` — the gated writer for the project-level **knowledge registries** (`--target paper | edge | gap`), the durable cross-package stores the Context Pack reads. Gated by per-target reject-before-write validators (`registry.py`), not the package state machine; dedups and appends one line to `research_html/data/{papers,edges,gaps}.jsonl`. Payloads: **paper** = `{id|arxiv|source_id (≥1 required), title (required), url, pkg}`; **edge** = `{from (required), to (required), type ∈ extends|contradicts|addresses_gap|invalidates (required), evidence}`; **gap** = `{id (required), summary (required), status}`. A duplicate is a silent idempotent skip (still audited). `--pkg` is the adding context (must exist) and is recorded on the audit line.
-- `--target rule` with `--pkg _project` — the project-level half of the **unified rules registry** (`data/rules.js`). Package-level rule rows flow the normal state-gated path (`--pkg <pkg-id>`, matrix rows I12/U14/D9); project-level rows use the synthetic `_project` context and require a non-empty `payload.ack` (the distinct human action supplied by the governed caller). `level=universal` is write-locked everywhere (the R/T mirror); `origin ∈ {mirror, selfevolve}` rows are export-owned. `--op check --target rule` wraps `learnings_lint.py lint-rules`. Retired targets `package-invariant` / `analysis-rule` reject with a pointer to this target.
+## Package mutations
 
-## Validate-before-write contract
+The structured shape is:
 
-Every Insert / Update / Delete passes Phase 1 (state gate) and Phase 2 (invariant check) before bytes hit disk. Phase 1 looks up `(category, status, op, target)` in `transitions.py`; Phase 2 runs per-target rules from [references/validate-rules.md](references/validate-rules.md). Reject envelope: `{rejected: true, phase, rule, file, anchor, field, expected, actual, suggested_fix, op, target}`. On reject, the agent retries with the rule visible.
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  --workspace <workspace> \
+  --pkg <package-id> \
+  --op <insert|update|delete|check> \
+  --target <typed-target> \
+  --payload '<json-object>' \
+  --idempotency-key <stable-key> \
+  --expected-version <aggregate-version>
+```
 
-For Scope-materialized packages, run `--op check --scope scope-alignment` before status transitions,
-terminal routing, package result closeout, or any rewrite that depends on `sourceDirection` /
-`sourceTasks`. This check wraps `learnings_lint.py lint-status --pkg <id>` and verifies package
-provenance against the current Scope SSOT projection.
+Common targets include:
 
-## On reject
+- `experiments-row`, which only binds an accepted Scope Experiment to a
+  Package, and `experiments-status`, which changes execution status;
+- `tracker-impl-review-row`, which also records a Change;
+- `tracker-chosen-route`, which also records a Decision;
+- `approval-ack-slot`, which records an immutable acknowledgement;
+- `analysis-insight`, which records a Learning;
+- `results-gate-row`, `result-block`, `methodsTried`, and package metadata;
+- `doc-file`, whose content is stored as a content-addressed NoteRef;
+- `rule`, with the governed Rule lifecycle.
 
-Read the structured envelope. The `suggested_fix` field tells you how to adjust the payload. Re-invoke with the corrected payload. Do not bypass — every rejection traces to a real spec invariant.
+Legality is evaluated from the full
+`(lifecycle, phase, blocker, operation, target)` tuple. A blocker uses the
+restricted blocked policy even when a phase remains present. Terminal
+lifecycle records stay frozen except for explicitly allowed transitions.
 
-## Audit log
+Entering `READY_TO_LAUNCH` requires `review_change_id` for a committed Change
+whose review has distinct `producer` and `judge` identities and
+`result=SOUND`. The Package event records that Change event as its causation.
 
-Path: `outputs/<pkg>/_actions.jsonl`. One JSONL line per op invocation (success or reject). Verbatim payload included. Never tracked in git. `tail -f` is the live-observability surface; `grep '"validation": "OP_REJECTED"'` is the agent-stuck debug surface.
+Before a success transition, record a verifier Decision over one finalized Run:
 
-## Single-home invariants this skill protects
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  --workspace <workspace> --pkg <package-id> \
+  --op update --target results-verdict \
+  --payload '{
+    "run_id":"<run-id>",
+    "verdict":{"producer":"<producer>","judge":"<judge>","result":"SOUND"}
+  }'
+```
 
-1. **Terminal freeze (delete-only)**: a `methodsTried` row cannot be *deleted* once status is in `success/*` or `fail/*` (enforced by `rule_methodstried_terminal_frozen`); appending rows and updating `terminationMessage` stay legal there. `verdict` and `evidencePath` are not independent `--target`s — they are fields inside a `methodsTried` / result-gate row, mutated through those targets, never directly.
-2. **Single-home rule**: each Insert has exactly one target file; downstream surfaces re-paint.
-3. **Per-event atomicity**: composite events either succeed for every owning surface or fail entirely; no half-written fan-out.
+Before success, fail, or STOPPED, record a user acknowledgement:
 
-## Pointers
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  --workspace <workspace> --pkg <package-id> \
+  --op update --target approval-ack-slot \
+  --actor-type user --actor-id <user-id> \
+  --payload '{
+    "ack_type":"TERMINAL_ACK",
+    "to":"ACKNOWLEDGED",
+    "target_status":"<terminal-status>"
+  }'
+```
 
-- [references/matrix.md](references/matrix.md) — the 36-row Insert/Update/Delete/Check legality matrix; also encodes the 18-cell (category, status) state machine.
-- [references/composite-events.md](references/composite-events.md) — the 5 composite events.
-- [references/validate-rules.md](references/validate-rules.md) — Phase 2 invariant catalogue.
+The status command then references `terminal_decision_id`; success additionally
+references `verifier_decision_id` and supplies `terminationMessage` plus
+`adoptionPath`. A free-form `ack` string has no authority.
 
-## Bundled resources
+For natural-language requests, translate the intent into this structured shape
+and show the user the command preview when the change is consequential.
+`--nl` deliberately does not parse prose; it exits with a translation prompt.
 
-- `scripts/research_op.py` — CLI entry.
-- `scripts/rules_store.py` — data/rules.js load/save + row validation (the registry writer the rule ops use).
-- `scripts/transitions.py` — the legality matrix as Python dicts (per-op target maps).
-- `scripts/events.py` — 5 composite events.
-- `scripts/validate.py` — Phase 2 rules.
-- `scripts/router.py` — dispatcher.
-- `scripts/audit.py` — jsonl writer.
-- `scripts/scan_events.py` — artifact mtime scanner.
-- `scripts/ops/{insert,update,delete,check}.py` — per-op handlers.
-- `scripts/ops/_pkg_block.py` — HTML package-block parser shared by the insert/update/delete handlers.
+Never use a Package mutation to create or revise `Experiment.spec`.
+`experiments-row insert` accepts `scope_experiment_id`, `local_id`, and
+execution metadata only. Spec revisions, archives, and supersession go through
+a hash-bound Scope proposal.
+
+## Scope and Triage
+
+The formal hierarchy is:
+
+```text
+Project -> Direction -> Experiment.spec
+```
+
+Project, Direction, and Experiment changes retain their distinct gates. To
+commit an accepted proposal:
+
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  --workspace <workspace> \
+  --pkg _scope \
+  --op scope-transition \
+  --from-triage <proposal-id>
+```
+
+This command reloads the accepted proposal, recomputes its content hash, checks
+the recorded `ProposalAccepted` event, and uses that event as causation.
+Missing, rejected, stale, ambiguous, or hash-mismatched proposals fail closed.
+
+The explicit payload form is reserved for separately governed callers:
+
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  --workspace <workspace> \
+  --pkg _scope \
+  --op scope-transition \
+  --payload '{
+    "id":"experiment/retrieval/p1",
+    "level":"experiment",
+    "parents":["direction/retrieval"],
+    "version":1,
+    "status":"ACTIVE",
+    "spec":{
+      "purpose":"Measure the frozen retrieval hypothesis under the declared protocol.",
+      "config_ref":"configs/p1.yaml",
+      "gate":"Recall@1 >= 48",
+      "control_mode":"CHECKPOINTED"
+    },
+    "source":"accepted-proposal",
+    "op":"create",
+    "gate":"AGENT_DEFERRED_ACK"
+  }'
+```
+
+Measured values and verdicts never belong in `Experiment.spec`.
+
+## Knowledge registry
+
+Paper, KnowledgeEdge, and KnowledgeGap records live in state:
+
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  --workspace <workspace> --pkg <package-id> \
+  --op registry-add --target paper \
+  --payload '{"id":"dpr2020","title":"Dense Passage Retrieval","url":"https://arxiv.org/abs/2004.04906"}'
+
+python3 skills/research-op/scripts/research_op.py \
+  --workspace <workspace> --pkg <package-id> \
+  --op registry-add --target gap \
+  --payload '{"id":"gap-zero-shot","summary":"No verified zero-shot comparison exists.","status":"open"}'
+
+python3 skills/research-op/scripts/research_op.py \
+  --workspace <workspace> --pkg <package-id> \
+  --op registry-add --target edge \
+  --payload '{"from":"paper:dpr2020","to":"gap:gap-zero-shot","type":"ADDRESSES_GAP","evidence":"evidence ref or note"}'
+```
+
+An edge is accepted only when both typed endpoints already exist. Context
+queries read this state, never browser projection files.
+
+## Rules and Learnings
+
+Package Rules use `level=package, kind=binding`. Project Rules use
+`level=project, kind=constraint` and require the governed human acknowledgement.
+Universal rules are write-locked mirrors. The general Rule path cannot alter
+`origin=selfevolve` records.
+
+A Learning must contain verified evidence. Promoting it to a Rule requires an
+admitted Decision over that same Learning. Retirement requires a lifecycle
+Decision over the exact Rule version.
+
+## Run reconciliation and result ingest
+
+Use:
+
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  --workspace <workspace> --pkg <package-id> --op scan-events
+
+python3 skills/research-op/scripts/research_op.py \
+  --workspace <workspace> --pkg <package-id> \
+  --event RUN_RESULT_FINALIZED --payload '{"run_id":"<run-id>"}'
+```
+
+Reconciliation can restore a missing `RunLaunched` callback before submitting
+`RunTerminal`, but only from immutable `run.json` and terminal run-local
+evidence. Result ingest verifies identity, status, EvidenceRef hashes, and
+package policy before updating Package and Experiment summaries. Simple numeric
+gates are checked mechanically at `RunResultFinalized`; compound or
+natural-language gates are resolved by the governed verifier Decision without
+rewriting `Experiment.spec.gate`.
+
+Checkpoint, sentinel, phase-marker, and candidate-submission composite events
+are observations, not scientific verdicts.
+
+## Concurrency and retry
+
+- Supply a stable idempotency key for retriable commands.
+- Supply `--expected-version` when acting on a previously read aggregate.
+- An identical idempotency replay returns the original event.
+- Reusing a key with different content or submitting a stale version is a
+  conflict, not a retry signal to bypass.
+- State lock timeouts are bounded; retry only after re-querying current state.
+
+## After a commit
+
+Mutation responses report `interface_written`, `interface_root`, and the source
+sequence used for the rebuild. The rebuild runs after the canonical event is
+durable and after the state lock is released. If it fails, the command records
+`PROJECTION_FAILED` in the audit log and reports `interface_error`; the accepted
+event remains committed. Fix the projection error, then retry the same
+idempotent command or run the dashboard build command.

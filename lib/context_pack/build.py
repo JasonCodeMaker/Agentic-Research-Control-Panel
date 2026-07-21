@@ -1,577 +1,678 @@
-"""I/O loader + CLI for the Context Pack.
+"""State-backed Context Pack query.
 
-Reads the pipeline's existing stores (read-only) and writes two artifacts:
-  outputs/<pkg>/context_pack.{md,json}   — full per-direction pack (agent working context)
-
-research-packages.js is read through the canonical node dumper; every other source
-degrades gracefully (missing → that section is simply absent from the pack).
+The management event log is the only input.  The result exists only in memory
+unless an experiment launcher freezes it into that Run's immutable
+``context.json``.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
+import copy
 import json
-import re
-import subprocess
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # lib/ on path for scope_ssot
-import scope_ssot  # noqa: E402
+LIB_ROOT = Path(__file__).resolve().parents[1]
+if str(LIB_ROOT) not in sys.path:
+    sys.path.insert(0, str(LIB_ROOT))
 
-from context_pack import assemble, render_md, render_json, is_stale  # noqa: E402
+try:  # package import
+    from . import assemble, render_json, render_md
+except ImportError:  # direct ``python lib/context_pack/build.py``
+    from context_pack import assemble, render_json, render_md  # type: ignore
 
-RULES_PREFIX = "window.RESEARCH_RULES = "
-PIPELINE_ROOT = Path(__file__).resolve().parents[2]
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def load_packages(root: str) -> list:
-    """Read research-packages.js via the canonical node dumper. Graceful: [] on any failure."""
-    root_path = Path(root)
-    dump = root_path / "scripts" / "dump_packages.js"
-    try:
-        if dump.exists():
-            out = subprocess.check_output(["node", str(dump)], text=True)
-        else:
-            data_file = root_path / "data" / "research-packages.js"
-            if not data_file.exists():
-                return []
-            script = (
-                "const fs = require('fs');"
-                "global.window = {};"
-                f"eval(fs.readFileSync({json.dumps(str(data_file))}, 'utf8'));"
-                "process.stdout.write(JSON.stringify({packages: window.RESEARCH_PACKAGES || []}));"
-            )
-            out = subprocess.check_output(["node", "-e", script], text=True)
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        return []
-    try:
-        return json.loads(out).get("packages", []) or []
-    except (json.JSONDecodeError, AttributeError):
-        return []
+try:  # ``lib.context_pack.build``
+    from ..research_state import EventStore, ResearchPaths, UpgradeRequired
+    from ..research_state.migration_facts import legacy_package_fact_projection
+except ImportError:  # top-level ``context_pack.build`` / direct script
+    from research_state import EventStore, ResearchPaths, UpgradeRequired  # type: ignore
+    from research_state.migration_facts import (  # type: ignore
+        legacy_package_fact_projection,
+    )
 
 
-def load_rules_registry(root: str) -> list:
-    """Read data/rules.js — missing is empty, malformed fails closed."""
-    p = Path(root) / "data" / "rules.js"
-    if not p.exists():
-        return []
-    text = p.read_text(encoding="utf-8").strip()
-    if not text.startswith(RULES_PREFIX):
-        raise ValueError(f"rules registry malformed: {p} must start with {RULES_PREFIX!r}")
-    try:
-        rows = json.loads(text[len(RULES_PREFIX):].rstrip(";"))
-    except json.JSONDecodeError as e:
-        raise ValueError(f"rules registry malformed: {p}: {e}") from e
-    if not isinstance(rows, list):
-        raise ValueError(f"rules registry malformed: {p}: expected JSON array")
-    return rows
-
-
-def load_rules_registry_strict(root: str) -> list:
-    """Read data/rules.js for writer paths; malformed existing stores are not clobbered."""
-    p = Path(root) / "data" / "rules.js"
-    if not p.exists():
-        return []
-    text = p.read_text(encoding="utf-8").strip()
-    if not text.startswith(RULES_PREFIX):
-        raise ValueError(f"Refusing to overwrite malformed rules registry: {p}")
-    try:
-        rows = json.loads(text[len(RULES_PREFIX):].rstrip(";"))
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Refusing to overwrite malformed rules registry: {p}: {e}") from e
-    if not isinstance(rows, list):
-        raise ValueError(f"Refusing to overwrite malformed rules registry: {p}: expected array")
-    return rows
-
-
-def load_learned_rules(root: str) -> list:
-    """ACTIVE project-level rule texts from the registry (replaces the rules.md bullets)."""
-    return [r.get("text", "") for r in load_rules_registry(root)
-            if r.get("level") == "project" and r.get("status") == "ACTIVE" and r.get("text")]
-
-
-def load_package_binding_rules(root: str, pkg_id: str) -> list:
-    """ACTIVE package-level binding rows for the package currently receiving the pack."""
-    return [r.get("text", "") for r in load_rules_registry(root)
-            if r.get("level") == "package" and r.get("kind") == "binding"
-            and r.get("pkg") == pkg_id and r.get("status") == "ACTIVE" and r.get("text")]
-
-
-def load_analysis_rules(root: str) -> list:
-    """ACTIVE package lesson rows from the registry (replaces analysis.html parsing)."""
-    out = []
-    for r in load_rules_registry(root):
-        if r.get("level") == "package" and r.get("kind") == "lesson" and r.get("status") == "ACTIVE":
-            out.append({"pkg": r.get("pkg", ""), "slug": r["id"].split("#", 1)[-1],
-                        "prose": r.get("text", "")})
-    return out
-
-
-def load_registry(root: str, name: str) -> list:
-    """Read a project-level knowledge registry JSONL (papers/edges/gaps). [] if absent."""
-    path = Path(root) / "data" / name
-    if not path.exists():
-        return []
-    out = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if line.strip():
-            try:
-                out.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    return out
-
-
-def load_pending_triage(triage_path: str = "outputs/_scope/triage.jsonl") -> list[dict]:
-    """Read latest pending Scope Triage items. Pending is advisory, never accepted intent."""
-    path = Path(triage_path)
-    if not path.exists():
-        return []
-    latest = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if rec.get("id"):
-            latest[rec["id"]] = rec
-    return [rec for rec in latest.values() if rec.get("status") == "pending"]
-
-
-def triage_version(triage_path: str = "outputs/_scope/triage.jsonl") -> int:
-    """Global Triage position, used to refresh advisory pending Scope context."""
-    path = Path(triage_path)
-    if not path.exists():
-        return 0
-    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
-
-
-# Effectiveness-authority ordering for the Rule Store export (proven before advisory, §13.1).
-# Keys are rule_oracle_admission canonical values (FULLY_ADMITTED before TENTATIVELY_ADMITTED).
-_AUTHORITY_ORDER = {"FULLY_ADMITTED": 0, "TENTATIVELY_ADMITTED": 1}
-
-
-def load_rule_store_active(selfevolve_root: str = "outputs/_selfevolve") -> list:
-    """Active Rules from the self-evolve Rule Store, ordered FULLY_ADMITTED first (§13.1)."""
-    from self_evolve import store as se_store  # lib/ already on path
-    log = Path(selfevolve_root) / "rules" / "transitions.jsonl"
-    if not log.exists():
-        return []
-    actives = se_store.active_transitions(se_store.read_log(log))
-    rules = []
-    for (eid, ver), t in actives.items():
-        rel = Path(selfevolve_root) / "rules" / "releases" / eid / ver / "rule.json"
-        if not rel.exists():
-            continue
-        rule = json.loads(rel.read_text(encoding="utf-8"))
-        rules.append({"id": eid, "content": rule.get("content", ""),
-                      "authority": t.get("admission", "TENTATIVELY_ADMITTED"),
-                      "scope": rule.get("scope", {}),
-                      "title": rule.get("title") or rule.get("content", "")[:60]})
-    rules.sort(key=lambda r: (_AUTHORITY_ORDER.get(r["authority"], 9), r["id"]))
-    return rules
-
-
-def _rule_slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60] or "rule"
-
-
-def _unique_rule_id(base_slug: str, source_id: str, used: set[str], *, prefix: str = "PRJ-se-") -> str:
-    rid = f"{prefix}{base_slug}"
-    if rid not in used:
-        used.add(rid)
-        return rid
-    source_slug = re.sub(r"[^a-z0-9]+", "-", source_id.lower()).strip("-") or "rule"
-    rid = f"{prefix}{base_slug}-{source_slug}"
-    i = 2
-    while rid in used:
-        rid = f"{prefix}{base_slug}-{source_slug}-{i}"
-        i += 1
-    used.add(rid)
-    return rid
-
-
-def _selfevolve_registry_rows(rule: dict, used: set[str]) -> list[dict]:
-    content = str(rule.get("content", ""))
-    base_slug = _rule_slug(content)
-    scope = rule.get("scope") if isinstance(rule.get("scope"), dict) else {}
-    packages = [str(p) for p in scope.get("packages", []) if str(p).strip()]
-    title = str(rule.get("title") or content[:60] or "Self-evolve rule")[:80]
-    common = {
-        "title": title,
-        "text": content,
-        "rationale": f"self-evolve {rule['authority']}",
-        "source": f"selfevolve:{rule['id']}",
-        "origin": "selfevolve",
-        "status": "ACTIVE",
-        "addedAt": "derived",
-    }
-    if packages and packages != ["*"]:
-        rows = []
-        for pkg in sorted(packages):
-            rid = _unique_rule_id(base_slug, rule["id"], used, prefix=f"{pkg}#se-")
-            rows.append({**common, "id": rid, "level": "package", "pkg": pkg, "kind": "binding"})
-        return rows
-    rid = _unique_rule_id(base_slug, rule["id"], used)
-    return [{**common, "id": rid, "level": "project", "kind": "constraint"}]
-
-
-def export_learned_rules(selfevolve_root: str, root: str) -> int:
-    """Project the Rule Store's ACTIVE rules into the registry (origin=selfevolve, replace-all).
-
-    The self-evolve store stays authoritative for the learning lifecycle; the registry
-    (data/rules.js) is authoritative for what binds the agent now. This one-way export is the
-    only bridge — selfevolve-origin rows are regenerated, never hand-edited.
-    """
-    scripts_root = PIPELINE_ROOT / "skills" / "research-op" / "scripts"
-    if str(scripts_root) not in sys.path:
-        sys.path.insert(0, str(scripts_root))
-    import rules_store  # noqa: E402
-
-    rules = load_rule_store_active(selfevolve_root)
-    registry = [r for r in load_rules_registry_strict(root) if r.get("origin") != "selfevolve"]
-    used = {r.get("id") for r in registry if r.get("id")}
-    for r in rules:
-        registry.extend(_selfevolve_registry_rows(r, used))
-    rules_store.save_rules(Path(root), registry)
-    return len(rules)
-
-
-def _hash_path(hasher, label: str, path: Path) -> None:
-    if not path.exists() or not path.is_file():
-        return
-    hasher.update(label.encode("utf-8"))
-    hasher.update(b"\0")
-    hasher.update(path.as_posix().encode("utf-8"))
-    hasher.update(b"\0")
-    hasher.update(path.read_bytes())
-    hasher.update(b"\0")
-
-
-def learning_fingerprint(root: str, *, selfevolve_root: str | None = None) -> str:
-    """Fingerprint every store whose changes should refresh agent learning context."""
-    root_path = Path(root)
-    hasher = hashlib.sha256()
-    for rel in (
-        "data/research-packages.js",
-        "data/rules.js",
-        "data/papers.jsonl",
-        "data/edges.jsonl",
-        "data/gaps.jsonl",
+def _paths(
+    workspace_or_paths: str | Path | ResearchPaths = ".",
+    *,
+    research_root: str | Path | None = None,
+) -> ResearchPaths:
+    # ``lib.research_state`` and ``research_state`` can both be importable in
+    # local skill/test entrypoints.  Accept the resolver by protocol as well as
+    # exact class identity so a valid ResearchPaths is never coerced to Path.
+    if isinstance(workspace_or_paths, ResearchPaths) or (
+        hasattr(workspace_or_paths, "workspace")
+        and hasattr(workspace_or_paths, "root")
+        and hasattr(workspace_or_paths, "events")
+        and hasattr(workspace_or_paths, "current")
     ):
-        _hash_path(hasher, rel, root_path / rel)
-    data_packages = root_path / "data" / "packages"
-    if data_packages.exists():
-        for path in sorted(data_packages.glob("*/tables/methods_tried.csv")):
-            _hash_path(hasher, str(path.relative_to(root_path)), path)
-    se_root = Path(selfevolve_root) if selfevolve_root is not None else Path("outputs/_selfevolve")
-    _hash_path(hasher, "selfevolve:rules/transitions.jsonl", se_root / "rules" / "transitions.jsonl")
-    return "sha256:" + hasher.hexdigest()
+        if research_root is not None:
+            raise ValueError("research_root cannot accompany an existing ResearchPaths")
+        return workspace_or_paths
+
+    workspace = Path(workspace_or_paths).expanduser().resolve()
+    if workspace.name == ".research" or (workspace / "VERSION").is_file():
+        return ResearchPaths.resolve(
+            workspace=workspace.parent,
+            research_root=workspace,
+        )
+    return ResearchPaths.resolve(workspace=workspace, research_root=research_root)
 
 
-def resolve_direction(packages: list, pkg_id: str, transitions_path: str):
-    """Active direction node + its scope_version for a package (None, 0 if unresolved)."""
-    node_id = next((p.get("sourceDirection") for p in packages if p.get("id") == pkg_id), None)
-    if not node_id:
-        return None, 0
-    node = scope_ssot.fold(scope_ssot.read_log(transitions_path)).get(node_id)
-    if node is None:
-        return None, 0
-    return node, node.get("version", 0)
+def _management_state(paths: ResearchPaths) -> dict[str, Any]:
+    version = paths.load_version()
+    if version is None:
+        markers = paths.legacy_markers()
+        if markers:
+            raise UpgradeRequired(
+                "upgrade-required: Context Pack queries require migrated research state; "
+                f"legacy stores remain at {', '.join(str(path) for path in markers)}"
+            )
+        raise UpgradeRequired(
+            f"research state is not initialized at {paths.root}; initialize or migrate it first"
+        )
+    return EventStore(paths).state()
 
 
-def _find_package(packages: list, pkg_id: str) -> dict | None:
-    return next((p for p in packages if p.get("id") == pkg_id), None)
-
-
-def _latest_records_by_node(records: list[dict]) -> dict[str, dict]:
-    latest = {}
-    for rec in records:
-        latest[rec.get("node_id")] = rec
-    return latest
-
-
-def _package_provenance(pkg: dict | None) -> dict:
-    if not pkg:
-        return {}
-    experiments = pkg.get("experiments") or []
-    exp_tasks = sorted({
-        exp.get("sourceTask")
-        for exp in experiments
-        if isinstance(exp, dict) and exp.get("sourceTask")
-    })
-    return {
-        "sourceDirection": pkg.get("sourceDirection"),
-        "sourceVersion": pkg.get("sourceVersion"),
-        "sourceChange": pkg.get("sourceChange"),
-        "sourceTasks": pkg.get("sourceTasks") or [],
-        "experimentSourceTasks": exp_tasks,
-    }
-
-
-def _active_project_for_direction(direction_node: dict | None, projection: dict) -> dict | None:
-    parent_ids = direction_node.get("parents", []) if direction_node else []
-    for parent_id in parent_ids:
-        node = projection.get(parent_id)
-        if node and node.get("level") == "project" and node.get("status") == "ACTIVE":
-            return node
-    projects = scope_ssot.active_nodes(projection, "project")
-    return projects[0] if projects else None
-
-
-def _active_tasks_for_direction(direction_node: dict | None, projection: dict) -> list[dict]:
-    if not direction_node:
-        return []
-    direction_id = direction_node.get("id")
+def _records(state: dict[str, Any], aggregate_type: str) -> list[dict[str, Any]]:
+    bucket = state["aggregates"].get(aggregate_type, {})
     return [
-        node for node in scope_ssot.active_nodes(projection, "task")
-        if direction_id in (node.get("parents") or [])
+        copy.deepcopy(record)
+        for _, record in sorted(bucket.items())
+        if isinstance(record, dict)
     ]
 
 
-def _source_task_ids(provenance: dict) -> set[str]:
-    ids = set()
-    for item in provenance.get("sourceTasks") or []:
-        if isinstance(item, dict) and item.get("id"):
-            ids.add(item["id"])
-        elif isinstance(item, str):
-            ids.add(item)
-    return ids
+def _direction_id(package: dict[str, Any]) -> str | None:
+    value = package.get("direction_id") or package.get("sourceDirection")
+    return str(value) if value else None
 
 
-def _scope_warnings(pkg: dict | None, direction_node: dict | None, task_nodes: list[dict],
-                    provenance: dict, latest_records: dict[str, dict]) -> list[str]:
-    warnings = []
-    if not pkg:
-        return [f"package {provenance.get('active_pkg', '') or 'unknown'} was not found in package registry"]
-    source_direction = provenance.get("sourceDirection")
-    if not source_direction:
-        warnings.append("package has no sourceDirection; Scope binding cannot be verified")
-    elif not direction_node:
-        warnings.append(f"sourceDirection {source_direction} is missing from folded Scope")
-    elif direction_node.get("status") != "ACTIVE":
-        warnings.append(f"sourceDirection {source_direction} is {direction_node.get('status')}")
-
-    latest = latest_records.get(source_direction)
-    declared_version = provenance.get("sourceVersion")
-    if declared_version not in (None, "", []) and latest:
-        latest_version = latest.get("scope_version")
-        if str(declared_version) != str(latest_version):
-            warnings.append(
-                f"sourceVersion {declared_version} is stale; latest Direction version is {latest_version}"
-            )
-
-    active_task_ids = {node.get("id") for node in task_nodes}
-    declared_task_ids = _source_task_ids(provenance)
-    if source_direction and not declared_task_ids:
-        warnings.append("package has sourceDirection but no sourceTasks")
-    for task_id in sorted(declared_task_ids - active_task_ids):
-        warnings.append(f"sourceTasks includes {task_id}, but it is not an active Task for this Direction")
-    for task_id in sorted(active_task_ids - declared_task_ids):
-        warnings.append(f"active Task {task_id} is not listed in package sourceTasks")
-    exp_task_ids = set(provenance.get("experimentSourceTasks") or [])
-    for task_id in sorted(exp_task_ids - declared_task_ids):
-        warnings.append(f"experiment sourceTask {task_id} is not listed in sourceTasks")
-    return warnings
+def _project_for_direction(
+    projects: list[dict[str, Any]],
+    direction: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if direction:
+        project_id = direction.get("project_id")
+        parents = direction.get("parents") or []
+        candidates = [project_id, *parents]
+        for candidate in candidates:
+            if candidate:
+                match = next(
+                    (row for row in projects if row.get("id") == candidate),
+                    None,
+                )
+                if match is not None:
+                    return match
+    active = [
+        row
+        for row in projects
+        if row.get("status", "ACTIVE") == "ACTIVE"
+    ]
+    return active[0] if active else (projects[0] if projects else None)
 
 
-def _triage_target_id(item: dict) -> str | None:
-    proposed = item.get("proposed_node") if isinstance(item.get("proposed_node"), dict) else {}
-    return item.get("node_id") or proposed.get("id")
+def _package_experiments(
+    experiments: list[dict[str, Any]],
+    package: dict[str, Any],
+    _direction_id: str | None,
+) -> list[dict[str, Any]]:
+    """Select only Experiments owned by this Package.
+
+    Direction membership alone is insufficient because one Direction may own
+    several Packages and still have unmaterialized Scope Experiments.
+    """
+    return [
+        experiment
+        for experiment in experiments
+        if experiment.get("package_id") == package.get("id")
+    ]
 
 
-def _triage_parents(item: dict) -> list:
-    proposed = item.get("proposed_node") if isinstance(item.get("proposed_node"), dict) else {}
-    parents = item.get("parents") or proposed.get("parents") or []
-    return parents if isinstance(parents, list) else []
+def _packages_with_results(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Project finalized Run results into package context without a second writer."""
+    packages = _records(state, "package")
+    package_index = {
+        str(package.get("id")): package
+        for package in packages
+        if package.get("id")
+    }
+    experiments = {
+        str(identity): record
+        for identity, record in state["aggregates"]["experiment"].items()
+        if isinstance(record, dict)
+    }
+    derived: dict[str, list[dict[str, Any]]] = {}
+    for run_id, run in sorted(state["aggregates"]["run"].items()):
+        if not isinstance(run, dict):
+            continue
+        package_id = str(run.get("package_id") or "")
+        result = run.get("latest_scientific_result")
+        experiment = experiments.get(str(run.get("experiment_id") or ""))
+        if (
+            package_id not in package_index
+            or not isinstance(result, dict)
+            or not isinstance(experiment, dict)
+        ):
+            continue
+        spec = experiment.get("spec")
+        spec = spec if isinstance(spec, dict) else {}
+        measurements = result.get("measurements")
+        measurements = measurements if isinstance(measurements, dict) else {}
+        metric = str(result.get("metric") or "")
+        measured = copy.deepcopy(result.get("measured"))
+        if not metric and len(measurements) == 1:
+            metric, measured = next(iter(measurements.items()))
+            metric = str(metric)
+        elif measured is None:
+            measured = copy.deepcopy(measurements) if measurements else "unmeasured"
+        local_id = str(
+            result.get("experiment_local_id")
+            or run.get("experiment_local_id")
+            or experiment.get("local_id")
+            or experiment.get("id")
+            or ""
+        )
+        evidence = result.get("evidence")
+        evidence = evidence if isinstance(evidence, list) else []
+        evidence_path = next(
+            (
+                str(ref.get("uri"))
+                for ref in evidence
+                if isinstance(ref, dict) and ref.get("uri")
+            ),
+            str(result.get("result_json") or ""),
+        )
+        derived.setdefault(package_id, []).append(
+            {
+                "id": f"{local_id}::{run_id}",
+                "run_id": str(run_id),
+                "exp_id": local_id,
+                "method": result.get("method")
+                or spec.get("purpose")
+                or local_id,
+                "hypothesis": result.get("hypothesis") or "",
+                "gate": result.get("gate") or spec.get("gate") or "",
+                "metric": metric,
+                "measured": measured,
+                "verdict": result.get("verdict"),
+                "validity": result.get("validity"),
+                "evidence": copy.deepcopy(evidence),
+                "evidencePath": evidence_path,
+            }
+        )
+    for package_id, package in package_index.items():
+        rows = derived.get(package_id, [])
+        legacy_rows = legacy_package_fact_projection(package)["methodsTried"]
+        existing = (
+            copy.deepcopy(legacy_rows)
+            if legacy_rows
+            else
+            [
+                copy.deepcopy(row)
+                for row in package.get("methodsTried", [])
+                if isinstance(row, dict)
+            ]
+            if isinstance(package.get("methodsTried"), list)
+            else []
+        )
+        if not existing and not rows:
+            continue
+        by_id = {
+            str(row.get("id") or row.get("run_id")): index
+            for index, row in enumerate(existing)
+            if row.get("id") or row.get("run_id")
+        }
+        for row in rows:
+            identity = str(row["id"])
+            if identity in by_id:
+                existing[by_id[identity]] = row
+            else:
+                by_id[identity] = len(existing)
+                existing.append(row)
+        package["methodsTried"] = existing
+    return packages
 
 
-def _relevant_pending_triage(pending: list[dict], project_node: dict | None,
-                             direction_node: dict | None, task_nodes: list[dict]) -> list[dict]:
-    project_id = project_node.get("id") if project_node else None
-    direction_id = direction_node.get("id") if direction_node else None
-    task_ids = {node.get("id") for node in task_nodes}
-    chain = {item for item in [project_id, direction_id, *task_ids] if item}
-    out = []
-    for item in pending:
-        target = _triage_target_id(item)
-        parents = set(_triage_parents(item))
-        level = item.get("level")
-        if target in chain:
-            out.append(item)
-        elif level == "task" and direction_id and direction_id in parents:
-            out.append(item)
-        elif level == "direction" and target == direction_id:
-            out.append(item)
-        elif level == "project" and target == project_id:
-            out.append(item)
-    return sorted(out, key=lambda item: item.get("id", ""))
-
-
-def resolve_scope_context(packages: list, pkg_id: str, transitions_path: str,
-                          triage_path: str = "outputs/_scope/triage.jsonl") -> dict:
-    """Resolve Project, Direction, Tasks, provenance, and freshness inputs for one package."""
-    records = scope_ssot.read_log(transitions_path)
-    projection = scope_ssot.fold(records)
-    latest = _latest_records_by_node(records)
-    pkg = _find_package(packages, pkg_id)
-    provenance = _package_provenance(pkg)
-    direction_id = provenance.get("sourceDirection")
-    direction_node = projection.get(direction_id) if direction_id else None
-    scope_version = direction_node.get("version", 0) if direction_node else 0
-    project_node = _active_project_for_direction(direction_node, projection)
-    task_nodes = _active_tasks_for_direction(direction_node, projection)
-    pending_scope = _relevant_pending_triage(
-        load_pending_triage(triage_path), project_node, direction_node, task_nodes)
-    warnings = _scope_warnings(pkg, direction_node, task_nodes, provenance, latest)
+def _package_provenance(
+    package: dict[str, Any],
+    experiments: list[dict[str, Any]],
+) -> dict[str, Any]:
     return {
-        "records": records,
-        "projection": projection,
-        "global_scope_version": scope_ssot.global_version(records),
-        "triage_version": triage_version(triage_path),
-        "project_node": project_node,
-        "direction_node": direction_node,
-        "task_nodes": task_nodes,
-        "package_provenance": provenance,
-        "pending_scope": pending_scope,
-        "scope_warnings": warnings,
-        "scope_version": scope_version,
+        "sourceDirection": _direction_id(package),
+        "sourceVersion": package.get("sourceVersion"),
+        "sourceChange": package.get("sourceChange"),
+        "sourceExperiments": copy.deepcopy(
+            package.get("sourceExperiments") or []
+        ),
     }
 
 
-def _write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
+def _target_id(proposal: dict[str, Any]) -> str | None:
+    proposed = (
+        proposal.get("proposed_node")
+        if isinstance(proposal.get("proposed_node"), dict)
+        else {}
+    )
+    value = (
+        proposal.get("aggregate_id")
+        or proposal.get("node_id")
+        or proposed.get("id")
+    )
+    return str(value) if value else None
 
 
-def build(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/transitions.jsonl",
-          triage_path: str = "outputs/_scope/triage.jsonl",
-          budget_chars: int = 8000, generated_at: str | None = None,
-          selfevolve_root: str | None = None):
-    """Load stores → assemble full + core packs → write the three artifacts.
+def _pending_proposals(
+    proposals: list[dict[str, Any]],
+    *,
+    package_id: str,
+    project_id: str | None,
+    direction_id: str | None,
+    experiment_ids: set[str],
+) -> list[dict[str, Any]]:
+    chain = {
+        value
+        for value in {package_id, project_id, direction_id, *experiment_ids}
+        if value
+    }
+    selected = []
+    for proposal in proposals:
+        if proposal.get("disposition") != "PENDING":
+            continue
+        parents = set(proposal.get("parents") or [])
+        proposed = proposal.get("proposed_node")
+        if isinstance(proposed, dict):
+            parents.update(proposed.get("parents") or [])
+        if (
+            proposal.get("package_id") == package_id
+            or _target_id(proposal) in chain
+            or parents.intersection(chain)
+        ):
+            selected.append(proposal)
+    return sorted(selected, key=lambda row: str(row.get("id", "")))
 
-    When selfevolve_root is given, the registry's selfevolve-origin rows are first
-    regenerated as a derived export of the Rule Store's active Rules (plan D7).
-    """
-    generated_at = generated_at or _now_iso()
-    if selfevolve_root is not None:
-        export_learned_rules(selfevolve_root, root)
-    learning_stamp = learning_fingerprint(root, selfevolve_root=selfevolve_root)
-    packages = load_packages(root)
-    project_rules = load_learned_rules(root)
-    active_package_rules = load_package_binding_rules(root, pkg_id)
-    learned_rules = project_rules + active_package_rules
-    analysis_rules = load_analysis_rules(root)
-    scope_context = resolve_scope_context(packages, pkg_id, transitions_path, triage_path=triage_path)
-    direction_node = scope_context["direction_node"]
-    scope_version = scope_context["scope_version"]
-    global_scope_version = scope_context["global_scope_version"]
-    # Project-level knowledge registries (cross-package → belong in both full + core).
-    papers_registry = load_registry(root, "papers.jsonl")
-    edges = load_registry(root, "edges.jsonl")
-    gaps = load_registry(root, "gaps.jsonl")
 
-    full = assemble({
-        "project_node": scope_context["project_node"],
-        "direction_node": direction_node,
-        "task_nodes": scope_context["task_nodes"],
-        "package_provenance": scope_context["package_provenance"],
-        "pending_scope": scope_context["pending_scope"],
-        "scope_warnings": scope_context["scope_warnings"],
-        "active_pkg": pkg_id,
-        "scope_version": scope_version,
-        "global_scope_version": global_scope_version,
-        "triage_version": scope_context["triage_version"],
-        "learning_fingerprint": learning_stamp,
-        "generated_at": generated_at, "packages": packages, "learned_rules": learned_rules,
-        "analysis_rules": analysis_rules,
-        "papers_registry": papers_registry, "edges": edges, "gaps": gaps,
-    }, budget_chars=budget_chars)
+def _pending_decisions(
+    decisions: list[dict[str, Any]],
+    *,
+    package_id: str,
+    direction_id: str | None,
+    experiment_ids: set[str],
+) -> list[dict[str, Any]]:
+    subjects = {value for value in {package_id, direction_id, *experiment_ids} if value}
+    pending_values = {
+        "PENDING",
+        "AWAITING_ACK",
+        "AWAITING_APPROVAL",
+        "AWAITING_RATIFICATION",
+        "ASK_USER",
+    }
+    selected = []
+    for decision in decisions:
+        pending = (
+            decision.get("pending") is True
+            or decision.get("requires_action") is True
+            or decision.get("status") in pending_values
+            or decision.get("outcome") in pending_values
+            or decision.get("route") in pending_values
+        )
+        if not pending:
+            continue
+        if (
+            decision.get("package_id") == package_id
+            or decision.get("direction_id") == direction_id
+            or decision.get("subject_id") in subjects
+            or decision.get("experiment_id") in experiment_ids
+        ):
+            selected.append(decision)
+    return sorted(selected, key=lambda row: str(row.get("id", "")))
 
-    # Direction-independent cross-package knowledge. Returned for callers/tests,
-    # but no longer written to a dashboard context.html surface.
-    core = assemble({
-        "project_node": scope_context["project_node"],
-        "direction_node": None, "active_pkg": None, "scope_version": scope_version,
-        "global_scope_version": global_scope_version,
-        "triage_version": scope_context["triage_version"],
-        "learning_fingerprint": learning_stamp,
-        "generated_at": generated_at, "packages": packages, "learned_rules": project_rules,
-        "analysis_rules": analysis_rules,
-        "papers_registry": papers_registry, "edges": edges, "gaps": gaps,
-    }, budget_chars=budget_chars)
 
-    _write(Path("outputs") / pkg_id / "context_pack.md", render_md(full))
-    _write(Path("outputs") / pkg_id / "context_pack.json",
-           json.dumps(render_json(full), indent=2, ensure_ascii=False) + "\n")
+def _scope_warnings(
+    package: dict[str, Any],
+    direction: dict[str, Any] | None,
+    experiments: list[dict[str, Any]],
+) -> list[str]:
+    warnings_out = []
+    direction_id = _direction_id(package)
+    if not direction_id:
+        warnings_out.append("package has no direction_id; Scope binding cannot be verified")
+    elif direction is None:
+        warnings_out.append(f"direction {direction_id} is missing from research state")
+    elif direction.get("status", "ACTIVE") != "ACTIVE":
+        warnings_out.append(
+            f"direction {direction_id} is {direction.get('status')}"
+        )
+    if not experiments:
+        warnings_out.append("package has no Experiment.spec in current state")
+    return warnings_out
+
+
+def _rule_applies(rule: dict[str, Any], package_id: str) -> bool:
+    if rule.get("status") not in {"ACTIVE", "PROMOTED", "RULE_ACTIVE"}:
+        return False
+    level = rule.get("level")
+    if level in {"universal", "project"}:
+        return True
+    if level != "package":
+        return False
+    scoped = rule.get("package_id") or rule.get("pkg")
+    if scoped == package_id:
+        return True
+    scope = rule.get("scope") if isinstance(rule.get("scope"), dict) else {}
+    return package_id in set(scope.get("packages") or [])
+
+
+def _rule_text(rule: dict[str, Any]) -> str:
+    return str(
+        rule.get("text")
+        or rule.get("content")
+        or rule.get("description")
+        or ""
+    )
+
+
+def _learning_applies(learning: dict[str, Any], package_id: str) -> bool:
+    scoped = learning.get("package_id") or learning.get("pkg")
+    if scoped in {None, "", "*", package_id}:
+        return True
+    scope = learning.get("scope") if isinstance(learning.get("scope"), dict) else {}
+    packages = set(scope.get("packages") or [])
+    return "*" in packages or package_id in packages
+
+
+def _scope_version(
+    state: dict[str, Any],
+    direction_id: str | None,
+    direction: dict[str, Any] | None,
+) -> int:
+    if direction_id:
+        version = state["aggregate_versions"].get(f"direction/{direction_id}")
+        if version is not None:
+            return int(version)
+    return int((direction or {}).get("version", 0) or 0)
+
+
+def build(
+    workspace: str | Path | ResearchPaths,
+    pkg_id: str,
+    *,
+    research_root: str | Path | None = None,
+    budget_chars: int = 8000,
+    generated_at: str = "",
+    state_snapshot: dict[str, Any] | None = None,
+):
+    """Return ``(package_pack, project_core_pack)`` without writing an artifact."""
+    paths = _paths(workspace, research_root=research_root)
+    state = state_snapshot if state_snapshot is not None else _management_state(paths)
+    if not isinstance(state, dict) or not isinstance(state.get("aggregates"), dict):
+        raise ValueError("state_snapshot must be a folded research-state object")
+    packages = _packages_with_results(state)
+    package = next((row for row in packages if row.get("id") == pkg_id), None)
+    if package is None:
+        raise KeyError(f"unknown package: {pkg_id}")
+
+    direction_id = _direction_id(package)
+    directions = _records(state, "direction")
+    direction = next(
+        (row for row in directions if row.get("id") == direction_id),
+        None,
+    )
+    project = _project_for_direction(_records(state, "project"), direction)
+    experiments = _package_experiments(
+        _records(state, "experiment"),
+        package,
+        direction_id,
+    )
+    experiment_ids = {str(row.get("id")) for row in experiments if row.get("id")}
+    provenance = _package_provenance(package, experiments)
+    proposals = _pending_proposals(
+        _records(state, "proposal"),
+        package_id=pkg_id,
+        project_id=str(project.get("id")) if project and project.get("id") else None,
+        direction_id=direction_id,
+        experiment_ids=experiment_ids,
+    )
+    pending_decisions = _pending_decisions(
+        _records(state, "decision"),
+        package_id=pkg_id,
+        direction_id=direction_id,
+        experiment_ids=experiment_ids,
+    )
+
+    rules = _records(state, "rule")
+    package_rules = [
+        _rule_text(rule)
+        for rule in rules
+        if _rule_applies(rule, pkg_id) and _rule_text(rule)
+    ]
+    project_rules = [
+        _rule_text(rule)
+        for rule in rules
+        if rule.get("level") in {"universal", "project"}
+        and rule.get("status") in {"ACTIVE", "PROMOTED", "RULE_ACTIVE"}
+        and _rule_text(rule)
+    ]
+    learnings = [
+        row
+        for row in _records(state, "learning")
+        if _learning_applies(row, pkg_id)
+    ]
+    papers = _records(state, "paper")
+    edges = _records(state, "knowledge_edge")
+    gaps = _records(state, "knowledge_gap")
+    common = {
+        "source_seq": state["source_seq"],
+        "source_hash": state["source_hash"],
+        "scope_version": _scope_version(state, direction_id, direction),
+        "global_scope_version": state["source_seq"],
+        "triage_version": sum(
+            int(version)
+            for key, version in state.get("aggregate_versions", {}).items()
+            if str(key).startswith("proposal/")
+        ),
+        "generated_at": generated_at,
+        "packages": packages,
+        "analysis_rules": [],
+        "papers_registry": papers,
+        "edges": edges,
+        "gaps": gaps,
+    }
+    full = assemble(
+        {
+            **common,
+            "project_node": project,
+            "direction_node": direction,
+            "package": package,
+            "experiment_nodes": experiments,
+            "package_provenance": provenance,
+            "pending_scope": proposals,
+            "pending_decisions": pending_decisions,
+            "scope_warnings": _scope_warnings(package, direction, experiments),
+            "active_pkg": pkg_id,
+            "learned_rules": package_rules,
+            "learnings": learnings,
+        },
+        budget_chars=budget_chars,
+    )
+    core = assemble(
+        {
+            **common,
+            "project_node": project,
+            "direction_node": None,
+            "package": None,
+            "experiment_nodes": [],
+            "package_provenance": {},
+            "pending_scope": [],
+            "pending_decisions": [],
+            "scope_warnings": [],
+            "active_pkg": None,
+            "learned_rules": project_rules,
+            "learnings": [
+                row
+                for row in _records(state, "learning")
+                if not (row.get("package_id") or row.get("pkg"))
+            ],
+        },
+        budget_chars=budget_chars,
+    )
     return full, core
 
 
-def ensure_fresh(root: str, pkg_id: str, *, transitions_path: str = "outputs/_scope/transitions.jsonl",
-                 triage_path: str = "outputs/_scope/triage.jsonl",
-                 budget_chars: int = 8000, generated_at: str | None = None,
-                 selfevolve_root: str | None = None) -> bool:
-    """Rebuild the pack iff it is missing or stale (scope advanced). Returns True if it rebuilt.
-
-    This is the staleness + backfill contract a consumer runs before reading the pack.
-    """
-    pack_json = Path("outputs") / pkg_id / "context_pack.json"
-    if selfevolve_root is not None:
-        export_learned_rules(selfevolve_root, root)
-    current_learning_fingerprint = learning_fingerprint(root, selfevolve_root=selfevolve_root)
-    if pack_json.exists():
-        try:
-            pj = json.loads(pack_json.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            pj = None
-        if pj is not None:
-            records = scope_ssot.read_log(transitions_path)
-            if not is_stale(
-                pj,
-                current_global_scope_version=scope_ssot.global_version(records),
-                current_triage_version=triage_version(triage_path),
-                current_learning_fingerprint=current_learning_fingerprint,
-            ):
-                return False
-    build(root, pkg_id, transitions_path=transitions_path, triage_path=triage_path,
-          budget_chars=budget_chars, generated_at=generated_at,
-          selfevolve_root=selfevolve_root)
-    return True
+def query_json(
+    workspace: str | Path | ResearchPaths,
+    pkg_id: str,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Return the package Context Pack as a JSON-ready ephemeral projection."""
+    options = dict(kwargs)
+    supplied_state = options.pop("state_snapshot", None)
+    paths = _paths(workspace, research_root=options.pop("research_root", None))
+    state = supplied_state if supplied_state is not None else _management_state(paths)
+    full, _ = build(
+        paths,
+        pkg_id,
+        state_snapshot=state,
+        **options,
+    )
+    rendered = render_json(full)
+    rendered["selection"] = _structured_selection(state, pkg_id)
+    return rendered
 
 
-def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Build the Context Pack for a package.")
-    ap.add_argument("--pkg", required=True)
-    ap.add_argument("--root", default="research_html")
-    ap.add_argument("--transitions", default="outputs/_scope/transitions.jsonl")
-    ap.add_argument("--triage", default="outputs/_scope/triage.jsonl")
-    ap.add_argument("--budget-chars", type=int, default=8000)
-    ap.add_argument("--selfevolve-root", default=None,
-                    help="regenerate the registry's selfevolve-origin rows from this Rule Store first")
-    ap.add_argument("--if-stale", action="store_true",
-                    help="rebuild only when the pack is missing or the scope version advanced")
-    args = ap.parse_args(argv)
-    if args.if_stale:
-        rebuilt = ensure_fresh(args.root, args.pkg, transitions_path=args.transitions,
-                               triage_path=args.triage,
-                               budget_chars=args.budget_chars,
-                               selfevolve_root=args.selfevolve_root)
-        print(f"context_pack {'rebuilt' if rebuilt else 'already fresh'} for {args.pkg}")
-        return 0
-    full, _ = build(args.root, args.pkg, transitions_path=args.transitions,
-                    triage_path=args.triage,
-                    budget_chars=args.budget_chars, selfevolve_root=args.selfevolve_root)
-    print(f"context_pack → outputs/{args.pkg}/context_pack.md "
-          f"({len(full.sections)} sections)")
+def _structured_selection(
+    state: dict[str, Any],
+    package_id: str,
+) -> dict[str, Any]:
+    """Machine-readable controls and evidence retained beside prose sections."""
+    package = state["aggregates"]["package"].get(package_id)
+    if not isinstance(package, dict):
+        raise KeyError(f"unknown package: {package_id}")
+    direction_id = _direction_id(package)
+    experiments = _package_experiments(
+        _records(state, "experiment"),
+        package,
+        direction_id,
+    )
+    experiment_ids = {
+        str(experiment["id"])
+        for experiment in experiments
+        if experiment.get("id")
+    }
+    pending_decisions = _pending_decisions(
+        _records(state, "decision"),
+        package_id=package_id,
+        direction_id=direction_id,
+        experiment_ids=experiment_ids,
+    )
+    rules = [
+        rule
+        for rule in _records(state, "rule")
+        if _rule_applies(rule, package_id)
+    ]
+    learnings = [
+        learning
+        for learning in _records(state, "learning")
+        if _learning_applies(learning, package_id)
+    ]
+    finalized_runs = [
+        run
+        for run in _records(state, "run")
+        if run.get("package_id") == package_id
+        and isinstance(run.get("latest_scientific_result"), dict)
+    ]
+    evidence_refs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in [
+        package,
+        *experiments,
+        *pending_decisions,
+        *rules,
+        *learnings,
+        *(
+            run["latest_scientific_result"]
+            for run in finalized_runs
+        ),
+    ]:
+        refs = (
+            record.get("evidence_refs")
+            or record.get("evidenceRefs")
+            or record.get("evidence")
+            or []
+        )
+        if not isinstance(refs, list):
+            continue
+        for ref in refs:
+            if not isinstance(ref, dict):
+                continue
+            identity = json.dumps(
+                ref,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            )
+            if identity not in seen:
+                seen.add(identity)
+                evidence_refs.append(copy.deepcopy(ref))
+    return {
+        "package": {
+            key: copy.deepcopy(package.get(key))
+            for key in ("id", "lifecycle", "phase", "blocker")
+        },
+        "experiments": [
+            {
+                "id": experiment.get("id"),
+                "status": experiment.get("status"),
+                "control_mode": (
+                    experiment.get("spec", {}).get("control_mode")
+                    if isinstance(experiment.get("spec"), dict)
+                    else None
+                ),
+            }
+            for experiment in experiments
+        ],
+        "pending_decision_ids": [
+            decision.get("id")
+            for decision in pending_decisions
+            if decision.get("id")
+        ],
+        "evidence_refs": evidence_refs,
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Query an ephemeral, state-backed Context Pack."
+    )
+    parser.add_argument("--pkg", required=True)
+    parser.add_argument("--workspace", default=".")
+    parser.add_argument("--research-root")
+    parser.add_argument("--budget-chars", type=int, default=8000)
+    parser.add_argument("--format", choices=("json", "md"), default="json")
+    args = parser.parse_args(argv)
+    if args.format == "md":
+        full, _ = build(
+            args.workspace,
+            args.pkg,
+            research_root=args.research_root,
+            budget_chars=args.budget_chars,
+        )
+        print(render_md(full), end="")
+    else:
+        print(
+            json.dumps(
+                query_json(
+                    args.workspace,
+                    args.pkg,
+                    research_root=args.research_root,
+                    budget_chars=args.budget_chars,
+                ),
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+        )
     return 0
 
 

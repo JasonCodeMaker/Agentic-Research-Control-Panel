@@ -93,12 +93,6 @@ def install_skill(selfevolve_root, project_root, manifest, approval, *, now=None
     return dest, Path(project_root) / ".claude" / "skills" / eid
 
 
-def installed_target(project_root, entity_id):
-    """The resolved install target for a Skill, or None if not installed."""
-    link = Path(project_root) / ".claude" / "skills" / entity_id
-    return link.resolve() if link.is_symlink() else None
-
-
 def is_invocation_allowed(state, manifest, requested_trigger):
     """Runtime gate (§12.3): deny when suspended / not deployed / outside canary scope."""
     if state == "SUSPENDED":

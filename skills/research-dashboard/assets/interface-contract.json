@@ -1,0 +1,143 @@
+{
+  "browser_major": 150,
+  "browser_version": "Chromium 150.0.7871.114 snap",
+  "css": {
+    "assets/research.css": "ec0c61032fded92b99b0c8e1b23819b2209d4f60e1b4af68c276b556d9419293",
+    "assets/toc.css": "a7ce4705f4c71a9e03cc7a9ce41337d4008d5faa31655be98dab6d0d412fbce4"
+  },
+  "dom": {
+    "index.html": "d76858598072036522d8928a42c1279048c02520f3702891e6ca51d8b732382c",
+    "learnings.html": "43629476698ee04c2db206564b153231edf6191dd77e7968e646481cfd30f500",
+    "live.html": "b5fa5404b96ca89007f66f5b826a148534602fed7a3a98cd4e64232c85f59568",
+    "module.html": "e2922501a0641196233546ba081ada7b5ab75f2fa0a334ed43b3134735864c9a",
+    "packages/fixture/analysis.html": "fcae90dce856725846f4945b54163c2077b75688a2711ec07b22f8f5c1481beb",
+    "packages/fixture/docs/index.html": "d99da53441379cfed7142ed538b55a1e03a9b3c05d9587a62224ab55898f4d21",
+    "packages/fixture/implementation.html": "d12d63522467a91d63d03fa235e63c232364a9bdf666a0eedf397d9d88ee571c",
+    "packages/fixture/index.html": "d7cc291f2848185e0264b90c22ada17478c42393883440f0fed8a56cb9a41000",
+    "packages/fixture/plan.html": "a80271ba57157373be758bbd1594dd58cf0eb0dfb0ee2d0b30b9d42dbfe07f39",
+    "packages/fixture/results.html": "5ffba80d5d47010860eb65a020d3163929e570910bda8dec576ce4f3a53ac13c",
+    "packages/fixture/tracker.html": "3cdb7f14db5c805bdee5a91cdc1b1244536fac18014742f13b67477ca5764a26",
+    "scope.html": "e435f76040bbb0bba192d98c56cdb68536ecfd7a316f291abf13bfc4f8a8d170"
+  },
+  "fonts": {
+    "fontconfig_version": "fontconfig version 2.13.1",
+    "matches": {
+      "Arial": {
+        "family": "Arial",
+        "file": "/usr/share/fonts/truetype/msttcorefonts/Arial.ttf",
+        "file_sha256": "35c0f3559d8db569e36c31095b8a60d441643d95f59139de40e23fada819b833",
+        "style": "Regular,Normal,oby\u010dejn\u00e9,Standard,\u039a\u03b1\u03bd\u03bf\u03bd\u03b9\u03ba\u03ac,Normaali,Norm\u00e1l,Normale,Standaard,Normalny,\u041e\u0431\u044b\u0447\u043d\u044b\u0439,Norm\u00e1lne,Navadno,th\u01b0\u01a1\u0300ng,Arrunta"
+      },
+      "Georgia": {
+        "family": "Georgia",
+        "file": "/usr/share/fonts/truetype/msttcorefonts/Georgia.ttf",
+        "file_sha256": "7d0bb20c632bb59e81a0885f573bd2173f71f73204de9058feb68ce032227072",
+        "style": "Regular,Normal,oby\u010dejn\u00e9,Standard,\u039a\u03b1\u03bd\u03bf\u03bd\u03b9\u03ba\u03ac,Normaali,Norm\u00e1l,Normale,Standaard,Normalny,\u041e\u0431\u044b\u0447\u043d\u044b\u0439,Norm\u00e1lne,Navadno,Arrunta"
+      },
+      "Times New Roman": {
+        "family": "Times New Roman",
+        "file": "/usr/share/fonts/truetype/msttcorefonts/Times_New_Roman.ttf",
+        "file_sha256": "4e98adeff8ccc8ef4e3ece8d4547e288ff85fdc9c7ca711a4599c234874bbe86",
+        "style": "Regular,Normal,oby\u010dejn\u00e9,Standard,\u039a\u03b1\u03bd\u03bf\u03bd\u03b9\u03ba\u03ac,Normaali,Norm\u00e1l,Normale,Standaard,Normalny,\u041e\u0431\u044b\u0447\u043d\u044b\u0439,Norm\u00e1lne,Navadno,th\u01b0\u01a1\u0300ng,Arrunta"
+      },
+      "monospace": {
+        "family": "DejaVu Sans Mono",
+        "file": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "file_sha256": "39c29931201f08dd89fdba4129c76288e6baeecf7c94fe4f6a757f2b50718b1b",
+        "style": "Book"
+      },
+      "sans-serif": {
+        "family": "DejaVu Sans",
+        "file": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "file_sha256": "690243adfefe0ce154b547db6205794bd30ac4277275179517a90994f4980648",
+        "style": "Book"
+      },
+      "serif": {
+        "family": "DejaVu Serif",
+        "file": "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+        "file_sha256": "3731a19f2b50d86d81dd1a1effcd81492ed1fa44f6ea904792dd98fdae9b3dfe",
+        "style": "Book"
+      },
+      "system-ui": {
+        "family": "DejaVu Sans",
+        "file": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "file_sha256": "690243adfefe0ce154b547db6205794bd30ac4277275179517a90994f4980648",
+        "style": "Book"
+      },
+      "ui-monospace": {
+        "family": "DejaVu Sans",
+        "file": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "file_sha256": "690243adfefe0ce154b547db6205794bd30ac4277275179517a90994f4980648",
+        "style": "Book"
+      },
+      "ui-serif": {
+        "family": "DejaVu Sans",
+        "file": "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "file_sha256": "690243adfefe0ce154b547db6205794bd30ac4277275179517a90994f4980648",
+        "style": "Book"
+      }
+    },
+    "sha256": "1d614f97c7220c8759a439ac3b899b6cf841154e33c29775a3e482d8d6880bcb"
+  },
+  "render_environment_sha256": "f53db6142e5fc92500436d5cf9df93227514ee42e80843e6c698befbc16524d3",
+  "runtime": {
+    "libc": [
+      "glibc",
+      "2.35"
+    ],
+    "os_release_sha256": "594d5ddd35aedb47f00d9c34d140017907a5b9f93c975aba125fc924daac5c07",
+    "pillow_version": "11.2.1",
+    "platform_machine": "x86_64",
+    "platform_system": "Linux",
+    "python_implementation": "CPython",
+    "python_version": "3.13.2",
+    "sha256": "40ef74c9b618cd2090a4ecccef2e854b9aa3de7cda417dc16e6dc479cc5fc22c"
+  },
+  "schema_version": 2,
+  "screenshot_flags": [
+    "--headless=new",
+    "--no-sandbox",
+    "--disable-background-networking",
+    "--disable-default-apps",
+    "--disable-extensions",
+    "--disable-sync",
+    "--hide-scrollbars",
+    "--disable-lcd-text",
+    "--force-device-scale-factor=1",
+    "--force-color-profile=srgb",
+    "--force-prefers-reduced-motion=reduce",
+    "--lang=en-US",
+    "--run-all-compositor-stages-before-draw",
+    "--window-size=1440,1200",
+    "--virtual-time-budget=2000"
+  ],
+  "screenshot_policy": {
+    "animation_policy": "virtual-time-budget-2000ms",
+    "color_profile": "srgb",
+    "language": "en-US",
+    "locale": "C.UTF-8",
+    "reduced_motion": "reduce",
+    "timezone": "UTC"
+  },
+  "viewport": {
+    "device_scale_factor": 1,
+    "height": 1200,
+    "width": 1440
+  },
+  "visual": {
+    "index.html": "fffffffff07fffffe777ffffe0007fffe000ffffe0000fffe0003ffff37ffffff43fffffffffffffe003fffff6effffffffffffff0fffffff000001ff000001ff003939ffffffffff07ffffff000001ff000001ff00000ffffffffffffefffffe7df7cfff7ff7cffffffffffffffffffe0ffffffe0000fffe0000fffffffffff",
+    "learnings.html": "fffffffff87fffffe07dffffe0007fffe0007fffe00fffffe0001fffe0001fffe0001fffe7fffffff00ffffffffffffff12fffffe007fffffffffffff00ffffff00ffffff0000ffff007ffffff9de71ff7bdcefffffffffffffffffff0fffffffffffffffffc3ffffffffffffffffffff0fffffffffffffffffc3fffffffffff",
+    "live.html": "fffffffff0ffffffe0ffffffe03fffffe03fffffe0000fffe0001ffff03d7ffff03fffffffffffffe00ffffff00fffffffffffffe777719fe777719fffffffffe1ffffffe0001fffe0001fffe00003ffffe003ffe0ffffffe0ffffffe0000fffe0fffffffffc3fffffffffffe0fffffff07ffffff03fffffffffffffffffffff",
+    "module.html?package=fixture&module=plan": "fffffffff1e7ffffe397ffffe787ffffe787e8ffe780007fff801fffffc27fffffffffffff83ffffff83ffffffcfe0ffffcc601ffffc7f1ffffc3f1ffffcf71ffffc3e5ffffc771fffffff1fffcfe1ffffcfe1ffffc0700fffc0701fffc0301fffc0200fffc1e03ffffffcffffc7f7ffffc7e3ffffc0200fffc07fffffcfffff",
+    "packages/fixture/analysis.html": "fffffffff3fffffff1dbffffe000ffffe000ffffe001fffff0000fffe0000fffe07ffffff01ffffff733337ff173333fffffffffffffffffe001fffff001ffffefffffffe7ffffffe3ffffffe000000fe0ffffffefffffffefffffffe3ffffffe000001fe000003fe07fbfffffffffffffffffffffffffffe0ffffffffffffff",
+    "packages/fixture/docs/index.html": "fffffffffbffffffe76fffffe003ffffe001ffffe001fffff0029fffe0001fffe3fffffff5fffffffffffffff773333ff3ffffffffffffffffffffffe001fffff0007fffe3feffffe001fffff001ffffe1ffffffe01fffffe01fffffe5ffffffe5ffffffe0000007e0000007e000000fe0000007ffffffffffffffffffffffff",
+    "packages/fixture/implementation.html": "fffffffff1ffffffe1efffffe001ffffe000ffffe000ffffe0cfffffe0ffffffe0000fffe0000fffe1fffffff07fffffff7fbffff133333ffffffffffffffffff003ffffe001fffffffffffff007fffff007fffff00fffffefffffffe0ffffffe07fffffe000001fe0ffffffedffffffffffffffe1ffffffffffffffe1fffc0f",
+    "packages/fixture/index.html": "fffffffff07fffffe03fffffe000ffffe000ffffe0ffffffe01fffffe01fffffe001fffff733337fe133333fffffffffffffffffe001ffffe001000fefffffffe3ffffffe3ffffffe607ffffe60fffffe27fffffefffffffe3ffffffe3ffffffe000001fefffffffe1ffffffe03c6fffe20000ffefffff0fe0000007e0000007",
+    "packages/fixture/plan.html": "fffffffffbffffffe76fffffe003ffffe001ffffe001fffff0001fffe0001fffe0407ffff03ffffff53ffffff333333ff17fffffffffffffffffffffe001ffffefffffffe1ffffffe0ffffffe200007fe701ffffe73fffffe71fffffe70fffffe71fffffe13fffffefffffffe0ffffffe0ffffffe000000fe000001fe000207f",
+    "packages/fixture/results.html": "fffffffff3ffffffe5d3ffffe000ffffe001ffffe001fffff0001fffe0001ffff07ffffff67ffffff733337ff177333fffffffffffffffffe001fffff003fffffffffffff003fffff00fffffffffffffefffffffe1ffffffe03fefffefe08fffe01fffffe0001fffea7fffffe3ffffffebf7feffe000000fe000000fe000000f",
+    "packages/fixture/tracker.html": "fffffffff0ffffffe5dbffffe000ffffe000ffffe001fffff0001fffe0000fffe0001ffff01ffffff6bffffff333333ff17fffffffffffffffffffffe001fffffffffffffffffffff3fffffff000001ff03ffffffd3fffffefffffffe07fffffe07fffffe000001fe1ffffffe0ffffffe20fffffe63fffffe27fffffefffffff",
+    "scope.html": "fffffffff07fffffe27fffffa003ffffe0024fffe0000fffe0000fffe0000fffe03fffffe027fffff080000fe00cceeff331311fe333711fe7dfffffe3133fffefff7ffff0ffffffe01ffffff119bfffff713ffff1fffffff1ffffffe0fffffff01ffffff333fffff111fffffff3fffffffffffff1ffffefe03ffffff000ffff"
+  },
+  "visual_digest": "mean-threshold-32x32-v1",
+  "visual_max_hamming": 8
+}

@@ -10,9 +10,9 @@ A local control layer for coding agents that run research experiments in real re
 with approved objectives, visible runs, evidence-backed results, and project memory you can inspect.
 
 [Why ARC?](#why-arc) ·
-[Research Loop](#the-research-loop) ·
+[Storage Model](#one-managed-root) ·
 [Quick Start](#quick-start) ·
-[Example Run](#a-complete-example-run) ·
+[Research Loop](#the-research-loop) ·
 [Command Reference](#command-reference)
 
 <br />
@@ -28,7 +28,7 @@ with approved objectives, visible runs, evidence-backed results, and project mem
 </p>
 
 <p align="center">
-  <sub>A shared control surface for project scope, package status, live runs, evidence, results, and human decisions.</sub>
+  <sub>A human control surface for project scope, package status, live runs, evidence, results, and decisions.</sub>
 </p>
 
 ---
@@ -36,74 +36,138 @@ with approved objectives, visible runs, evidence-backed results, and project mem
 ## Why ARC?
 
 When a coding agent runs experiment after experiment in a real research repo,
-the code may execute just fine. The harder question is whether the research
-state still belongs to the project instead of the chat.
+successful execution is only the first requirement. The harder question is
+whether the research state still belongs to the project instead of the chat.
 
 | Challenge | Question ARC keeps visible |
 | --- | --- |
-| 🎯 **Objective drift** | Several sessions in, can you see whether the agent is still bound to the objective, metric, and baseline you approved? |
-| 👀 **Run visibility** | While an auto-research pipeline is executing, can you inspect what it is doing instead of trusting its summary? |
-| 📎 **Evidence traceability** | When it reports a metric, can you trace that number to an artifact and verify that the result is real and reproducible? |
-| 🧠 **Project memory** | Can the next session inherit what this run proved or ruled out? |
+| 🎯 **Objective drift** | Can you see whether the agent is still bound to the objective, metric, and baseline you approved? |
+| 👀 **Run visibility** | Can you inspect an active campaign instead of trusting a later summary? |
+| 📎 **Evidence traceability** | Can you trace a reported metric to the command, context, log, and result that produced it? |
+| 🧠 **Project memory** | Can the next session reuse what prior work proved or ruled out? |
 
-Chat is the wrong source of truth for research work. This project keeps the
-working state in the repo, where the human and the agent can inspect the same
-objective, run state, evidence, result, and decision.
+ARC keeps management state and experimental evidence outside chat memory. The
+agent works through typed queries and guarded commands. The human sees the same
+research through a browser interface and ratifies changes that alter intent or
+terminal conclusions.
 
-Start from an empty workspace or attach ARC to an existing ML or research repo.
+## One Managed Root
 
-## The Research Loop
+ARC manages one versioned root per research workspace:
 
-Each cycle moves through an approved objective, a scoped package, a visible run,
-an evidence-backed result, a human decision, and project memory. A scoped package
-is a bounded, approved unit of work.
+```text
+.research/
+|-- VERSION
+|-- state/
+|   |-- events.jsonl
+|   |-- current.json
+|   |-- migration.json                 # present after an explicit migration
+|   `-- notes/<sha256>.md
+|-- audit/
+|   `-- actions.jsonl
+|-- experiments/
+|   `-- <package>/<experiment>/<run>/
+|       |-- run.json
+|       |-- context.json
+|       |-- status.json
+|       |-- events.jsonl
+|       |-- metrics.jsonl
+|       |-- log.txt
+|       |-- result.json
+|       `-- files/, checkpoints, and experiment-specific files
+`-- interface/
+    |-- index.html
+    |-- live.html
+    |-- scope.html
+    |-- learnings.html
+    |-- packages/<package>/
+    |   |-- index.html
+    |   |-- plan.html
+    |   |-- tracker.html
+    |   |-- results.html
+    |   |-- implementation.html
+    |   |-- analysis.html
+    |   `-- docs/
+    `-- data/
+```
 
-<img src="asset/arc-workflow.png" alt="ARC logo" width="1000" />
+The four directories exist because they answer different questions:
 
+| Layer | Owns | Mutability |
+| --- | --- | --- |
+| `state/` | Ratified intent, package and experiment records, decisions, rules, learnings, and management history | Guarded event writes |
+| `audit/` | The outcome of attempted management commands, including rejections | Append-only |
+| `experiments/` | What actually ran and the evidence it produced | Run-local, then immutable evidence |
+| `interface/` | What a person needs to inspect | Rebuildable projection |
 
-| Stage | Command |
-| --- | --- |
-| Shape an idea | `/research-brainstorm` |
-| Approve research intent | `/research-scope` |
-| Create an executable unit | `/research-package` |
-| Run and verify it | `/research-run` |
-| Continue within an approved direction | `/research-auto` |
+`state/events.jsonl` is the management authority. Run directories are the
+execution and evidence authority. `state/current.json` is a rebuildable state
+projection. Everything under `interface/` is a human read model.
 
----
+This storage change does not redesign the browser experience. The existing
+dashboard navigation, package pages, modules, tables, and visual layout remain
+multi-page and keep their current structure. Only their source and generated
+location move under `.research/interface/`.
+
+Agents do not use `interface/` as context, evidence, or authority. They query
+state through the bounded command surface and inspect the relevant run files.
+If the interface disagrees with state or run evidence, rebuild the interface
+from those authorities.
+
+### The only path setting
+
+The default root is `<workspace>/.research`. Set `RESEARCH_ROOT` only when the
+managed tree must live elsewhere:
+
+```bash
+export RESEARCH_ROOT=/data/my-project/.research
+```
+
+Every state, audit, experiment, migration, query, and interface command resolves
+the same root. There is no second runtime-data root.
+Process-local server metadata is not persisted research data.
+
+## The Research Model
+
+The intent hierarchy is:
+
+```text
+Project -> Direction -> Experiment
+                         |
+                         `-> Run 1, Run 2, ...
+```
+
+- **Project** defines the ratified objective and non-negotiable constraints.
+- **Direction** defines one approved research strategy under that objective.
+- **Experiment** is the only executable specification. Its `spec` owns the
+  purpose, configuration reference, gate, and control mode.
+- **Package** groups the working records and experiments for a bounded piece of
+  research. It is not another Scope level.
+- **Run** is one execution attempt against one Experiment.
+
+There is no separate Task entity. Work previously represented as a Task is
+represented by `Experiment.spec`, so intent and execution cannot drift across
+two competing objects.
 
 ## Quick Start
 
-Setup has two layers:
-
-1. Install the skills so Claude Code or Codex can see the `/research-*` commands.
-2. Attach the protocols and dashboard inside each research workspace you want to manage.
-
-`/research-onboard` is an optional next step for workspaces that do not yet have
-an approved Project objective.
+Setup has three parts: install the skills, attach the project protocol, and
+initialize or migrate the managed root.
 
 ### 1. Install the skills
 
-Skills must be symlinked from this toolbox repo. Do not copy them: the helper
-scripts resolve shared `lib/` code relative to this checkout.
+Symlink the skills from this toolbox checkout. Do not copy them because their
+scripts resolve the shared `lib/` code from this repo.
 
-> [!IMPORTANT]
-> Run the install command from the Agentic Research Control Panel (ARC) repo, not from
-> the research workspace you want to manage.
-
-Set `DEST` to the appropriate location:
-
-| Installation | Claude Code | Codex |
+| Agent | Global skill directory | Invocation |
 | --- | --- | --- |
-| **Global** | `DEST="$HOME/.claude/skills"` | `DEST="$HOME/.codex/skills"` |
-| **Project level** | `DEST="/path/to/your-research-workspace/.claude/skills"` | Keep skills in `$HOME/.codex/skills` and place project-specific rules in the workspace's `AGENTS.md`. |
-
-Codex project-level behavior is handled by step 2, not by a separate
-`<workspace>/.codex/skills` directory.
+| Claude Code | `$HOME/.claude/skills` | `/research-dashboard` |
+| Codex | `$HOME/.agents/skills` | `$research-dashboard` |
 
 ```bash
 cd /path/to/Agentic-Research-Control-Panel
 REPO="$(pwd)"
-DEST="$HOME/.claude/skills"
+DEST="$HOME/.agents/skills"  # use $HOME/.claude/skills for Claude Code
 
 mkdir -p "$DEST"
 for src in "$REPO"/skills/*/; do
@@ -117,368 +181,242 @@ done
 ls -l "$DEST" | grep research
 ```
 
-**Expected:** the listed entries are symlinks that point back into this toolbox
-repo. Use `DEST="$HOME/.codex/skills"` for the Codex global install, or the
-project-local Claude Code path for a one-workspace Claude Code install.
+Open a new agent session after installation.
 
-Restart Claude Code or open a new Codex session, then type `/research-` to
-confirm the commands are visible.
+### 2. Attach the protocol
 
-### 2. Attach the protocols to a research workspace
-
-Run this inside the workspace you want the agent to work on. It can be empty or
-already contain research code.
+Copy or merge the protocol files into the research workspace. Never overwrite
+existing project instructions without reviewing them.
 
 ```bash
-cd /path/to/your-research-workspace
+WORKSPACE=/path/to/your-research-workspace
 PIPELINE=/path/to/Agentic-Research-Control-Panel
 
-mkdir -p outputs/_scope outputs/_selfevolve
-test -f AGENTS.md || cp "$PIPELINE/AGENTS.md" AGENTS.md
-test -f CLAUDE.md  || cp "$PIPELINE/CLAUDE.md" CLAUDE.md
+test -f "$WORKSPACE/AGENTS.md" || cp "$PIPELINE/AGENTS.md" "$WORKSPACE/AGENTS.md"
+test -f "$WORKSPACE/CLAUDE.md" || cp "$PIPELINE/CLAUDE.md" "$WORKSPACE/CLAUDE.md"
 ```
 
-**Expected:** your research workspace now has the operating protocol files the
-agent will read before doing research work.
+Prepend project-specific objectives, datasets, budgets, and contribution
+constraints to the copied protocol.
 
-> [!NOTE]
-> If either file already exists, merge the ARC protocol
-> into the existing project instructions instead of overwriting it.
+### 3A. Initialize a greenfield workspace
 
-Use `AGENTS.md` for Codex-facing project rules. Use `CLAUDE.md` for Claude Code
-and for the shared research operating protocol.
-
-### 3. Deploy and open the control panel
-
-Ask the agent from inside your research workspace:
-
-```text
-/research-dashboard
-```
-
-**Expected:** `research_html/` appears in your workspace.
-
-Start the local dashboard server:
+Use this path only when the workspace has no prior ARC-managed data:
 
 ```bash
-python3.13 research_html/scripts/serve_dashboard.py ensure \
+cd "$PIPELINE"
+python3 -m lib.research_state.cli --workspace "$WORKSPACE" init
+```
+
+Initialization creates the versioned `.research/` layout. It fails closed when
+it detects prior unversioned managed data.
+
+### 3B. Migrate an installed workspace
+
+Do not run `init` over an installed workspace. Inventory first, take a backup,
+then migrate explicitly:
+
+```bash
+cd "$PIPELINE"
+python3 -m lib.research_state.migration --workspace "$WORKSPACE" inventory
+python3 -m lib.research_state.migration --workspace "$WORKSPACE" migrate
+python3 -m lib.research_state.migration --workspace "$WORKSPACE" check
+```
+
+`inventory` is read-only and creates nothing. `migrate` is idempotent, imports
+management records, maps former Task records into `Experiment.spec`, copies
+terminal run evidence, and publishes `VERSION` only after parity gates pass.
+Active runs, missing identities, unsafe paths, and source drift remain explicit
+blockers. `check` verifies the sealed migration and copied evidence.
+
+The migration does not delete old managed roots. Archive them outside the
+workspace only after `check` reports `"ok": true`, then run `check` once more.
+
+### 4. Build and serve the interface
+
+Run the commands from the toolbox checkout and point them at the managed
+workspace:
+
+```bash
+cd "$PIPELINE"
+python3 skills/research-dashboard/scripts/ensure_dashboard.py \
+  --workspace "$WORKSPACE"
+
+python3 -m lib.interface.serve --workspace "$WORKSPACE" ensure \
   --host 127.0.0.1 --port 8904 --max-port 8904 --json
 ```
 
-Open the control panel:
+Open [http://127.0.0.1:8904/index.html](http://127.0.0.1:8904/index.html).
+The server exposes only the generated interface plus narrow read-only run APIs.
 
-[http://127.0.0.1:8904/research_html/index.html](http://127.0.0.1:8904/research_html/index.html)
+Check a previously started server with:
 
-Keep this tab open while the agent works. From this point on, the dashboard is
-the shared interface for project scope, package status, live runs, evidence,
-results, and human decisions.
-
-> [!IMPORTANT]
-> Serve the page through `research_html/scripts/serve_dashboard.py`, not a
-> file-watching preview. Dashboard data files are refreshed in place by
-> `research_html/assets/live-data.js`, so Scope projection and package status
-> updates repaint without a full page reload.
-
-Setup ends here. The workspace now has the skills, project protocols, and the
-interface where you will monitor and ratify research work.
-
-<details>
-<summary><strong>Optional: keep dashboard facts synchronized after agent edits</strong></summary>
-
-<br />
-
-Optional turn-end automation can keep dashboard facts synchronized after agent
-edits. Claude Code projects register the Stop hook in `.claude/settings.json`;
-Codex projects use the equivalent `[[hooks.Stop]]` lifecycle hook.
-
-The complete hook recipe lives in:
-
-```text
-skills/research-dashboard/references/stop-fact-propagation-hook.md
+```bash
+python3 -m lib.interface.serve --workspace "$WORKSPACE" status --json
 ```
 
-</details>
+The interface builder performs an atomic full rebuild. Do not hand-edit files
+under `.research/interface/`; the next build will replace them.
 
-<details>
-<summary><strong>Optional: onboard a workspace without an approved Project objective</strong></summary>
+## The Research Loop
 
-<br />
+Each cycle moves through ratified intent, an executable Experiment, a visible
+Run, evidence-backed results, a human decision, and reusable project knowledge.
 
-Run this only when the workspace has no approved Project objective and you want
-the agent to help create one. Keep the control panel open before running this
-command.
+<img src="asset/arc-workflow.png" alt="ARC research workflow" width="1000" />
+
+| Stage | Claude Code | Codex |
+| --- | --- | --- |
+| Shape a rough idea | `/research-brainstorm` | `$research-brainstorm` |
+| Ratify Project, Direction, or Experiment intent | `/research-scope` | `$research-scope` |
+| Materialize a bounded package | `/research-package` | `$research-package` |
+| Execute and verify an Experiment | `/research-run` | `$research-run` |
+| Continue within one approved Direction | `/research-auto` | `$research-auto` |
+
+### 1. Shape and ratify intent
+
+Brainstorming may draft alternatives, but it does not change Scope. Project,
+Direction, Experiment, and scope revisions enter Triage first. The agent may
+propose them; only explicit human ratification commits them.
+
+Use onboarding when a workspace has no ratified Project objective:
 
 ```text
 /research-onboard
 ```
 
-**Expected:** for an empty workspace, the agent scaffolds a small research
-project and asks you for the objective. For an existing workspace, it reads the
-project files, writes a compact prior-knowledge digest, and proposes a Project
-objective. In both cases, it should ask you to accept, reject, or revise the
-objective before it becomes active.
+Onboarding proposes the objective and stops for acceptance, rejection, or
+revision. It does not start a campaign.
 
-Example reply:
+### 2. Materialize a package
 
-```text
-Accept this proposal.
-```
-
-Onboarding stops at the Project proposal. It does not start a research campaign,
-commit Scope by itself, or create research packages. Start `/research-auto`
-later, when you are ready to run a gated campaign.
-
-</details>
-
----
-
-## How ARC Works
-
-Setup gives the workspace a shared control surface. After that, the pipeline
-turns research work into four states: idea, committed intent, executable package,
-and verified run. Each state has one command that owns it.
-
-### 1. Shape an idea
-
-Use `/research-brainstorm` when the research idea is still rough.
-
-```text
-/research-brainstorm "Can a cheaper reranker improve validation recall?"
-```
-
-Brainstorming is intentionally cheap. It creates dashboard ideas and readable
-idea pages, but it does not create packages or change the approved research
-scope. When an idea is ready, the agent converts it into a Direction proposal.
-You still decide whether that Direction becomes part of the project.
-
-### 2. Commit the research intent
-
-Use `/research-scope` when the goal, direction, task, or success gate needs to
-be defined or changed.
-
-```text
-/research-scope "Define a Direction for validating the reranker idea against the current baseline"
-```
-
-Scope is the contract for the work. Project, Direction, and Task entries live in
-the Scope log only after ratification. The agent can propose a change, but it
-cannot silently move the research goal, rewrite the metric, or declare a new
-task as approved. Pending proposals stay in Triage until you accept, reject, or
-revise them.
-
-Use `/research-onboard` before this step only when the workspace has no approved
-Project objective yet. Onboarding proposes that first Project objective; it does
-not start a campaign.
-
-### 3. Create an executable package
-
-Use `/research-package` after a Direction and its validation Tasks are already
-accepted.
+After a Direction and its Experiment specs are ratified:
 
 ```text
 /research-package from-scope <direction-id>
 ```
 
-A package is the working unit the dashboard can track. It contains the plan,
-task spine, status, evidence slots, result pages, and agent context for one
-piece of research work. The package materializer reads committed Scope only. It
-will not turn a pending idea or pending Triage item into executable work.
+The package groups the plan, experiment records, evidence slots, results, and
+decisions. Materialization reads committed state only.
 
-### 4. Run and verify the package
+### 3. Query bounded context
 
-Use `/research-run` when the package exists and should advance.
+An agent asks for the smallest state slice required by one package:
 
-```text
-/research-run "Continue the active package"
+```bash
+cd "$PIPELINE"
+python3 skills/research-op/scripts/research_op.py \
+  context <package-id> --workspace "$WORKSPACE"
 ```
 
-The runner does not invent research direction. It executes the next legal step
-inside an already scoped package: readiness checks, implementation or review,
-launch, live monitoring, artifact propagation, result verification, and terminal
-routing. If the dashboard, Project, Direction, Task, or package is missing,
-`/research-run` stops and tells you which earlier command owns the missing
-piece.
+Add `--phase <phase-id>` to narrow the selection further. The response is an
+ephemeral query result. It is not written back as a package file and must not
+become a second source of truth.
 
-Results count only when they pass the package gate with evidence. Runtime
-artifacts feed facts, facts feed package pages, and the final decision remains
-visible in the control panel.
+Useful management queries are:
 
-### 5. Let the loop continue
-
-Use `/research-auto` when you want the agent to keep cycling within one approved
-Direction until a measurable gate clears or a real stop condition appears.
-
-```text
-/research-auto "Improve validation recall" --gate "MRR@10 improves by 2 points"
+```bash
+python3 -m lib.research_state.cli --workspace "$WORKSPACE" \
+  show experiment <experiment-id>
+python3 -m lib.research_state.cli --workspace "$WORKSPACE" \
+  history experiment/<experiment-id>
+python3 -m lib.research_state.cli --workspace "$WORKSPACE" \
+  audit <command-id>
 ```
 
-`/research-auto` is the campaign conductor. It delegates formation to
-`/research-brainstorm` and `/research-scope`, package creation to
-`/research-package`, execution to `/research-run`, and learning capture to the
-analysis and rule paths.
+### 4. Launch and inspect a Run
 
-It does not add a shortcut around approval. Direction changes, scope changes,
-terminal adoption, and unresolved blockers still surface as human decisions.
+`research-run` owns readiness checks, the launch acknowledgement, monitoring,
+result verification, and terminal routing. The underlying launcher is:
 
-The opening screenshot shows the same loop in the interface: the dashboard gives
-the project-level view, and the package lane shows the method candidate,
-reference run, current status, gate, metric, and next route.
-
----
-
-## A Complete Example Run
-
-> [!NOTE]
-> This section uses a placeholder dataset and metric. Replace them with a real
-> demonstration when one is ready.
-
-```text
-In an existing research repo:
-
-User:
-  /research-dashboard
-
-Expected:
-  research_html/ exists and the dashboard opens locally.
-
-User:
-  /research-onboard
-
-Agent:
-  I found the repo goal, datasets, baseline, and likely validation metric.
-  Here is the proposed project objective.
-
-User:
-  Accept this proposal.
-
-Expected:
-  The approved objective appears in the control panel.
-
-User:
-  /research-auto "Improve baseline retrieval on the validation split" \
-    --gate "MRR@10 improves by 2 points"
-
-Expected:
-  A research package is created.
-  A live run appears in the dashboard.
-  The result page records the metric, evidence, and verdict.
-
-User:
-  Accept the result, revise the direction, or stop.
-
-Expected:
-  The decision is recorded, and the useful lesson is available to the next run.
+```bash
+cd "$PIPELINE"
+python3 -m lib.experiments.launch \
+  --workspace "$WORKSPACE" \
+  --package <package-id> \
+  --experiment <experiment-id> \
+  --cwd "$WORKSPACE" \
+  -- python3 train.py
 ```
 
----
+At authorization time, the launcher queries current state and writes an
+immutable `context.json` beside `run.json`. That frozen context records exactly
+what the Run was allowed to use. Later state changes do not rewrite it.
 
-## What ARC Preserves
+Inspect open runs or one run directory without reading the human interface:
 
-After one loop, the repo should have more than logs and chat text. The useful
-state is saved where the next agent and the human can read it.
+```bash
+python3 -m lib.experiments.report --workspace "$WORKSPACE" --open
+python3 -m lib.experiments.report \
+  --workspace "$WORKSPACE" \
+  --run "$RESEARCH_ROOT/experiments/<package>/<experiment>/<run>"
+```
 
-| You see | What it means |
-| --- | --- |
-| **Approved goal** | The research question the agent is allowed to pursue. |
-| **Research package** | One unit of work with plan, run state, result, and decision. |
-| **Live run** | The experiment or command currently running, with status outside chat memory. |
-| **Result package** | The answer to whether the work helped, tied to evidence. |
-| **Decision record** | The human call: accept, revise, stop, archive, or continue. |
-| **Lesson for next run** | What should be reused or avoided later. |
+If `RESEARCH_ROOT` is unset, replace it in the second command with
+`$WORKSPACE/.research`.
 
-The internal names are Scope, Package, Live Run, Result, and Learning. This
-README uses those names only after the user has seen the loop.
+### 5. Verify, decide, and learn
+
+A metric becomes a research fact only when its protocol and evidence pass the
+declared gate. Terminal adoption, archival, scope changes, and direction changes
+remain human decisions. Accepted results and failed methods are written into
+typed state so the next context query can retrieve them.
+
+## Human Interface Contract
+
+The interface is intentionally for people:
+
+- It preserves the current dashboard, package-page, module, table, and visual
+  layout.
+- It is rebuilt from state and run evidence, never edited as authority.
+- It may be deleted and regenerated without losing research truth.
+- Agents may report its URL, but they do not read it to form context, infer
+  status, verify a claim, or choose the next action.
+- A stale page is a projection problem, not a reason to mutate HTML.
+
+This boundary keeps the browser optimized for human comprehension while the
+agent consumes compact, typed data.
 
 ## Human Control Points
 
-The pipeline keeps agent-assisted research tied to visible human decisions.
+- You approve the Project objective before research execution starts.
+- You ratify Direction and Experiment intent before it becomes active.
+- You can inspect active and recent Runs in the browser.
+- You can trace results to frozen context, commands, logs, metrics, and files.
+- You decide whether a terminal result is adopted, revised, archived, or
+  continued.
 
-- You approve the research goal before work starts.
-- You can watch active and recent runs in the control panel.
-- You inspect the result package before deciding what counts.
-- The agent records evidence instead of asking you to trust a chat summary.
-- Useful lessons are carried into the next cycle deliberately.
-
-Under the hood, Scope/Triage owns the approved research intent, result packages
-tie claims back to evidence, and the Context Pack carries project memory forward.
-Those details matter, but they should support the workflow rather than become
-the first thing a new user has to learn.
-
-## How ARC Fits Your Stack
-
-AI research agents can propose and run work. Experiment trackers can record
-metrics after a run. ARC sits between them: it keeps
-the research goal, live state, evidence, decision, and next-cycle learning in
-one place.
-
-- Pair it with agent frameworks when you want their actions to land in a visible
-  research workflow.
-- Pair it with MLflow, Weights and Biases, DVC, or similar tools when those tools
-  already track raw runs and metrics.
-- Use it for experiment-driven research where code, data, and decisions all need
-  to stay connected.
-- Use it when you want agents to move faster while the research agenda stays
-  visible and deliberate.
-
-## Status
-
-The dashboard, Scope/Triage system, package runner, live-run envelope,
-fact-backed package surfaces, Context Pack, and Rule Store are implemented in
-the toolbox. `/research-auto` composes them into a direction-level campaign
-loop.
-
-The current product boundary is the control panel and governance layer around
-agent-assisted research work in a new or existing research workspace.
-
----
+ARC can sit beside MLflow, Weights and Biases, DVC, or another experiment
+tracker. Those tools may own specialized telemetry or artifacts. ARC owns the
+governed connection among intent, execution, evidence, decisions, and project
+knowledge.
 
 ## Command Reference
 
-### Daily commands
-
-| Command | Use when | Output |
+| Capability | Primary skill | Durable result |
 | --- | --- | --- |
-| `/research-dashboard` | A workspace needs the shared control panel. | `research_html/` scaffold and validation. |
-| `/research-onboard` | A workspace has no approved Project objective. | Empty-project scaffold or prior-knowledge digest, then a Project proposal. |
-| `/research-brainstorm` | The research idea is still rough. | Brainstorm item and Direction proposal. |
-| `/research-scope` | Project, Direction, Task, or scope revision needs approval. | Pending proposal and Scope transition after acceptance. |
-| `/research-package from-scope <direction-id>` | An approved Direction or Task should become executable. | Package pages and dashboard entry. |
-| `/research-run` | A scoped package should advance toward a terminal outcome. | Runtime artifacts, evidence propagation, verification, verdict routing. |
-| `/research-auto` | One Direction should be pursued until a measurable gate clears or an honest stop fires. | Campaign ledger, package cycles, gate evaluation. |
-| `/research-analysis` | A package needs human-curated rules or insights. | `analysis.html` updates through governed writes. |
-| `/research-op` | Package, registry, rule, event, or Scope mutation must be applied safely. | Reject-before-write validation and audit log. |
-| `/research-exp-live` | A long experiment needs structured launch, monitoring, resume, or harvest. | `status.json`, run index, live checks. |
-| `/research-resource` | Compute servers or GPU allocations need typed tracking. | Resource registry and allocation ledger. |
+| Initialize or rebuild the human view | `research-dashboard` | `.research/interface/` |
+| Establish the first Project objective | `research-onboard` | Proposal, then ratified Project state |
+| Explore an uncommitted idea | `research-brainstorm` | Brainstorm record and optional Direction proposal |
+| Change approved intent | `research-scope` | Ratified Project, Direction, or Experiment event |
+| Create a bounded work unit | `research-package` | Package and Experiment records |
+| Execute and verify | `research-run` | Run envelope, evidence, result, and routing decision |
+| Run a direction-level campaign | `research-auto` | Campaign state and package cycles |
+| Record analysis and rules | `research-analysis` | Typed learning and rule records |
+| Apply guarded mutations and queries | `research-op` | State event plus audited outcome |
+| Track long experiments | `research-exp-live` | Structured Run status and evidence |
+| Register and allocate compute | `research-resource` | Resource and allocation records |
 
-### Main files and directories
+## Status
 
-```text
-Agentic-Research-Control-Panel/
-|-- README.md
-|-- AGENTS.md
-|-- CLAUDE.md
-|-- workflow.ts
-|-- skills/
-|-- lib/
-```
-
-In a managed research workspace, the main generated surfaces are:
-
-```text
-research_html/                         # dashboard and package pages
-research_html/live.html                # live runs page
-research_html/packages/<pkg>/          # package pages
-research_html/data/packages/<pkg>/     # fact-backed package tables
-outputs/_scope/                        # approved and pending research intent
-outputs/_live/                         # global run index
-outputs/<pkg>/                         # package runtime records and artifacts
-outputs/_selfevolve/                   # governed project memory
-```
+The versioned EventStore, Triage and ratification gates, package workflow,
+immutable Run envelope, result verification, governed learning store, migration
+path, and generated multi-page interface are implemented in this toolbox.
 
 ## Acknowledgements
 
 The design was informed by prior work on auto-research agents, research skill
 systems, and agent workflow methodology. This repo does not vendor those
-projects. Its contribution is the governed control panel around agent-assisted
-research: approved goals, visible runs, evidence-backed result packages, human
-decisions, and reusable project memory.
+projects. Its contribution is a governed control layer around agent-assisted
+research: approved intent, visible runs, evidence-backed results, human
+decisions, and reusable project knowledge.

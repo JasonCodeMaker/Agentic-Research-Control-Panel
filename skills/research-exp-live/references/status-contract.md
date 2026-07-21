@@ -1,53 +1,64 @@
-# Exp-live Status Contract
+# Exp-live status contract
 
-`status.json` is the routine live-check source of truth for wrapper-launched runs. It is written with a temp file and atomic rename.
+`status.json` is the atomic, run-local status snapshot for one authorized Run:
 
-Required top-level fields:
+```text
+$RESEARCH_ROOT/experiments/<package>/<experiment>/<run>/status.json
+```
+
+It is runtime evidence, not a global index. Management-open Run discovery comes from the Run aggregate
+in `$RESEARCH_ROOT/state/events.jsonl`. `lib.experiments.reconcile` repairs a missing launch or
+terminal callback from valid Run files.
+
+## Fields
 
 | Field | Meaning |
 | --- | --- |
-| `run_id`, `pkg`, `exp_id` | Run identity and task-spine join keys. |
-| `status` | One of `QUEUED`, `RUNNING`, `COMPLETED`, `RUN_FAILED`, `RUN_HALTED`, `STALE`, `SKIPPED`. |
+| `schema_version` | Status schema version. |
+| `run_id` | Run identity. |
+| `package_id` | Owning Package. |
+| `experiment_id` | Canonical accepted Scope Experiment identity. |
+| `experiment_local_id` | Directory-safe Experiment id used in the Run path. |
+| `status` | `QUEUED`, `RUNNING`, `STALE`, `COMPLETED`, `FAILED`, `HALTED`, or `SKIPPED`. |
 | `health` | `{state: OK|WARN|ERROR, reasons: []}`. |
-| `progress` | Step, total, percent, epoch, or phase when known. |
-| `latest_metrics` | Latest metric values parsed from telemetry. |
-| `source_map` | Metric key to telemetry source. |
-| `throughput` | Rate, unit, and `stable_since` when known. |
-| `eta` | Literal `unknown` until 30 minutes of stable measured throughput clears. |
-| `first_output_at`, `last_output_at`, `started_at` | Epoch seconds. |
-| `heartbeat_timeout` | Seconds of silence before STALE; lets any reader re-derive STALE from `last_output_at` age when the harvester itself died. |
-| `anomalies`, `log_lines` | Bounded monitoring counters. |
-| `resource` | GPU sample (`--gpu-sample`, refreshed on watchdog ticks) or `null`. |
-| `pid`, `harvester_pid` | Child and harvester process ids for mechanical liveness checks. |
-| `exit_code`, `ended_at` | Terminal evidence; `null` while open. |
+| `progress` | Known step, total, percent, epoch, or phase fields. |
+| `latest_metrics` | Most recent parsed metric values. |
+| `source_map` | Metric name to telemetry source. |
+| `throughput` | Measured rate, unit, and `stable_since`, or `null`. |
+| `first_output_at`, `last_output_at`, `started_at` | Epoch seconds, or `null`. |
+| `heartbeat_timeout` | Silence threshold used to derive `STALE`. |
+| `anomalies`, `log_lines` | Monitoring counters. |
+| `resource` | Optional GPU sample. |
+| `pid`, `harvester_pid` | Child and harvester process ids. |
+| `exit_code`, `ended_at` | Terminal evidence, otherwise `null`. |
+| `launch_failed` | True when the command did not start. |
+| `callback_errors` | Bounded errors from management callbacks. |
 
-Freshness: the harvester re-writes `status.json` on a watchdog clock (independent of output), so STALE and silence-WARN appear on disk during quiet periods. Writes are throttled during chatty output (at most ~1/s, forced on first output, anomalies, and terminal).
+The harvester writes this file atomically and refreshes it on its watchdog clock. Readers may derive
+`STALE` again from `last_output_at` and `heartbeat_timeout` if the harvester has died.
 
-Live-check row mapping:
+`status.json` does not authorize a Run. `run.json`, `context.json`, and the management
+`RunLaunchAuthorized` event provide that authorization.
 
-| Live-check column | Source |
+## Observation mapping
+
+| Live-check field | Source |
 | --- | --- |
-| `Run State` | `status` |
-| `Last Log Time` | `last_output_at` |
-| `Progress` | `progress` |
-| `Latest Metrics` | `latest_metrics` |
-| `Resource Use` | `resource` or `unmeasured` |
-| `ETA` | `eta` |
+| Run state | `status` |
+| Last output | `last_output_at` |
+| Progress | `progress` |
+| Latest metrics | `latest_metrics` |
+| Resource use | `resource`, otherwise `unmeasured` |
+| Health | `health` |
 
-The agent still owns `Agent`, `Live Action`, `Next Check`, and `Artifact Status`.
+The agent supplies the live action and next-check time. Write those decisions through `research-op`;
+do not add them to `status.json`.
 
-Fact-backed package ownership:
+## Terminal rule
 
-- `status.json` is the live-run source of truth and may be refreshed by the
-  harvester/watchdog.
-- `outputs/_live/dashboard_server.json` is dashboard-server health/provenance
-  only. It may contain `repair_required`, but it never replaces `status.json`
-  or blocks experiment launch/completion truth.
-- `research_html/data/packages/<pkg>/tables/live_checks.csv` stores extracted
-  live-check snapshots for `tracker.html`.
-- `research_html/data/packages/<pkg>/tables/resource_allocation.csv` stores the
-  tracker resource-allocation projection rows.
-- The tracker CSV rows are package-surface facts. They do not replace
-  `status.json` as raw runtime truth.
-- Completed result claims and methods `PASS` rows must be backed by extracted
-  result facts, not manual tracker rows.
+A Run is mechanically terminal only when `status` is `COMPLETED`, `FAILED`, `HALTED`, or `SKIPPED`.
+The snapshot must also contain `exit_code` and `ended_at`. Scientific claims still require
+`result.json` and valid EvidenceRefs.
+
+The interface under `$RESEARCH_ROOT/interface/` is a read-only projection of these facts. It never
+replaces either management state or Run evidence.

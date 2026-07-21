@@ -1,5 +1,5 @@
 "use strict";
-// Generated from lib.scope_ssot.scope_schema(); do not hand-edit field rules here.
+// Generated from lib/research_state/schema.json; do not hand-edit field rules.
 (function (root) {
   root.SCOPE_SCHEMA = {
     "levels": {
@@ -71,9 +71,9 @@
           "goal"
         ]
       },
-      "task": {
+      "experiment": {
         "fields": {
-          "config": {
+          "config_ref": {
             "kind": "ref",
             "label": "Config"
           },
@@ -87,7 +87,7 @@
               "SUPERVISED"
             ]
           },
-          "experiment": {
+          "purpose": {
             "kind": "text",
             "label": "Experiment",
             "maxWords": 100,
@@ -101,13 +101,13 @@
           }
         },
         "order": [
-          "experiment",
-          "config",
+          "purpose",
+          "config_ref",
           "gate",
           "control_mode"
         ],
         "primary": [
-          "experiment",
+          "purpose",
           "control_mode"
         ]
       }

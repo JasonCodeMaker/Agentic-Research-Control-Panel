@@ -14,7 +14,7 @@
       <h1>Live <em>Runs</em></h1>
       <p class="lead">
         A read-only view over structured experiment runtime artifacts. The
-        autonomous dashboard server reads <code>outputs/_live/runs.jsonl</code>
+        autonomous dashboard server reads <code>.research/state run aggregates</code>
         and each run's <code>status.json</code> through <code>/api/live</code>,
         keeping volatile runtime writes outside the static page reload path.
       </p>
@@ -74,8 +74,8 @@
 
     <footer class="footer-note" data-field="fetch-help">
       Cannot fetch live state? Start or repair the autonomous server from the
-      repository root: <code>python research_html/scripts/serve_dashboard.py ensure --json</code>,
-      then open <code>http://127.0.0.1:8904/research_html/live.html</code>.
+      repository root: <code>python -m lib.interface.serve --workspace . ensure --json</code>,
+      then open <code>http://127.0.0.1:8904/live.html</code>.
     </footer>
   </div>
 
@@ -83,8 +83,8 @@
   <script>
   (function () {
     var API_RUNS_URL = "/api/live/runs?include_status=1";
-    var RUNS_URL = "../outputs/_live/runs.jsonl";
-    var ACK_URL = "../outputs/_live/acknowledged.json";
+    var RUNS_URL = "data/live-runs.jsonl";
+    var ACK_URL = "data/live-acknowledged.json";
     var POLL_MS = 3000;
     var TERMINAL = { COMPLETED: true, RUN_FAILED: true, RUN_HALTED: true, SKIPPED: true };
 
@@ -135,7 +135,13 @@
     }
 
     function experimentFor(pkg, expId) {
-      return (pkg.experiments || []).find(function (exp) { return exp.id === expId; }) || {};
+      return (pkg.experiments || []).find(function (exp) {
+        return exp.id === expId || exp.localId === expId || exp.local_id === expId;
+      }) || {};
+    }
+
+    function experimentDisplayId(exp, fallback) {
+      return String((exp && (exp.localId || exp.local_id)) || fallback || "unmeasured");
     }
 
     function parseJsonl(text) {
@@ -163,21 +169,12 @@
       return Object.keys(byRun).map(function (id) { return byRun[id]; });
     }
 
-    function runtimeHref(path) {
-      if (!path) return "#";
-      var marker = "/outputs/";
-      var idx = path.indexOf(marker);
-      if (idx >= 0) return "../outputs/" + path.slice(idx + marker.length);
-      if (path.indexOf("outputs/") === 0) return "../" + path;
-      return path;
-    }
-
     function statusUrl(run) {
-      return runtimeHref(run.dir).replace(/\/$/, "") + "/status.json";
+      return "/api/live/status/" + encodeURIComponent(run.run_id);
     }
 
     function logUrl(run) {
-      return runtimeHref(run.dir).replace(/\/$/, "") + "/log.txt";
+      return "/api/live/log/" + encodeURIComponent(run.run_id);
     }
 
     function trackerHref(pkg) {
@@ -258,6 +255,7 @@
       var pkg = packageById(status.pkg || run.pkg);
       var expId = status.exp_id || run.exp_id || "unmeasured";
       var exp = experimentFor(pkg, expId);
+      var displayExpId = experimentDisplayId(exp, expId);
       var state = run.view || status.status || run.final_status || "RUNNING";
       var pct = status.progress && status.progress.pct != null ? Math.max(0, Math.min(100, status.progress.pct)) : 0;
       var cfg = configText(run);
@@ -266,7 +264,7 @@
         '<article class="live-card run-card" data-run-id="' + escapeHtml(run.run_id) + '" data-status="' + escapeHtml(state) + '">',
         '<div class="live-card-head">',
         '<div class="run-ident">',
-        '<span class="run-id">' + escapeHtml(expId) + '</span>',
+        '<span class="run-id">' + escapeHtml(displayExpId) + '</span>',
         '<h3 class="run-title">' + escapeHtml(exp.label || exp.purpose || pkg.name || run.pkg || run.run_id) + '</h3>',
         '</div>',
         '<span class="status ' + statusClass(state) + '" data-field="run-state">' + escapeHtml(state) + '</span>',
@@ -295,6 +293,7 @@
       var pkg = packageById(status.pkg || run.pkg);
       var expId = status.exp_id || run.exp_id || "unmeasured";
       var exp = experimentFor(pkg, expId);
+      var displayExpId = experimentDisplayId(exp, expId);
       var state = run.view || status.status || run.final_status || "RUNNING";
       var health = healthLine(status);
       var reason = health.reason || (state === "STALE" ? "no recent output" : "");
@@ -308,7 +307,7 @@
         '<span class="status ' + statusClass(state) + '" data-field="run-state">' + escapeHtml(state) + '</span>',
         '<span class="run-age">' + escapeHtml(ageText(ref)) + '</span>',
         '</div>',
-        '<h3 class="run-title">' + escapeHtml(expId + " — " + (exp.label || exp.purpose || pkg.name || run.pkg || run.run_id)) + '</h3>',
+        '<h3 class="run-title">' + escapeHtml(displayExpId + " — " + (exp.label || exp.purpose || pkg.name || run.pkg || run.run_id)) + '</h3>',
         reason ? ('<p class="run-reason">' + escapeHtml(reason) + '</p>') : '',
         note,
         '<div class="toolbar live-card-links">',
@@ -354,8 +353,10 @@
       });
       function cleared(run) { return !!(run.supersededBy || run.acknowledged); }
 
-      var open = runs.filter(function (run) { return !TERMINAL[run.view]; });
-      var terminal = runs.filter(function (run) { return TERMINAL[run.view] && terminalRecent(run); });
+      var open = runs.filter(function (run) { return !run.terminal && !TERMINAL[run.view]; });
+      var terminal = runs.filter(function (run) {
+        return (run.terminal || TERMINAL[run.view]) && terminalRecent(run);
+      });
       var attention = runs.filter(function (run) {
         if (cleared(run)) return false;
         return run.view === "STALE" || (run.view === "RUN_FAILED" && terminalRecent(run));
@@ -391,10 +392,13 @@
         return run;
       }).catch(function () {
         run.status = {
+          ok: false,
           run_id: run.run_id,
           pkg: run.pkg,
           exp_id: run.exp_id,
-          status: run.final_status || "RUNNING",
+          status: "UNKNOWN",
+          management_status: run.final_status || "UNKNOWN",
+          status_error: "status snapshot unavailable",
           latest_metrics: {},
           progress: {},
           eta: "unknown",

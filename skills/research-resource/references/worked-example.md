@@ -1,66 +1,120 @@
-# Worked example — three predefined servers (Local + Bunya + Nectar)
+# Worked example with local, Bunya, and Nectar
 
-The user predefines a local workstation, a Slurm HPC cluster reached through an existing tmux
-login session, and a cloud VM. Adapt names/values to the actual project; the registry lives in
-the managed project's `outputs/_resources/`, not in this toolbox repo.
-
-## 1. Register
+The user has defined a local workstation, a Slurm cluster reached through an existing tmux gateway,
+and a cloud VM.
 
 ```bash
-python3 lib/resource_alloc/cli.py register <<'EOF'
-{"name": "local", "kind": "local",
- "gpus": [{"type": "a6000", "count": 2, "mem_gb": 48}],
- "tags": ["msrvtt-features", "internet"],
- "env": {"workdir": "/home/user/Project", "conda": "python3.13"}}
+export RESEARCH_ROOT="${RESEARCH_ROOT:-.research}"
+```
+
+## Register
+
+```bash
+python3 lib/resource_alloc/cli.py --research-root "$RESEARCH_ROOT" register <<'EOF'
+{"name":"local","kind":"local",
+ "gpus":[{"type":"a6000","count":2,"mem_gb":48}],
+ "tags":["msrvtt-features","internet"],
+ "env":{"workdir":"/home/user/Project","conda":"python3.13"}}
 EOF
 
-python3 lib/resource_alloc/cli.py register <<'EOF'
-{"name": "bunya", "kind": "slurm",
- "control": {"path": "tmux", "tmux_session": "bunya"},
- "gpus": [{"type": "h100", "count": 3, "mem_gb": 80}, {"type": "a100", "count": 4, "mem_gb": 80}],
- "slurm": {"account": "a_eecs_ds",
-           "partitions": {"h100": {"partition": "gpu_sxm", "qos": "sxm"}},
-           "max_hours": 168},
- "env": {"workdir": "/scratch/user/<user>/Project"},
- "tags": ["msrvtt-features"],
- "skill": "bunya-slurm-ops",
- "notes": "Duo on new SSH connections - reuse the tmux session; idle GPUs via ~/idle_gpus.sh"}
+python3 lib/resource_alloc/cli.py --research-root "$RESEARCH_ROOT" register <<'EOF'
+{"name":"bunya","kind":"slurm",
+ "control":{"path":"tmux","tmux_session":"bunya"},
+ "gpus":[{"type":"h100","count":3,"mem_gb":80},
+         {"type":"a100","count":4,"mem_gb":80}],
+ "slurm":{"account":"a_eecs_ds",
+          "partitions":{"h100":{"partition":"gpu_sxm","qos":"sxm"}},
+          "max_hours":168},
+ "env":{"workdir":"/scratch/user/<user>/Project"},
+ "tags":["msrvtt-features"],
+ "skill":"bunya-slurm-ops",
+ "notes":"Reuse the existing tmux gateway; probe with bash ~/idle_gpus.sh."}
 EOF
 
-python3 lib/resource_alloc/cli.py register <<'EOF'
-{"name": "nectar", "kind": "ssh",
- "control": {"path": "direct", "host": "203.0.113.7", "user": "ubuntu"},
- "gpus": [{"type": "a100", "count": 1, "mem_gb": 40}],
- "tags": ["internet"],
- "notes": "ARDC Nectar VM - always-on, no queue"}
+python3 lib/resource_alloc/cli.py --research-root "$RESEARCH_ROOT" register <<'EOF'
+{"name":"nectar","kind":"ssh",
+ "control":{"path":"direct","host":"203.0.113.7","user":"ubuntu"},
+ "gpus":[{"type":"a100","count":1,"mem_gb":40}],
+ "tags":["internet"]}
 EOF
 ```
 
-(`control.user` style extras live inside `control` — it is an open object once `path` is valid.)
+These commands commit Resource aggregates. They do not create a separate registry file.
 
-## 2. Probe, recommend, allocate, launch, release
+## Probe and recommend
+
+Probe the local resource:
 
 ```bash
-# local probe + a remote capture (taken via the bunya tmux pane, saved to a file)
-python3 lib/resource_alloc/cli.py snapshot --server local --probe
-python3 lib/resource_alloc/cli.py snapshot --server bunya --from-nvidia-smi /tmp/bunya-smi.txt
+python3 lib/resource_alloc/cli.py --research-root "$RESEARCH_ROOT" \
+  snapshot --server local --probe
+```
 
-# 1×GPU eval that needs the MSRVTT features staged
-python3 lib/resource_alloc/cli.py recommend --pkg 2026-06-12-demo --exp P1 \
+Collect Bunya's GPU output through its existing tmux gateway, save it as `/tmp/bunya-smi.txt`, then
+normalize it:
+
+```bash
+python3 lib/resource_alloc/cli.py --research-root "$RESEARCH_ROOT" \
+  snapshot --server bunya --from-nvidia-smi /tmp/bunya-smi.txt
+```
+
+The snapshot is a short-lived XDG runtime projection. It is not allocation state.
+
+Recommend a single-GPU evaluation that needs local MSRVTT features:
+
+```bash
+python3 lib/resource_alloc/cli.py --research-root "$RESEARCH_ROOT" \
+  recommend --pkg 2026-06-12-demo --exp P1 \
   --gpu-count 1 --min-mem-gb 30 --tag msrvtt-features
-# -> local confirmed-free first; bunya unknown/queued second; nectar blocked (missing tag)
-
-python3 lib/resource_alloc/cli.py allocate --server local --pkg 2026-06-12-demo --exp P1 \
-  --gpu-count 1 --min-mem-gb 30 --tag msrvtt-features --gpu-ids 1 --reason "eval, GPU1 idle"
-# -> {"alloc_id": "a-..."}
-
-CUDA_VISIBLE_DEVICES=1 python3 lib/exp_live/launch.py --pkg 2026-06-12-demo --exp P1 \
-  --server local --alloc a-... --tmux-session demo-p1 -- bash scripts/run_eval.sh
-
-# remote alternative: submit via the server's own skill, then bind the job id
-python3 lib/resource_alloc/cli.py link --alloc a-... --job-id 9912345
-
-# at verified completion (terminal status.json / sacct evidence)
-python3 lib/resource_alloc/cli.py release --alloc a-... --outcome COMPLETED
-python3 lib/resource_alloc/cli.py status   # leaks must be empty before session end
 ```
+
+The result ranks confirmed free capacity first. Nectar is blocked because it lacks the required tag.
+
+## Allocate and launch
+
+```bash
+python3 lib/resource_alloc/cli.py --research-root "$RESEARCH_ROOT" \
+  allocate --server local --pkg 2026-06-12-demo --exp P1 \
+  --gpu-count 1 --min-mem-gb 30 --tag msrvtt-features \
+  --gpu-ids 1 --reason "evaluation on idle GPU 1"
+```
+
+Use the returned allocation id:
+
+```bash
+CUDA_VISIBLE_DEVICES=1 python3 -m lib.experiments.launch \
+  --workspace . \
+  --research-root "$RESEARCH_ROOT" \
+  --pkg 2026-06-12-demo \
+  --exp P1 \
+  --server local \
+  --alloc <allocation-id> \
+  --tmux-session demo-p1 \
+  -- bash scripts/run_eval.sh
+```
+
+The Run lives below:
+
+```text
+$RESEARCH_ROOT/experiments/2026-06-12-demo/P1/<run-id>/
+```
+
+For a remote alternative, submit through the registered execution skill and bind the scheduler id:
+
+```bash
+python3 lib/resource_alloc/cli.py --research-root "$RESEARCH_ROOT" \
+  link --alloc <allocation-id> --job-id 9912345
+```
+
+## Release
+
+After verified terminal evidence:
+
+```bash
+python3 lib/resource_alloc/cli.py --research-root "$RESEARCH_ROOT" \
+  release --alloc <allocation-id> --outcome COMPLETED
+
+python3 lib/resource_alloc/cli.py --research-root "$RESEARCH_ROOT" status
+```
+
+`status` should report no leaked allocation for the completed Run.

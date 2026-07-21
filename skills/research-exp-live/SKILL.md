@@ -1,236 +1,252 @@
 ---
 name: research-exp-live
-description: "Use when launching, monitoring, resuming, or stopping long-running research experiment commands that should be tracked through structured runtime artifacts, adaptive live checks, startup health gates, or global live.html."
+description: "Use when launching, monitoring, resuming, or stopping a long-running research Experiment with structured run evidence and scheduled live checks."
 ---
 
-# Research Exp Live
+# research-exp-live
 
 ## Purpose
 
-Track long-running research commands through a workflow-owned run envelope, not through repeated raw scrollback reading. The local source of truth is the run directory under `outputs/<pkg>/runs/<run_id>/`; the user-facing overview is `research_html/live.html`.
+Use this skill for a long-running command that belongs to an existing Package and Experiment. It
+authorizes the Run through management state, stores producer evidence in one Run directory, and keeps
+monitoring decisions tied to measured status.
 
-This skill governs wrapper-launched runs only. Unwrapped runs stay on the default `workflow.ts`
-`<=600s` live-loop deadline.
+This skill does not create a Package or Experiment, decide research scope, or treat a browser page as
+state.
 
-## Authority
+## Storage and authority
 
-1. User invocation and active package plan.
-2. `workflow.ts` lifecycle, run status enum, live-check row, stop gate, and fact propagation.
-3. This skill for exp-live launch, startup health, adaptive cadence, typed evidence, and open-runs stop checks.
-4. Runtime files under `outputs/<pkg>/runs/<run_id>/`.
+Resolve the managed root once:
 
-Scheduler-neutral / re-entry-tool-neutral: this skill states the evidence, deadlines, and decisions that must hold. Use whatever re-entry facility the environment provides, but meet the deadline recorded in `Next Check`.
+```bash
+export RESEARCH_ROOT="${RESEARCH_ROOT:-.research}"
+```
 
-## Pre-flight
+`--research-root` overrides the environment variable. If neither is set, the default is
+`.research`.
 
-- `research_html/live.html` exists. It is scaffolded by `/research-dashboard`; this skill only requires it.
-- `research_html/scripts/serve_dashboard.py` exists for API-first live views. `launch.py`
-  will best-effort start or reuse it; if it is missing or unhealthy, the run may
-  still launch, but the dashboard state must record `repair_required`.
-- The package exists in `research_html/data/research-packages.js`.
-- The target `--exp` exists in that package's `experiments[]` task spine.
-- The command is a long-running experiment, training run, evaluation sweep, feature extraction, index build, preprocessing job, or print-only script. If the active plan explicitly marks it as an untracked one-shot, document that exception and use the unwrapped fallback loop.
+With the default root, the three managed areas are `.research/state/`,
+`.research/experiments/`, and `.research/interface/`.
+
+| Data | Location | Authority |
+| --- | --- | --- |
+| Package, Experiment, Run, and allocation lifecycle | `$RESEARCH_ROOT/state/events.jsonl` | Management authority |
+| Current folded state | `$RESEARCH_ROOT/state/current.json` | Rebuildable state projection |
+| Run command and frozen context | `$RESEARCH_ROOT/experiments/<package>/<experiment>/<run>/run.json` and `context.json` | Immutable Run envelope |
+| Live status and raw evidence | The same Run directory | Producer-owned runtime evidence |
+| Human pages | `$RESEARCH_ROOT/interface/` | Read-only generated projection |
+| Interface server process metadata | `$XDG_RUNTIME_DIR/trustworthy-research/<workspace-hash>/` | Ephemeral local runtime |
+
+When `XDG_RUNTIME_DIR` is unset, `ResearchPaths` uses its per-user temporary runtime fallback. Server
+metadata never belongs in `$RESEARCH_ROOT/state/` or `$RESEARCH_ROOT/interface/`.
+
+The interface can be absent, stale, or rebuilt while an Experiment is running. Interface health
+never authorizes a launch and never proves completion.
+
+## Preconditions
+
+Before launch, confirm through state queries that:
+
+- the Package lifecycle is `ACTIVE` and its phase is `READY_TO_LAUNCH`;
+- the selected Experiment belongs to that Package and has status `READY`;
+- `Experiment.spec` contains `purpose`, `config_ref`, `gate`, and `control_mode`;
+- a user `LAUNCH_ACK` or `READY_TO_LAUNCH_ACK` Decision exists;
+- a requested GPU allocation is open and bound to the same Package and Experiment.
+
+The launcher checks these conditions again under the management-state lock. Do not bypass a rejected
+launch by writing a Run directory yourself.
 
 ## Launch
 
-Use the wrapper for tracked long-running commands:
+Use the canonical launcher:
 
 ```bash
-python3 lib/exp_live/launch.py \
+python3 -m lib.experiments.launch \
+  --workspace . \
+  --research-root "$RESEARCH_ROOT" \
   --pkg <package-id> \
-  --exp <P1> \
+  --exp <experiment-id> \
   --tmux-session <name> \
   --heartbeat-timeout 600 \
   -- bash scripts/run_experiment.sh
 ```
 
-Optional telemetry flags include `--metrics-regex`, `--total-steps`, `--wandb-run-id`, and `--tensorboard-logdir`. The local run directory remains canonical even when external telemetry exists.
+The default transport is a named tmux session. Use `--foreground` for a short command. Useful optional
+flags include:
 
-Two more optional flags feed the adaptive protocol:
+- `--metrics-regex` for named metric groups;
+- `--total-steps` for progress normalization;
+- `--wandb-run-id` and `--tensorboard-logdir` for external telemetry identifiers;
+- `--expected-duration minutes|hours|days` for scheduling;
+- `--gpu-sample` for GPU observations;
+- `--server` and `--alloc` for a resource binding;
+- `--retry-of <run-id>` for a replacement attempt.
 
-- `--expected-duration minutes|hours|days` — the coarse duration class for the cadence evidence ladder. Scheduling input only; package surfaces still record `est_time=unknown` until the 30-minute measured rule clears.
-- `--gpu-sample` — sample `nvidia-smi` for the run's GPUs on each watchdog tick so the live-check `Resource Use` column fills from `status.json.resource`. Off by default; without it `resource` is `null` and the column renders `unmeasured`.
+External telemetry adds observations. It does not replace the Run directory or management callbacks.
 
-The wrapper also ensures the local dashboard server before launch:
+The launcher writes:
 
-```bash
-python research_html/scripts/serve_dashboard.py ensure --json
+```text
+$RESEARCH_ROOT/experiments/<package>/<experiment>/<run>/
+├── run.json
+├── context.json
+├── status.json
+├── events.jsonl
+├── metrics.jsonl
+├── result.json
+└── log.txt
 ```
 
-This is a best-effort observation hook, not a launch gate. Success is recorded
-in `meta.json.dashboard_server` and printed as `dashboard_live_url=...`. Failure
-is recorded as `repair_required` and printed as `dashboard_server_warning=...`;
-continue the experiment launch and repair the dashboard server separately.
+`run.json` binds the command, context hash, selected Experiment, resource, and transport.
+`context.json` freezes the state snapshot used at authorization.
 
-Record the allocation row exactly as the `workflow.ts` ticket requires:
+## Optional human interface
 
-- `Session/Job`: tmux session
-- `Runtime Root`: `outputs/<pkg>/runs/<run_id>/`
-- `Log Path`: `outputs/<pkg>/runs/<run_id>/log.txt`
-- `Expected Duration`: `est_time=unknown` unless the 30-minute measured-throughput rule has already cleared
+Start or reuse the read-only interface server only when a human view is useful:
 
-A tracked run launched outside `launch.py` is a workflow violation unless the active plan explicitly says it is untracked.
+```bash
+python3 -m lib.interface.serve \
+  --workspace . \
+  --research-root "$RESEARCH_ROOT" \
+  ensure --json
+```
+
+The server serves `$RESEARCH_ROOT/interface/` and exposes narrow read-only APIs over state and Run
+evidence. Its `dashboard_server.json` and log live under the XDG runtime directory. A failed
+`ensure` call is interface debt, not a Run failure.
 
 ## Startup health gate
 
-Purpose: P1 verified health. The first check is due within the startup window, default 120 seconds after launch. Widen it only for known slow starts and record why.
+Check the new Run within 120 seconds unless the command has a documented slow start. Read
+`status.json`. Startup is confirmed only when:
 
-Read `status.json`. The gate passes only when:
-
-- process lifecycle is still active or terminal state is mechanically recorded;
+- the lifecycle is still open or a terminal status is mechanically recorded;
 - `first_output_at` is set;
 - `health.state` is `OK` or `WARN`.
 
-Until the gate passes, do not pick up unrelated work that risks missing the deadline, and do not end the turn without a re-entry due inside the startup window.
-
-If `health.state=ERROR`, or the run exits inside the startup window, run:
+Do not report a healthy launch before these facts exist. If the process exits or
+`health.state=ERROR`, inspect a bounded log tail:
 
 ```bash
-python3 lib/exp_live/report.py --run outputs/<pkg>/runs/<run_id> --tail 50
+python3 -m lib.experiments.report \
+  --workspace . \
+  --research-root "$RESEARCH_ROOT" \
+  --run "$RESEARCH_ROOT/experiments/<package>/<experiment>/<run>" \
+  --tail 50
 ```
 
-Then route by the `workflow.ts` ticket: repair, fix implementation, ask, or block. Launch provenance may be recorded immediately, but you must not report startup-confirmed, healthy, or running normally until this gate passes.
+Route the verified failure to repair, implementation review, a user decision, or a recorded blocker.
 
-## Adaptive Cadence
+## Monitoring cadence
 
-Purpose: replace the fixed clock for wrapper-launched runs.
+For the first 30 minutes, track the Run every 5 minutes. If a failed branch is replaced, restart that
+30-minute window from the replacement launch.
 
-Evidence ladder, best first:
+After the initial window, use the best available scheduling evidence:
 
-1. measured ETA from stabilized throughput in `status.json`;
-2. harvester progress trend from `progress.pct`, `progress.step`, `progress.total`, and `throughput.rate`;
-3. coarse expected-duration class from launch readiness or a launch flag;
+1. measured progress and stable throughput from `status.json`;
+2. recent progress changes and output heartbeat;
+3. `expected_duration` from `run.json`;
 4. unknown duration.
 
-Interval guide:
-
-| Remaining duration | Default next interval |
+| Remaining duration | Next check |
 | --- | --- |
-| `<= 15 min` | 2-5 min |
-| `<= 1 h` | about 10 min |
-| `<= 6 h` | 15-30 min |
-| `> 6 h` | 30-60 min |
-| unknown | 10 min until evidence improves |
+| up to 15 minutes | 2 to 5 minutes |
+| up to 1 hour | about 10 minutes |
+| up to 6 hours | 15 to 30 minutes |
+| over 6 hours | 30 to 60 minutes |
+| unknown | 10 minutes |
 
-Hard cap 60 min: no open wrapper run goes unchecked longer than this. Tighten freely; never loosen past the cap.
+No open Run goes unchecked for more than 60 minutes. Check immediately when status becomes `STALE`,
+health becomes `ERROR`, anomaly count increases, or throughput drops sharply.
 
-Tighten triggers:
+At every check:
 
-- `health.state=WARN`
-- anomaly count increases
-- throughput materially drops
-- remaining ETA is less than twice the current interval
-- `status=STALE` or `health.state=ERROR` means act now
-
-Scheduling estimates are not recorded ETA claims. Package surfaces still record `est_time=unknown` until the existing 30-minute measured-throughput rule clears.
-
-## Per-check Obligations
-
-At every wrapper-run check:
-
-1. Read `status.json` for every open wrapper run. Do not tail `log.txt` for routine monitoring.
-2. Update the live-check row from `status.json` fields verbatim:
-   - `Run State` = `status`
-   - `Last Log Time` = `last_output_at`
-   - `Progress` = `progress`
-   - `Latest Metrics` = `latest_metrics`
-   - `Resource Use` = `resource` or `unmeasured`
-   - `ETA` = `eta`
-3. Derive and record `Next Check` from the adaptive cadence above.
-4. Run `scan-events` for the package and fan out every emitted artifact event through `research-op`. Artifact propagation follows this same adaptive cadence; do not create a second fixed artifact-scan loop for wrapper-launched runs.
-5. Emit one compact `perRun[].statusLine` per open run. Its `progress=`, `performance=`, and `est_time=` segments must equal the values read from `status.json`.
-6. Arm re-entry at or before `Next Check`.
-
-If `outputs/_live/dashboard_server.json` reports `repair_required`, attempt one
-autonomous `python research_html/scripts/serve_dashboard.py ensure --json`
-repair, or dispatch a bounded dashboard-server repair worker when available.
-Dashboard repair must not pause run monitoring or artifact propagation.
-
-Ending a turn with an open wrapper run and no re-entry at or before `Next Check` is a workflow violation.
-
-## STALE, Anomalies, and Failures
-
-If `status.json` says `STALE`, or `health.state` degrades, check immediately. Liveness is mechanical: the tmux session named in `meta.json`, the child `pid` and `harvester_pid` recorded in `status.json`, and `last_output_at` age vs the recorded `heartbeat_timeout`. The harvester's watchdog re-writes `status.json` on its own clock, so silence flips STALE on disk even between your checks; if the harvester itself died, derive STALE from `last_output_at` age (as `report.py --open` does). Route from verified state; do not infer from a quiet terminal.
-
-Use bounded raw-log intake only after an issue:
+1. Read `status.json` for each management-open Run. Use `log.txt` only to diagnose a problem.
+2. Record the live-check observation through a `research-op` command envelope.
+3. Record `Next Check` and arm re-entry before that time.
+4. Reconcile missing management callbacks.
+5. Run the Package artifact scan once. Do not create a second polling loop.
 
 ```bash
-python3 lib/exp_live/report.py --run outputs/<pkg>/runs/<run_id> --tail 50
+python3 -m lib.experiments.reconcile \
+  --workspace . \
+  --research-root "$RESEARCH_ROOT"
+
+python3 skills/research-op/scripts/research_op.py \
+  --workspace . \
+  --research-root "$RESEARCH_ROOT" \
+  --pkg <package-id> \
+  --op scan-events \
+  --payload '{}'
 ```
 
-## Verified Completion
+The observation fields come from `status.json`: `status`, `last_output_at`, `progress`,
+`latest_metrics`, `resource`, and health. The agent supplies the action and next-check time. Do not
+edit state or interface files to record a check.
 
-Purpose: P2 verified completion. A wrapper-launched run is finished iff `status.json` is terminal:
+## Liveness and failure
+
+Liveness comes from the child `pid`, `harvester_pid`, `last_output_at`, and `heartbeat_timeout`.
+`status.json` can become `STALE` even when the command is quiet. Verify the process before deciding
+whether to wait, stop, or replace it.
+
+Canonical terminal statuses are:
 
 - `COMPLETED`
-- `RUN_FAILED`
-- `RUN_HALTED`
+- `FAILED`
+- `HALTED`
+- `SKIPPED`
 
-The terminal snapshot must include `exit_code` and `ended_at`. Elapsed time, quiet logs, ETA expiry, and expected artifacts are not completion evidence.
+Completion requires a terminal `status.json` with `exit_code` and `ended_at`, followed by a matching
+management callback. If the callback is missing, run the reconciler. Elapsed time, an expired
+estimate, or a quiet log is not completion evidence.
 
-Immediately before recording completed facts, re-read `status.json`. Then proceed through the usual ticket surfaces: final live-check row, result recording through research-op, `scan-events` propagation, and bounded post-mortem on failure.
+After terminal status:
 
-## Open-runs Stop Gate
+1. read `result.json` and its EvidenceRefs;
+2. compare measured results with the immutable Experiment gate;
+3. record result and Experiment status through `research-op`;
+4. release any open resource allocation;
+5. run reconciliation and artifact scan again.
 
-Before `BLOCKED`, `STOPPED`, or session end:
+## Open-run stop gate
+
+Before ending a session, list management-open Runs:
 
 ```bash
-python3 lib/exp_live/report.py --open
+python3 -m lib.experiments.report \
+  --workspace . \
+  --research-root "$RESEARCH_ROOT" \
+  --open
 ```
 
-If it lists non-terminal runs, every listed run must have an armed re-entry at or before its recorded `Next Check`. Otherwise the stop is refused. After terminal lines land and `report.py --open` returns an empty list, the wrapper-run part of the stop gate is clear.
+Every listed Run needs a scheduled next check. If a Run is already terminal on disk but still appears
+open, reconcile it before stopping. A healthy interface server does not clear this gate.
 
-On resume, reconcile the tracker Resume Block `Open Runs` against `report.py --open` and each listed run's `status.json` before trusting tracker state.
-
-Also check `python research_html/scripts/serve_dashboard.py status --json` when
-`research_html/scripts/serve_dashboard.py` exists. If it is unhealthy, run
-`ensure --json` once and keep monitoring via `status.json` regardless of UI
-health.
-
-## Worked Example
-
-Check 1 at startup:
+## Worked example
 
 ```text
-status=RUNNING health=OK first_output_at=set progress=step 20/50000 eta=unknown
-Decision: startup gate passed
-Next Check: +10 min because duration is unknown and health is OK
-scan-events: empty
-P2: progress=step 20/50000; performance=pending(first_eval); est_time=unknown; action=CONTINUE_RUN
-```
-
-Check 2 after progress trend:
-
-```text
-status=RUNNING health=OK progress=step 1200/50000 latest_metrics=loss 0.41 eta=unknown
+status=RUNNING health=OK progress=1200/50000 latest_metrics={"loss":0.41}
 Decision: continue
-Next Check: +15 min because long-run trend is stable but ETA is not yet claimable
-scan-events: CHECKPOINT_SAVED fan-out applied if emitted
-P2: progress=step 1200/50000; performance=loss=0.41; est_time=unknown; action=CONTINUE_RUN
+Next Check: 5 minutes, still inside the initial 30-minute tracker window
+Management: live-check command accepted
+Reconcile: no missing callback
+Artifact scan: no new event
 ```
 
-Short-run contrast:
+Failure:
 
 ```text
-status=RUNNING health=OK progress=80% eta=unknown
-Decision: continue, tighten near finish
-Next Check: +2 min
-```
-
-Failure path — the startup gate refusing (P1):
-
-```text
-Check 1 at +90 s:
-status=RUN_FAILED health=ERROR reasons=["Traceback", "exit_code=1"] first_output_at=set
-Decision: startup gate REFUSED — do not report launched/healthy/running normally
-python3 lib/exp_live/report.py --run outputs/<pkg>/runs/<run_id> --tail 50
-  -> tail shows ImportError in dataloader
-Route: FIX_IMPLEMENTATION; record the failed run as evidence;
-relaunch later with --retry-of <run_id>
+status=FAILED health=ERROR exit_code=1 first_output_at=set
+Decision: startup health refused
+Evidence: bounded report tail shows ImportError
+Route: FIX_IMPLEMENTATION
+Replacement: launch with --retry-of <run-id> and restart the 30-minute tracker
 ```
 
 ## References
 
-- `references/status-contract.md` - schema and live-check column mapping
-- `references/telemetry-sources.md` - adapter/source precedence
-- `references/live-page-contract.md` - read-only page and polling contract
+- [status contract](references/status-contract.md)
+- [telemetry sources](references/telemetry-sources.md)
+- [live page contract](references/live-page-contract.md)

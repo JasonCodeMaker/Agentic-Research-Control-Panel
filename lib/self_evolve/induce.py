@@ -61,6 +61,7 @@ def induce_rule(event, draft, *, version="1.0.0"):
         },
         "validation_policy": {"required_oracles": RULE_PROFILES[etype]},
         "supersedes": draft.get("supersedes", []),
+        "evidence_refs": draft.get("evidence_refs", event.get("evidence_refs", [])),
     }
     rule["content_digest"] = schema.content_digest(rule)
     schema.validate_rule(rule)

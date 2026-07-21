@@ -1,8 +1,9 @@
-"""Append-only Rule transition log: deterministic fold + optimistic concurrency (plan §9.2-§9.3).
+"""Legacy append-only transition helper for generated Skill bundles only.
 
-The log is the store. Authoritative state is the fold of the append-only transitions;
-a fresh (entity_id, version) reads as the pre-creation state "OBSERVED". Writes are
-serialized by compare-and-append on (expected_from_state, entity_version).
+Project Learning, Decision, and Rule memory must use ``self_evolve.state`` and
+the shared management ``EventStore``.  This small fold remains because Skill
+bundle/install state intentionally lives in the user's tool directory, outside
+workspace ``.research``.
 """
 
 import json
@@ -46,22 +47,6 @@ def fold(records):
 def current_state(records, entity_id, entity_version):
     """Folded state for one version; FRESH_STATE if the version has no transition yet."""
     return fold(records).get((entity_id, entity_version), FRESH_STATE)
-
-
-def active_version(records, entity_id, *, active_state="RULE_ACTIVE"):
-    """The version of an entity currently in the given active_state, if any."""
-    for (eid, ver), st in fold(records).items():
-        if eid == entity_id and st == active_state:
-            return ver
-    return None
-
-
-def active_transitions(records, *, active_state="RULE_ACTIVE"):
-    """The last transition per (entity_id, version) whose folded state is active_state."""
-    last = {}
-    for r in _dedup(records):
-        last[(r["entity_id"], r["entity_version"])] = r
-    return {k: t for k, t in last.items() if t["to_state"] == active_state}
 
 
 def append_transition(path, transition):

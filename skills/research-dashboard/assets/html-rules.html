@@ -28,7 +28,7 @@
       <h1>HTML <em>Rules</em></h1>
       <p class="lead">
         These rules apply to every refinement made under
-        <code>research_html/</code> from this point forward. They are derived
+        <code>.research/interface/</code> from this point forward. They are derived
         from Thariq's article "The Unreasonable Effectiveness of HTML"
         (May 8, 2026) and the constructive replies in that thread.
       </p>
@@ -36,20 +36,20 @@
         <a class="pill" href="../index.html">Dashboard</a>
         <a class="pill" href="../README.md">README</a>
         <a class="pill" href="trustworthy-research-rules.html">Trust Rules</a>
-        <span class="tag">scope: research_html/</span>
+        <span class="tag">scope: .research/interface/</span>
       </div>
     </header>
 
     <section class="scope-band" data-section="scope">
       <h2>Scope &amp; Authority</h2>
       <p>
-        These rules govern files inside <code>research_html/</code> only. The
+        These rules govern files inside <code>.research/interface/</code> only. The
         canonical Markdown surfaces under
         <code>research/active/&lt;id&gt;/{PLAN,TRACKER,RESULTS}.md</code> remain
         the source of truth for plans, tracker rows, and result entries; the
         HTML surface presents and extends them. When a rule below conflicts
         with the active <code>workflow.ts</code> or
-        <code>research_html/README.md</code>, the lower-numbered rule here wins
+        <code>.research/interface/README.md</code>, the lower-numbered rule here wins
         for HTML-surface decisions; <code>workflow.ts</code> still wins for
         workflow state, gates, routes, and stop conditions.
       </p>
@@ -109,7 +109,7 @@
             authenticated CDN. External assets are limited to images explicitly
             committed under the package or shared <code>assets/</code> folder.
           </p>
-          <p class="applies">Applies to: every HTML file under research_html/.</p>
+          <p class="applies">Applies to: every HTML file under .research/interface/.</p>
         </article>
 
         <article class="rule-card" data-rule="R5" data-kind="benefit">
@@ -243,7 +243,7 @@
             generated and hand-edited HTML in separate commits when both
             change.
           </p>
-          <p class="applies">Applies to: every commit touching research_html/.</p>
+          <p class="applies">Applies to: every commit touching .research/interface/.</p>
         </article>
 
         <article class="rule-card" data-rule="R13" data-kind="guardrail">
@@ -273,7 +273,7 @@
           <p>
             ASCII tables of metrics that should be a real <code>&lt;table&gt;</code>,
             unicode bar charts, unicode color squares, and ASCII flow
-            diagrams are not acceptable inside research_html/. Use HTML
+            diagrams are not acceptable inside .research/interface/. Use HTML
             tables, inline SVG, or committed images instead.
           </p>
         </article>
@@ -309,7 +309,7 @@
           <p>
             Pages must not load remote JavaScript, remote analytics, remote
             CSS, or external CDN fonts. Everything required to render lives
-            under <code>research_html/assets/</code> or under the owning
+            under <code>.research/interface/assets/</code> or under the owning
             package directory. This protects offline review and keeps the
             single-URL share model honest.
           </p>
@@ -349,7 +349,7 @@
       Source: Thariq (@trq212), "Using Claude Code: The Unreasonable
       Effectiveness of HTML", May 8, 2026, plus the public reply thread.
       These rules are binding for refinements under
-      <code>research_html/</code>. Update this file (not the README) when a
+      <code>.research/interface/</code>. Update this file (not the README) when a
       rule needs to change.
     </footer>
 

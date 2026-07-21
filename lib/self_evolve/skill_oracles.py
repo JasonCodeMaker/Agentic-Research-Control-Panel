@@ -1,8 +1,8 @@
-"""Skill validation oracles (plan §11.3). Pure: every oracle consumes injected evidence.
+"""Skill validation contract and locally exercised deterministic checks.
 
-Pre-install stages (static / bundle / replay / adversarial / shadow / independent-review)
-gate `candidate -> validated`. Runtime stages (installation / canary / continuous-monitor)
-live in install.py / the worker. Effectiveness stays on measured oracles, never an LLM.
+Pre-install reports for replay, adversarial, and shadow stages are produced by
+the experiment workflow. This module names those required reports and resolves
+their typed outcomes; it does not keep unused pseudo-runners for them.
 """
 
 from self_evolve import bundle, sandbox, schema
@@ -30,30 +30,6 @@ def bundle_integrity(manifest, files):
     if files is None:
         return ORACLE_INCONCLUSIVE
     return ORACLE_PASS if bundle.verify_bundle(files, manifest.get("bundle_digest")) else ORACLE_FAIL
-
-
-def historical_replay(report):
-    """Required past workflows meet declared output/invariant thresholds."""
-    if not report:
-        return ORACLE_INCONCLUSIVE
-    req, passed = report.get("required", 0), report.get("passed", 0)
-    return ORACLE_PASS if req > 0 and passed == req else ORACLE_FAIL
-
-
-def adversarial(report):
-    """Independently generated attacks cannot break declared invariants."""
-    if report is None:
-        return ORACLE_INCONCLUSIVE
-    return ORACLE_FAIL if report.get("invariant_breaks") else ORACLE_PASS
-
-
-def shadow(report):
-    """Candidate runs without authoritative effects and meets comparison thresholds."""
-    if report is None:
-        return ORACLE_INCONCLUSIVE
-    if report.get("scope_escape") or report.get("regressions"):
-        return ORACLE_FAIL
-    return ORACLE_PASS
 
 
 def independent_review(review):

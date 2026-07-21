@@ -1,243 +1,221 @@
 ---
 name: research-analysis
-description: "Create, maintain, and validate the per-package `analysis.html` page (Rules + Insight). Use this skill whenever the user types /research-analysis, asks to initialize / scaffold / lint an analysis page, asks to add a distilled rule or a deep-analysis insight to a package, asks to summarize an insight into a rule, or asks to embed a visualization (bar chart, heatmap, threshold chart, admission matrix) into an insight sub-block. Project-agnostic. Hard requirement: the dashboard at <cwd>/research_html/ must already exist (run /research-dashboard first) and the target package must already exist (run /research-package first). Analysis is the single home for the lessons distilled from a package's results — Rules are generalized constraints future packages must obey; Insights are the mechanism-level diagnostics that justify those rules. Both blocks are manual-only and never auto-populated from results, tracker, or inventory."
+description: "Use when initializing, adding, updating, deleting, or linting a package's state-backed Analysis view, or when distilling an evidence-backed insight into a package Rule."
 argument-hint: "<subcommand: init | add-insight | add-rule | lint> [args]"
-allowed-tools: Bash(*), Read, Edit, Write, Glob, Grep
+allowed-tools: Bash(python *), Read, Grep, Glob
 ---
 
-# Research Analysis
+# research-analysis
 
 ## Purpose
 
-Own the per-package `analysis.html` page so its contract stays invariant across packages. The page captures the deep analysis of a package's results — the *why* behind the verdicts on `results.html` (Insight block) — and the generalizable design lessons future packages must obey (Rules block). The skill provides four crisp operations: init, add-insight, add-rule, lint.
+`/research-analysis` manages the records behind a package's existing Analysis page. It owns two
+editorial decisions:
 
-## Authority
+1. whether an experimental result supports a mechanism-level Insight;
+2. whether that Insight warrants a reusable package Rule.
 
-Authority order, highest first:
-1. The user's invocation prompt and any explicit `--<flag>` overrides.
-2. Trust rules `T1–T24` in `<root>/rules/trustworthy-research-rules.html`.
-3. Form rules `R1–R18` in `<root>/rules/html-rules.html`.
-4. The two-block contract in this skill (below).
-5. [references/viz-templates.md](references/viz-templates.md) — reusable visualization snippets with the canonical color palette.
+The records live in unified research state. The browser page under `.research/interface/` is a
+derived view and must never become a store.
 
-## Boundary (binding)
+## Authority and storage
 
-- `results.html` owns *what happened* — result-gate table, validity chips, per-experiment cards, claim analysis. Mechanically populated; inventory-coupled; lint-gated.
-- `analysis.html` owns *why it happened* (Insight) and *what future packages must not repeat* (Rules). **Hand-curated only. No auto-population. No propagate_facts hook. No `methodsTried` writes.**
-- Rules in `analysis.html` are **NOT** `methodsTried[]` in `data/research-packages.js`. `methodsTried` is a per-experiment verdict record consumed by `learnings.html`. Rules are generalized, transferable design constraints consumed by humans+agents to avoid repeating mistakes. The two co-exist and answer different questions.
-- Stage order on the package nav: `overview → plan → implementation → results → analysis → tracker → docs`. Analysis sits between `results` and `tracker` (the chosen-route / next-action decision is folded into `tracker.html#chosen-route`).
-- File writes to `analysis.html` (and removals) go through `/research-op` (`--target rule` with `level=package, kind=lesson` for Rules; `--target analysis-insight` for Insights); the footer `<time>` timestamp is bumped automatically by the handler, so no separate call is needed. This skill owns the **editorial decision** (when a rule is warranted, what counts as an insight); `/research-op` owns the **store and the paint** (the registry row, where to insert, what shape, lint compliance). Lint (`scripts/lint_analysis.py`) stays in this skill.
+Authority runs in this order:
 
-## Pre-flight checks
+1. the user's request and explicit payload;
+2. the management schema and EventStore policy;
+3. the trust and interface rules shipped by `/research-dashboard`;
+4. this skill's editorial contract.
 
-1. The dashboard exists:
-   ```bash
-   test -f <cwd>/research_html/index.html && test -f <cwd>/research_html/data/research-packages.js && echo dashboard-ok
-   ```
-2. The target package exists:
-   ```bash
-   test -f <cwd>/research_html/packages/<id>/index.html && echo package-ok
-   ```
-3. The dashboard JS registers `analysis` in `STAGE_PAGES` (`<root>/assets/research.js`) and the CSS holds the per-page override (`body[data-page="analysis"] #rules { grid-template-columns: 1fr; }`). The dashboard skill ships both — if either is missing, the dashboard is out of date; ask the user to re-run `/research-dashboard` rather than patching the dashboard from this skill.
+The relevant data is:
 
-If any check fails, stop and tell the user what to run first; do not silently scaffold the prerequisite.
+| Concept | Authoritative representation |
+| --- | --- |
+| Analysis enabled | `Package.pages[]` contains `"analysis"` |
+| Insight | `Learning` aggregate `<pkg>::learning::<insight-id>`, plus the package's `analysisInsights[]` projection fields |
+| Package Rule | `Rule` aggregate `<pkg>#<slug>` with `level=package`, `kind=lesson` |
+| Evidence | `provenance` and any typed evidence reference recorded with the Learning or Rule |
+| Human view | `.research/interface/packages/<package-slug>/analysis.html`, rebuilt by `lib.interface` |
 
-## Two-block contract (binding)
+All mutations use `skills/research-op/scripts/research_op.py`, except `init`, whose small helper commits
+the package page-selection event through the same management layer. Do not edit
+`.research/state/events.jsonl`, `.research/state/current.json`, or anything below
+`.research/interface/`.
 
-`analysis.html` carries exactly two top-level sections, in this order:
+## Boundary
 
-1. **Rules** (`<section id="rules" data-section="rules">`) — a numbered list, one `<li>` per rule.
-2. **Insight** (`<section id="insight" data-section="insight">`) — a stack of collapsible `<details>` sub-blocks, one per analyzed experiment, phase, or theme.
+- `results.html` answers what happened. Its rows come from verified run results.
+- Analysis answers why it happened and what should be remembered.
+- Insights and Rules require an explicit editorial decision. Fact propagation does not create them.
+- An Insight is a non-binding Learning. A Rule is binding package memory and needs stronger evidence.
+- A package Rule is not a `methodsTried` verdict row. The two records answer different questions.
+- Terminal packages are frozen. If `research-op` rejects a mutation, surface the rejection instead of
+  patching the rendered page.
 
-The rules block sits above the insight block because rules are the high-density take-away; the insight block is the supporting evidence.
+## Preflight
 
-### Rules block — strict format
+Confirm that the versioned research root and target Package exist:
 
-- **The block is a paint of the unified rules registry** (`data/rules.js`, rows with `level=package`,
-  `kind=lesson`, `status=ACTIVE` for this package). Never hand-edit the `<ol>`; the research-op rule
-  handler regenerates it on every rule insert/update/delete.
-- Container: `<ol class="rules-list" data-list="rules">`.
-- Each rule paints as one `<li class="card-text" id="rule-<slug>">…</li>`.
-- The slug is kebab-case and unique within the package (e.g. `rule-non-binding-precondition`).
-- The row's `text` is plain natural-language prose, written so a human reader and an agent both understand and can apply the rule **without** re-opening the linked insight. Embed the binding numbers, thresholds, and named subjects inline; name the justifying insight slug in the row's `rationale`.
-- **No `<strong>`, `<b>`, or other emphasis on the rule itself.** Plain sentences, not imperatives in bold.
-- Add a rule **only when a result clearly warrants a generalizable lesson, not on every run**. The Rules block can stay empty for the whole life of a package.
-
-When the page is initialized and no rule exists yet, render a placeholder:
-
-```html
-<li class="card-text"><em>No rules recorded yet.</em></li>
+```bash
+test -f .research/VERSION
+python skills/research-op/scripts/research_op.py \
+  show package <package-id> --workspace .
 ```
 
-Remove the placeholder when the first real rule lands.
-
-### Insight block — strict format
-
-- Container: `<div class="insight-body" data-block="insight-body">`.
-- Each insight is a `<details class="insight-subblock" id="insight-<slug>">` card. **Always `<details>` (closed); never `<details open>`.**
-- The `<summary>` is the clickable title bar (one line, no nested elements).
-- The `<details>` body is a single inner `<div>` with consistent padding; inside it: narrative paragraphs (`<p class="card-text">`), optional `<h4>` sub-headings, inline-styled visualizations from [references/viz-templates.md](references/viz-templates.md), and one caption paragraph immediately after each visualization.
-- Every visualization caption is a `<p class="card-text" style="font-size:0.88rem; color:#555;">` paragraph that starts with `<em>Reading:</em>` and explains what the reader should take away.
-- **Closed by default (binding):** every insight sub-block renders closed. The summary line is the index; readers click to expand. This rule supersedes any earlier guidance that said the most recent insight should be `<details open>`.
-- Each sub-block has a stable deep-link anchor (`id="insight-<slug>"`) so rules can cite it.
-- **Manual update only.** Never auto-populate an insight from `results.html`, `tracker.html`, or `data/research-packages.js`.
-
-When the page is initialized and no insight exists yet, render a placeholder:
-
-```html
-<p class="card-text"><em>No insight content yet.</em></p>
-```
-
-Remove the placeholder when the first real insight lands.
-
-## Visualization palette (binding)
-
-Visualizations are **inline-styled HTML/CSS only** — no external charting libraries, no `<script>` blocks, no canvas. Use the colors below. Every visualization is followed by exactly one caption paragraph.
-
-| Role | Color | Notes |
-| --- | --- | --- |
-| Card chrome (`<details>` border) | `#d8dde6` | 1 px solid |
-| Card chrome (`<details>` background) | `#fafbfd` | very light off-white |
-| Card chrome (`<summary>` text) | `#1f2a44` | dark navy |
-| Bar background | `#eef` | very light blue-gray |
-| Bar border | `#ccd` | 1 px solid |
-| Neutral / baseline bar fill | `#888` | medium gray |
-| Pass / improved bar fill | `#4a8e63` | medium green |
-| Fail / regressed bar fill | `#a14444` | medium red |
-| Threshold dashed line | `#c33` | 2 px dashed |
-| Pass chip bg / text / border | `#dff5e3` / `#0a5d24` / `#b8e5c2` | green chip |
-| Fail chip bg / text / border | `#fde2e2` / `#7a1a1a` / `#f0b8b8` | red chip |
-| Heatmap gradient (best → worst) | `#fbe0db → #f4ada1 → #e89486 → #c8593f → #a93527 → #8c2c1f → #691f15` | seven discrete bands |
-| Caption | `font-size:0.88rem; color:#555;` | always after a viz |
-
-See [references/viz-templates.md](references/viz-templates.md) for copy-paste-ready snippets of:
-
-- threshold bar chart (one row per cell, vertical threshold line)
-- before/after paired bar table (rowspan delta column)
-- 2-D heatmap (e.g. `G × p` dose-response)
-- single-axis dose-response bar chart (e.g. sibling-count tax)
-- admission matrix (2-D pass/drop grid)
+If the Package is missing, use `/research-package`. If the workspace needs migration, stop and use
+the migration path. The generated interface is not an execution prerequisite.
 
 ## Operations
 
-The skill has four subcommands. All are explicitly user-triggered; none run on a timer or as part of a fact-propagation cycle.
-
 ### `init <package-id>`
 
-Install the empty `analysis.html` page in the package and opt it into the package's inventory `pages` array.
+Enable the Analysis page in Package state:
 
 ```bash
-python <skill-dir>/scripts/init_analysis_page.py \
-  --root <cwd>/research_html \
-  --package-id <YYYY-MM-DD-slug>
+python skills/research-analysis/scripts/init_analysis_page.py \
+  --workspace . \
+  --package-id <package-id>
 ```
 
-Behavior:
+The command appends `"analysis"` to `Package.pages[]` through a
+`PackageMutationApplied` event. It is idempotent. The management gateway then
+rebuilds the interface and reports whether the projection was written.
 
-- Reads the package's existing `name` from `data/research-packages.js`.
-- Writes `<root>/packages/<id>/analysis.html` from `templates/analysis.html` (refuses to overwrite unless `--force`).
-- Adds `"analysis"` to the package's `pages` array in `data/research-packages.js` if not already present.
-- Verifies (does not patch) that the dashboard ships:
-  - `analysis` in `STAGE_PAGES` (in `<root>/assets/research.js`)
-  - `body[data-page="analysis"] #rules { grid-template-columns: 1fr; }` in `<root>/assets/research.css`
-  - Both ship from the `research-dashboard` skill — emit a warning with the patch command if absent.
-- After init, every subsequent edit to `analysis.html` goes through `/research-op` (`--target rule` with `kind=lesson` for the Rules block, `--target analysis-insight` for the Insight block; this skill's `add-rule` and `add-insight` subcommands are thin wrappers around those).
+### `add-insight <package-id> <insight-id>`
 
-### `add-insight <package-id> <slug> <title>`
-
-Append one new `<details>` sub-block to the Insight block. The agent then hand-edits the body. This skill delegates the file write to `/research-op`:
+Record one evidence-backed Insight through the `analysis-insight` facade:
 
 ```bash
 python skills/research-op/scripts/research_op.py \
-  --pkg <package-id> --op insert --target analysis-insight \
-  --payload '{"slug":"<slug>","title":"<title>","body":"<body html>"}'
+  --workspace . \
+  --pkg <package-id> \
+  --op insert \
+  --target analysis-insight \
+  --payload '{
+    "id":"<kebab-case-id>",
+    "title":"<short title>",
+    "lead":"<observed pattern>",
+    "reading":"<what the evidence shows>",
+    "mechanism":"<why it happened>",
+    "provenance":".research/experiments/<pkg>/<experiment>/<run>/result.json"
+  }'
 ```
 
-`/research-op` writes the `<details class="insight-subblock" id="insight-<slug>">` wrapper closed by default; the agent edits the inner body via `Edit` after the wrapper lands. Use `templates/insight-subblock.html` as the shape reference for that body. This skill no longer ships its own scaffolding script for insight additions.
+Required fields:
 
-**Embed a visualization** (the `embed a bar chart / heatmap / …` trigger): after the insight wrapper lands, open the matching snippet in [references/viz-templates.md](references/viz-templates.md) — threshold bar chart, paired before/after bar, 2-D heatmap, single-axis dose-response, or admission matrix — paste it into the insight body via `Edit`, recolor with the [palette](#visualization-palette-binding), and add the required `<em>Reading:</em>` caption paragraph immediately after it. No separate subcommand or script is involved.
+- `id` or `slug`;
+- `title`;
+- at least one of `lead`, `reading`, or `mechanism`;
+- `provenance` that identifies the evidence.
 
-This insert is only legal while the package `category` is `in-progress`; for terminal packages (`success` / `fail`) the analysis page is frozen and `/research-op` rejects the call — surface the rejection and ask the user before attempting a write.
+The gateway records a `Learning` and updates the package's renderer-facing `analysisInsights[]`
+fields in the same operation. Use `--op update` with the same stable `id` to revise it. Use
+`--op delete` with `{"id":"<id>","reason":"<why>"}` for an explicit correction.
+
+The interface renders each Insight as a closed `<details>` block. Text fields are HTML-escaped.
+Raw HTML is not part of the current Insight payload contract.
 
 ### `add-rule <package-id> <slug>`
 
-Add one distilled rule. The rule lands as a typed row in the unified rules registry
-(`data/rules.js`, `level=package`, `kind=lesson`); `/research-op` repaints the Rules block `<ol>` from
-the registry in the same call — the page is a paint, never the store. The agent hand-crafts the prose;
-this skill delegates the write to `/research-op`:
+Distill an existing Insight into a package Rule only when finalized result evidence supports a
+general lesson:
 
 ```bash
 python skills/research-op/scripts/research_op.py \
-  --pkg <package-id> --op insert --target rule \
-  --payload '{"level":"package","kind":"lesson","slug":"<slug>","title":"<short name>","text":"<rule prose>","rationale":"<which insight/verdict justifies it>","addedAt":"<YYYY-MM-DD>"}'
+  --workspace . \
+  --pkg <package-id> \
+  --op insert \
+  --target rule \
+  --payload '{
+    "level":"package",
+    "kind":"lesson",
+    "slug":"<kebab-case-slug>",
+    "title":"<short title>",
+    "text":"<standalone rule prose>",
+    "rationale":"insight-<insight-id>",
+    "addedAt":"<YYYY-MM-DD>"
+  }'
 ```
 
-`/research-op` runs the rule-target Phase 2 validators (kebab-case slug, required fields, `kind=lesson`
-needs ≥1 finalized result-gate row) and either writes+repaints or rejects with the structured envelope.
-This skill no longer ships its own scaffolding script for rule additions.
-
-For the **summarize-an-insight-into-a-rule** trigger: first read the target insight sub-block, distill
-the single generalizable lesson, then call `add-rule` with that prose and name the insight slug in
-`rationale` so the provenance stays traceable. There is no separate `summarize` subcommand — it is
-`add-rule` applied to an existing insight.
-
-As with `add-insight`, this insert is only legal while the package `category` is `in-progress`; for terminal packages (`success` / `fail`) `/research-op` rejects the call — surface the rejection and ask the user before attempting a write.
+The Rule text must stand on its own and remain plain text. Put thresholds, named subjects, and other
+binding details in `text`; put the supporting Insight id in `rationale`. `research-op` rejects a
+lesson when the package has no finalized result evidence.
 
 ### `lint <package-id-or-all>`
 
-Validate the contract on one package or all packages. Returns non-zero on violations.
+Lint the authoritative state:
 
 ```bash
-python <skill-dir>/scripts/lint_analysis.py \
-  --root <cwd>/research_html \
-  [--package-id <id> | --all]
+python skills/research-analysis/scripts/lint_analysis.py \
+  --workspace . \
+  --package-id <package-id>
+
+python skills/research-analysis/scripts/lint_analysis.py \
+  --workspace . \
+  --all
 ```
 
-Checks per page:
+The linter checks:
 
-- `<body data-page="analysis" data-package-id="<id>">` is present and the id matches the directory.
-- The two sections appear in order: `#rules` first, then `#insight`. No other top-level section between them.
-- Every `<li>` inside `<ol class="rules-list">` either is the `No rules recorded yet.` placeholder OR has `id="rule-<slug>"` with a kebab-case slug; painted slugs must match the registry's ACTIVE lesson rows in both directions (drift is an error).
-- Every `<li class="card-text" id="rule-*">` body contains no `<strong>` or `<b>` tag wrapping the rule itself (inline `<em>` for emphasis on a sub-clause is allowed; the lint checks only `<strong>`/`<b>`, not `<em>`).
-- Every `<details>` inside `<div class="insight-body">` has `id="insight-<slug>"`, exactly one `<summary>`, and at least one `<p class="card-text">` in its body.
-- Every visualization (any element with `style="…background:#…"` that contains `width:` or sits inside a grid) is followed by a caption `<p class="card-text" style="…0.88rem…color:#555…">`.
-- Every `#rule-*` Evidence link resolves to an `#insight-*` anchor that exists on the same page.
-- Inventory check: the package's `pages` array in `data/research-packages.js` includes `"analysis"`.
-- Dashboard check: `STAGE_PAGES` in `<root>/assets/research.js` includes the `analysis` slot, and the `#rules` CSS override is present.
+- Analysis is enabled in `Package.pages[]`;
+- Insight ids are unique kebab-case ids;
+- every Insight has a title, content, and provenance;
+- active lesson Rules contain plain text;
+- each lesson Rule cites an Insight that exists for the package.
 
-A clean lint exits 0 silently; violations are printed one per line with a file:line anchor where possible.
+It does not parse or mutate rendered HTML.
 
-## Update cadence (binding)
+## Human layout contract
 
-- **Insight** is updated **only on explicit user instruction**. If a user says "summarize the V0 results into an insight," that's an explicit instruction. If the agent is on a propagate_facts cycle, it never touches `analysis.html`.
-- **Rules** are updated only when a result clearly warrants a generalizable lesson. Most experiments will not warrant a new rule. An insight without a rule is still useful; a rule without an insight to link is not allowed.
-- When a rule is added, the linked insight must already exist on the page (the `lint` subcommand catches broken `#insight-<slug>` links).
+The current Analysis page keeps the existing human layout:
 
-## Relationship to other skills
+1. Rules appear first as a numbered list.
+2. Insights follow as closed, collapsible cards.
+3. The interface renderer supplies the empty placeholders.
+4. The package navigation and shared CSS remain owned by `/research-dashboard` and
+   `lib.interface`.
 
-- `/research-dashboard` ships the global JS/CSS that registers the analysis page in the nav and fixes the 1-column layout for the Rules section. Re-run it after pulling the dashboard skill if either piece is missing.
-- `/research-package` scaffolds the package shell. When `--scope` includes `analysis` (or is `all`), the scaffolder writes an empty `analysis.html` and adds `analysis` to the inventory `pages` array. The `research-analysis` skill then owns content updates on the page from that point on.
-- `learnings.html` and `data/research-packages.js` `methodsTried[]` are owned by `/research-package`. Rules in `analysis.html` are a separate plane and never feed `learnings.html`.
-- When an insight surfaces a durable **field gap** (a known unknown the field has not closed), register it in the project-level gap registry so it feeds the Context Pack's Open-gaps section — and link the idea/package that targets it with an `ADDRESSES_GAP` edge: `research-op --op registry-add --target gap --payload '{"id":"G1","summary":"..."}'` then `--target edge --payload '{"from":"<idea-or-pkg>","to":"G1","type":"ADDRESSES_GAP","evidence":"..."}'`. The gap registry is a separate plane from the manual `analysis.html` Rules; registering a gap never edits the analysis page.
+`skills/research-package/templates/analysis.html` is the single layout template. This skill does not
+carry or write a second page template.
+
+## Visualization boundary
+
+[references/viz-templates.md](references/viz-templates.md) records the approved visual language for a
+future typed visualization field. The current `analysis-insight` facade accepts text fields and does
+not render arbitrary HTML. Do not paste a visualization into `.research/interface/` or smuggle raw
+HTML into state. Until the schema and renderer gain a typed visualization payload, place the finding
+in `reading` and `mechanism`, with the result artifact in `provenance`.
+
+## Inspection
+
+Inspect the stored records through bounded queries:
+
+```bash
+python skills/research-op/scripts/research_op.py \
+  show learning '<package-id>::learning::<insight-id>' --workspace .
+
+python skills/research-op/scripts/research_op.py \
+  show rule '<package-id>#<rule-slug>' --workspace .
+```
+
+After any accepted mutation, confirm that the automatic interface rebuild
+succeeded, then run the state linter. A clean lint is silent and exits with
+status 0.
 
 ## Final response
 
-After any subcommand, state:
+Report:
 
-- subcommand and arguments
-- package id
-- files written / patched
-- inventory updates
-- lint result (if applicable)
-- one-line "next action" suggestion (e.g. "Add the first rule with `/research-analysis add-rule …`")
-
-Apply the dashboard's output-classification rule: agent-only continuity notes go in a `>` blockquote.
+- the operation and package id;
+- the committed event ids;
+- the Learning or Rule aggregate id;
+- the lint result;
+- whether the interface rebuild succeeded;
+- the next decision, if one remains.
 
 ## Bundled resources
 
-- `templates/analysis.html` — empty two-block scaffold rendered by `init`.
-- `templates/insight-subblock.html` — one collapsible insight card, copy-paste boilerplate.
-- `templates/rule-bullet.html` — `research-op --target rule` payload boilerplate for a package lesson row.
-- `references/viz-templates.md` — five visualization patterns with the canonical color palette.
-- `scripts/init_analysis_page.py` — init subcommand implementation.
-- `scripts/lint_analysis.py` — lint subcommand implementation.
+- `scripts/init_analysis_page.py`: enables Analysis in Package state.
+- `scripts/lint_analysis.py`: validates the state contract.
+- `templates/rule-bullet.html`: package Rule payload reminder.
+- `references/viz-templates.md`: frozen visualization layout reference, not a mutation path.

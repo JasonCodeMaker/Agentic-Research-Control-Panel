@@ -1,208 +1,168 @@
 ---
 name: research-brainstorm
-description: "The Step-3 direction-formation on-ramp. Use when the user has only a vague or partial research idea and cannot yet state a clear Direction, or types /research-brainstorm, or asks to brainstorm / shape / explore a research direction before committing. Captures cheap pre-package, pre-SSOT ideas onto the dashboard brainstorm lane, automatically generates an English brainstorm HTML detail page for each idea, and converts one or more ideas into a single Direction proposal submitted through Triage. The agent only PROPOSES the Direction — the PM ratifies. Project-agnostic. Requires a committed Project node (run /research-onboard or /research-scope first)."
-argument-hint: "[<dashboard root, defaults to ./research_html>]"
+description: "Use when the user has a vague research idea and needs to shape it into a typed Direction proposal before package creation."
+argument-hint: "[--workspace <path>] [--research-root <path>]"
 allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob, Agent
 disable-model-invocation: false
 ---
 
-# research-brainstorm (Step 3 · direction formation)
+# Research brainstorm
 
-A **brainstorm** is a cheap, pre-package, pre-SSOT **idea** that lives on the dashboard brainstorm lane.
-Ideas are many; commitment is the deliberate step. This skill helps a user who only has a vague idea
-shape it — following the brainstorming method, grounding factual uncertainties, and sharpening
-hypotheses — until one or more ideas can be **converted** into a single ratified Direction.
+Use this skill before a Direction exists. A Brainstorm is a cheap, reversible
+idea; it is not a committed Direction and cannot authorize an experiment.
 
-The trust line is unchanged: ideas are not gated (they carry no claims, metrics, or evidence). They touch
-the SSOT only at **conversion**, where the synthesized Direction is *proposed* through Triage and the PM
-disposes. The agent never commits the SSOT.
+The authority flow is:
 
-If the user says "convert this brainstorm to a research package", do not call `/research-package`
-directly. Convert means: propose a Direction, wait for ratification, propose validation Tasks, wait for
-ratification, then run `/research-package from-scope <direction-id>`.
+```text
+Brainstorm state
+  -> typed Direction proposal
+  -> human Triage disposition
+  -> committed Direction
+  -> governed Experiment.spec
+  -> Package materialization
+```
 
-## Resources
+The Brainstorm CLI writes typed events through the research-op management
+gateway. It does not write HTML or JavaScript. Human-readable cards and detail
+pages appear only after the interface renderer rebuilds
+`.research/interface/`.
 
-**Pipeline root:** `/home/uqzzha35/Project/Trustworthy-Research-Pipeline/Trustworthy-Research-Pipeline`
+## Inputs
 
-| Resource | Path |
-|---|---|
-| Brainstorm CLI | `<pipeline-root>/skills/research-brainstorm/scripts/brainstorm.py` |
-| Idea store (dashboard lane source) | `research_html/data/brainstorms.js` |
-| Idea detail pages (user-readable) | `research_html/brainstorm/<YYYY-MM-DD>-<idea-id>.html` |
-| Scope SSOT lib | `<pipeline-root>/lib/scope_ssot/__init__.py` |
-| Triage CLI | `<pipeline-root>/skills/research-scope/scripts/triage.py` |
-| Transition log | `outputs/_scope/transitions.jsonl` |
-| Triage queue | `outputs/_scope/triage.jsonl` |
+Start with:
 
-Brainstorm CLI commands:
+- the user's rough idea;
+- the active Project goal and out-of-scope boundary;
+- any factual sources needed to check prior work, baselines, or metrics;
+- related Learnings and Rules returned by the state query.
+
+Resolve all workspace data through `ResearchPaths`. `RESEARCH_ROOT` defaults to
+`.research`; `--research-root` is the only path override.
+
+## Check the Project boundary
 
 ```bash
-python3 skills/research-brainstorm/scripts/brainstorm.py add --root research_html --title '<t>' --idea '<text>' [--rough-metric '<m>'] [--lit-refs '<json list>'] [--page-language en]
-python3 skills/research-brainstorm/scripts/brainstorm.py list --root research_html
-python3 skills/research-brainstorm/scripts/brainstorm.py remove --root research_html --id <idea-id>
-python3 skills/research-brainstorm/scripts/brainstorm.py check-project --transitions outputs/_scope/transitions.jsonl
-python3 skills/research-brainstorm/scripts/brainstorm.py direction-ready --spec '<json>'
-python3 skills/research-brainstorm/scripts/brainstorm.py build-proposal --node-id direction/<slug> --parent-project-id <project-id> --spec '<json>' --source '<text>' --source-brainstorms '<json list of idea ids>'
+python3 skills/research-brainstorm/scripts/brainstorm.py check-project \
+  --workspace <workspace>
 ```
 
-## Precondition
+If `active_project_ids` is empty, stop and use `research-onboard` or
+`research-scope`. A Direction must be a child of an accepted Project. Compare
+every candidate with the returned Project goal and `out_of_scope` list.
 
-A committed Project node must exist (Step 2 done):
+Load relevant governed context separately:
 
 ```bash
-python3 skills/research-brainstorm/scripts/brainstorm.py check-project --transitions outputs/_scope/transitions.jsonl
+python3 skills/research-op/scripts/research_op.py \
+  show project --workspace <workspace>
 ```
 
-If `active_project_ids` is empty, stop and point the user at `/research-onboard` (or `/research-scope`)
-to ratify a Project first. A Direction is always a child of a ratified Project.
-The same command also returns `active_projects` with each Project's `goal` and `out_of_scope`. Read those
-fields before shaping or converting ideas. Candidate Directions must fit the active Project goal and must
-not ask the package workflow to pursue work listed as out of scope.
+Do not read `.research/interface/` as context.
 
-Before shaping or converting an idea, run the learning context gate and read its JSON summary:
+## Shape and store ideas
+
+Ask one useful question at a time. When several framings are plausible, present
+their trade-offs and record distinct candidates separately.
 
 ```bash
-python3 research_html/scripts/learning_context_gate.py --root research_html --json
+python3 skills/research-brainstorm/scripts/brainstorm.py add \
+  --workspace <workspace> \
+  --title "Candidate-pool audit" \
+  --idea "Measure first-stage visibility before changing the reranker" \
+  --rough-metric "CanHit@100" \
+  --lit-refs '["paper:example"]'
 ```
 
-If it reports malformed rules or unreadable package data, stop and repair the learning surface first.
-Use the counts as an explicit empty-source stamp: zero failed methods or adopted wins is allowed only
-after this gate has loaded the stores successfully.
-
-## Procedure
-
-**1. Shape the idea (follow the brainstorming method).**
-
-The user usually has only a vague or partial idea. Do **not** demand a full spec up front. Following
-the brainstorming method: ask one question at a time, surface 2-3 candidate framings with trade-offs, and
-converge. Capture each distinct candidate as a cheap idea — there can be several:
+Other state operations:
 
 ```bash
-python3 skills/research-brainstorm/scripts/brainstorm.py add --root research_html \
-  --title 'Mixup augmentation' --idea 'Augment CIFAR-10 with mixup to lift top-1' --rough-metric 'top-1 accuracy'
+python3 skills/research-brainstorm/scripts/brainstorm.py list \
+  --workspace <workspace>
+
+python3 skills/research-brainstorm/scripts/brainstorm.py revise \
+  --workspace <workspace> --id <idea-id> \
+  --patch '{"rough_metric":"CanHit@100 and R@10"}'
+
+python3 skills/research-brainstorm/scripts/brainstorm.py remove \
+  --workspace <workspace> --id <idea-id> \
+  --reason "superseded by a more testable framing"
 ```
 
-`add` writes two user-facing surfaces in the same operation:
+`remove` archives the aggregate; it does not erase history. The stored
+`detailPath` is projection metadata, not a file written by this skill.
 
-1. `research_html/data/brainstorms.js` gets a brainstorm-lane card.
-2. `research_html/brainstorm/<YYYY-MM-DD>-<idea-id>.html` is generated and the card receives `detailPath`.
+When a framing depends on a factual unknown, inspect reliable sources before
+putting the claim into shared context. Do not invent novelty, baseline, or
+state-of-the-art claims.
 
-The generated HTML page is **English by default**. Keep any agent-added page content in English unless the
-user explicitly requests another page language. For a one-sentence hunch, the generated page shell is
-enough; for substantive brainstorming or analysis, immediately enrich that HTML page with the readable
-summary, candidate framings, trade-offs, rough metric, evidence links, and next decision. Do not leave the
-user with only a `brainstorms.js` row when the skill is invoked.
+## Form a Direction
 
-**2. Ground factual uncertainties.**
+A conversion-ready Direction has exactly:
 
-Whenever a framing turns on a *factual* unknown — is this novel? what is the SOTA baseline? what is the
-standard metric? has this been tried? — fetch and read sources before turning the claim into shared
-context. Fold the grounding back into the idea (e.g., record the real baseline in `--rough-metric`, add
-`--lit-refs`). Do not assert a baseline or prior-art claim without a source or package fact.
+```json
+{
+  "hypothesis": "A testable statement",
+  "metric": {"name": "primary metric", "direction": "higher"},
+  "baselines": ["A concrete comparison"],
+  "success_gate": "A measurable condition"
+}
+```
 
-**3. Sharpen hypotheses.**
-
-Expand and sharpen candidate hypotheses for the most promising framing. At formation there is no scoped
-direction yet, so write the sharpened ideas back as brainstorms, not as package rows.
-
-**4. Converge and check readiness.**
-
-Decide, with the user, which one or more ideas become **one** Direction. Synthesize a single typed
-spec `{hypothesis, metric, baselines, success_gate}` from them and check it is conversion-ready:
+Check completeness:
 
 ```bash
-python3 skills/research-brainstorm/scripts/brainstorm.py direction-ready --spec '{"hypothesis":"<20-100 word testable claim>","metric":{"name":"<primary metric>","dir":"higher"},"baselines":["<5-50 word baseline>"],"success_gate":"<20-100 word success condition>"}'
+python3 skills/research-brainstorm/scripts/brainstorm.py direction-ready \
+  --spec '<direction-spec-json>'
 ```
 
-`ready=false` means a field is missing or empty — keep shaping. A baseline must be concrete (ideally
-grounded by step 2), not a placeholder. If `metric` is supplied as a string instead of an object, it must
-also be 20-100 words.
-Before this spec becomes a proposal, compare it to the active Project `goal` and `out_of_scope` from
-`check-project`. If it conflicts, either reshape the idea or route a Project/Scope revision through
-`/research-scope`; do not hide the conflict inside the Direction proposal.
-
-**4b. Rank candidate ideas with a separate sub-agent before forming the Direction.**
-
-When more than one pre-package idea is in contention for a single Direction, do not pick by the
-generating context's own taste. A **separate** sub-agent ranks them (`generate ≠ judge`), then the
-user ratifies the winner (proposer ≠ disposer preserved — the sub-agent *ranks*, the human *ratifies*).
-
-```python
-import sys
-sys.path.insert(0, "<pipeline-root>/lib")
-import ranking
-```
-
-1. Write the candidate ideas to `outputs/_brainstorm/<slug>/candidates.json`.
-2. `req = ranking.rank_request(idea_ids, ["outputs/_brainstorm/<slug>/candidates.json"],
-   "Rank these directions best-first for a publishable research program; the answer should matter
-   either way.", top_k=1)`. Dispatch a fresh ranking sub-agent (Agent tool) with `req` (paths only).
-3. `parsed = ranking.parse_ranking(reply, idea_ids)`;
-   `reason = ranking.assess_ranking(parsed["ranking"], idea_ids,
-   producer="brainstorm-ideas", judge="brainstorm-ranker")`. If `reason`, stop and surface it.
-4. `winner = ranking.select_top_k(parsed["ranking"], 1)[0]`. Persist
-   `ranking.write_ranking_verdict("outputs/_brainstorm/<slug>/verdicts/",
-   {"producer": "brainstorm-ideas", "judge": "brainstorm-ranker", "scope_version": <v>,
-   "candidate_set_id": "_brainstorm/<slug>/candidates.json", "candidate_set": idea_ids,
-   "ranking": parsed["ranking"], "selected": [winner], "rationale": parsed["rationale"]})`.
-5. Present `winner` + `parsed["rationale"][winner]` to the user for ratification. Record the rationale
-   + `ranking_id` as conversion provenance in the new package's `brainstorm.html`.
-
-If only one idea is in contention, this step is skipped — proceed directly to step 5.
-
-**5. Build the Direction proposal and submit it through Triage.**
+Then build, submit, and display the hash-bound proposal:
 
 ```bash
-P=$(python3 skills/research-brainstorm/scripts/brainstorm.py build-proposal \
-  --node-id direction/<slug> --parent-project-id <project-id> \
-  --spec '<json>' --source 'brainstorms:<idea-ids>' --source-brainstorms '<json list of idea ids>')
-python3 skills/research-scope/scripts/triage.py propose --log outputs/_scope/triage.jsonl --item "$P"
-python3 skills/research-scope/scripts/triage.py pending --log outputs/_scope/triage.jsonl
+PROPOSAL=$(python3 skills/research-brainstorm/scripts/brainstorm.py build-proposal \
+  --node-id direction/<slug> \
+  --parent-project-id <project-id> \
+  --spec '<direction-spec-json>' \
+  --source 'brainstorms:<idea-id>,<idea-id>' \
+  --source-brainstorms '["<idea-id>","<idea-id>"]')
+
+python3 skills/research-scope/scripts/triage.py propose \
+  --workspace <workspace> --item "$PROPOSAL"
+
+python3 skills/research-scope/scripts/triage.py pending \
+  --workspace <workspace>
 ```
 
-`build-proposal` validates the spec against the SSOT schema (reject-before-propose) and carries
-`source_brainstorms` so the consumed ideas are known at conversion. Show the pending item and **STOP** —
-ratifying the Direction is the PM's decision.
+Stop at this boundary. The agent may prepare and explain a proposal, but only
+the user's matching `ACCEPT <proposal-id> <proposal-hash>` can authorize its
+disposition and subsequent Scope commit.
 
-## Hand-off (PM action, then the existing chain)
+## Optional interface rebuild
 
-This mirrors `research-scope`'s human-accept path:
+After state has changed:
 
-1. PM runs `triage.py dispose --decision ACCEPTED`, then commits with
-   `research-op --pkg _scope --op scope-transition --from-triage <item-id>`. The accepted
-   Direction proposal enters the SSOT.
-2. The existing chain takes over: `plan_milestones.py` proposes milestones; after they are committed,
-   `/research-package from-scope <direction-id>` materializes the package. Pass the consumed idea ids so
-   they are frozen into the package's `brainstorm.html` provenance sub-page and removed from the
-   brainstorm lane:
+```bash
+python3 skills/research-dashboard/scripts/ensure_dashboard.py build \
+  --workspace <workspace>
+```
 
-   ```bash
-   python3 skills/research-package/scripts/create_from_scope.py \
-     --direction-id <direction-id> --root research_html \
-     --transitions outputs/_scope/transitions.jsonl \
-     --source-brainstorms '<json list of idea ids>'
-   ```
+This generates the existing brainstorm lane and detail-page layout under
+`.research/interface/`. A failed or missing interface build does not invalidate
+the Brainstorm event or proposal.
 
-## Scope (what this skill does NOT do)
+## Boundaries
 
-- Does not commit the SSOT — it only proposes a pending Direction Triage item.
-- Does not create packages or milestones — those belong to `/research-scope` and
-  `/research-package from-scope <direction-id>`.
-- Ideas are not research-op surfaces — `add`/`remove` write `brainstorms.js` directly; they carry no gates.
-
-## Output contract
-
-| Path | Written by | Contents |
-|---|---|---|
-| `research_html/data/brainstorms.js` | this skill (`add`/`remove`) | pre-package ideas rendered on the brainstorm lane, each with `detailPath` |
-| `research_html/brainstorm/<YYYY-MM-DD>-<idea-id>.html` | this skill (`add`, then optional Edit) | English-by-default, user-readable brainstorm page for the idea |
-| `outputs/_scope/triage.jsonl` | `triage.py propose` | one pending Direction item (carries `source_brainstorms`) |
-| `outputs/_scope/transitions.jsonl` | PM only (via research-op) | committed Direction — never this skill |
+- Do not create a Package directly from a Brainstorm.
+- Do not commit Project or Direction Scope without accepted Triage.
+- Do not create old Task records; validation work is an `Experiment.spec`.
+- Do not store candidate files, ranking ledgers, or verdicts in ad hoc
+  workspace directories. Durable judgments belong in Decision state with
+  evidence.
+- Do not edit state logs, `current.json`, generated JS, or generated HTML by
+  hand.
 
 ## Done condition
 
-The shaped idea(s) are on the brainstorm lane, each has a readable HTML page linked by `detailPath`, and —
-when the user is ready — a conversion-ready Direction is a pending Triage item carrying its
-`source_brainstorms`, shown to the user. The Direction is not yet in effect; it takes effect only after PM
-acceptance and the `research-op --pkg _scope --op scope-transition --from-triage <item-id>` commit.
+The relevant Brainstorm records exist in state. If the user chose a direction,
+a complete Direction proposal is pending with its proposal hash and
+`source_brainstorms`; it is not yet treated as committed. The human interface
+may be rebuilt independently without changing that authority.

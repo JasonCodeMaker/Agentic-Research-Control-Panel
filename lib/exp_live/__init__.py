@@ -1,2 +1,1 @@
-"""Structured live-run tracking for Trustworthy research experiments."""
-
+"""Deprecated module name; storage and behavior come from :mod:`lib.experiments`."""

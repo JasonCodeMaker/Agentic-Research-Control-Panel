@@ -15,7 +15,7 @@ Before acting, classify the current working directory:
 - **Toolbox repo**: this repository, whose git root is the directory containing this file, `README.md`,
   `CLAUDE.md`, `workflow.ts`, `skills/`, and `lib/`. The parent workspace is not the repo.
 - **Target research project**: a consuming ML/research repo where the pipeline has been attached. It may
-  contain copied or merged `AGENTS.md`, `CLAUDE.md`, `research_html/`, `outputs/_scope/`, and project
+  contain copied or merged `AGENTS.md`, `CLAUDE.md`, a versioned `.research/` root, and project
   source/config/data files.
 
 If the user asks to change the pipeline implementation or protocol, work in the toolbox repo. If the
@@ -32,21 +32,17 @@ For any non-trivial target-project task, read only the relevant files in this or
    result analysis, or package state transition.
 4. The relevant skill body under `$HOME/.codex/skills/<skill-name>/SKILL.md`, or `skills/<skill-name>/`
    when editing this toolbox.
-5. The smallest live authority set for the task: Scope for intent, package pages for plans/verdicts,
-   runtime artifacts for measurements, and `research_html/data/research-packages.js` for dashboard index
-   state.
+5. The smallest live authority set for the task: `research-op context <package-id>` for governed intent
+   and knowledge, plus that experiment's run/result files for measurements.
 
 Runtime artifacts and live process state override remembered summaries. If a required fact is missing,
 record the gap and stop at the smallest useful user decision instead of inventing intent.
 
-Source hierarchy: Scope owns intent; package `plan.html` owns executable gates; runtime artifacts own
-measurements; package `results.html` owns verdicts; `research-packages.js` owns dashboard index state;
-`research_html/data/rules.js` owns the binding-rule corpus (mutated only via `research-op --target rule`;
-its `origin=mirror|selfevolve` rows are export-owned projections).
-Derived pages (`scope.html`, `learnings.html`, lane pages, `scope-projection.json/js`) are
-read surfaces unless their owning skill says otherwise. For detailed surface ownership, read only the
-relevant skill/reference, especially `research-dashboard`, `research-package`, `research-op`, and
-`research-scope`.
+Source hierarchy: `.research/state/events.jsonl` owns governed intent and management history;
+`.research/experiments/<package>/<experiment>/<run>/` owns executed commands, measurements, and evidence;
+`.research/audit/actions.jsonl` owns command outcomes. `.research/state/current.json` and the entire
+`.research/interface/` tree are rebuildable projections. Agents use `research-op` queries and never read
+the interface as an authority.
 
 ## Cold Start Skill Routing
 
@@ -55,7 +51,7 @@ the full `SKILL.md` body is loaded only when the task matches that skill or the 
 For ambiguous target-project research workflow requests, use this lifecycle only to avoid skipping
 prerequisites:
 
-`dashboard -> onboard/scope -> brainstorm -> package -> run`
+`onboard/scope -> brainstorm -> package -> run`
 
 If the user names a specific skill, file, surface, script, or operation, go directly to that owner instead
 of forcing the lifecycle route.
@@ -70,9 +66,9 @@ that skill body and its directly referenced contract files.
 ## Setup And Script Resolution
 
 Setup and attach work is occasional, not ordinary cold-start context. For target-repo setup, use `README.md`
-and the owning setup skills (`research-dashboard`, then `research-onboard` or `research-scope`) without
-overwriting existing target `AGENTS.md` / `CLAUDE.md` instructions. The pipeline is not active for research
-execution until a Project node is committed in the Scope SSOT.
+and the owning setup skills without overwriting existing target `AGENTS.md` / `CLAUDE.md` instructions.
+Initialize the governed state first; build the human interface independently. The pipeline is not active
+for research execution until a Project node is committed.
 
 In a target research project, do not assume this toolbox source tree is vendored into the repo. Resolve
 relative `skills/<name>/scripts/...` commands through the installed Codex skill first
@@ -81,30 +77,29 @@ path and run the relevant maintainer checks available in this checkout.
 
 ## Scope And Triage Contract
 
-Scope is the versioned intent store for Project -> Direction -> Task. Codex must preserve this boundary:
+Scope is the versioned intent model for Project -> Direction -> Experiment. A former Task is represented
+as `Experiment.spec`; it is not a second executable entity. Codex must preserve this boundary:
 
-- Pending ideas, Project objectives, Directions, Tasks, and scope revisions go through Triage first.
+- Pending ideas, Project objectives, Directions, Experiments, and scope revisions go through Triage first.
 - Codex may draft proposals and show them to the user, but it must not silently commit
-  `outputs/_scope/transitions.jsonl`.
+  a Scope event.
 - A committed Scope transition requires explicit human ratification and the gated writer documented by
   `research-scope` / `research-op`.
-- Dashboard Scope projection files are read-only derived views. Do not hand-edit them to change intent.
+- Interface projection files are read-only. Do not hand-edit them to change intent.
 
-If Scope and package/dashboard surfaces disagree, treat Scope as the intent authority and package/runtime
-artifacts as evidence authority; repair through the appropriate gated operation rather than ad-hoc edits.
+If state and the interface disagree, treat state as the management authority and run artifacts as the
+evidence authority. Rebuild the interface after repairing the typed source through its gated operation.
 
 ## Research Package Operation Contract
 
 For package work, Codex is the decision owner governed by `workflow.ts`:
 
-- Read the package Resume Block, active plan, project rules, results, and relevant runtime artifacts before
-  acting.
-- Use `/research-op` for research-package surface mutations. Direct edits to package HTML, inventory rows,
-  or package docs are violations unless the relevant skill explicitly owns scaffolding or large structural
-  setup.
+- Load the bounded package context, selected Experiment spec, and relevant run results before acting.
+- Use `/research-op` for every management mutation. Direct edits to state JSON, generated HTML, JavaScript,
+  CSV, or package docs are violations.
 - Treat user instructions that change constraints, plan, metric, baseline, or scope as locked facts. Record
   them in the typed home and propagate status in the same turn.
-- Run the required lint/check command after learnings-relevant or package-state mutations, and fix errors
+- Run the required state, evidence, and projection checks after a management mutation, and fix errors
   before claiming the turn is complete.
 - Put long-running experiments, training, preprocessing, downloads, and remote jobs in named `tmux`
   sessions unless the user explicitly asks for a different runner.

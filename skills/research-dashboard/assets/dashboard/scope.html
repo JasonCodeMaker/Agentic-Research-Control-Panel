@@ -7,8 +7,8 @@
   <link rel="stylesheet" href="assets/research.css">
 </head>
 <body data-page="scope"
-      data-transitions="../outputs/_scope/transitions.jsonl"
-      data-triage="../outputs/_scope/triage.jsonl">
+      data-transitions="data/scope-transitions.jsonl"
+      data-triage="data/scope-triage.jsonl">
   <a class="skip-link" href="#scope-main">Skip to main content</a>
   <div class="shell">
 
@@ -17,9 +17,9 @@
       <h1>Scope <em>Inspector</em></h1>
       <p class="lead">
         A read-only, live view of the Scope SSOT tree. It folds
-        <code>outputs/_scope/transitions.jsonl</code> directly in the browser, so
+        <code>data/scope-transitions.jsonl</code> in the browser, so
         committed intent, active Directions, validation Milestones, and pending
-        proposals stay current without regenerating any dashboard data file. Scope
+        proposals stay current after each read-only interface projection rebuild. Scope
         owns the spec (what counts as success), never the measured reading.
       </p>
       <div class="toolbar" data-card="scope-toolbar">
@@ -68,15 +68,15 @@
 
     <noscript>
       <div class="notice">This page reads the Scope logs with JavaScript. Enable JavaScript and
-        serve the project from its root with <code>python -m http.server</code>.</div>
+        serve the project from its root with <code>python -m lib.interface.serve --workspace . ensure</code>.</div>
     </noscript>
 
     <footer class="footer-note">
-      Source of truth: <code>outputs/_scope/transitions.jsonl</code> and
-      <code>outputs/_scope/triage.jsonl</code>, read directly. This page is a reader: it
+      Source projections: <code>data/scope-transitions.jsonl</code> and
+      <code>data/scope-triage.jsonl</code>, generated from .research/state/events.jsonl. This page is a reader: it
       never writes scope and never renders measured results as spec fields. Serve from
-      the repo root with <code>python -m http.server</code>, then open
-      <code>/research_html/scope.html</code>.
+      the repo root with <code>python -m lib.interface.serve --workspace . ensure</code>, then open
+      <code>/scope.html</code>.
     </footer>
   </div>
 

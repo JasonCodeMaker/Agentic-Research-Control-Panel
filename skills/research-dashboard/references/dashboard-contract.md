@@ -1,109 +1,152 @@
-# Dashboard Contract
+# Read-only interface contract
 
-The dashboard is the global research-system surface. Keep it project-agnostic.
-Put project-specific goals in `window.RESEARCH_PROJECT_PROFILE`.
+The human interface is a projection, not an authority. Its design follows one
+rule: a person may use it to understand research state, but an agent must be
+able to delete and rebuild it without losing a decision, fact, note, audit
+record, run, or experiment output.
 
-Required root files:
+## Authority boundary
+
+The default managed root is `<workspace>/.research`. A custom root may be
+selected with `--research-root` or `RESEARCH_ROOT`.
+
+| Path | Responsibility | Mutability |
+| --- | --- | --- |
+| `VERSION` | Managed-root schema version | Written only by initialization or explicit migration |
+| `state/events.jsonl` | Authoritative event history | Append-only through management commands |
+| `state/current.json` | Authoritative reduced state | Written through the event store |
+| `state/notes/` | Content-addressed source notes | Written through the note store |
+| `audit/actions.jsonl` | Command and projection audit | Append-only through the event store |
+| `experiments/` | Durable run records, logs, checkpoints, metrics, and outputs | Written by experiment controllers |
+| `interface/` | Rebuildable human projection | Replaced only by the interface builder |
+
+The interface may contain copies or renderings of authoritative data. Those
+copies never become valid inputs to management commands.
+
+## Build contract
+
+`lib.interface.build_interface()` reads the versioned store, creates a complete
+staging tree, validates that the tree has no Python execution surface, and
+atomically replaces `interface/`.
+
+A successful build returns:
+
+- the generated interface root;
+- the source event sequence;
+- the source event hash;
+- the complete generated file list.
+
+The build is whole-tree and deterministic for the same bundled assets,
+authoritative state, notes, and supported experiment records. It must repair a
+deleted or damaged projection without consulting prior interface output.
+
+Initialization is allowed only for a genuinely empty managed root. Legacy
+markers, a missing version beside existing data, or an unsupported version
+produce `upgrade-required`. Migration is explicit and never part of
+`build_interface()`, `ensure_dashboard.py`, or the server startup path.
+
+## Required global surface
+
+The generated root keeps these human-facing pages:
 
 - `index.html`
-- `assets/research.css`
-- `assets/research.js`
-- `data/research-packages.js`
-- `data/rules.js` (the unified rules registry — see ownership note below)
+- `live.html`
+- `scope.html`
+- `learnings.html`
+- `module.html`
+- `package-template.html`
 - `categories/brainstorm/index.html`
 - `categories/in-progress/index.html`
 - `categories/success/index.html`
 - `categories/fail/index.html`
-- `package-template.html`
 
-Required data globals:
+Each projected package keeps:
 
-- `window.RESEARCH_PROJECT_PROFILE`
-- `window.RESEARCH_CATEGORIES`
-- `window.RESEARCH_TAG_ROLES`
-- `window.RESEARCH_PACKAGES`
-- `window.RESEARCH_RULES` (in `data/rules.js`)
+- `packages/<package>/plan.html`
+- `packages/<package>/implementation.html`
+- `packages/<package>/results.html`
+- `packages/<package>/analysis.html`
+- `packages/<package>/tracker.html`
+- `packages/<package>/docs/index.html`
 
-`data/rules.js` ownership (three populations, one schema): rows with
-`origin="mirror"` are a write-locked projection of the shipped R/T rule files
-(rebuilt by `ensure_dashboard.py`); rows with `origin="selfevolve"` are a
-projection of the self-evolve Rule Store (rebuilt by `lib/context_pack`);
-all other rows (project / package rules) are mutated only through
-`research-op --target rule`. `learnings_lint.py lint-rules` checks schema,
-id uniqueness, and both mirror syncs.
+`module.html` is part of the frozen surface. Preserve the existing
+`module.html?package=<id>&module=<name>` route. Package pages and module routing
+must not be collapsed into a single-page application.
 
-The chrome owns no protocol content: the objective panel renders from the
-Scope SSOT projection (`data/scope-projection.js`), the routes panel from
-`schema.js` (`NEXT_ROUTE` + `NEXT_ROUTE_MEANING`), and the rules section from
-`data/rules.js`. `RESEARCH_GLOBAL_CONTEXT` / `RESEARCH_GLOBAL_PROTOCOL` are
-retired — do not reintroduce protocol prose as chrome data.
+## Required generated data
 
-Every package object must include:
+The data directory exposes browser-safe projections such as:
 
-- `id`
-- `name`
-- `category`
-- `tag`
-- `tagMeaning`
-- `sourcePath`
-- `runtime`
-- `detailPath`
-- `problem`
-- `objective`
-- `motivation`
+- `schema.js`
+- `research-packages.js`
+- `brainstorms.js`
+- `rules.js`
+- `scope-projection.json` and `scope-projection.js`
+- `scope-transitions.jsonl` and `scope-triage.jsonl`
+- `live-runs.jsonl` and `live-acknowledged.json`
+- `self-evolution.json` and `self-evolution.js`
 
-Category-scoped tag meanings:
+The exact population depends on current state, but the browser globals and file
+names consumed by the frozen pages must remain available. Scope JSONL files are
+generated views of state events. Live files are generated indexes of
+experiment state. Rules and learnings are state-backed projections. None is a
+write surface.
 
-- `brainstorm`: the optimization direction
-- `in-progress`: the current workflow status
-- `success`: the adopted model, method, or pipeline part
-- `fail`: the core failure reason
+The generated tree must contain no `scripts/` directory, `.py` file, server
+state, or server log.
 
-Dashboard pages should remain concise. Long plans, results, commands, and run
-logs belong in package modules or artifact roots.
+## Server contract
 
-Required dashboard sections (each must carry the matching `data-section` anchor):
+`lib.interface.serve` serves only the resolved `interface/` directory. It may
+read authority to answer these endpoints:
 
-- `masthead`: title, lead paragraph, and toolbar with global dashboard links.
-- `nav`: in-page anchor nav over the remaining sections.
-- `snapshot`: one `data-card="dashboard-role"` article that names this surface
-  as overview + agent context, and points readers to package surfaces for
-  claims and evidence.
-- `lanes`: the four lane summary cells produced by `renderDashboardSummary()`.
-- `packages`: the full package grid populated by `renderPackages()`.
-- `protocol`: the panels populated by `renderGlobalContext()` — objective
-  (Scope SSOT projection, with an empty-state pointing at `/research-onboard`),
-  allowed routes (schema.js), protocol link cards (workflow.ts / CLAUDE.md /
-  rule files), and the tag legend. No protocol prose is stored here.
-- `profile`: a `#project-profile-root` slot for project-specific specialization.
-- `rules`: a section-level `Rule Registry` heading and lead, matching the
-  `packages` section format, followed by the `#rules-registry-root` slot
-  rendered from `data/rules.js` by `renderRulesRegistry()`. The registry
-  groups universal rows by rule kind (`form`, `trust`) and uses the same
-  grouped/empty-state component for future project and package rule rows.
+- `GET /api/health`
+- `GET /api/live/runs`
+- `GET /api/live/status/<run-id>`
+- `GET /api/live/log/<run-id>`
 
-Lane pages mirror the same chrome contract: the masthead carries
-`data-section="masthead"`, the package grid carries `data-section="lane"`,
-and the toolbar links both rule files.
+No write endpoint is allowed. Path validation must prevent a run reference from
+escaping the managed `experiments/` root.
 
-Rule alignment: dashboard chrome satisfies R1, R6, R8, R9, R11, R13, and R18
-from `rules/html-rules.html`. The trust rules (T1-T24) in
-`rules/trustworthy-research-rules.html` apply to package surfaces, not to the
-dashboard.
+`ensure` rebuilds the projection, reuses a healthy matching server when
+possible, or starts one. `serve` runs in the foreground and builds only if the
+projection is absent. `status` reads the recorded runtime state and checks
+health.
 
-## Output classification (mirrored from SKILL.md)
+Volatile server metadata and logs live under:
 
-The full rule lives in `SKILL.md` under [Output classification](../SKILL.md).
-One-line summary for agents reading this contract first:
+```text
+$XDG_RUNTIME_DIR/trustworthy-research/<workspace-hash>/
+```
 
-- **Agent-important only** chat output &rarr; wrap in a markdown `>`
-  blockquote (UI collapses by default).
-- **Agent-important only** HTML content &rarr; wrap in
-  `<details data-audience="agent"><summary>agent context</summary>...</details>`
-  (browser collapses by default).
-- **Both-audience** content (the common case) renders inline without any
-  wrapper.
+When `XDG_RUNTIME_DIR` is absent, use the per-user temporary fallback selected
+by `ResearchPaths.runtime`. Runtime state never belongs in the managed
+interface tree.
 
-`data-audience="agent"` extends the R6 stable-anchor taxonomy &mdash; agents
-can grep for it to recover their private notes. Form rule R18 in
-`rules/html-rules.html` is the binding HTML form of this rule.
+## Frozen human contract
+
+Storage simplification must not alter the human layout. The following are
+regression-protected:
+
+- DOM hierarchy and contract-bearing `id`, `class`, `href`, `src`, `name`,
+  `type`, and `role` attributes;
+- `assets/research.css` and `assets/toc.css`;
+- the fixed viewport and Chromium major;
+- screenshot perceptual hashes for the global, module, and representative
+  package pages.
+
+The checked baseline is
+`skills/research-dashboard/assets/interface-contract.json`. Validate it with:
+
+```bash
+python3 -m lib.interface.parity check
+```
+
+The current contract covers 11 DOM pages, 2 CSS files, and 7 visual pages,
+including `module.html?pkg=fixture&module=plan`. `--no-visual` is an
+intermediate check only. Do not update the baseline to hide an accidental UI
+change.
+
+State plumbing and narrowly necessary path or serve guidance may change without
+a redesign. Any change to page composition, navigation, module routing, DOM
+anchors, CSS, or visual layout requires explicit user approval.

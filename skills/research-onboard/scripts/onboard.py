@@ -2,9 +2,9 @@
 """research-onboard: the deterministic on-ramp behind the steps 1->3 bridge.
 
 Detects whether the workspace is empty or existing, scaffolds a deep-learning
-project skeleton in place, writes a project-level prior-knowledge artifact, and
-builds a *validated* Project-node Triage proposal. It never commits the SSOT;
-the proposal flows through the same triage.py gate research-scope uses.
+project skeleton in place, stores prior knowledge as a content-addressed
+Project NoteRef, and builds a validated Project proposal.  It never commits
+Project intent; the proposal flows through the research-op Triage gateway.
 """
 
 from __future__ import annotations
@@ -14,24 +14,40 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(PIPELINE_ROOT / "lib"))
+for candidate in (
+    PIPELINE_ROOT,
+    PIPELINE_ROOT / "lib",
+    PIPELINE_ROOT / "skills" / "research-op" / "scripts",
+):
+    if str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
 
+from lib.research_state import (  # noqa: E402
+    CommandRejected,
+    LockBusy,
+    ResearchPaths,
+    StateQuery,
+    UnsupportedResearchVersion,
+    UpgradeRequired,
+)
+import management  # noqa: E402
 import scope_ssot  # noqa: E402
 
 # Entries that never count as "project content" when deciding empty vs existing.
 IGNORE = frozenset({
     ".git", ".gitignore", ".gitkeep", ".pytest_cache", "__pycache__", ".DS_Store",
-    "research_html", "outputs",
 })
 
-# In-place deep-learning skeleton (mirrors the create-project layout).
+# Source and configuration stay in the workspace.  Managed Run output belongs
+# under ResearchPaths.experiments and is not duplicated in source-side folders.
 SKELETON_DIRS = (
     "src", "scripts", "configs", "data", "dataset", "baselines",
-    "logs", "results", "results/ours", "wandb", "figures", "analysis",
+    "figures",
 )
-GITKEEP_DIRS = ("data", "dataset", "logs", "results", "baselines", "wandb", "figures", "analysis")
+GITKEEP_DIRS = ("data", "dataset", "baselines", "figures")
 
 CLAUDE_STUB = """# CLAUDE.md
 
@@ -70,22 +86,60 @@ compute constraints, non-goals, and current best checkpoint.
 - Keep the Trustworthy pipeline protocol sections project-agnostic; prepend local context instead of
   rewriting the universal rules.
 - If `CLAUDE.md` is absent, attach the pipeline protocol from the toolbox repo before
-  running `/research-dashboard`, `/research-onboard`, or `/research-run`.
+  running `/research-onboard` or `/research-run`.
+- Treat `.research/state` as management authority and `.research/interface` as a disposable projection.
 """
 
 
-def workspace_state(cwd) -> str:
+def resolve_paths(*, workspace=".", research_root=None) -> ResearchPaths:
+    return ResearchPaths.resolve(
+        workspace=workspace,
+        research_root=research_root,
+    )
+
+
+def _require_safe_workspace(paths: ResearchPaths) -> None:
+    """Fail closed on legacy or unversioned managed data."""
+    version = paths.load_version()
+    if version is not None:
+        return
+    markers = paths.legacy_markers()
+    if markers:
+        raise UpgradeRequired(
+            "upgrade-required: legacy research data exists; run the explicit "
+            "research migration before onboarding"
+        )
+    if paths.root.exists() and any(paths.root.iterdir()):
+        raise UpgradeRequired(
+            "upgrade-required: the research root is unversioned; run the "
+            "explicit research migration before onboarding"
+        )
+
+
+def _is_managed_entry(entry: Path, paths: ResearchPaths) -> bool:
+    try:
+        return entry.resolve() == paths.root
+    except OSError:
+        return False
+
+
+def workspace_state(paths: ResearchPaths) -> str:
     """'empty' if the directory holds nothing but pipeline-managed/noise entries, else 'existing'."""
-    cwd = Path(cwd)
-    for entry in cwd.iterdir():
-        if entry.name not in IGNORE:
+    _require_safe_workspace(paths)
+    for entry in paths.workspace.iterdir():
+        if entry.name not in IGNORE and not _is_managed_entry(entry, paths):
             return "existing"
     return "empty"
 
 
-def content_entries(cwd) -> list[str]:
+def content_entries(paths: ResearchPaths) -> list[str]:
     """The non-ignored top-level entries an existing-workspace analysis should read."""
-    return sorted(e.name for e in Path(cwd).iterdir() if e.name not in IGNORE)
+    _require_safe_workspace(paths)
+    return sorted(
+        entry.name
+        for entry in paths.workspace.iterdir()
+        if entry.name not in IGNORE and not _is_managed_entry(entry, paths)
+    )
 
 
 def scaffold_skeleton(cwd) -> list[str]:
@@ -117,17 +171,43 @@ def write_project_agents_stub(cwd) -> bool:
     return True
 
 
-def prior_knowledge_path(state_root) -> Path:
-    """Project-level prior-knowledge artifact, sibling to the scope logs."""
-    return Path(state_root) / "_scope" / "prior_knowledge.md"
+def write_prior_knowledge(
+    paths: ResearchPaths,
+    markdown: str,
+) -> dict[str, Any]:
+    """Store prior knowledge once and return its stable NoteRef."""
+    if not isinstance(markdown, str) or not markdown.strip():
+        raise CommandRejected(
+            "prior-knowledge-required",
+            "prior knowledge must be non-empty Markdown",
+        )
+    return management.write_note(
+        paths,
+        markdown,
+        mime="text/markdown",
+        title="Project prior knowledge",
+    )
 
 
-def write_prior_knowledge(state_root, markdown: str) -> Path:
-    """Write the prior-knowledge markdown the later roles read. Returns its path."""
-    path = prior_knowledge_path(state_root)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(markdown, encoding="utf-8")
-    return path
+def _validate_note_ref(note_ref: dict[str, Any]) -> None:
+    required = {"uri", "sha256", "mime", "title"}
+    missing = sorted(required - set(note_ref))
+    if missing:
+        raise scope_ssot.RuleViolation(
+            f"prior_knowledge NoteRef missing fields: {missing}"
+        )
+    digest = note_ref.get("sha256")
+    if not isinstance(digest, str) or not re.fullmatch(
+        r"[0-9a-f]{64}",
+        digest,
+    ):
+        raise scope_ssot.RuleViolation(
+            "prior_knowledge NoteRef sha256 must be 64 lowercase hex digits"
+        )
+    if note_ref.get("uri") != f"state/notes/{digest}.md":
+        raise scope_ssot.RuleViolation(
+            "prior_knowledge NoteRef uri must match its sha256"
+        )
 
 
 def _slug(value: str) -> str:
@@ -135,14 +215,24 @@ def _slug(value: str) -> str:
     return slug or "project"
 
 
-def build_project_proposal(node_id: str, spec: dict, *, source: str,
-                           item_id: str | None = None, change: str | None = None,
-                           rationale: str | None = None) -> dict:
+def build_project_proposal(
+    node_id: str,
+    spec: dict,
+    *,
+    source: str,
+    prior_knowledge: dict[str, Any] | None = None,
+    item_id: str | None = None,
+    change: str | None = None,
+    rationale: str | None = None,
+) -> dict:
     """Build a validated level=project Triage item. Raises RuleViolation on a bad spec."""
     node = {
         "id": node_id, "level": "project", "parents": [], "version": 1,
         "status": "ACTIVE", "spec": spec, "source": source,
     }
+    if prior_knowledge is not None:
+        _validate_note_ref(prior_knowledge)
+        node["prior_knowledge"] = prior_knowledge
     scope_ssot.validate_node(node)  # reject-before-propose: spec must be project-legal
     return {
         "id": item_id or f"project-{_slug(node_id.rsplit('/', 1)[-1])}",
@@ -158,60 +248,133 @@ def build_project_proposal(node_id: str, spec: dict, *, source: str,
     }
 
 
-def has_project_scope(transitions_path) -> bool:
-    """True iff the committed SSOT already holds an active Project node (backs the dashboard auto-chain)."""
-    projection = scope_ssot.fold(scope_ssot.read_log(transitions_path))
-    return any(n.get("level") == "project" and n.get("status") == "ACTIVE" for n in projection.values())
+def has_project_scope(paths: ResearchPaths) -> bool:
+    """Return whether state contains an active Project."""
+    _require_safe_workspace(paths)
+    if paths.load_version() is None:
+        return False
+    projects = StateQuery(paths).show("project")["data"]
+    return any(
+        isinstance(project, dict)
+        and project.get("level") == "project"
+        and project.get("status") == "ACTIVE"
+        for project in projects.values()
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--workspace", default=".")
+    p.add_argument("--research-root")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    pd = sub.add_parser("detect", help="classify the workspace as empty|existing")
-    pd.add_argument("--cwd", default=".")
+    sub.add_parser("detect", help="classify the workspace as empty|existing")
 
-    ps = sub.add_parser("scaffold", help="create the in-place DL skeleton + protocol stubs")
-    ps.add_argument("--cwd", default=".")
+    sub.add_parser("scaffold", help="create the in-place DL skeleton + protocol stubs")
 
-    pw = sub.add_parser("write-prior-knowledge", help="write outputs/_scope/prior_knowledge.md")
-    pw.add_argument("--state-root", default="outputs")
+    pw = sub.add_parser(
+        "write-prior-knowledge",
+        help="store Markdown and return a Project NoteRef",
+    )
     pw.add_argument("--content", required=True)
 
-    pb = sub.add_parser("build-proposal", help="build a validated project Triage item (pipe to triage.py)")
+    pb = sub.add_parser(
+        "build-proposal",
+        help="build a validated Project proposal",
+    )
     pb.add_argument("--node-id", required=True)
     pb.add_argument("--spec", required=True, help="JSON: goal, contributions, out_of_scope")
     pb.add_argument("--source", required=True)
     pb.add_argument("--item-id", default=None)
+    pb.add_argument(
+        "--prior-knowledge",
+        help="JSON NoteRef returned by write-prior-knowledge",
+    )
 
-    ph = sub.add_parser("has-project-scope", help="True iff a Project node is committed in the SSOT")
-    ph.add_argument("--transitions", default="outputs/_scope/transitions.jsonl")
+    sub.add_parser(
+        "has-project-scope",
+        help="True iff a Project node is committed in the SSOT",
+    )
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    if args.cmd == "detect":
-        print(json.dumps({"state": workspace_state(args.cwd),
-                          "content": content_entries(args.cwd)}, ensure_ascii=False))
-    elif args.cmd == "scaffold":
-        created = scaffold_skeleton(args.cwd)
-        wrote_claude = write_project_claude_stub(args.cwd)
-        wrote_agents = write_project_agents_stub(args.cwd)
-        print(json.dumps({
-            "created_dirs": created,
-            "claude_md_written": wrote_claude,
-            "agents_md_written": wrote_agents,
-        }, ensure_ascii=False))
-    elif args.cmd == "write-prior-knowledge":
-        path = write_prior_knowledge(args.state_root, args.content)
-        print(json.dumps({"path": str(path)}, ensure_ascii=False))
-    elif args.cmd == "build-proposal":
-        item = build_project_proposal(args.node_id, json.loads(args.spec),
-                                      source=args.source, item_id=args.item_id)
-        print(json.dumps(item, ensure_ascii=False))
-    elif args.cmd == "has-project-scope":
-        print(json.dumps({"has_project_scope": has_project_scope(args.transitions)}, ensure_ascii=False))
+    paths = resolve_paths(
+        workspace=args.workspace,
+        research_root=args.research_root,
+    )
+    try:
+        if args.cmd == "detect":
+            print(
+                json.dumps(
+                    {
+                        "state": workspace_state(paths),
+                        "content": content_entries(paths),
+                        "research_root": str(paths.root),
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        elif args.cmd == "scaffold":
+            _require_safe_workspace(paths)
+            management.initialize(paths)
+            created = scaffold_skeleton(paths.workspace)
+            wrote_claude = write_project_claude_stub(paths.workspace)
+            wrote_agents = write_project_agents_stub(paths.workspace)
+            print(
+                json.dumps(
+                    {
+                        "created_dirs": created,
+                        "claude_md_written": wrote_claude,
+                        "agents_md_written": wrote_agents,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        elif args.cmd == "write-prior-knowledge":
+            note_ref = write_prior_knowledge(paths, args.content)
+            print(json.dumps({"note_ref": note_ref}, ensure_ascii=False))
+        elif args.cmd == "build-proposal":
+            prior_knowledge = (
+                json.loads(args.prior_knowledge)
+                if args.prior_knowledge
+                else None
+            )
+            item = build_project_proposal(
+                args.node_id,
+                json.loads(args.spec),
+                source=args.source,
+                prior_knowledge=prior_knowledge,
+                item_id=args.item_id,
+            )
+            print(json.dumps(item, ensure_ascii=False))
+        elif args.cmd == "has-project-scope":
+            print(
+                json.dumps(
+                    {"has_project_scope": has_project_scope(paths)},
+                    ensure_ascii=False,
+                )
+            )
+    except (
+        CommandRejected,
+        LockBusy,
+        UnsupportedResearchVersion,
+        UpgradeRequired,
+        scope_ssot.RuleViolation,
+        json.JSONDecodeError,
+    ) as exc:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "error": type(exc).__name__,
+                    "detail": str(exc),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 2
     return 0
 
 

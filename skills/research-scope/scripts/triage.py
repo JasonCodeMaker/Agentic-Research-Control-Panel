@@ -1,103 +1,154 @@
-"""Triage admission gate: the agent may PROPOSE a scope change; only the human PM disposes it.
+"""Triage admission gate: the agent proposes; dispose records an explicit PM decision.
 
-A proposal lands as a pending item in the Triage queue and never touches the Scope SSOT. The human
-accepts (then the transition is committed via research-op's scope-transition op) or rejects (archived,
-SSOT untouched). This keeps the objective cascade PM-write-only.
+A proposal lands as a pending item in the Triage queue and never touches the Scope SSOT. The PM alone
+decides whether to accept or reject the visible proposal. After that explicit decision, the agent may
+record it here. An accepted transition still goes through research-op; rejection leaves the SSOT
+untouched. This keeps the objective cascade PM-decision-gated.
 """
 
 import json
-import hashlib
-from datetime import datetime, timezone
+import sys
 from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+RESEARCH_OP_SCRIPTS = REPO_ROOT / "skills" / "research-op" / "scripts"
+if str(RESEARCH_OP_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(RESEARCH_OP_SCRIPTS))
+
+import management
+from lib.research_state import (
+    CommandRejected,
+    LockBusy,
+    ResearchPaths,
+    UnsupportedResearchVersion,
+    UpgradeRequired,
+)
+
+
+def resolve_paths(*, workspace=".", research_root=None):
+    """Resolve the sole management root for this workspace."""
+    return ResearchPaths.resolve(
+        workspace=workspace,
+        research_root=research_root,
+    )
 
 
 def proposal_hash(item):
     """Hash the proposal content the PM is asked to dispose."""
-    content = {
-        k: v for k, v in item.items()
-        if k not in {"status", "proposal_hash", "accepted_proposal", "disposed_at", "decision"}
-    }
-    encoded = json.dumps(content, sort_keys=True, ensure_ascii=False).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    return management.proposal_content_hash(item)
 
 
-def proposal_hash_matches(item, expected_hash):
-    return proposal_hash(item) == expected_hash
-
-
-def propose(triage_log, item):
+def propose(paths, item):
     """Append an agent-proposed scope change as a pending Triage item. Does not touch the SSOT."""
-    triage_log = Path(triage_log)
-    triage_log.parent.mkdir(parents=True, exist_ok=True)
-    record = {**item, "status": "pending", "proposal_hash": proposal_hash(item)}
-    with triage_log.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
-    return item["id"]
-
-
-def _read(triage_log):
-    triage_log = Path(triage_log)
-    if not triage_log.exists():
-        return []
-    return [json.loads(line) for line in triage_log.read_text(encoding="utf-8").splitlines() if line.strip()]
-
-
-def pending(triage_log):
-    """Items still awaiting human disposition (latest status per id wins)."""
-    latest = {}
-    for rec in _read(triage_log):
-        latest[rec["id"]] = rec
-    return [rec for rec in latest.values() if rec["status"] == "pending"]
-
-
-def dispose(triage_log, item_id, decision):
-    """Record a human disposition (ACCEPTED | REJECTED). Never mutates the SSOT itself."""
-    if decision not in ("ACCEPTED", "REJECTED"):
-        raise ValueError(f"decision must be ACCEPTED|REJECTED, got {decision!r}")
-    triage_log = Path(triage_log)
-    records = _read(triage_log)
-    latest = next((rec for rec in reversed(records) if rec.get("id") == item_id), None)
-    pending_proposal = next(
-        (rec for rec in reversed(records)
-         if rec.get("id") == item_id and rec.get("status") == "pending"),
-        None,
+    record, _event = management.submit_proposal(
+        paths,
+        item,
     )
-    status = "accepted" if decision == "ACCEPTED" else "archived"
-    record = {
-        "id": item_id,
-        "status": status,
-        "decision": decision,
-        "disposed_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="milliseconds"),
-    }
-    if status == "accepted":
-        accepted_proposal = pending_proposal
-        if accepted_proposal is None and latest and isinstance(latest.get("accepted_proposal"), dict):
-            accepted_proposal = latest["accepted_proposal"]
-        if accepted_proposal is not None:
-            record["proposal_hash"] = accepted_proposal.get("proposal_hash") or proposal_hash(accepted_proposal)
-            record["accepted_proposal"] = accepted_proposal
-    elif latest and latest.get("proposal_hash"):
-        record["proposal_hash"] = latest["proposal_hash"]
-    with triage_log.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return record["id"]
+
+
+def _read(paths):
+    return management.proposal_records(paths)
+
+
+def pending(paths):
+    """Items still awaiting human disposition (latest status per id wins)."""
+    return management.pending_proposals(paths)
+
+
+def dispose(
+    paths,
+    item_id,
+    decision,
+    expected_proposal_hash,
+    *,
+    actor=None,
+):
+    """Record an explicit PM decision (ACCEPTED | REJECTED). Never mutates the SSOT itself."""
+    status, _event = management.dispose_proposal(
+        paths,
+        item_id,
+        decision,
+        expected_proposal_hash,
+        actor=actor,
+    )
     return status
 
 
 def main(argv=None):
     """CLI so the skill can drive the Triage queue via Bash(python3 *)."""
     import argparse
-    p = argparse.ArgumentParser(description="Triage admission gate for agent-proposed scope changes.")
+    p = argparse.ArgumentParser(
+        description="Triage admission gate for agent-proposed scope changes."
+    )
+    p.add_argument("--workspace", default=".")
+    p.add_argument("--research-root")
     sub = p.add_subparsers(dest="cmd", required=True)
-    pp = sub.add_parser("propose"); pp.add_argument("--log", required=True); pp.add_argument("--item", required=True, help="JSON object; must include an 'id'")
-    pn = sub.add_parser("pending"); pn.add_argument("--log", required=True)
-    pd = sub.add_parser("dispose"); pd.add_argument("--log", required=True); pd.add_argument("--id", required=True); pd.add_argument("--decision", required=True, choices=("ACCEPTED", "REJECTED"))
+    pp = sub.add_parser("propose")
+    pp.add_argument(
+        "--item",
+        required=True,
+        help="JSON object; must include an 'id'",
+    )
+    sub.add_parser("pending")
+    pd = sub.add_parser("dispose")
+    pd.add_argument("--id", required=True)
+    pd.add_argument(
+        "--decision",
+        required=True,
+        choices=("ACCEPTED", "REJECTED"),
+    )
+    pd.add_argument("--proposal-hash", required=True)
+    pd.add_argument(
+        "--actor-type",
+        choices=("user", "agent", "system"),
+        default="agent",
+        help="decision actor type; disposition requires an explicit user actor",
+    )
+    pd.add_argument(
+        "--actor-id",
+        default="research-scope-cli",
+        help="stable identity for the decision actor",
+    )
     args = p.parse_args(argv)
-    if args.cmd == "propose":
-        print(propose(args.log, json.loads(args.item)))
-    elif args.cmd == "pending":
-        print(json.dumps(pending(args.log), ensure_ascii=False))
-    elif args.cmd == "dispose":
-        print(dispose(args.log, args.id, args.decision))
+    paths = resolve_paths(
+        workspace=args.workspace,
+        research_root=args.research_root,
+    )
+    try:
+        if args.cmd == "propose":
+            print(propose(paths, json.loads(args.item)))
+        elif args.cmd == "pending":
+            print(json.dumps(pending(paths), ensure_ascii=False))
+        elif args.cmd == "dispose":
+            print(
+                dispose(
+                    paths,
+                    args.id,
+                    args.decision,
+                    args.proposal_hash,
+                    actor={"type": args.actor_type, "id": args.actor_id},
+                )
+            )
+    except (
+        CommandRejected,
+        LockBusy,
+        UnsupportedResearchVersion,
+        UpgradeRequired,
+        ValueError,
+    ) as exc:
+        print(
+            json.dumps(
+                {
+                    "rejected": True,
+                    "rule": getattr(exc, "rule", type(exc).__name__),
+                    "detail": str(exc),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 2
     return 0
 
 

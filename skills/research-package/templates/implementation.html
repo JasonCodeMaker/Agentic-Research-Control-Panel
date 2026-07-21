@@ -73,7 +73,7 @@
         <table class="data-table test-rule-catalog-table" data-table="test-rule-catalog">
           <thead><tr><th>Id</th><th>Label</th><th>Description</th><th>Rule</th><th>Applies to</th><th>Evidence shape</th></tr></thead>
           <tbody data-table-body="test-rule-catalog">
-            <tr class="test-rule-row" data-rule-id="smoke-test"><td><code>smoke-test</code></td><td>Smoke test passes</td><td>Sentinel manifest + first-N hashes; for training changes, converged ckpt past gate.</td><td>sentinel + ckpt</td><td>new-code, behavior-edit</td><td><code>outputs/&lt;pkg&gt;/manifests/&lt;exp&gt;.json</code></td></tr>
+            <tr class="test-rule-row" data-rule-id="smoke-test"><td><code>smoke-test</code></td><td>Smoke test passes</td><td>Sentinel manifest + first-N hashes; for training changes, converged ckpt past gate.</td><td>sentinel + ckpt</td><td>new-code, behavior-edit</td><td><code>.research/experiments/&lt;pkg&gt;/&lt;experiment&gt;/&lt;run&gt;/result.json</code></td></tr>
             <tr class="test-rule-row" data-rule-id="code-anchors-resolve"><td><code>code-anchors-resolve</code></td><td>Code anchors resolve</td><td>Every path in <code>codeAnchors[]</code> resolves in the current repo.</td><td>fs check</td><td>all</td><td>code anchor list</td></tr>
             <tr class="test-rule-row" data-rule-id="deep-doc-resolves"><td><code>deep-doc-resolves</code></td><td>Deep doc resolves</td><td><code>deepDocPath</code> file exists; content matches change title + anchors.</td><td>fs check</td><td>critical</td><td><code>docs/&lt;slug&gt;.html</code></td></tr>
             <tr class="test-rule-row" data-rule-id="phase-coverage"><td><code>phase-coverage</code></td><td>Phase coverage</td><td>Every <code>phaseIds</code> entry resolves to a plan phase; every non-skipped plan phase has an implementing change or is reuse-only.</td><td>inventory cross-ref</td><td>all</td><td><code>experiments[]</code></td></tr>
@@ -92,7 +92,7 @@
           <div class="k">User ack (T1)</div><div data-field="user-ack">unmeasured</div>
           <div class="k">Ack locked at</div><time data-field="ack-locked-at" datetime="">unmeasured</time>
         </div>
-        <p class="card-text">T1: do not move to <code>READY_TO_LAUNCH</code> without a recorded user ack here.</p>
+        <p class="card-text">T1: do not move to <code>READY_TO_LAUNCH</code> without a committed Change carrying an independent, acquitting implementation review.</p>
       </article>
 
     </section>

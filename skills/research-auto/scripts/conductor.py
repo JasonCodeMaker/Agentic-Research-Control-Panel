@@ -1,174 +1,422 @@
-"""Campaign conductor for /research-auto — deterministic routing over one Direction.
+"""Deterministic Direction-campaign routing over unified research state."""
 
-Given a committed Direction and its gate (the spec's success_gate), the conductor decides
-the next campaign move: form/await scope, materialize, design the next experiment, run the package,
-or exit (success / budget / no-candidate / ask). It owns gate evaluation, the typed cycle ledger, and
-the authority guard. It never writes a package surface, never writes the SSOT, never disposes
-Triage — its only writes are the campaign ledger and PACK under outputs/_auto/.
-"""
+from __future__ import annotations
 
+import argparse
+import copy
+import hashlib
 import json
 import re
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
-_PIPE = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(_PIPE / "lib"))
-sys.path.insert(0, str(_PIPE / "skills" / "research-run" / "scripts"))
-sys.path.insert(0, str(_PIPE / "skills" / "research-op" / "scripts"))
-sys.path.insert(0, str(_PIPE / "skills" / "research-scope" / "scripts"))
-import scope_ssot  # noqa: E402
+PIPELINE_ROOT = Path(__file__).resolve().parents[3]
+for candidate in (
+    PIPELINE_ROOT,
+    PIPELINE_ROOT / "lib",
+    PIPELINE_ROOT / "skills" / "research-op" / "scripts",
+    PIPELINE_ROOT / "skills" / "research-run" / "scripts",
+):
+    if str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
+
+from lib.research_state import (  # noqa: E402
+    ResearchPaths,
+    StateQuery,
+)
+from lib.research_state.io import canonical_json  # noqa: E402
+import management  # noqa: E402
 import driver  # noqa: E402
-import pack  # noqa: E402
-import triage  # noqa: E402
-from ops import _pkg_block  # noqa: E402
+
 
 AUTONOMY_LEVELS = ("SUPERVISED", "CHECKPOINTED", "DEFERRED", "AUTONOMOUS")
 AWAY_DIALS = frozenset({"DEFERRED", "AUTONOMOUS"})
-
-ROUTES = ("FORM_DIRECTION", "AWAIT_RATIFICATION", "MATERIALIZE_PACKAGE", "DESIGN_EXPERIMENT",
-          "RUN_PACKAGE", "SUCCESS_EXIT", "HALT_BUDGET", "HALT_NO_CANDIDATE", "ASK_USER")
-
-CYCLE_FIELDS = ("cycle", "direction_id", "pkg_id", "exp_id", "hypothesis", "verdict",
-                "measured", "gate_eval", "evidence", "next_action")
+ROUTES = (
+    "FORM_DIRECTION",
+    "AWAIT_RATIFICATION",
+    "MATERIALIZE_PACKAGE",
+    "DESIGN_EXPERIMENT",
+    "RUN_PACKAGE",
+    "SUCCESS_EXIT",
+    "HALT_BUDGET",
+    "HALT_NO_CANDIDATE",
+    "ASK_USER",
+)
+CYCLE_FIELDS = (
+    "cycle",
+    "direction_id",
+    "pkg_id",
+    "exp_id",
+    "run_id",
+    "hypothesis",
+    "verdict",
+    "measured",
+    "gate_eval",
+    "evidence",
+    "next_action",
+)
 VERDICTS = frozenset({"PASS", "FAIL", "INCONCLUSIVE", "DIAGNOSTIC"})
 GATE_EVALS = frozenset({"PASS", "FAIL", "UNEVALUATED"})
-
-# experiments[] statuses that still leave the package something to execute or finish
-_EXECUTABLE_EXP_STATUSES = frozenset({"pending", "queued", "running"})
+EXECUTABLE_EXP_STATUSES = frozenset({"PLANNED", "READY", "ACTIVE"})
+TERMINAL_RUN_STATUSES = frozenset({"COMPLETED", "FAILED", "HALTED", "SKIPPED"})
 
 
 class GateUnparseable(Exception):
-    """Raised when a gate carries no machine-checkable comparator clause."""
+    """The charter gate has no machine-checkable comparator."""
 
 
-# ---- gate parsing + evaluation ----
+def _digest(value: Any) -> str:
+    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
 
-def parse_gate(gate_text):
-    """Extract the first `<cmp> <number>` clause of a gate; raise if none exists."""
-    m = re.search(r"(>=|<=|>|<)\s*([0-9]+(?:\.[0-9]+)?)", str(gate_text))
-    if not m:
+
+def parse_gate(gate_text: Any) -> dict[str, Any]:
+    match = re.search(r"(>=|<=|>|<)\s*([0-9]+(?:\.[0-9]+)?)", str(gate_text))
+    if not match:
         raise GateUnparseable(f"no comparator clause in gate: {gate_text!r}")
-    return {"cmp": m.group(1), "threshold": float(m.group(2))}
+    return {"cmp": match.group(1), "threshold": float(match.group(2))}
 
-def evaluate_gate(measured, gate_text):
-    """PASS/FAIL the campaign gate for a measured value; the value must come from verified facts."""
+
+def evaluate_gate(measured: Any, gate_text: Any) -> str:
     gate = parse_gate(gate_text)
     value = float(measured)
-    ops = {">=": value >= gate["threshold"], "<=": value <= gate["threshold"],
-           ">": value > gate["threshold"], "<": value < gate["threshold"]}
-    return "PASS" if ops[gate["cmp"]] else "FAIL"
+    outcomes = {
+        ">=": value >= gate["threshold"],
+        "<=": value <= gate["threshold"],
+        ">": value > gate["threshold"],
+        "<": value < gate["threshold"],
+    }
+    return "PASS" if outcomes[gate["cmp"]] else "FAIL"
 
 
-# ---- campaign ledger (reject-before-write, PACK discipline) ----
+def campaign_id(direction_id: str) -> str:
+    """Campaign identity is the Direction identity; no filesystem slug store."""
+    return direction_id
 
-def _slug(value):
-    slug = re.sub(r"[^a-z0-9]+", "-", str(value).lower()).strip("-")
-    return slug or "direction"
 
-def ledger_path(root, direction_id):
-    """The campaign ledger home for a direction: outputs/_auto/<slug>/campaign.jsonl."""
-    return Path(root) / "outputs" / "_auto" / _slug(direction_id.rsplit("/", 1)[-1]) / "campaign.jsonl"
+def campaign_cycles(
+    source: ResearchPaths | dict[str, Any],
+    direction_id: str,
+) -> list[dict[str, Any]]:
+    view = (
+        StateQuery(source).campaign(direction_id)["data"]
+        if isinstance(source, ResearchPaths)
+        else source
+    )
+    if "aggregates" in view:
+        record = view["aggregates"]["campaign"].get(
+            campaign_id(direction_id),
+            {},
+        )
+    else:
+        record = view.get("campaign") or {}
+    rows = record.get("cycles") if isinstance(record, dict) else []
+    return copy.deepcopy(rows) if isinstance(rows, list) else []
 
-def pack_path(root, direction_id):
-    """The campaign PACK log next to the ledger."""
-    return ledger_path(root, direction_id).parent / "_pack.jsonl"
 
-def append_cycle(ledger, record):
-    """Append one typed cycle record; reject a blank/missing field or illegal verdict before write."""
-    missing = [f for f in CYCLE_FIELDS if not str(record.get(f, "")).strip()]
+def _validate_cycle_shape(record: dict[str, Any]) -> None:
+    missing = [
+        field
+        for field in CYCLE_FIELDS
+        if record.get(field) in (None, "", [], {})
+    ]
     if missing:
         raise ValueError(f"cycle record missing required fields: {missing}")
     if record["verdict"] not in VERDICTS:
-        raise ValueError(f"verdict {record['verdict']!r} not in {sorted(VERDICTS)}")
+        raise ValueError(
+            f"verdict {record['verdict']!r} not in {sorted(VERDICTS)}"
+        )
     if record["gate_eval"] not in GATE_EVALS:
-        raise ValueError(f"gate_eval {record['gate_eval']!r} not in {sorted(GATE_EVALS)}")
+        raise ValueError(
+            f"gate_eval {record['gate_eval']!r} not in {sorted(GATE_EVALS)}"
+        )
     if record["gate_eval"] == "PASS" and record["verdict"] != "PASS":
-        raise ValueError("gate_eval PASS requires verdict PASS (an unproven result cannot clear the gate)")
-    row = {**record, "ts": record.get("ts") or time.strftime("%Y-%m-%dT%H:%M:%S")}
-    ledger = Path(ledger)
-    ledger.parent.mkdir(parents=True, exist_ok=True)
-    with ledger.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        raise ValueError("gate_eval PASS requires verdict PASS")
+    if record["next_action"] not in ROUTES:
+        raise ValueError(
+            f"next_action {record['next_action']!r} not in {list(ROUTES)}"
+        )
+
+
+def _validate_cycle_witness(
+    view: dict[str, Any],
+    record: dict[str, Any],
+) -> None:
+    package_id = str(record["pkg_id"])
+    requested_experiment = str(record["exp_id"])
+    run_id = str(record["run_id"])
+    if "aggregates" in view:
+        packages = view["aggregates"]["package"]
+        experiments = view["aggregates"]["experiment"]
+        run = view["aggregates"]["run"].get(run_id)
+    else:
+        packages = {
+            str(package["id"]): package
+            for package in view.get("packages", [])
+        }
+        experiments = view.get("experiments", {})
+        run = view.get("run")
+    if package_id not in packages:
+        raise ValueError(f"cycle package does not exist: {package_id}")
+    experiment_id, _ = driver.resolve_bound_experiment(
+        experiments,
+        package_id,
+        requested_experiment,
+    )
+    if not isinstance(run, dict):
+        raise ValueError(f"cycle run does not exist: {run_id}")
+    if run.get("package_id") != package_id:
+        raise ValueError(f"cycle run {run_id} belongs to another package")
+    run_experiment_id, _ = driver.resolve_bound_experiment(
+        experiments,
+        package_id,
+        [
+            run.get("experiment_id"),
+            run.get("experiment_local_id"),
+        ],
+    )
+    if run_experiment_id != experiment_id:
+        raise ValueError(f"cycle run {run_id} belongs to another experiment")
+    if run.get("status") not in TERMINAL_RUN_STATUSES:
+        raise ValueError(f"cycle run is not terminal: {run_id}")
+
+
+def append_cycle(
+    paths: ResearchPaths,
+    direction_id: str,
+    record: dict[str, Any],
+    *,
+    actor: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Append one validated cycle through ``CampaignUpdated``."""
+    _validate_cycle_shape(record)
+    if record["direction_id"] != direction_id:
+        raise ValueError("cycle direction_id does not match the campaign")
+    query = StateQuery(paths).campaign(
+        direction_id,
+        package_id=str(record["pkg_id"]),
+        run_id=str(record["run_id"]),
+    )
+    view = query["data"]
+    _validate_cycle_witness(view, record)
+    aggregate_id = campaign_id(direction_id)
+    current = view.get("campaign") or {}
+    cycles = (
+        copy.deepcopy(current.get("cycles", []))
+        if isinstance(current, dict)
+        else []
+    )
+    cycle_number = int(record["cycle"])
+    if any(int(row.get("cycle", -1)) == cycle_number for row in cycles):
+        existing = next(
+            row for row in cycles if int(row.get("cycle", -1)) == cycle_number
+        )
+        if existing == record or {
+            key: existing.get(key) for key in record
+        } == record:
+            return copy.deepcopy(existing)
+        raise ValueError(f"campaign cycle already exists: {cycle_number}")
+    row = {
+        **copy.deepcopy(record),
+        "ts": record.get("ts") or time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+    cycles.append(row)
+    version = int(view["campaign_version"])
+    management.update_campaign(
+        paths,
+        aggregate_id,
+        {
+            "direction_id": direction_id,
+            "cycles": cycles,
+            "status": (
+                "SUCCEEDED"
+                if row["gate_eval"] == "PASS"
+                else "RUNNING"
+            ),
+            "route": row["next_action"],
+            "updated_at": row["ts"],
+        },
+        expected_version=version,
+        actor=actor or {"type": "agent", "id": "research-auto"},
+        idempotency_key=(
+            f"campaign:{aggregate_id}:cycle:{cycle_number}:{_digest(row)}"
+        ),
+    )
     return row
 
-def read_ledger(ledger):
-    """All cycle records for a campaign (empty if it has not started)."""
-    ledger = Path(ledger)
-    if not ledger.exists():
-        return []
-    return [json.loads(line) for line in ledger.read_text(encoding="utf-8").splitlines() if line.strip()]
 
-def campaign_status(records, *, max_cycles):
-    """Fold the ledger into the campaign position: cycles used, gate met, budget exhausted."""
-    gate_met = any(r.get("gate_eval") == "PASS" for r in records)
-    cycles_used = max((int(r.get("cycle", 0)) for r in records), default=0)
-    return {"cycles_used": cycles_used, "gate_met": gate_met,
-            "budget_exhausted": cycles_used >= max_cycles and not gate_met,
-            "last": records[-1] if records else None}
+def append_pack(
+    paths: ResearchPaths,
+    direction_id: str,
+    bundle: dict[str, Any],
+    *,
+    actor: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Append an away-mode handoff bundle to the Campaign aggregate."""
+    required = {
+        "attempted",
+        "found",
+        "hypothesis_state",
+        "next_action",
+        "blocking_decision",
+    }
+    missing = sorted(
+        field for field in required if bundle.get(field) in (None, "", [], {})
+    )
+    if missing:
+        raise ValueError(f"campaign PACK missing fields: {missing}")
+    if bundle["next_action"] not in ROUTES:
+        raise ValueError(
+            f"campaign PACK next_action must be one of {list(ROUTES)}"
+        )
+    view = StateQuery(paths).campaign(direction_id)["data"]
+    aggregate_id = campaign_id(direction_id)
+    current = view.get("campaign") or {}
+    packs = copy.deepcopy(current.get("packs", [])) if isinstance(current, dict) else []
+    row = {
+        **copy.deepcopy(bundle),
+        "ts": bundle.get("ts") or time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+    }
+    packs.append(row)
+    version = int(view["campaign_version"])
+    management.update_campaign(
+        paths,
+        aggregate_id,
+        {
+            "direction_id": direction_id,
+            "packs": packs,
+            "status": current.get("status", "RUNNING"),
+            "route": row["next_action"],
+            "updated_at": row["ts"],
+        },
+        expected_version=version,
+        actor=actor or {"type": "agent", "id": "research-auto"},
+        idempotency_key=(
+            f"campaign:{aggregate_id}:pack:{len(packs)}:{_digest(row)}"
+        ),
+    )
+    return row
 
 
-# ---- router ----
+def campaign_status(
+    records: list[dict[str, Any]],
+    *,
+    max_cycles: int,
+) -> dict[str, Any]:
+    gate_met = any(row.get("gate_eval") == "PASS" for row in records)
+    cycles_used = max(
+        (int(row.get("cycle", 0)) for row in records),
+        default=0,
+    )
+    return {
+        "cycles_used": cycles_used,
+        "gate_met": gate_met,
+        "budget_exhausted": cycles_used >= max_cycles and not gate_met,
+        "last": records[-1] if records else None,
+    }
 
-# Per-route copy: (headline, next_action, offer, awaits_user, handoff-or-delegate key, command).
+
 _ROUTE_TABLE = {
     "FORM_DIRECTION": (
         "No committed Direction matches this campaign yet.",
-        "I'll shape the direction through /research-brainstorm, rank competing framings when needed, and propose it through Triage with your gate as the success gate.",
-        "You ratify the Direction + gate + dial when the proposal lands — the campaign starts after that.",
-        False, "handoff", "/research-brainstorm"),
+        "Shape it through /research-brainstorm and submit it through Triage.",
+        "Ratify the Direction, gate, and dial when the proposal lands.",
+        False,
+        "handoff",
+        "/research-brainstorm",
+    ),
     "AWAIT_RATIFICATION": (
-        "A direction proposal for this campaign is waiting in Triage.",
-        "Accept or reject the pending Direction — commit authority is yours, not the campaign's.",
-        "Reply `accept` or `reject` (with edits if you want changes); the campaign resumes on accept.",
-        True, "handoff", "triage dispose"),
+        "A Direction proposal is waiting in Triage.",
+        "Accept, revise, or reject it; the campaign cannot dispose Triage.",
+        "The campaign resumes only after human ratification.",
+        True,
+        "handoff",
+        "triage dispose",
+    ),
     "ASK_USER": (
-        "The campaign gate is not machine-checkable, so the loop cannot self-judge success.",
-        "Restate the gate as a comparator clause (e.g. `R@1 >= 48`), or tell me to run supervised with you judging results.",
-        "One sentence with a measurable gate unblocks the campaign.",
-        True, "handoff", "user"),
+        "The campaign gate is not machine-checkable.",
+        "Restate it with one comparator clause.",
+        "A measurable gate unblocks deterministic evaluation.",
+        True,
+        "handoff",
+        "user",
+    ),
     "SUCCESS_EXIT": (
-        "The campaign gate has been cleared with verified evidence.",
-        "Close out: terminal success routing + T1 acknowledgement, then the campaign report from the ledger.",
-        "Confirm the terminal transition (T1); away-mode queued acks are listed in the report.",
-        True, "delegate", "/research-run"),
+        "The gate has cleared with verified evidence.",
+        "Complete terminal routing and its T1 acknowledgement.",
+        "The Campaign aggregate contains the evidence-backed report.",
+        True,
+        "delegate",
+        "/research-run",
+    ),
     "HALT_BUDGET": (
-        "The cycle budget is exhausted and the gate is still unmet.",
-        "Stop honestly: campaign report + a Triage proposal to extend budget, revise the metric/scope, or archive the direction.",
-        "Pick extend / revise / archive — the campaign never rewrites its own goalpost.",
-        True, "handoff", "/research-scope"),
+        "The cycle budget is exhausted and the gate is unmet.",
+        "Propose extend, revise, or archive through Triage.",
+        "The campaign never moves its own goalpost.",
+        True,
+        "handoff",
+        "/research-scope",
+    ),
     "HALT_NO_CANDIDATE": (
-        "No legal next experiment remains under the current scope.",
-        "Stop and propose a scope revision through Triage, extend the design space, or archive the direction.",
-        "Approve a scope revise, add a new constraint, or archive.",
-        True, "handoff", "/research-scope"),
+        "No legal next experiment remains.",
+        "Propose a scope revision or archive through Triage.",
+        "Add constraints or expand the design space explicitly.",
+        True,
+        "handoff",
+        "/research-scope",
+    ),
     "MATERIALIZE_PACKAGE": (
-        "Committed scope exists but no open package carries this direction.",
-        "Materialize the package from committed Scope state only (/research-package create_from_scope), then enter the run loop.",
-        "This is mechanical; I'll continue into the first cycle when surfaces exist.",
-        False, "delegate", "/research-package"),
+        "Committed scope has no active package.",
+        "Materialize it from accepted state through /research-package.",
+        "This creates the Package and binds its accepted Scope Experiments.",
+        False,
+        "delegate",
+        "/research-package",
+    ),
     "RUN_PACKAGE": (
-        "An executable experiment is on the package task spine.",
-        "Delegate to /research-run: readiness, implementation/review, launch, monitoring, propagation, verification, terminal routing.",
-        "I'll harvest the verdict into the campaign ledger and re-check the gate when the run completes.",
-        False, "delegate", "/research-run"),
+        "An executable experiment is available.",
+        "Delegate execution and monitoring to /research-run.",
+        "Its terminal run will witness the next Campaign cycle.",
+        False,
+        "delegate",
+        "/research-run",
+    ),
     "DESIGN_EXPERIMENT": (
-        "The gate is unmet and the package has no executable experiment left — the campaign needs its next design.",
-        "Design the next experiment from the Context Pack plus verified package evidence, then add it as an experiments-row through research-op.",
-        "At SUPERVISED/CHECKPOINTED I pause for the designed row; at DEFERRED/AUTONOMOUS I proceed and queue the deferred ack.",
-        False, "delegate", "/research-op"),
+        "The gate is unmet and no executable experiment remains.",
+        "Design the next experiment from state context and verified evidence.",
+        "Add it through the research-op Experiment facade.",
+        False,
+        "delegate",
+        "/research-op",
+    ),
 }
 
-def render_next_step(action):
-    """Plain-language Next-Smooth-Step copy for a campaign action (no raw FSM label as headline)."""
-    headline, nxt, offer, awaits, _, _ = _ROUTE_TABLE[action["type"]]
-    return {"type": action["type"], "headline": headline, "next_action": nxt, "offer": offer,
-            "awaits_user": awaits, "details": action.get("message") or f"campaign route: {action['type']}"}
 
-def next_action(*, direction_committed, pending_direction, status, open_pkg,
-                has_executable_exp=False, no_candidate=False, dial="AUTONOMOUS", gate_parseable=True):
-    """Route the campaign tick by strict precedence; returns one typed action with next_step copy."""
+def render_next_step(action: dict[str, Any]) -> dict[str, Any]:
+    headline, next_action_text, offer, awaits, _, _ = _ROUTE_TABLE[action["type"]]
+    return {
+        "type": action["type"],
+        "headline": headline,
+        "next_action": next_action_text,
+        "offer": offer,
+        "awaits_user": awaits,
+        "details": action.get("message")
+        or f"campaign route: {action['type']}",
+    }
+
+
+def next_action(
+    *,
+    direction_committed: bool,
+    pending_direction: bool,
+    status: dict[str, Any],
+    open_pkg: str | None,
+    has_executable_exp: bool = False,
+    no_candidate: bool = False,
+    dial: str = "AUTONOMOUS",
+    gate_parseable: bool = True,
+) -> dict[str, Any]:
     if not direction_committed:
         route = "AWAIT_RATIFICATION" if pending_direction else "FORM_DIRECTION"
     elif not gate_parseable:
@@ -185,218 +433,259 @@ def next_action(*, direction_committed, pending_direction, status, open_pkg,
         route = "RUN_PACKAGE"
     else:
         route = "DESIGN_EXPERIMENT"
-    _, _, _, _, kind, command = _ROUTE_TABLE[route]
-    action = {"type": route, kind: command, "dial": dial,
-              "message": f"cycles_used={status['cycles_used']} gate_met={status['gate_met']} open_pkg={open_pkg}"}
+    _, _, _, _, key, command = _ROUTE_TABLE[route]
+    action = {
+        "type": route,
+        key: command,
+        "dial": dial,
+        "message": (
+            f"cycles_used={status['cycles_used']} "
+            f"gate_met={status['gate_met']} open_pkg={open_pkg}"
+        ),
+    }
     action["next_step"] = render_next_step(action)
     return action
 
 
-# ---- authority guard ----
-
-def validate_campaign_action(action):
-    """Reject any campaign action that smuggles commit/disposal authority; None means legal."""
+def validate_campaign_action(action: dict[str, Any]) -> dict[str, Any] | None:
     reasons = []
-    t = action.get("type")
-    if t not in ROUTES:
-        reasons.append(f"unknown campaign route: {t!r}")
-    if action.get("decision") in ("accept", "reject", "ACCEPTED", "REJECTED"):
-        reasons.append("authority smuggle: a Triage disposal decision belongs to the user, not the campaign")
+    action_type = action.get("type")
+    if action_type not in ROUTES:
+        reasons.append(f"unknown campaign route: {action_type!r}")
+    if action.get("decision") in {"accept", "reject", "ACCEPTED", "REJECTED"}:
+        reasons.append("authority smuggle: Triage disposal belongs to the user")
     dial = action.get("dial")
-    for m in action.get("mutations", []):
-        if isinstance(m, dict) and m.get("op") == "scope-transition":
-            payload = m.get("payload") or {}
+    for mutation in action.get("mutations", []):
+        if isinstance(mutation, dict) and mutation.get("op") == "scope-transition":
+            payload = mutation.get("payload") or {}
             level = payload.get("level")
-            if level != "task":
-                reasons.append(f"authority smuggle: the campaign never commits a {level or 'unknown'}-level scope-transition")
+            if level != "experiment":
+                reasons.append(
+                    "authority smuggle: campaigns never commit Project or "
+                    "Direction scope"
+                )
                 continue
             if payload.get("gate") != "AGENT_DEFERRED_ACK":
-                reasons.append("task transition must use the SSOT task gate AGENT_DEFERRED_ACK")
+                reasons.append("Experiment spec transition requires AGENT_DEFERRED_ACK")
             if dial not in AWAY_DIALS:
-                reasons.append(f"dial {dial!r} requires the Triage pause path for task proposals, not a self-commit")
-            if not str(payload.get("deferred_ack", "")).strip():
-                reasons.append("a self-committed task transition must queue a non-empty deferred_ack for the human")
+                reasons.append(f"dial {dial!r} requires the Triage pause path")
+            if not str(payload.get("deferred_ack") or "").strip():
+                reasons.append("self-proposed Experiment spec requires deferred_ack")
         else:
-            reasons += [f"mutation: {e}" for e in driver.validate_mutation(m)]
+            reasons.extend(
+                f"mutation: {reason}"
+                for reason in driver.validate_mutation(mutation)
+            )
     if reasons:
-        return {"rejected": True, "type": t, "reasons": reasons}
+        return {"rejected": True, "type": action_type, "reasons": reasons}
     return None
 
 
-# ---- per-cycle task shaping ----
-
-def milestone_task_node(direction_node, *, cycle, suffix, experiment, gate, dial):
-    """Build a validated milestone Task node for a campaign cycle (the dial-keyed scope seam)."""
-    if dial not in AUTONOMY_LEVELS:
-        raise ValueError(f"unknown dial {dial!r}; expected one of {list(AUTONOMY_LEVELS)}")
-    direction_id = direction_node["id"]
-    node = {
-        "id": f"task/{_slug(direction_id.rsplit('/', 1)[-1])}/{suffix}",
-        "level": "task",
-        "parents": [direction_id],
-        "version": 1,
-        "status": "ACTIVE",
-        "spec": {"experiment": experiment,
-                 "config": f"scope:{direction_id}#{suffix.lower()}",
-                 "gate": gate,
-                 "control_mode": dial},
-        "source": f"research-auto:cycle-{cycle}:{suffix}",
-    }
-    scope_ssot.validate_node(node)
-    return node
-
-
-# ---- filesystem derivation ----
-
-def committed_direction(root, direction_id):
-    """The folded ACTIVE direction node for this id, or None if not committed."""
-    records = scope_ssot.read_log(Path(root) / "outputs" / "_scope" / "transitions.jsonl")
-    node = scope_ssot.fold(records).get(direction_id)
-    if node and node.get("level") == "direction" and node.get("status") == "ACTIVE":
-        return node
+def committed_direction(
+    source: ResearchPaths | dict[str, Any],
+    direction_id: str,
+) -> dict[str, Any] | None:
+    view = (
+        StateQuery(source).campaign(direction_id)["data"]
+        if isinstance(source, ResearchPaths)
+        else source
+    )
+    node = (
+        view["aggregates"]["direction"].get(direction_id)
+        if "aggregates" in view
+        else view.get("direction")
+    )
+    if isinstance(node, dict) and node.get("status") == "ACTIVE":
+        return copy.deepcopy(node)
     return None
 
-def _pending_matches_direction(item, direction_id):
-    if item.get("node_id") == direction_id:
-        return True
-    proposed = item.get("proposed_node") or {}
-    if isinstance(proposed, dict) and proposed.get("id") == direction_id:
-        return True
-    tail = _slug(direction_id.rsplit("/", 1)[-1])
-    legacy_ids = {direction_id, _slug(direction_id), f"direction-{tail}"}
-    return str(item.get("id", "")) in legacy_ids
 
-def pending_direction_items(root, direction_id=None):
-    """Pending direction-level Triage items (the campaign waits on these, never disposes them)."""
-    log = Path(root) / "outputs" / "_scope" / "triage.jsonl"
-    items = [p for p in triage.pending(log) if p.get("level") == "direction"]
-    if direction_id is None:
-        return items
-    return [p for p in items if _pending_matches_direction(p, direction_id)]
-
-def _js_string_value(raw):
-    raw = raw.strip()
-    if raw.startswith(("'", '"')) and len(raw) >= 2:
-        try:
-            return bytes(raw[1:-1], "utf-8").decode("unicode_escape")
-        except UnicodeDecodeError:
-            return raw[1:-1]
-    return raw
-
-def _top_level_value(block, field):
-    bounds = _pkg_block.find_top_level_field_value(block, field)
-    if bounds is None:
-        return ""
-    start, end = bounds
-    return _js_string_value(block[start:end])
-
-def _array_object_items(array_text):
-    if not array_text.strip().startswith("["):
-        return
-    i = 1
-    n = len(array_text)
-    while i < n - 1:
-        s_end = _pkg_block._skip_string(array_text, i)
-        if s_end is not None:
-            i = s_end
+def pending_direction_items(
+    source: ResearchPaths | dict[str, Any],
+    direction_id: str | None = None,
+) -> list[dict[str, Any]]:
+    if isinstance(source, ResearchPaths):
+        if direction_id is None:
+            return StateQuery(source).pending_directions()["data"]
+        else:
+            view = StateQuery(source).campaign(direction_id)["data"]
+            return copy.deepcopy(view["pending_directions"])
+    else:
+        state = source
+    if "aggregates" not in state:
+        return copy.deepcopy(state.get("pending_directions", []))
+    rows = []
+    for item in state["aggregates"]["proposal"].values():
+        if not isinstance(item, dict) or item.get("disposition") != "PENDING":
             continue
-        c_end = _pkg_block._skip_comment(array_text, i)
-        if c_end is not None:
-            i = c_end
+        proposed = item.get("proposed_node")
+        level = (
+            proposed.get("level")
+            if isinstance(proposed, dict)
+            else item.get("level")
+        )
+        if level != "direction":
             continue
-        if array_text[i] == "{":
-            item_end = _pkg_block.find_matching_close(array_text, i)
-            yield array_text[i:item_end]
-            i = item_end
-            continue
-        i += 1
+        target = (
+            proposed.get("id")
+            if isinstance(proposed, dict)
+            else item.get("node_id")
+        )
+        if direction_id is None or target == direction_id:
+            rows.append(copy.deepcopy(item))
+    return rows
 
-def _has_executable_experiment(block):
-    bounds = _pkg_block.find_top_level_field_value(block, "experiments")
-    if bounds is None:
-        return False
-    start, end = bounds
-    for item in _array_object_items(block[start:end]):
-        if _top_level_value(item, "status").lower() in _EXECUTABLE_EXP_STATUSES:
-            return True
-    return False
 
-def detect_open_package(root, direction_id):
-    """(pkg_id, has_executable_exp) for the in-progress package materialized from this direction."""
-    inv = Path(root) / "research_html" / "data" / "research-packages.js"
-    if not inv.exists():
+def detect_open_package(
+    source: ResearchPaths | dict[str, Any],
+    direction_id: str,
+) -> tuple[str | None, bool]:
+    view = (
+        StateQuery(source).campaign(direction_id)["data"]
+        if isinstance(source, ResearchPaths)
+        else source
+    )
+    if "aggregates" in view:
+        candidates = [
+            (package_id, package)
+            for package_id, package in view["aggregates"]["package"].items()
+            if isinstance(package, dict)
+            and (
+                package.get("direction_id") == direction_id
+                or package.get("sourceDirection") == direction_id
+            )
+            and package.get("lifecycle") == "ACTIVE"
+        ]
+        experiments = view["aggregates"]["experiment"].values()
+    else:
+        candidates = [
+            (str(package["id"]), package)
+            for package in view.get("packages", [])
+            if package.get("lifecycle") == "ACTIVE"
+        ]
+        experiments = view.get("experiments", {}).values()
+    if not candidates:
         return (None, False)
-    text = inv.read_text(encoding="utf-8")
-    for m in re.finditer(r"\{\s*(?:id|['\"]id['\"])\s*:", text):
-        try:
-            block = text[m.start():_pkg_block.find_matching_close(text, m.start())]
-        except ValueError:
-            continue
-        pkg_id = _top_level_value(block, "id")
-        if not pkg_id:
-            continue
-        if _top_level_value(block, "sourceDirection") != direction_id:
-            continue
-        if _top_level_value(block, "category") != "in-progress":
-            continue
-        return (pkg_id, _has_executable_experiment(block))
-    return (None, False)
+    package_id, _ = sorted(candidates, key=lambda item: str(item[0]))[-1]
+    executable = any(
+        isinstance(experiment, dict)
+        and experiment.get("package_id") == package_id
+        and experiment.get("status") in EXECUTABLE_EXP_STATUSES
+        for experiment in experiments
+    )
+    return str(package_id), executable
 
 
-# ---- CLI ----
+def _add_location_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--workspace", default=".")
+    parser.add_argument("--research-root")
 
-def main(argv=None):
-    """CLI so the skill drives every routing decision reproducibly from disk via Bash(python3 *)."""
-    import argparse
-    p = argparse.ArgumentParser(description="Campaign conductor for /research-auto.")
-    sub = p.add_subparsers(dest="cmd", required=True)
-    ps = sub.add_parser("status")
-    ps.add_argument("--root", default=".")
-    ps.add_argument("--direction-id", required=True)
-    ps.add_argument("--max-cycles", type=int, default=5)
-    ps.add_argument("--dial", default="AUTONOMOUS", choices=AUTONOMY_LEVELS)
-    ps.add_argument("--gate", default="", help="override gate; default = direction success_gate")
-    ps.add_argument("--no-candidate", action="store_true")
-    pg = sub.add_parser("gate-eval")
-    pg.add_argument("--measured", required=True)
-    pg.add_argument("--gate", required=True)
-    pa = sub.add_parser("append-cycle")
-    pa.add_argument("--root", default=".")
-    pa.add_argument("--direction-id", required=True)
-    pa.add_argument("--record", required=True, help="JSON cycle record")
-    pp = sub.add_parser("pack")
-    pp.add_argument("--root", default=".")
-    pp.add_argument("--direction-id", required=True)
-    pp.add_argument("--bundle", required=True, help="JSON PACK bundle")
-    args = p.parse_args(argv)
 
+def _paths(args: argparse.Namespace) -> ResearchPaths:
+    return ResearchPaths.resolve(
+        workspace=args.workspace,
+        research_root=args.research_root,
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="cmd", required=True)
+
+    status_parser = sub.add_parser("status")
+    _add_location_arguments(status_parser)
+    status_parser.add_argument("--direction-id", required=True)
+    status_parser.add_argument("--max-cycles", type=int, default=5)
+    status_parser.add_argument(
+        "--dial",
+        default="AUTONOMOUS",
+        choices=AUTONOMY_LEVELS,
+    )
+    status_parser.add_argument("--gate", default="")
+    status_parser.add_argument("--no-candidate", action="store_true")
+
+    gate_parser = sub.add_parser("gate-eval")
+    gate_parser.add_argument("--measured", required=True)
+    gate_parser.add_argument("--gate", required=True)
+
+    cycle_parser = sub.add_parser("append-cycle")
+    _add_location_arguments(cycle_parser)
+    cycle_parser.add_argument("--direction-id", required=True)
+    cycle_parser.add_argument("--record", required=True)
+
+    pack_parser = sub.add_parser("pack")
+    _add_location_arguments(pack_parser)
+    pack_parser.add_argument("--direction-id", required=True)
+    pack_parser.add_argument("--bundle", required=True)
+    args = parser.parse_args(argv)
+
+    if args.cmd == "gate-eval":
+        print(json.dumps({"gate_eval": evaluate_gate(args.measured, args.gate)}))
+        return 0
+
+    paths = _paths(args)
     if args.cmd == "status":
-        node = committed_direction(args.root, args.direction_id)
-        gate_text = args.gate or (node or {}).get("spec", {}).get("success_gate", "")
+        view = StateQuery(paths).campaign(args.direction_id)["data"]
+        node = committed_direction(view, args.direction_id)
+        gate_text = args.gate or (
+            (node or {}).get("spec", {}).get("success_gate", "")
+        )
         try:
             parse_gate(gate_text)
             gate_parseable = True
         except GateUnparseable:
             gate_parseable = False
-        open_pkg, executable = detect_open_package(args.root, args.direction_id)
-        records = read_ledger(ledger_path(args.root, args.direction_id))
-        status = campaign_status(records, max_cycles=args.max_cycles)
-        action = next_action(direction_committed=node is not None,
-                             pending_direction=bool(pending_direction_items(args.root, args.direction_id)),
-                             status=status, open_pkg=open_pkg, has_executable_exp=executable,
-                             no_candidate=args.no_candidate, dial=args.dial, gate_parseable=gate_parseable)
-        state = {"direction_committed": node is not None, "gate": gate_text,
-                 "gate_parseable": gate_parseable, "open_pkg": open_pkg,
-                 "has_executable_exp": executable, **status}
-        print(json.dumps({"state": state, "action": action}, ensure_ascii=False))
-    elif args.cmd == "gate-eval":
-        print(json.dumps({"gate_eval": evaluate_gate(args.measured, args.gate)}))
+        open_package, executable = detect_open_package(view, args.direction_id)
+        records = campaign_cycles(view, args.direction_id)
+        folded = campaign_status(records, max_cycles=args.max_cycles)
+        action = next_action(
+            direction_committed=node is not None,
+            pending_direction=bool(
+                pending_direction_items(view, args.direction_id)
+            ),
+            status=folded,
+            open_pkg=open_package,
+            has_executable_exp=executable,
+            no_candidate=args.no_candidate,
+            dial=args.dial,
+            gate_parseable=gate_parseable,
+        )
+        position = {
+            "direction_committed": node is not None,
+            "gate": gate_text,
+            "gate_parseable": gate_parseable,
+            "open_pkg": open_package,
+            "has_executable_exp": executable,
+            **folded,
+        }
+        print(
+            json.dumps(
+                {"state": position, "action": action},
+                ensure_ascii=False,
+            )
+        )
     elif args.cmd == "append-cycle":
-        row = append_cycle(ledger_path(args.root, args.direction_id), json.loads(args.record))
+        row = append_cycle(
+            paths,
+            args.direction_id,
+            json.loads(args.record),
+        )
         print(json.dumps(row, ensure_ascii=False))
-    elif args.cmd == "pack":
-        pack.write_pack(pack_path(args.root, args.direction_id), json.loads(args.bundle))
-        print(json.dumps({"pack": str(pack_path(args.root, args.direction_id))}))
+    else:
+        row = append_pack(
+            paths,
+            args.direction_id,
+            json.loads(args.bundle),
+        )
+        print(
+            json.dumps(
+                {
+                    "campaign": f"campaign/{campaign_id(args.direction_id)}",
+                    "pack": row,
+                },
+                ensure_ascii=False,
+            )
+        )
     return 0
 
 

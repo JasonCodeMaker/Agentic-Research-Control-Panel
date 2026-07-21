@@ -1,16 +1,24 @@
-# Exp-live Telemetry Sources
+# Exp-live telemetry sources
 
-Lifecycle and provenance do not depend on telemetry richness. With zero adapter matches, the harness still records liveness, output heartbeat, status, exit code, log path, and global index entries.
+Telemetry enriches a Run but does not control its lifecycle. With no metric adapter match, the
+harvester still records process status, output heartbeat, exit code, and Run evidence.
 
 Adapter order:
 
 1. cooperating JSON lines;
-2. explicit custom regex named groups;
-3. tqdm-style progress bars;
+2. custom regular expressions with named groups;
+3. tqdm-style progress;
 4. generic `name=value` or `name: value` metrics;
 5. phase markers;
 6. anomaly markers.
 
-Metric source precedence is visible through `status.json.source_map`; values are not silently overwritten without their source being recorded.
+`status.json.source_map` records the source selected for each metric. A later value may replace an
+earlier value, but the reader can still see which adapter produced it.
 
-External telemetry such as W&B or TensorBoard is optional. External IDs can be stored in `meta.json.telemetry`, but `status.json` remains the workflow source of truth for routine live checks and `live.html`.
+W&B and TensorBoard identifiers belong in `run.json.telemetry`. Their services are optional.
+`status.json` remains the routine live observation, and `$RESEARCH_ROOT/state/` remains the
+management authority.
+
+GPU samples are also observations. When `--gpu-sample` is disabled or unavailable, `resource` is
+`null`; no reader may infer idle or busy capacity from that absence. Resource availability snapshots
+belong to the XDG runtime cache described by `research-resource`, not to the Run's management state.

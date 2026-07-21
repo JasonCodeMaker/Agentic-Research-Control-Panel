@@ -1,307 +1,247 @@
 ---
 name: research-scope
-description: "Use when defining or revising Project, Direction, or Task Scope intent, or when execution discovers a needed scope change. The agent only proposes through Triage and must show every proposed Scope clearly to the PM with the next ratification step; accepted Scope writes route through research-op's scope-transition op. Never invokes git."
-allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
-disable-model-invocation: false
+description: "Use when defining or revising governed Project, Direction, or Experiment intent."
 ---
 
-# research-scope (R1 · scope + Triage admission gate)
+# research-scope
 
-The agent proposes; the PM disposes. This separation is how "user-monitored" and "autonomous" coexist:
-the Scope SSOT is never mutated by agent action alone — every write is either a user-committed
-`scope-transition` (accepted Triage item) or rejected with the SSOT left untouched.
+The agent proposes; the PM decides. A proposal does not change research intent.
+Only an explicit, hash-bound PM decision can dispose it:
 
-The PM visibility invariant is mandatory: **never ask the PM to accept, reject, or revise a Scope
-proposal without showing the exact Scope content first.** Every Project, Direction, or Task proposal
-must be presented as a clear review block that names the current state and the next PM action.
+- `ACCEPT <item-id> <proposal-hash>` authorizes the `ACCEPTED` disposition and
+  the gated `research-op` Scope writer.
+- `REJECT <item-id> <proposal-hash>` authorizes only the `REJECTED`
+  disposition.
+- `REVISE <item-id> <proposal-hash>` authorizes a validated replacement under
+  the same item id. It authorizes neither a disposition nor a Scope write.
 
-> If the user has only a vague idea and cannot yet state a clear Direction spec
-> (`hypothesis / metric / baselines / success_gate`), use **`/research-brainstorm`** first — it shapes
-> the idea into pre-package brainstorms and converges them into a Direction proposal. Use this skill
-> directly when the Direction is already clear.
+The item id and hash must match the exact proposal visible to the PM. A stale
+hash, ambiguous reply, or missing decision leaves the proposal pending. Never
+infer or manufacture a PM decision. Never invoke git.
 
-## Resources
+If the user cannot yet state a Direction as
+`hypothesis / metric / baselines / success_gate`, use
+`/research-brainstorm` first.
 
-**Pipeline root:** `/home/uqzzha35/Project/Trustworthy-Research-Pipeline/Trustworthy-Research-Pipeline`
+## Authority and commands
 
-| Resource | Path |
-|---|---|
-| Scope SSOT lib | `<pipeline-root>/lib/scope_ssot/__init__.py` |
-| Triage CLI | `<pipeline-root>/skills/research-scope/scripts/triage.py` |
-| Transition log (SSOT commits) | `outputs/_scope/transitions.jsonl` |
-| Triage queue (pending/disposed) | `outputs/_scope/triage.jsonl` |
-| research-op entrypoint | `<pipeline-root>/skills/research-op/scripts/research_op.py` |
-| Milestone planner | `<pipeline-root>/skills/research-scope/scripts/plan_milestones.py` |
-| Scope name migration | `<pipeline-root>/skills/research-scope/scripts/migrate_scope_names.py` |
-| Direction→package materializer | `<pipeline-root>/skills/research-package/scripts/create_from_scope.py` |
+`.research/state` is the management authority. `.research/interface` is a
+disposable human projection and must not be read as Scope state. Skills never
+edit state JSON, events, audit rows, HTML, JavaScript, or CSV directly.
 
-Import pattern for the lib:
+All commands resolve the workspace through `ResearchPaths`. Use
+`--research-root` only when the workspace does not use the default
+`.research` root.
+
+```bash
+# Read committed intent through a bounded query
+python3 -m lib.research_state.cli --workspace . show project
+python3 -m lib.research_state.cli --workspace . show direction
+python3 -m lib.research_state.cli --workspace . show experiment
+
+# Inspect proposals
+python3 skills/research-scope/scripts/triage.py --workspace . pending
+
+# Submit a validated proposal
+python3 skills/research-scope/scripts/triage.py --workspace . propose \
+  --item '<proposal-json>'
+
+# Record an explicit, matching PM decision
+python3 skills/research-scope/scripts/triage.py --workspace . dispose \
+  --id <item-id> \
+  --decision ACCEPTED|REJECTED \
+  --proposal-hash <proposal-hash> \
+  --actor-type user \
+  --actor-id <pm-id>
+```
+
+`triage.py` calls the typed `research-op` management gateway. It never owns a
+separate proposal store. Omitting the actor flags records the caller as an
+agent, so the disposition is rejected and the proposal remains pending.
+
+## Scope node contract
+
+Every proposal carries a complete `proposed_node`:
+
+```json
+{
+  "id": "<stable-id>",
+  "level": "project|direction|experiment",
+  "parents": ["<parent-id>"],
+  "version": 1,
+  "status": "ACTIVE",
+  "spec": {},
+  "source": "<user dialogue or evidence reference>"
+}
+```
+
+A Project has no parent. A Direction has a Project parent. An Experiment has a
+Direction parent and may carry `package_id` when a Package already exists.
+
+| Level | Required spec | Gate |
+|---|---|---|
+| `project` | `goal`, `contributions`, `out_of_scope` | `USER_ONLY` |
+| `direction` | `hypothesis`, `metric`, `baselines`, `success_gate` | `USER_CROSS_MODEL_AUDIT` |
+| `experiment` | `purpose`, `config_ref`, `gate`, `control_mode` | `AGENT_DEFERRED_ACK` |
+
+Text constraints:
+
+- Project `goal`: 3 to 100 words.
+- Direction `hypothesis` and `success_gate`: 20 to 100 words.
+- Experiment `purpose` and `gate`: 20 to 100 words.
+- Each Project list item and Direction baseline: 5 to 50 words.
+- `metric` is a non-empty object or a 20 to 100 word string.
+- `config_ref` is a non-empty reference.
+- `control_mode` is `SUPERVISED`, `CHECKPOINTED`, `DEFERRED`, or
+  `AUTONOMOUS`.
+
+Measured values, verdicts, Run status, and result readings never belong in a
+Scope spec.
+
+Validate the complete node before submission:
+
 ```python
 import sys
 sys.path.insert(0, "<pipeline-root>/lib")
 import scope_ssot
+
+scope_ssot.validate_node(node)
 ```
 
-Triage CLI commands:
-```bash
-# Propose a scope change (agent path)
-python3 skills/research-scope/scripts/triage.py propose \
-    --log outputs/_scope/triage.jsonl \
-    --item '<json>'
+Do not bypass `RuleViolation` by editing a state file.
 
-# List pending items (agent or human inspection)
-python3 skills/research-scope/scripts/triage.py pending \
-    --log outputs/_scope/triage.jsonl
+## Proposal contract
 
-# Dispose an item — accept or reject (human PM path)
-python3 skills/research-scope/scripts/triage.py dispose \
-    --log outputs/_scope/triage.jsonl \
-    --id <item-id> \
-    --decision ACCEPTED|REJECTED
-```
-
-On accept, the human then commits the transition (agent does NOT do this). Prefer committing from the
-accepted Triage item so the SSOT payload is bound to what the PM saw:
-```bash
-python3 skills/research-op/scripts/research_op.py \
-    --pkg _scope --op scope-transition --from-triage <item-id>
-```
-
-The explicit payload form is available for structured callers, but then the payload must carry all
-seven node fields **plus** `op` (one of `create` / `revise` / `supersede` / `reopen` / `archive`) and
-`gate` (the required gate for the node's level — see the gate table below); `research_op.py` reads
-`op` and `gate` out of the payload and passes them to `scope_ssot.propose_transition`, which rejects a
-missing/illegal `op` or a mismatched `gate`.
-
-## Node shape
-
-A node has these required fields:
+The item submitted to `triage.py propose` contains:
 
 ```json
 {
-  "id": "<unique-string>",
-  "level": "project|direction|task",
-  "parents": ["<parent-id>"],
-  "version": 1,
-  "status": "ACTIVE",
-  "spec": { ... },
-  "source": "<free text or reference>"
-}
-```
-
-Spec fields differ by level. Supply all fields for the relevant level, no others:
-
-| level | required spec fields and form |
-|---|---|
-| `project` | `goal`: string, 3-100 words so exact short objectives can be ratified. `contributions`: non-empty list of strings, each 5-50 words. `out_of_scope`: non-empty list of strings, each 5-50 words. |
-| `direction` | `hypothesis`: string, 20-100 words. `metric`: non-empty object, or string with 20-100 words. `baselines`: non-empty list of strings, each 5-50 words. `success_gate`: string, 20-100 words. |
-| `task` | `experiment`: string, 20-100 words. `config`: non-empty reference string. `gate`: string, 20-100 words. `control_mode`: one of `SUPERVISED`, `CHECKPOINTED`, `DEFERRED`, `AUTONOMOUS`. |
-
-A spec must not contain readings (measured values, results, verdicts). Those live in results surfaces, not in scope. `config` is a ref/path and `control_mode` is an enum, so the 20-100 word scalar-text rule does not apply to them.
-
-Required gate per level — the `gate` field passed to `scope_ssot.propose_transition`:
-
-| level | gate |
-|---|---|
-| `project` | `USER_ONLY` |
-| `direction` | `USER_CROSS_MODEL_AUDIT` |
-| `task` | `AGENT_DEFERRED_ACK` |
-
-## Procedure
-
-**1. Read the learning context gate, active Scope, and pending Triage.**
-
-Before drafting any Project, Direction, or Task proposal, load the project learning summary:
-
-```bash
-python3 research_html/scripts/learning_context_gate.py --root research_html --json
-```
-
-If the gate fails, repair the malformed learning source before proposing Scope. A zero count is not a
-problem; an unreadable rules or package source is.
-
-```python
-import sys; sys.path.insert(0, "<pipeline-root>/lib"); import scope_ssot
-records = scope_ssot.read_log("outputs/_scope/transitions.jsonl")
-projection = scope_ssot.fold(records)
-history = scope_ssot.history("<node-id>", records)  # [] if new node
-```
-
-If the log does not exist or is empty, there is no committed scope yet — the first proposal creates it.
-Also inspect pending proposals before drafting a new one:
-
-```bash
-python3 skills/research-scope/scripts/triage.py pending \
-    --log outputs/_scope/triage.jsonl
-```
-
-Use pending items only as collision warnings. They are not accepted intent and must not be treated as
-Scope authority. If a pending item targets the same node, level, or substantially the same change, surface
-that conflict instead of submitting a duplicate proposal.
-
-**2. Validate the proposed node.**
-
-Build the node dict according to the shape above, then call:
-
-```python
-scope_ssot.validate_node(node)  # checks level, required spec fields, value forms, word counts, and reading-field exclusion
-```
-
-Fix any `RuleViolation` before proceeding. Do not hand-edit log files to work around a violation.
-
-**Migration from old Scope names.**
-
-If a live project still has old `yardstick` / `provenance` records, migrate them explicitly:
-
-```bash
-python3 skills/research-scope/scripts/migrate_scope_names.py \
-    --transitions outputs/_scope/transitions.jsonl \
-    --triage outputs/_scope/triage.jsonl \
-    --inventory research_html/data/research-packages.js \
-    --write
-```
-
-Run it without `--write` first for a dry run. Normal Scope validation rejects the old node shape.
-
-**3. Build the Triage item.**
-
-The item dict passed to `triage.py propose` must include:
-
-```json
-{
-  "id": "<unique-item-id>",
-  "level": "project|direction|task",
-  "change": "<one-sentence description of what changes>",
+  "id": "<proposal-id>",
+  "level": "project|direction|experiment",
+  "node_id": "<proposed-node-id>",
+  "op": "create|revise|supersede|reopen|archive",
+  "gate": "<required-level-gate>",
+  "change": "<one sentence>",
   "rationale": "<why this change is needed>",
-  "proposed_spec": { ... },
+  "proposed_spec": {},
+  "proposed_node": {},
   "post_accept_actions": []
 }
 ```
 
-For a `level == "direction"` proposal, ask this QA before calling `triage.py propose`:
+For a Direction proposal, ask whether the PM wants high-level validation
+Experiments proposed after acceptance. If yes, record
+`"post_accept_actions": ["plan_validation_experiments"]`. Pending proposals are
+collision warnings, not accepted intent.
 
-> This Direction is still a pending proposal. If you accept it into the Scope SSOT, should I then propose high-level validation milestones before any package is generated?
+The explicit payload form is reserved for separately governed structured
+callers. It cannot substitute for or bypass the accepted snapshot when
+executing a ratified Triage proposal.
 
-If the user answers yes, set:
+## Review before submission
 
-```json
-"post_accept_actions": ["plan_validation_milestones"]
+Show the exact content before asking the PM to confirm submission:
+
+```markdown
+**Scope Review**
+- Status: Candidate, not yet submitted
+- Level: project | direction | experiment
+- Node: <node-id>
+- Parents: <parent ids>
+- Operation / Gate: <operation> / <gate>
+- Spec: <every field exactly as it would enter state>
+- Source: <source>
+- Rationale: <rationale>
+- Post-Accept Actions: <actions or []>
+- Next Step: CONFIRM to submit, REVISE with changes, or REJECT the draft
 ```
 
-If the user answers no or later, leave `post_accept_actions` empty. Never create the package from a pending Triage item, and never let package surfaces invent high-level validation goals.
+If the user supplied exact wording, reproduce it verbatim in the Spec section.
+Keep agent interpretation outside the proposed spec.
 
-**4. Submit the proposal.**
-
-```bash
-python3 skills/research-scope/scripts/triage.py propose \
-    --log outputs/_scope/triage.jsonl \
-    --item '{"id":"scope-001","level":"direction","change":"...","rationale":"...","proposed_spec":{...}}'
-```
-
-**5. Show pending items to the user and STOP.**
-
-```bash
-python3 skills/research-scope/scripts/triage.py pending \
-    --log outputs/_scope/triage.jsonl
-```
-
-Display the pending list. Do not proceed further. The agent's work ends here — scope commitment is the human PM's decision.
-Use this PM-facing format for every proposed Scope item:
+After confirmation, submit the item and show the returned proposal hash:
 
 ```markdown
 **Scope Review**
 - Status: Pending Triage, not yet committed
-- Level: project | direction | task
-- Node: <node id>
-- Parents: <parent ids, or [] for a Project>
-- Operation / Gate: <create|revise|...> / <required gate>
-- Spec: <each spec field exactly as it would enter the Scope node>
-- Rationale: <why this Scope change is proposed>
-- Post-Accept Actions: <planned follow-up, or []>
-- Next Step: ACCEPT to ratify via `research-op --pkg _scope --op scope-transition --from-triage <item-id>`, REVISE with field changes, or REJECT to archive
+- Triage Item: <item-id>
+- Proposal Hash: <proposal-hash>
+- Level: project | direction | experiment
+- Node: <node-id>
+- Parents: <parent ids>
+- Operation / Gate: <operation> / <gate>
+- Spec: <every field exactly as submitted>
+- Rationale: <rationale>
+- Post-Accept Actions: <actions or []>
+- Next Step: Reply `ACCEPT <item-id> <proposal-hash>`, `REVISE <item-id> <proposal-hash>` with changes, or `REJECT <item-id> <proposal-hash>`
 ```
 
-If the user supplied exact text for any spec field, show that text verbatim. Agent-authored
-interpretation or rationale must be visibly separate from the spec content that would enter the SSOT.
+Without an explicit PM decision, stop here.
 
-**Human accept path (PM action, not agent):**
+## Decision paths
 
-1. PM runs `triage.py dispose --decision ACCEPTED`.
-2. PM commits via `research-op --pkg _scope --op scope-transition --from-triage <item-id>`.
-3. The transition is appended to `outputs/_scope/transitions.jsonl`, then the dashboard
-   projection is refreshed when `research_html/data/` exists.
-4. If the accepted item has `post_accept_actions` containing `plan_validation_milestones`, ask one short confirmation: "Direction is now committed. Propose high-level validation milestones for it?" On yes, invoke `plan_milestones.py` with the committed direction node id. On no, stop and report that `plan_milestones.py --direction-id <direction-id>` can be run later.
+### Accept
 
-Milestone proposal command:
+After the PM replies with the exact visible item id and proposal hash:
+
+1. Re-read pending proposals and verify both values.
+2. Record the accepted disposition with `triage.py dispose`.
+3. Commit only the accepted snapshot:
+
+   ```bash
+   python3 skills/research-op/scripts/research_op.py \
+     --workspace . \
+     --pkg _scope \
+     --op scope-transition \
+     --from-triage <item-id>
+   ```
+
+Delegated execution of a ratified Triage proposal must use
+`--from-triage <item-id>`.
+
+The gateway revalidates the proposal hash, level gate, node version, and
+idempotency before writing Project, Direction, or Experiment state.
+
+If an accepted Direction requested validation planning, ask one short
+confirmation. On yes:
 
 ```bash
 python3 skills/research-scope/scripts/plan_milestones.py \
-    --direction-id <direction-node-id> \
-    --transitions outputs/_scope/transitions.jsonl \
-    --triage outputs/_scope/triage.jsonl
+  --workspace . \
+  --direction-id <direction-id>
 ```
 
-After the PM accepts/revises those milestone proposals and commits each Task/Milestone node with `research-op --pkg _scope --op scope-transition --from-triage <item-id>`, ask: "Milestones are now committed. Generate the research package from the Direction plus accepted milestones?" On yes, use `/research-package from-scope <direction-id>`. Script-level execution first checks readiness:
+The command submits five governed Experiment proposals. Each still requires
+its own visible, hash-bound PM decision. Once the relevant Experiments are
+accepted, check package readiness from state:
 
 ```bash
 python3 skills/research-package/scripts/create_from_scope.py \
-    --check --json \
-    --direction-id <direction-node-id> \
-    --root research_html \
-    --transitions outputs/_scope/transitions.jsonl
+  --workspace . \
+  --direction-id <direction-id> \
+  --check --json
 ```
 
-If `materializable` is false, stop and hand off to the returned `nextSkill`. If it is true, invoke the
-materializer:
+### Reject
 
-```bash
-python3 skills/research-package/scripts/create_from_scope.py \
-    --direction-id <direction-node-id> \
-    --root research_html \
-    --transitions outputs/_scope/transitions.jsonl
-```
+Verify the visible item id and hash, then record `REJECTED`. The proposal leaves
+the pending view and committed Scope state remains unchanged.
 
-**Human reject path:** PM runs `triage.py dispose --decision REJECTED`. The item is archived in `triage.jsonl`; the SSOT is untouched.
+### Revise
 
-Example — proposing a direction node:
-
-```bash
-python3 skills/research-scope/scripts/triage.py propose \
-    --log outputs/_scope/triage.jsonl \
-    --item '{
-      "id": "dir-retrieval-v2",
-      "level": "direction",
-      "change": "Narrow retrieval target to zero-shot cross-modal setting only",
-      "rationale": "In-distribution results are at ceiling; zero-shot gap is the open problem",
-      "proposed_spec": {
-        "hypothesis": "Cross-modal zero-shot retrieval can improve held-out Recall at one without supervised fine tuning by aligning text and video representations more consistently.",
-        "metric": {"name": "R@1", "split": "MSRVTT zero-shot", "dir": "higher"},
-        "baselines": ["CLIP zero-shot retrieval baseline on the same held-out split."],
-        "success_gate": "Recall at one must reach at least forty eight on the held-out seed before this Direction can be adopted safely."
-      },
-      "post_accept_actions": ["plan_validation_milestones"]
-    }'
-```
-
-## Output contract
-
-| Path | Written by | Contents |
-|---|---|---|
-| `outputs/_scope/triage.jsonl` | Agent (propose) + PM (dispose) | Pending and disposed Triage items, including optional post-accept milestone-planning intent, one JSON object per line |
-| `outputs/_scope/transitions.jsonl` | PM only (via research-op scope-transition) | Committed scope transitions, one JSON object per line |
-| `outputs/_scope/_actions.jsonl` | research-op | Audit line for synthetic `_scope` scope-transition ops |
-
-The agent appends to `triage.jsonl` only. It never writes to `transitions.jsonl` directly.
+Verify the visible item id and hash. Apply the requested field changes to the
+complete node, validate it, and submit a replacement under the same item id.
+Show the replacement in full with its new hash. Do not dispose the old view or
+invoke the Scope writer for `REVISE`.
 
 ## Done condition
 
-The skill is done when the pending Triage item is visible in `triage.jsonl`, has been shown to the user, and any direction-level milestone-planning QA has been answered and recorded in `post_accept_actions`. The scope change is not yet in effect — it takes effect only after PM acceptance and the `research-op --pkg _scope --op scope-transition --from-triage <item-id>` commit. Package files are created only after the Direction and its accepted high-level validation milestones are committed.
+For a pending proposal, the exact review and hash are visible and no committed
+intent changed. For acceptance, both the accepted disposition and the
+hash-bound `scope-transition` succeed. For rejection, no Project, Direction,
+or Experiment aggregate changes. For revision, the new same-id proposal is
+pending with a new visible hash.
 
-## Error path
-
-| Error | Meaning | Action |
-|---|---|---|
-| `RuleViolation` from `validate_node` | The node dict violates the schema (missing field, wrong level, reading in spec, etc.) | Fix the node dict and retry `validate_node` before calling `triage.py propose`. Never hand-edit the log. |
-| `RuleViolation` from `scope_ssot.propose_transition` (human path) | The transition op was refused by the gate check | Confirm the `gate` value matches `scope_ssot.REQUIRED_GATE[node["level"]]` (e.g. `USER_CROSS_MODEL_AUDIT` for direction) and retry. |
-| `triage.py propose` exits non-zero | Item JSON is malformed, or the `id` key is missing (the script enforces only `id`) | Check the `--item` JSON parses and carries `id`. `level`, `change`, `rationale`, and `proposed_spec` are required by this contract (downstream consumers need them) but are not validated by the script — include them anyway. |
-| Triage item sits pending indefinitely | PM has not disposed it | Surface the pending list again; do not re-propose the same change. |
+Every command outcome is recorded under `.research/audit`; state changes are
+events under `.research/state`. The interface can be deleted and rebuilt
+without changing any of these decisions.

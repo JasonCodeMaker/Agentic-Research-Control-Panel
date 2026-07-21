@@ -2,13 +2,16 @@
 
 The substantive judgment is made by a fresh, cross-family model (via mcp__codex__codex, called
 by the research-run / research-op skill with file paths only). This lib owns the *deterministic*
-half: which independence a Task's control mode requires, and whether a verdict is allowed to acquit.
+half: which independence an Experiment spec's control mode requires, and whether a verdict is allowed to acquit.
 A judge may DRIVE review but may never ACQUIT its own work.
 """
 
 import json
-import uuid
+import operator
+import re
 from pathlib import Path
+
+from lib.research_state.schema import enum
 
 # Model id prefix -> family. Cross-family independence is decided here.
 _FAMILY_PREFIXES = {
@@ -16,8 +19,8 @@ _FAMILY_PREFIXES = {
     "codex": "openai", "gemini": "google", "llama": "meta", "mistral": "mistral",
 }
 
-# Control mode canonical values (SSOT for this concept).
-CONTROL_MODES = ("SUPERVISED", "CHECKPOINTED", "DEFERRED", "AUTONOMOUS")
+# Control modes are owned by the central research-state schema.
+CONTROL_MODES = tuple(enum("control_mode"))
 
 # Control mode -> required judge independence. The mode escalates this.
 INDEPENDENCE_TABLE = {
@@ -43,6 +46,18 @@ DIAL_BEHAVIOR = {
 VERDICT_STATES = ("SOUND", "UNSOUND", "INCONCLUSIVE", "NEEDS_REVISION",
                   "INSUFFICIENT_EVIDENCE", "ABSTAIN")
 ACQUIT_STATES = {"SOUND"}
+
+_NUMERIC_GATE = re.compile(
+    r"^\s*(?P<metric>.+?)\s*(?P<operator>>=|<=|==|>|<)\s*"
+    r"(?P<threshold>-?(?:\d+(?:\.\d*)?|\.\d+))\s*$"
+)
+_COMPARATORS = {
+    ">=": operator.ge,
+    "<=": operator.le,
+    "==": operator.eq,
+    ">": operator.gt,
+    "<": operator.lt,
+}
 
 
 class VerifierError(Exception):
@@ -77,6 +92,57 @@ def assess_acquit(verdict, control_mode):
     return None
 
 
+def assess_metric_verdict(measured, gate, verdict):
+    """Reject a PASS/FAIL claim that contradicts a simple numeric gate.
+
+    Natural-language and compound gates remain verifier work.  Returning
+    ``None`` for those shapes is deliberate: the later governed verifier
+    Decision binds its judgment to the exact Experiment gate and Result.
+    """
+    match = _NUMERIC_GATE.fullmatch(str(gate or ""))
+    if match is None or verdict not in {"PASS", "FAIL"}:
+        return None
+    try:
+        measured_value = float(measured)
+    except (TypeError, ValueError):
+        return (
+            "numeric gate requires a numeric measured value, "
+            f"got {measured!r}"
+        )
+    threshold = float(match.group("threshold"))
+    passed = _COMPARATORS[match.group("operator")](
+        measured_value,
+        threshold,
+    )
+    expected = "PASS" if passed else "FAIL"
+    if verdict != expected:
+        return (
+            f"verdict {verdict!r} contradicts gate {gate!r} with "
+            f"measured={measured_value}; expected {expected}"
+        )
+    return None
+
+
+def assess_measurements_verdict(measurements, gate, verdict):
+    """Apply a simple numeric gate to the matching measured result."""
+    match = _NUMERIC_GATE.fullmatch(str(gate or ""))
+    if match is None or verdict not in {"PASS", "FAIL"}:
+        return None
+    if not isinstance(measurements, dict) or not measurements:
+        return "numeric gate requires a non-empty measurements object"
+    metric = match.group("metric").strip()
+    if metric in measurements:
+        measured = measurements[metric]
+    elif len(measurements) == 1:
+        measured = next(iter(measurements.values()))
+    else:
+        return (
+            f"numeric gate metric {metric!r} is absent from measurements "
+            f"{sorted(measurements)}"
+        )
+    return assess_metric_verdict(measured, gate, verdict)
+
+
 def pauses_at(control_mode, gate_kind):
     """Whether the loop pauses for a human at a gate of this kind at this control mode."""
     behavior = DIAL_BEHAVIOR.get(control_mode)
@@ -91,50 +157,6 @@ def blocks(control_mode):
     if behavior is None:
         raise VerifierError(f"unknown control mode: {control_mode!r}")
     return behavior["blocks"]
-
-
-def jury_request(artifact_paths, question, *, judge_model):
-    """Build the file-paths-only request an agent passes to mcp__codex__codex (fresh thread)."""
-    return {
-        "judge_model": judge_model,
-        "question": question,
-        "artifact_paths": list(artifact_paths),  # paths only — never inlined content
-        "instruction": "Judge soundness from the artifacts. Reply with one of: " + ", ".join(VERDICT_STATES),
-    }
-
-
-def interpret(raw_text):
-    """Map a judge's free-text reply to one of the 6 verdict states (ABSTAIN if unrecognized).
-
-    Checks longer states first to avoid substring collisions (e.g. 'sound' inside 'unsound').
-    """
-    text = (raw_text or "").strip().lower()
-    # Sort by descending length so longer tokens don't get shadowed by shorter substrings.
-    for state in sorted(VERDICT_STATES, key=len, reverse=True):
-        slug = state.lower()
-        prose = slug.replace("_", " ")
-        if slug in text or prose in text:
-            return state
-    return "ABSTAIN"
-
-
-# A persisted verdict record must carry these — the verifier's structured output the acquit gate reads.
-_VERDICT_REQUIRED = ("producer", "judge", "scope_version", "artifact_id", "result")
-
-
-def write_verdict(verdicts_dir, verdict):
-    """Persist a structured verdict record; reject (raise) before write if incomplete or self-judged."""
-    missing = [f for f in _VERDICT_REQUIRED if not str(verdict.get(f, "")).strip()]
-    if missing:
-        raise VerifierError(f"verdict missing required fields: {missing}")
-    if verdict["producer"] == verdict["judge"]:
-        raise VerifierError("producer == judge (may DRIVE review but never ACQUIT)")
-    record = dict(verdict)
-    record.setdefault("verdict_id", uuid.uuid4().hex[:12])
-    path = Path(verdicts_dir) / f"{record['verdict_id']}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
-    return record
 
 
 def read_verdict(verdicts_dir, verdict_id):

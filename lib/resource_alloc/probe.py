@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import os
 import subprocess
 import sys
 import time
@@ -13,6 +11,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from lib import resource_alloc as ra  # noqa: E402
+from lib.research_state.io import canonical_json, read_json, write_json_atomic  # noqa: E402
 
 SNAPSHOT_MAX_AGE = 600  # seconds; older snapshots count as unknown availability
 FREE_UTIL_MAX = 10      # percent
@@ -55,26 +54,93 @@ def probe_local():
     return parse_nvidia_smi(result.stdout)
 
 
-def _snapshot_path(outputs_root, server) -> Path:
-    return ra.resources_root(outputs_root) / "snapshots" / f"{server}.json"
+def _snapshot_path(research_root, server) -> Path:
+    return ra.resources_root(research_root) / f"{server}.json"
 
 
-def write_snapshot(outputs_root, server, gpus, t=None) -> Path:
-    path = _snapshot_path(outputs_root, server)
-    path.parent.mkdir(parents=True, exist_ok=True)
+def _validate_snapshot_gpus(server_record, gpus):
+    if not isinstance(gpus, list):
+        raise ra.RuleViolation(
+            "probe GPUs must be a list",
+            rule="resource-probe-invalid",
+        )
+    try:
+        canonical_json(gpus)
+    except (TypeError, ValueError) as exc:
+        raise ra.RuleViolation(
+            "probe GPUs must contain only JSON-compatible values",
+            rule="resource-probe-invalid",
+        ) from exc
+    physical_ids = []
+    for gpu in gpus:
+        if not isinstance(gpu, dict):
+            raise ra.RuleViolation(
+                "each probe GPU must be an object",
+                rule="resource-probe-invalid",
+            )
+        index = gpu.get("index")
+        if (
+            isinstance(index, bool)
+            or not isinstance(index, (int, str))
+            or not str(index).strip()
+        ):
+            raise ra.RuleViolation(
+                "each probe GPU needs a physical index",
+                rule="resource-probe-id-invalid",
+            )
+        physical_ids.append(str(index).strip())
+    if len(physical_ids) != len(set(physical_ids)):
+        raise ra.RuleViolation(
+            "probe GPU physical indices must be unique",
+            rule="resource-probe-id-duplicate",
+        )
+    if server_record.get("gpus") and not physical_ids:
+        raise ra.RuleViolation(
+            "probe returned no physical GPU ids for a GPU resource",
+            rule="resource-probe-empty",
+        )
+
+
+def _write_snapshot(research_root, server, gpus, t=None) -> Path:
+    """Atomically cache a short-lived probe outside persistent research data."""
+    server_record = ra.get_server(research_root, server)
+    _validate_snapshot_gpus(server_record, gpus)
+    path = _snapshot_path(research_root, server)
     snapshot = {"server": server, "t": time.time() if t is None else t, "gpus": gpus}
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(snapshot, sort_keys=True) + "\n", encoding="utf-8")
-    os.rename(tmp, path)
+    write_json_atomic(path, snapshot)
     return path
 
 
-def load_snapshot(outputs_root, server, now=None, max_age=SNAPSHOT_MAX_AGE):
+def write_snapshot(research_root, server, gpus, t=None) -> Path:
+    """Validate and audit a probe observation before caching it."""
+    summary = {
+        "server": server,
+        "gpu_observation_count": len(gpus) if isinstance(gpus, list) else None,
+        "gpu_ids": (
+            [gpu.get("index") for gpu in gpus if isinstance(gpu, dict)]
+            if isinstance(gpus, list)
+            else None
+        ),
+    }
+    try:
+        return _write_snapshot(research_root, server, gpus, t=t)
+    except ra.RuleViolation as exc:
+        ra.audit_rejection(
+            research_root,
+            command="resource-probe",
+            payload=summary,
+            error=exc,
+            actor={"type": "agent", "id": "resource-probe"},
+        )
+        raise
+
+
+def load_snapshot(research_root, server, now=None, max_age=SNAPSHOT_MAX_AGE):
     """Return the snapshot with age/freshness/free_count derived, or None when absent."""
-    path = _snapshot_path(outputs_root, server)
+    path = _snapshot_path(research_root, server)
     if not path.exists():
         return None
-    snapshot = json.loads(path.read_text(encoding="utf-8"))
+    snapshot = read_json(path)
     age = (time.time() if now is None else now) - snapshot["t"]
     snapshot["age"] = age
     snapshot["fresh"] = age <= max_age

@@ -1,0 +1,607 @@
+{
+  "schema_version": 1,
+  "event_schema_versions": [1],
+  "aggregate_types": [
+    "project",
+    "direction",
+    "package",
+    "experiment",
+    "run",
+    "change",
+    "decision",
+    "learning",
+    "rule",
+    "proposal",
+    "brainstorm",
+    "campaign",
+    "resource",
+    "resource_allocation",
+    "paper",
+    "knowledge_edge",
+    "knowledge_gap"
+  ],
+  "event_types": [
+    "AggregateImported",
+    "AggregateUpserted",
+    "AggregatePatched",
+    "AggregateRemoved",
+    "ProposalSubmitted",
+    "ProposalAccepted",
+    "ProposalRejected",
+    "ScopeCommitted",
+    "BrainstormCreated",
+    "BrainstormRevised",
+    "BrainstormArchived",
+    "PackageMaterialized",
+    "PackageExperimentBound",
+    "PackageMutationApplied",
+    "DecisionRecorded",
+    "CampaignUpdated",
+    "ExperimentBoundToPackage",
+    "ExperimentSpecRevised",
+    "ExperimentStatusChanged",
+    "RunLaunchAuthorized",
+    "RunLaunched",
+    "RunLaunchFailed",
+    "RunTerminal",
+    "RunResultFinalized",
+    "RunAttentionAcknowledged",
+    "ResourceRegistered",
+    "ResourceAllocationCreated",
+    "ResourceAllocationLinked",
+    "ResourceAllocationReleased",
+    "LearningRecorded",
+    "RulePromoted",
+    "RuleRetired"
+  ],
+  "event_aggregate_types": {
+    "ProposalSubmitted": "proposal",
+    "ProposalAccepted": "proposal",
+    "ProposalRejected": "proposal",
+    "BrainstormCreated": "brainstorm",
+    "BrainstormRevised": "brainstorm",
+    "BrainstormArchived": "brainstorm",
+    "PackageMaterialized": "package",
+    "PackageExperimentBound": "package",
+    "PackageMutationApplied": "package",
+    "DecisionRecorded": "decision",
+    "CampaignUpdated": "campaign",
+    "ExperimentBoundToPackage": "experiment",
+    "ExperimentSpecRevised": "experiment",
+    "ExperimentStatusChanged": "experiment",
+    "RunLaunchAuthorized": "run",
+    "RunLaunched": "run",
+    "RunLaunchFailed": "run",
+    "RunTerminal": "run",
+    "RunResultFinalized": "run",
+    "RunAttentionAcknowledged": "run",
+    "ResourceRegistered": "resource",
+    "ResourceAllocationCreated": "resource_allocation",
+    "ResourceAllocationLinked": "resource_allocation",
+    "ResourceAllocationReleased": "resource_allocation",
+    "LearningRecorded": "learning",
+    "RulePromoted": "rule",
+    "RuleRetired": "rule"
+  },
+  "aggregate_schemas": {
+    "project": {
+      "required": ["id", "level", "parents", "version", "status", "spec", "source"],
+      "properties": {
+        "id": {"type": "string"},
+        "level": {"type": "string", "const": "project"},
+        "parents": {"type": "array"},
+        "version": {"type": "integer"},
+        "status": {"type": "string", "enum": "scope_status"},
+        "spec": {"type": "object"},
+        "source": {"type": "string"}
+      }
+    },
+    "direction": {
+      "required": ["id", "level", "parents", "version", "status", "spec", "source"],
+      "properties": {
+        "id": {"type": "string"},
+        "level": {"type": "string", "const": "direction"},
+        "parents": {"type": "array"},
+        "version": {"type": "integer"},
+        "status": {"type": "string", "enum": "scope_status"},
+        "spec": {"type": "object"},
+        "source": {"type": "string"}
+      }
+    },
+    "package": {
+      "required": [
+        "id",
+        "direction_id",
+        "sourceVersion",
+        "sourceChange",
+        "sourceExperiments",
+        "lifecycle",
+        "phase",
+        "blocker"
+      ],
+      "properties": {
+        "id": {"type": "string"},
+        "direction_id": {"type": "string"},
+        "sourceVersion": {"type": "integer"},
+        "sourceChange": {"type": "string"},
+        "sourceExperiments": {"type": "array"},
+        "lifecycle": {"type": "string", "enum": "package_lifecycle"},
+        "phase": {"type": ["string", "null"], "enum": "package_phase"},
+        "blocker": {"type": ["object", "null"]}
+      }
+    },
+    "experiment": {
+      "required": [
+        "id",
+        "direction_id",
+        "package_id",
+        "spec",
+        "status",
+        "scope_status",
+        "scope_confirmation",
+        "scope_version",
+        "scope_source",
+        "confirmed_direction_version"
+      ],
+      "properties": {
+        "id": {"type": "string"},
+        "local_id": {"type": "string"},
+        "package_id": {"type": ["string", "null"]},
+        "direction_id": {"type": "string"},
+        "spec": {"type": "object"},
+        "status": {"type": "string", "enum": "experiment_status"},
+        "scope_status": {"type": "string", "enum": "scope_status"},
+        "scope_confirmation": {"type": "string", "enum": "scope_confirmation"},
+        "scope_version": {"type": "integer"},
+        "scope_source": {"type": "string"},
+        "confirmed_direction_version": {"type": "integer"},
+        "stale_direction_version": {"type": "integer"},
+        "status_before_scope_stale": {"type": "string", "enum": "experiment_status"}
+      }
+    },
+    "run": {
+      "required": ["id", "package_id", "experiment_id", "status"],
+      "properties": {
+        "id": {"type": "string"},
+        "package_id": {"type": "string"},
+        "experiment_id": {"type": "string"},
+        "status": {"type": "string", "enum": "run_status"},
+        "authorization_lease_seconds": {"type": "integer"},
+        "result_finalized_event_id": {"type": "string"},
+        "latest_scientific_result": {"type": "object"}
+      }
+    },
+    "change": {
+      "required": [
+        "id",
+        "package_id",
+        "owned_files",
+        "review",
+        "validating_experiments"
+      ],
+      "properties": {
+        "id": {"type": "string"},
+        "package_id": {"type": "string"},
+        "owned_files": {"type": "array"},
+        "review": {"type": "object"},
+        "validating_experiments": {"type": "array"}
+      }
+    },
+    "decision": {
+      "required": ["id", "actor", "evidence"],
+      "properties": {
+        "id": {"type": "string"},
+        "actor": {"type": "object"},
+        "route": {"type": "string", "enum": "decision_route"},
+        "evidence": {"type": "array"}
+      }
+    },
+    "learning": {
+      "required": ["id", "evidence"],
+      "properties": {
+        "id": {"type": "string"},
+        "evidence": {"type": "array"}
+      }
+    },
+    "rule": {
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string"},
+        "status": {"type": "string", "enum": "rule_status"},
+        "level": {"type": "string", "enum": "rule_level"},
+        "kind": {"type": "string", "enum": "rule_kind"}
+      }
+    },
+    "proposal": {
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string"},
+        "disposition": {"type": "string", "enum": "proposal_disposition"}
+      }
+    },
+    "brainstorm": {
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string"},
+        "status": {"type": "string"}
+      }
+    },
+    "campaign": {
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string"},
+        "status": {"type": "string", "enum": "campaign_status"},
+        "route": {"type": "string", "enum": "campaign_route"}
+      }
+    },
+    "resource": {
+      "required": ["id"],
+      "properties": {
+        "id": {"type": "string"},
+        "status": {"type": "string", "enum": "resource_status"}
+      }
+    },
+    "resource_allocation": {
+      "required": ["id", "alloc_id", "server", "gpu_count", "status"],
+      "properties": {
+        "id": {"type": "string"},
+        "alloc_id": {"type": "string"},
+        "server": {"type": "string"},
+        "gpu_count": {"type": "integer"},
+        "status": {"type": "string", "enum": "resource_allocation_status"}
+      }
+    },
+    "paper": {
+      "required": ["id"],
+      "properties": {"id": {"type": "string"}}
+    },
+    "knowledge_edge": {
+      "required": ["id", "from", "to", "type"],
+      "properties": {
+        "id": {"type": "string"},
+        "from": {"type": "string"},
+        "to": {"type": "string"},
+        "type": {"type": "string", "enum": "knowledge_edge_type"}
+      }
+    },
+    "knowledge_gap": {
+      "required": ["id"],
+      "properties": {"id": {"type": "string"}}
+    }
+  },
+  "aggregate_constraints": {
+    "rule_kind_by_level": {
+      "project": "constraint",
+      "package": "binding"
+    }
+  },
+  "enums": {
+    "package_lifecycle": [
+      "ACTIVE",
+      "ADOPTED_UNCONFIRMED",
+      "ADOPTED",
+      "SUPERSEDED",
+      "ARCHIVED",
+      "ARCHIVED_CONDITIONAL",
+      "STOPPED"
+    ],
+    "package_phase": [
+      "CONTEXT_LOADED",
+      "IMPLEMENTING",
+      "IMPLEMENTATION_REVIEW",
+      "READY_TO_LAUNCH",
+      "EXPERIMENT_RUNNING",
+      "LIVE_ANALYSIS",
+      "RESULT_ANALYSIS",
+      "NEXT_ACTION_READY",
+      "DECISION_ADJUDICATION"
+    ],
+    "package_category_compat": [
+      "in-progress",
+      "success",
+      "fail"
+    ],
+    "package_status_compat": [
+      "CONTEXT_LOADED",
+      "IMPLEMENTING",
+      "IMPLEMENTATION_REVIEW",
+      "READY_TO_LAUNCH",
+      "EXPERIMENT_RUNNING",
+      "LIVE_ANALYSIS",
+      "RESULT_ANALYSIS",
+      "NEXT_ACTION_READY",
+      "DECISION_ADJUDICATION",
+      "BLOCKED",
+      "STOPPED",
+      "ADOPTED_UNCONFIRMED",
+      "ADOPTED",
+      "WIN_SUPERSEDED",
+      "ARCHIVED",
+      "ARCHIVED_CONDITIONAL"
+    ],
+    "experiment_status": [
+      "PLANNED",
+      "READY",
+      "ACTIVE",
+      "COMPLETE",
+      "FAILED",
+      "BLOCKED",
+      "SKIPPED"
+    ],
+    "run_status": [
+      "QUEUED",
+      "RUNNING",
+      "STALE",
+      "COMPLETED",
+      "FAILED",
+      "HALTED",
+      "SKIPPED"
+    ],
+    "run_status_compat": [
+      "QUEUED",
+      "RUNNING",
+      "STALE",
+      "COMPLETED",
+      "RUN_FAILED",
+      "RUN_HALTED",
+      "SKIPPED"
+    ],
+    "rule_status": [
+      "ACTIVE",
+      "RETIRED",
+      "PROMOTED"
+    ],
+    "rule_level": [
+      "universal",
+      "project",
+      "package"
+    ],
+    "rule_kind": [
+      "form",
+      "trust",
+      "constraint",
+      "binding"
+    ],
+    "scope_kind": [
+      "project",
+      "direction",
+      "experiment"
+    ],
+    "scope_kind_compat": [
+      "project",
+      "direction",
+      "task"
+    ],
+    "scope_status": [
+      "ACTIVE",
+      "SUPERSEDED",
+      "ARCHIVED"
+    ],
+    "scope_confirmation": [
+      "CONFIRMED",
+      "STALE"
+    ],
+    "scope_operation": [
+      "create",
+      "revise",
+      "supersede",
+      "reopen",
+      "archive"
+    ],
+    "scope_gate": [
+      "USER_ONLY",
+      "USER_CROSS_MODEL_AUDIT",
+      "AGENT_DEFERRED_ACK"
+    ],
+    "control_mode": [
+      "SUPERVISED",
+      "CHECKPOINTED",
+      "DEFERRED",
+      "AUTONOMOUS"
+    ],
+    "proposal_disposition": [
+      "PENDING",
+      "ACCEPTED",
+      "REJECTED"
+    ],
+    "campaign_status": [
+      "IDLE",
+      "RUNNING",
+      "AWAITING_RATIFICATION",
+      "SUCCEEDED",
+      "HALTED_BUDGET",
+      "HALTED_NO_CANDIDATE",
+      "BLOCKED"
+    ],
+    "campaign_route": [
+      "FORM_DIRECTION",
+      "AWAIT_RATIFICATION",
+      "MATERIALIZE_PACKAGE",
+      "DESIGN_EXPERIMENT",
+      "RUN_PACKAGE",
+      "SUCCESS_EXIT",
+      "HALT_BUDGET",
+      "HALT_NO_CANDIDATE",
+      "ASK_USER"
+    ],
+    "autonomy_mode": [
+      "SUPERVISED",
+      "CHECKPOINTED",
+      "DEFERRED",
+      "AUTONOMOUS"
+    ],
+    "live_action": [
+      "CONTINUE_RUN",
+      "EARLY_STOP",
+      "REPAIR",
+      "ASK_USER",
+      "ESCALATE"
+    ],
+    "decision_route": [
+      "RUN_NEXT_EXPERIMENT",
+      "FIX_IMPLEMENTATION",
+      "REVISE_PLAN",
+      "TERMINATE",
+      "ASK_USER"
+    ],
+    "result_verdict": [
+      "PASS",
+      "FAIL",
+      "INCONCLUSIVE",
+      "DIAGNOSTIC"
+    ],
+    "result_validity": [
+      "VALID",
+      "PARTIAL",
+      "RESULT_FAIL",
+      "UNMEASURED",
+      "DIAGNOSTIC_ONLY",
+      "MISSING"
+    ],
+    "evidence_kind": [
+      "FILE",
+      "LOG_RANGE",
+      "METRIC",
+      "TABLE_CELL",
+      "CHECKPOINT",
+      "EXTERNAL_URI",
+      "NOTE"
+    ],
+    "resource_status": [
+      "ACTIVE",
+      "DISABLED"
+    ],
+    "resource_allocation_status": [
+      "OPEN",
+      "RELEASED"
+    ],
+    "knowledge_edge_type": [
+      "EXTENDS",
+      "CONTRADICTS",
+      "ADDRESSES_GAP",
+      "INVALIDATES"
+    ]
+  },
+  "status_groups": {
+    "run": {
+      "active": ["QUEUED", "RUNNING", "STALE"],
+      "terminal": ["COMPLETED", "FAILED", "HALTED", "SKIPPED"]
+    }
+  },
+  "scope": {
+    "required_node_fields": [
+      "id",
+      "level",
+      "parents",
+      "version",
+      "status",
+      "spec",
+      "source"
+    ],
+    "reading_fields": [
+      "measured",
+      "result",
+      "verdict",
+      "metric_value",
+      "current_best",
+      "primaryMetricVsGate",
+      "methodsTried"
+    ],
+    "required_gate": {
+      "project": "USER_ONLY",
+      "direction": "USER_CROSS_MODEL_AUDIT",
+      "experiment": "AGENT_DEFERRED_ACK"
+    },
+    "specs": {
+      "project": {
+        "fields": {
+          "goal": {"kind": "scalar_text", "min_words": 3, "max_words": 100},
+          "contributions": {"kind": "list_text", "min_words": 5, "max_words": 50},
+          "out_of_scope": {"kind": "list_text", "min_words": 5, "max_words": 50}
+        }
+      },
+      "direction": {
+        "fields": {
+          "hypothesis": {"kind": "scalar_text", "min_words": 20, "max_words": 100},
+          "metric": {"kind": "metric", "min_words": 20, "max_words": 100},
+          "baselines": {"kind": "list_text", "min_words": 5, "max_words": 50},
+          "success_gate": {"kind": "scalar_text", "min_words": 20, "max_words": 100}
+        }
+      },
+      "experiment": {
+        "fields": {
+          "purpose": {"kind": "scalar_text", "min_words": 20, "max_words": 100},
+          "config_ref": {"kind": "reference"},
+          "gate": {"kind": "scalar_text", "min_words": 20, "max_words": 100},
+          "control_mode": {"kind": "enum", "enum": "control_mode"}
+        }
+      }
+    }
+  },
+  "compatibility": {
+    "run_status": {
+      "RUN_FAILED": "FAILED",
+      "RUN_HALTED": "HALTED"
+    },
+    "experiment_status": {
+      "pending": "PLANNED",
+      "queued": "READY",
+      "running": "ACTIVE",
+      "completed": "COMPLETE",
+      "failed": "FAILED",
+      "blocked": "BLOCKED",
+      "skipped": "SKIPPED",
+      "NOT_STARTED": "PLANNED",
+      "QUEUED": "READY",
+      "RUNNING": "ACTIVE",
+      "COMPLETED": "COMPLETE"
+    },
+    "package_terminal_status": {
+      "ADOPTED_UNCONFIRMED": "ADOPTED_UNCONFIRMED",
+      "ADOPTED": "ADOPTED",
+      "WIN_SUPERSEDED": "SUPERSEDED",
+      "ARCHIVED": "ARCHIVED",
+      "ARCHIVED_CONDITIONAL": "ARCHIVED_CONDITIONAL",
+      "STOPPED": "STOPPED"
+    }
+  },
+  "transitions": {
+    "package_phase": {
+      "CONTEXT_LOADED": [
+        "IMPLEMENTING",
+        "READY_TO_LAUNCH"
+      ],
+      "IMPLEMENTING": [
+        "IMPLEMENTATION_REVIEW"
+      ],
+      "IMPLEMENTATION_REVIEW": [
+        "IMPLEMENTING",
+        "DECISION_ADJUDICATION",
+        "READY_TO_LAUNCH"
+      ],
+      "DECISION_ADJUDICATION": [
+        "IMPLEMENTING",
+        "IMPLEMENTATION_REVIEW",
+        "READY_TO_LAUNCH"
+      ],
+      "READY_TO_LAUNCH": [
+        "EXPERIMENT_RUNNING"
+      ],
+      "EXPERIMENT_RUNNING": [
+        "LIVE_ANALYSIS"
+      ],
+      "LIVE_ANALYSIS": [
+        "EXPERIMENT_RUNNING",
+        "RESULT_ANALYSIS",
+        "IMPLEMENTING"
+      ],
+      "RESULT_ANALYSIS": [
+        "NEXT_ACTION_READY"
+      ],
+      "NEXT_ACTION_READY": [
+        "READY_TO_LAUNCH",
+        "IMPLEMENTING"
+      ]
+    }
+  }
+}

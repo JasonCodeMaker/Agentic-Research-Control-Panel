@@ -81,6 +81,18 @@
     });
   }
 
+  function experimentDisplayId(exp) {
+    if (!exp) return "unmeasured";
+    return String(exp.localId || exp.local_id || exp.id || "unmeasured");
+  }
+
+  function experimentReferenceLabel(experiments, reference) {
+    var match = (experiments || []).find(function (exp) {
+      return exp && exp.id === reference;
+    });
+    return match ? experimentDisplayId(match) : String(reference);
+  }
+
   function tagRoleForCategory(category) {
     return tagRoles()[normalizeCategory(category)] || {
       role: "unknown",
@@ -341,14 +353,14 @@
     var nodes = ids.map(function (id) { return projection[id]; }).filter(Boolean);
     var projects = nodes.filter(function (node) { return node.level === "project"; });
     var directions = nodes.filter(function (node) { return node.level === "direction" && node.status === "ACTIVE"; });
-    var tasks = nodes.filter(function (node) { return node.level === "task" && node.status === "ACTIVE"; });
+    var experiments = nodes.filter(function (node) { return node.level === "experiment" && node.status === "ACTIVE"; });
     var projectHtml = projects.length
       ? projects.map(scopeProjectHtml).join("")
       : '<article class="scope-node scope-node-project"><h3>Project</h3><p class="card-text">No Project node found.</p></article>';
     var directionHtml = directions.length
       ? directions.map(function (direction) {
-        var children = tasks.filter(function (task) {
-          return (task.parents || []).indexOf(direction.id) >= 0;
+        var children = experiments.filter(function (experiment) {
+          return (experiment.parents || []).indexOf(direction.id) >= 0;
         });
         return scopeDirectionHtml(direction, children);
       }).join("")
@@ -399,7 +411,7 @@
     var spec = scopeSpec(node);
     var metric = typeof spec.metric === "object" ? (spec.metric.name || JSON.stringify(spec.metric)) : spec.metric;
     var childHtml = children.length
-      ? children.map(scopeTaskHtml).join("")
+      ? children.map(scopeExperimentHtml).join("")
       : '<li class="scope-task-empty">No accepted validation Milestones under this Direction.</li>';
     return [
       '<article class="scope-node scope-node-direction" data-scope-node="' + htmlEscape(node.id) + '">',
@@ -418,13 +430,13 @@
     ].join("");
   }
 
-  function scopeTaskHtml(node) {
+  function scopeExperimentHtml(node) {
     var spec = scopeSpec(node);
     return [
       '<li class="scope-task" data-scope-node="' + htmlEscape(node.id) + '">',
       '<code>' + htmlEscape(node.id) + "</code>",
-      '<p class="card-text"><b>Experiment:</b> ' + htmlEscape(spec.experiment || "not declared") + "</p>",
-      '<p class="card-text"><b>Config:</b> ' + htmlEscape(spec.config || "not declared") + "</p>",
+      '<p class="card-text"><b>Experiment:</b> ' + htmlEscape(spec.purpose || "not declared") + "</p>",
+      '<p class="card-text"><b>Config:</b> ' + htmlEscape(spec.config_ref || "not declared") + "</p>",
       '<p class="card-text"><b>Control mode:</b> ' + htmlEscape(spec.control_mode || "not declared") + "</p>",
       '<p class="card-text"><b>Gate:</b> ' + htmlEscape(spec.gate || "not declared") + "</p>",
       "</li>",
@@ -927,9 +939,9 @@
       '<div class="artifact-list">',
       '<div class="artifact-row"><div class="kind">source package</div><code data-artifact="source-package">' + htmlEscape(pkg.sourcePath) + "</code></div>",
       '<div class="artifact-row"><div class="kind">artifact root</div><code data-artifact="artifact-root">' + htmlEscape(pkg.runtime) + "</code></div>",
-      '<div class="artifact-row"><div class="kind">html package</div><code data-artifact="html-package">research_html/' + htmlEscape(pkg.detailPath) + "</code></div>",
-      '<div class="artifact-row"><div class="kind">docs folder</div><code data-artifact="html-docs">' + htmlEscape("research_html/" + pkg.detailPath + "docs/") + "</code></div>",
-      '<div class="artifact-row"><div class="kind">continuity file</div><code data-artifact="continuity-file">' + htmlEscape("research_html/" + pkg.detailPath + "_agent/context.html") + "</code></div>",
+      '<div class="artifact-row"><div class="kind">html package</div><code data-artifact="html-package">.research/interface/' + htmlEscape(pkg.detailPath) + "</code></div>",
+      '<div class="artifact-row"><div class="kind">docs folder</div><code data-artifact="html-docs">' + htmlEscape(".research/interface/" + pkg.detailPath + "docs/") + "</code></div>",
+      '<div class="artifact-row"><div class="kind">continuity file</div><code data-artifact="continuity-file">' + htmlEscape(".research/interface/" + pkg.detailPath + "_agent/context.html") + "</code></div>",
       "</div>",
       "</article>",
       '<article class="module-card" id="overview-continuity" data-card="continuity-verification">',
@@ -956,11 +968,11 @@
   }
 
   function scopeProvenanceCard(pkg) {
-    var tasks = (pkg.sourceTasks || []).map(function (item) {
+    var experiments = (pkg.sourceExperiments || []).map(function (item) {
       var parts = [];
       if (item.id) parts.push(item.id);
-      if (item.scopeVersion != null) parts.push("v" + item.scopeVersion);
-      if (item.txn) parts.push(item.txn);
+      if (item.version != null) parts.push("v" + item.version);
+      if (item.source) parts.push(item.source);
       return parts.join(" / ");
     }).filter(Boolean);
     var rows = [
@@ -968,8 +980,8 @@
       '<div class="k">Direction</div><div><code>' + htmlEscape(pkg.sourceDirection || "unmeasured") + "</code></div>",
       '<div class="k">Version</div><div>' + htmlEscape(pkg.sourceVersion || "unmeasured") + "</div>",
       '<div class="k">Change</div><div><code>' + htmlEscape(pkg.sourceChange || "unmeasured") + "</code></div>",
-      '<div class="k">Tasks</div><div>' + (tasks.length
-        ? '<ul class="scope-list">' + tasks.map(function (t) { return "<li>" + htmlEscape(t) + "</li>"; }).join("") + "</ul>"
+      '<div class="k">Tasks</div><div>' + (experiments.length
+        ? '<ul class="scope-list">' + experiments.map(function (item) { return "<li>" + htmlEscape(item) + "</li>"; }).join("") + "</ul>"
         : '<span class="unmeasured">No sourceTasks recorded.</span>') + "</div>",
     ];
     return [
@@ -1078,11 +1090,11 @@
       '<section class="module" data-module="tracker">',
       '<div class="module-header"><span class="idx">01</span><h2>Tracker Cards</h2></div>',
       '<div class="subcard-grid">',
-      '<article class="module-card" data-card="resume-block"><h3>Resume Block</h3><div class="kv-grid"><div class="k">Current State</div><div data-workflow-state>CONTEXT_LOADED | IMPLEMENTING | READY_TO_LAUNCH | EXPERIMENT_RUNNING | RESULT_ANALYSIS | BLOCKED | STOPPED</div><div class="k">Active Plan</div><div data-field="active-plan">Plan section, spec section, or experiment name.</div><div class="k">Last Action</div><div data-field="last-action">Timestamp plus command, edit, or observation.</div><div class="k">Next Action</div><div data-next-action>Single concrete next step.</div><div class="k">Artifact Root</div><code data-artifact="artifact-root">artifacts/research/...</code><div class="k">Open Runs</div><div data-field="open-runs">session/job ids or none.</div><div class="k">Blocking Issue</div><div data-field="blocking-issue">none or concrete blocker.</div></div></article>',
+      '<article class="module-card" data-card="resume-block"><h3>Resume Block</h3><div class="kv-grid"><div class="k">Current State</div><div data-workflow-state>CONTEXT_LOADED | IMPLEMENTING | READY_TO_LAUNCH | EXPERIMENT_RUNNING | RESULT_ANALYSIS | BLOCKED | STOPPED</div><div class="k">Active Plan</div><div data-field="active-plan">Plan section, spec section, or experiment name.</div><div class="k">Last Action</div><div data-field="last-action">Timestamp plus command, edit, or observation.</div><div class="k">Next Action</div><div data-next-action>Single concrete next step.</div><div class="k">Artifact Root</div><code data-artifact="artifact-root">.research/experiments/&lt;package&gt;/&lt;experiment&gt;/&lt;run&gt;/</code><div class="k">Open Runs</div><div data-field="open-runs">session/job ids or none.</div><div class="k">Blocking Issue</div><div data-field="blocking-issue">none or concrete blocker.</div></div></article>',
       '<article class="module-card" data-card="implementation-review"><h3>Implementation Review</h3><table class="data-table" data-table="implementation-review"><thead><tr><th>Change ID</th><th>Purpose</th><th>Unit</th><th>Owned Files</th><th>Reviewer Verdict</th><th>Finding Class</th><th>Required Fix</th><th>Main Decision</th><th>Validation</th></tr></thead><tbody><tr><td>change_id</td><td>purpose</td><td>unit</td><td>files</td><td>REVIEW_PASS|NEEDS_FIX|REVIEW_BLOCKED</td><td>BLOCKING|NON_BLOCKING|QUESTION|INVALID_FINDING</td><td>fix</td><td data-decision>Decision / Evidence Used</td><td>checks</td></tr></tbody></table></article>',
       '<article class="module-card" data-card="resource-allocation"><h3>Resource Allocation</h3><table class="data-table" data-table="resource-allocation"><thead><tr><th>Exp ID</th><th>Purpose</th><th>Dependency</th><th>Target</th><th>Capacity</th><th>Command/CWD/Env</th><th>Session/Job</th><th>Artifact Root</th><th>Log Path</th><th>Status</th></tr></thead><tbody><tr><td>exp_id</td><td>purpose</td><td>dependency</td><td>resource/job</td><td>live snapshot</td><td><code class="command">command</code></td><td>session</td><td>artifact root</td><td>log</td><td>QUEUED|RUNNING|COMPLETED|RUN_FAILED|RUN_HALTED</td></tr></tbody></table></article>',
       '<article class="module-card" data-card="latest-live-check"><h3>Latest Live Check</h3><table class="data-table" data-table="live-check"><thead><tr><th>Time</th><th>Exp ID</th><th>Run State</th><th>Progress</th><th>Latest Metrics</th><th>Resource Use</th><th>Artifact Status</th><th>ETA</th><th>Live Action</th><th>Next Check</th></tr></thead><tbody><tr><td>time</td><td>exp_id</td><td>RUNNING|STALE|COMPLETED</td><td>phase/epoch</td><td>objective metric only</td><td>resource/job</td><td>ok|missing</td><td>eta</td><td>CONTINUE_RUN|REPAIR|ASK_USER|ESCALATE</td><td>time</td></tr></tbody></table><p>Keep only the latest live check here. Detailed logs belong in artifacts.</p></article>',
-      '<article class="module-card" data-card="launch-command"><h3>Launch Command Template</h3><pre class="code-box"><code id="tracker-launch-command" class="command">run-experiment-command --config configs/experiment.yaml --output artifacts/research/...</code></pre><button class="copy-button" type="button" data-copy-target="#tracker-launch-command">Copy Command</button></article>',
+      '<article class="module-card" data-card="launch-command"><h3>Launch Command Template</h3><pre class="code-box"><code id="tracker-launch-command" class="command">run-experiment-command --config configs/experiment.yaml --output .research/experiments/&lt;package&gt;/&lt;experiment&gt;/&lt;run&gt;/files/</code></pre><button class="copy-button" type="button" data-copy-target="#tracker-launch-command">Copy Command</button></article>',
       '<article class="module-card" data-card="decision-log"><h3>Concise Decision</h3><p data-decision>Decision: route or judgment. Evidence Used: files, artifacts, runtime facts, or subagent reports.</p></article>',
       "</div>",
       "</section>",
@@ -1096,7 +1108,7 @@
       '<div class="subcard-grid">',
       '<article class="module-card exp-card" data-exp-id="template"><h3>Exp_Name (date)</h3><div class="metric-strip"><div class="metric-card"><div class="k">Validity</div><div class="v" data-field="validity">--</div></div><div class="metric-card"><div class="k">Primary</div><div class="v" data-metric="primary">--</div></div><div class="metric-card"><div class="k">Budget</div><div class="v" data-metric="budget">--</div></div><div class="metric-card"><div class="k">Verdict</div><div class="v" data-decision>--</div></div></div></article>',
       '<article class="module-card" data-card="result-gate"><h3>Result Gate</h3><table class="data-table" data-table="result-gate"><thead><tr><th>Exp ID</th><th>Validity</th><th>Baseline</th><th>PLAN Gate</th><th>Observed Metric</th><th>Budget/Resource Use</th><th>Seed Status</th><th>Artifact Completeness</th><th>Verdict</th><th>Reason</th></tr></thead><tbody><tr><td>exp_id</td><td>VALID|PARTIAL|RESULT_FAIL</td><td>baseline</td><td>gate</td><td>metric</td><td>budget</td><td>seed</td><td>artifacts</td><td data-decision>PASS|FAIL|INCONCLUSIVE|DIAGNOSTIC</td><td>reason</td></tr></tbody></table></article>',
-      '<article class="module-card" data-card="artifact-verification"><h3>Artifact Verification</h3><div class="artifact-list"><div class="artifact-row"><div class="kind">primary artifact</div><code data-artifact="primary-artifact">artifacts/research/.../primary_output</code></div><div class="artifact-row"><div class="kind">log</div><code data-artifact="log">artifacts/research/.../logs/run.log</code></div><div class="artifact-row"><div class="kind">summary</div><code data-artifact="summary">artifacts/research/.../summaries/result.json</code></div></div><p>Before recording numbers, verify artifacts exist, match the experiment id/config, and were modified after launch.</p></article>',
+      '<article class="module-card" data-card="artifact-verification"><h3>Artifact Verification</h3><div class="artifact-list"><div class="artifact-row"><div class="kind">primary artifact</div><code data-artifact="primary-artifact">.research/experiments/&lt;package&gt;/&lt;experiment&gt;/&lt;run&gt;/files/primary_output</code></div><div class="artifact-row"><div class="kind">log</div><code data-artifact="log">.research/experiments/&lt;package&gt;/&lt;experiment&gt;/&lt;run&gt;/log.txt</code></div><div class="artifact-row"><div class="kind">summary</div><code data-artifact="summary">.research/experiments/&lt;package&gt;/&lt;experiment&gt;/&lt;run&gt;/result.json</code></div></div><p>Before recording numbers, verify artifacts exist, match the experiment id/config, and were modified after launch.</p></article>',
       '<article class="module-card" data-card="analysis"><h3>Supported Claims</h3><p data-field="analysis">Concise interpretation tied to PLAN objective, gates, baseline, budget, seed status, and artifact completeness.</p></article>',
       '<article class="module-card" data-card="unsupported-claims"><h3>Unsupported Claims</h3><p data-field="unsupported-claims">List claims this result does not support, including metric, seed, budget, route, or rerank limitations.</p></article>',
       '<article class="module-card" data-card="next-action"><h3>Step 7 Next Action</h3><div class="kv-grid"><div class="k">Route</div><div data-route>RUN_NEXT_EXPERIMENT | FIX_IMPLEMENTATION | REVISE_PLAN | TERMINATE | ASK_USER</div><div class="k">Reason</div><div data-field="next-action-reason">Apply PLAN gates to verified evidence.</div><div class="k">Decision</div><div data-decision>Decision / Evidence Used</div></div></article>',
@@ -1111,7 +1123,7 @@
       '<div class="module-header"><span class="idx">01</span><h2>Docs</h2></div>',
       '<div class="notice">Docs are the Context Dossier for the user and Codex. They should resolve ambiguity before implementation, launch, review, monitoring, or result analysis.</div>',
       '<div class="subcard-grid">',
-      '<article class="module-card" data-doc-card="source-index"><h3>Source Index</h3><div class="artifact-list"><div class="artifact-row"><div class="kind">old source root</div><code data-artifact="old-docs-root">' + htmlEscape(pkg.sourcePath) + 'docs/</code></div><div class="artifact-row"><div class="kind">html docs folder</div><code data-artifact="html-docs">research_html/' + htmlEscape(pkg.detailPath) + 'docs/</code></div><div class="artifact-row"><div class="kind">continuity file</div><code data-artifact="continuity-file">research_html/' + htmlEscape(pkg.detailPath) + '_agent/context.html</code></div></div></article>',
+      '<article class="module-card" data-doc-card="source-index"><h3>Source Index</h3><div class="artifact-list"><div class="artifact-row"><div class="kind">old source root</div><code data-artifact="old-docs-root">' + htmlEscape(pkg.sourcePath) + 'docs/</code></div><div class="artifact-row"><div class="kind">html docs folder</div><code data-artifact="html-docs">.research/interface/' + htmlEscape(pkg.detailPath) + 'docs/</code></div><div class="artifact-row"><div class="kind">continuity file</div><code data-artifact="continuity-file">.research/interface/' + htmlEscape(pkg.detailPath) + '_agent/context.html</code></div></div></article>',
       '<article class="module-card" data-doc-card="context-dossier"><h3>Context Dossier</h3><ul><li>Invocation and active objective.</li><li>Plan/spec clauses, gates, budgets, commands, and no-change boundaries.</li><li>Prior Tracker and Results facts.</li><li>Verified code anchors, artifact roots, and validation checks.</li><li>Known ambiguities and assumptions that must not be invented.</li></ul></article>',
       '<article class="module-card" data-doc-card="method-design"><h3>Method Design</h3><p data-field="source-summary">Explain the method, model, training, data, or evaluation change; compatibility constraints; code anchors; and why it sharpens the project objective.</p></article>',
       '<article class="module-card" data-doc-card="contracts"><h3>Metric, Dataset, Runtime Contracts</h3><p data-field="source-summary">Define primary metrics, diagnostic metrics, baselines, budgets, dataset splits, feature roots, launch environment, and artifact paths.</p></article>',
@@ -1251,7 +1263,8 @@
       return;
     }
     host.innerHTML = items.map(function (e) {
-      var id = e && e.id ? String(e.id) : "unmeasured";
+      var internalId = e && e.id ? String(e.id) : "unmeasured";
+      var id = experimentDisplayId(e);
       var label = e && e.label ? String(e.label) : "";
       var status = e && e.status ? String(e.status) : "QUEUED";
       var run = e && e.runLink ? String(e.runLink) : "tracker.html#resource-allocation";
@@ -1420,7 +1433,7 @@
     if (!directionId) return "Legacy package. No Scope binding recorded.";
     var projection = scopeProjection() || {};
     var direction = projection[directionId];
-    var tasks = (pkg.sourceTasks || []).map(function (item) {
+    var experiments = (pkg.sourceExperiments || []).map(function (item) {
       return item && item.id ? item.id : String(item || "");
     }).filter(Boolean);
     if (!direction) {
@@ -1437,8 +1450,8 @@
     if (declared || version) {
       pieces.push("version " + htmlEscape(declared || "unmeasured") + " / current " + htmlEscape(version || "unmeasured"));
     }
-    if (tasks.length) {
-      pieces.push("tasks " + tasks.map(function (task) { return "<code>" + htmlEscape(task) + "</code>"; }).join(", "));
+    if (experiments.length) {
+      pieces.push("tasks " + experiments.map(function (experiment) { return "<code>" + htmlEscape(experiment) + "</code>"; }).join(", "));
     }
     if (stale || status !== "ACTIVE") {
       pieces.push("requires Scope check before reuse");
@@ -1770,7 +1783,7 @@
     if (!Array.isArray(exps) || !exps.length) return { nextEligible: null, runningNow: null };
     var byId = {};
     exps.forEach(function (e) { if (e && e.id) byId[e.id] = e; });
-    var running = exps.filter(function (e) { return e && e.status === "RUNNING"; }).map(function (e) { return e.id; });
+    var running = exps.filter(function (e) { return e && e.status === "RUNNING"; }).map(experimentDisplayId);
     var next = null;
     for (var i = 0; i < exps.length; i++) {
       var e = exps[i];
@@ -1780,7 +1793,7 @@
         var dep = byId[d];
         return dep && (dep.status === "COMPLETED" || dep.status === "SKIPPED");
       });
-      if (depsDone) { next = e.id; break; }
+      if (depsDone) { next = experimentDisplayId(e); break; }
     }
     return { nextEligible: next, runningNow: running.length ? running.join(", ") : null };
   }
@@ -1801,7 +1814,8 @@
       return;
     }
     host.innerHTML = exps.map(function (e) {
-      var id = e && e.id ? String(e.id) : "unmeasured";
+      var internalId = e && e.id ? String(e.id) : "unmeasured";
+      var id = experimentDisplayId(e);
       var label = e && e.label ? String(e.label) : "";
       var status = e && e.status ? String(e.status) : "QUEUED";
       var purpose = e && e.purpose ? String(e.purpose) : "unmeasured";
@@ -1832,7 +1846,7 @@
         "</div>",
         '<dl class="pipeline-node-fields">',
         '<dt>Purpose</dt><dd>' + htmlEscape(purpose) + "</dd>",
-        '<dt>After</dt><dd>' + (after.length ? after.map(htmlEscape).join(", ") : "<em>none</em>") + "</dd>",
+        '<dt>After</dt><dd>' + (after.length ? after.map(function (ref) { return htmlEscape(experimentReferenceLabel(exps, ref)); }).join(", ") : "<em>none</em>") + "</dd>",
         '<dt>Output</dt><dd><code>' + htmlEscape(output) + "</code></dd>",
         '<dt>Gate</dt><dd>' + htmlEscape(gate) + "</dd>",
         "</dl>",
@@ -1862,9 +1876,10 @@
       });
     });
     host.innerHTML = exps.map(function (e) {
-      var id = e && e.id ? String(e.id) : "unmeasured";
+      var internalId = e && e.id ? String(e.id) : "unmeasured";
+      var id = experimentDisplayId(e);
       var status = e && e.status ? String(e.status) : "QUEUED";
-      var nums = byPhase[id] || [];
+      var nums = byPhase[internalId] || byPhase[id] || [];
       var reuse = nums.length === 0 ? "true" : "false";
       var nlabel = nums.length ? nums.join("+") : "&mdash;";
       return [
@@ -1936,6 +1951,25 @@
     if (!host) return;
     var pkg = currentPackage();
     var changes = pkg && pkg.implementation && Array.isArray(pkg.implementation.changes) ? pkg.implementation.changes : [];
+    var owned = [];
+    changes.forEach(function (change) {
+      var anchors = Array.isArray(change && change.codeAnchors) ? change.codeAnchors : [];
+      anchors.forEach(function (anchor) {
+        anchor = String(anchor || "");
+        if (anchor && owned.indexOf(anchor) === -1) owned.push(anchor);
+      });
+    });
+    var ownedHost = document.querySelector('[data-field="owned-files-list"]');
+    if (ownedHost && owned.length) {
+      ownedHost.innerHTML = owned.map(function (path) {
+        return "<li><code>" + htmlEscape(path) + "</code></li>";
+      }).join("");
+    }
+    var diffSummary = document.querySelector('[data-field="diff-summary"]');
+    if (diffSummary && changes.length) {
+      diffSummary.textContent = changes.length + " governed change(s), " +
+        owned.length + " owned file(s).";
+    }
     if (!changes.length) return;
     var h2 = host.querySelector("h2.section-h2");
     host.innerHTML = (h2 ? h2.outerHTML : "<h2 class=\"section-h2\">Change blocks</h2>") + changes.map(function (c, i) {
@@ -2108,6 +2142,118 @@
     }
   }
 
+  function displayValue(value) {
+    if (value == null || value === "") return "unmeasured";
+    if (typeof value === "object") {
+      try { return JSON.stringify(value); } catch (_err) { return String(value); }
+    }
+    return String(value);
+  }
+
+  function renderAcknowledgementSlots() {
+    var pkg = currentPackage();
+    var rows = pkg && Array.isArray(pkg.acknowledgements) ? pkg.acknowledgements : [];
+    if (!rows.length) return;
+    function normalized(value) {
+      return String(value || "").toLowerCase().replace(/_ack$/, "").replace(/_/g, "-");
+    }
+    document.querySelectorAll("[data-ack]").forEach(function (node) {
+      var slot = normalized(node.getAttribute("data-ack"));
+      var matches = rows.filter(function (row) {
+        var kind = normalized(row && (row.ack_type || row.kind));
+        if (kind === slot) return true;
+        return (slot === "ready-to-launch" || slot === "experiment-running") &&
+          kind === "launch";
+      });
+      if (!matches.length) return;
+      var latest = matches[matches.length - 1];
+      var value = latest.value != null ? latest.value : latest.status;
+      node.setAttribute("data-ack-value", displayValue(value));
+      var cell = node.querySelector('[data-field="user-ack"]');
+      if (cell) {
+        var actor = latest.actor && latest.actor.id ? latest.actor.id : "";
+        cell.textContent = actor || displayValue(value);
+      }
+    });
+  }
+
+  function renderResultGateRows() {
+    var host = document.querySelector('[data-table-body="result-gate"]');
+    if (!host) return;
+    var pkg = currentPackage();
+    var rows = pkg && Array.isArray(pkg.resultGateRows) ? pkg.resultGateRows : [];
+    if (!rows.length) return;
+    host.innerHTML = rows.map(function (row) {
+      var validity = String(row.validity || "UNMEASURED").toUpperCase();
+      var verdict = String(row.verdict || "INCONCLUSIVE").toUpperCase();
+      var artifact = row.source_artifact || row.evidencePath || "unmeasured";
+      var observed = row.observed_metric != null ? row.observed_metric :
+        (row.value != null ? row.value : row.measured);
+      var metric = row.metric ? String(row.metric) + "=" : "";
+      return [
+        '<tr data-ack="result-pass" data-ack-value="" data-source-row="' +
+          htmlEscape(row.row_id || row.id || "") + '">',
+        '<td data-field="exp-id">' + htmlEscape(row.exp_id || "unmeasured") + "</td>",
+        '<td data-validity="' + htmlEscape(validity) + '">' + htmlEscape(validity) + "</td>",
+        '<td data-field="baseline">' + htmlEscape(displayValue(row.baseline)) + "</td>",
+        '<td data-field="plan-gate">' + htmlEscape(displayValue(row.plan_gate || row.gate)) + "</td>",
+        '<td data-field="observed-metric">' + htmlEscape(metric + displayValue(observed) + (row.unit || "")) + "</td>",
+        '<td data-field="budget-use">' + htmlEscape(displayValue(row.budget_use)) + "</td>",
+        '<td data-field="seed-status">' + htmlEscape(displayValue(row.seed_status || row.split)) + "</td>",
+        '<td data-field="artifact-completeness"><code>' + htmlEscape(displayValue(artifact)) + "</code></td>",
+        '<td data-decision data-field="verdict">' + htmlEscape(verdict) + "</td>",
+        '<td data-field="reason">' + htmlEscape(displayValue(row.reason || row.validity)) + "</td>",
+        "</tr>",
+      ].join("");
+    }).join("");
+  }
+
+  function renderLiveCheckRows() {
+    var pkg = currentPackage();
+    var rows = pkg && Array.isArray(pkg.liveChecks) ? pkg.liveChecks.slice() : [];
+    if (!rows.length) return;
+    rows.sort(function (a, b) {
+      var left = Number(a.time), right = Number(b.time);
+      if (Number.isFinite(left) && Number.isFinite(right)) return right - left;
+      return String(b.time || "").localeCompare(String(a.time || ""));
+    });
+    function rowHtml(row) {
+      var values = [
+        row.time, row.exp_id, row.agent, row.run_state, row.last_log,
+        row.progress, row.metrics, row.resource, row.artifacts, row.eta,
+        row.action, row.next_check,
+      ];
+      return '<tr data-source-row="' + htmlEscape(row.row_id || row.id || "") + '">' +
+        values.map(function (value) {
+          return "<td>" + htmlEscape(displayValue(value)) + "</td>";
+        }).join("") + "</tr>";
+    }
+    var current = document.querySelector('[data-table-body="live-check"]');
+    var history = document.querySelector('[data-table-body="live-check-history"]');
+    if (current) current.innerHTML = rows.slice(0, 5).map(rowHtml).join("");
+    if (history) history.innerHTML = rows.slice(5).map(rowHtml).join("");
+  }
+
+  function renderResourceAllocationRows() {
+    var host = document.querySelector('[data-table-body="resource-allocation"]');
+    if (!host) return;
+    var pkg = currentPackage();
+    var rows = pkg && Array.isArray(pkg.resourceAllocations) ? pkg.resourceAllocations : [];
+    if (!rows.length) return;
+    host.innerHTML = rows.map(function (row) {
+      var values = [
+        row.exp_id, row.purpose, row.dependency, row.target, row.capacity,
+        row.assigned, row.reason, row.agent, row.command_cwd_env,
+        row.session_job, row.runtime_root, row.log_path,
+        row.expected_duration, row.status,
+      ];
+      return '<tr data-source-row="' + htmlEscape(row.row_id || row.id || "") + '">' +
+        values.map(function (value) {
+          return "<td>" + htmlEscape(displayValue(value)) + "</td>";
+        }).join("") + "</tr>";
+    }).join("");
+  }
+
   function renderResultBlocks() {
     var host = document.querySelector('[data-list="result-blocks"]');
     if (!host) return;
@@ -2204,7 +2350,9 @@
         docs.map(function (d) {
           var topics = Array.isArray(d.topics) ? d.topics : [];
           var related = Array.isArray(d.relatedPages) ? d.relatedPages : [];
-          var citedBy = Array.isArray(d.citedByTasks) ? d.citedByTasks : [];
+          var citedBy = Array.isArray(d.citedByExperiments)
+            ? d.citedByExperiments
+            : (Array.isArray(d.citedByTasks) ? d.citedByTasks : []);
           return [
             '<article class="module-card doc-card"',
             ' data-doc-id="' + htmlEscape(d.id || "") + '"',
@@ -2246,6 +2394,10 @@
     renderPackageNav();
     renderResumeBlock();
     renderPlanStatus();
+    renderResultGateRows();
+    renderLiveCheckRows();
+    renderResourceAllocationRows();
+    renderAcknowledgementSlots();
     renderValidityCounts();
     renderHypothesisCheck();
     renderDashboardPackages();

@@ -6,9 +6,10 @@
     --payload '{"level":"package","kind":"lesson","slug":"$slug","title":"$title","text":"$rule_prose","rationale":"$insight_or_verdict_slug","addedAt":"$YYYY-MM-DD"}'
 
   Constraints:
-  - The Rules <ol> in analysis.html is a paint of data/rules.js; do not hand-edit it.
+  - This command commits a package-scoped Rule aggregate to unified state.
+  - Browser-facing Rules are rebuilt only by lib.interface; do not edit them.
   - $rule_prose is plain natural-language prose; no <strong>, <b>, or whole-rule <em>.
   - Embed the binding numbers/thresholds/named subjects inline so the rule stands alone
     without re-opening the linked insight.
-  - Put the insight/verdict provenance in rationale; research-op repaints the list.
+  - Put the insight/verdict provenance in rationale.
 -->

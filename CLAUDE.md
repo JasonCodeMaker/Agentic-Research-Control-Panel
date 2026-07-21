@@ -1,146 +1,251 @@
-# CLAUDE.md — Trustworthy Research Pipeline
+# CLAUDE.md - Trustworthy Research Pipeline
 
-This file is the agent operating context for any project that adopts the Trustworthy Research Pipeline.
-It is intentionally project-agnostic. A consuming project copies this file into its repo root and
-**prepends** project-specific sections (project name, motivation, optimization objective, contribution
-spine, current best, dataset / budget gates) above the protocols below. The protocols themselves are
-universal — do not edit them per project.
+This file is the agent operating contract for any project that adopts the
+Trustworthy Research Pipeline. It is project-agnostic. A consuming project
+copies this file into its repo root and prepends its project profile,
+optimization objective, contribution spine, current best result, dataset
+constraints, and budget gates. Keep the shared protocol below unchanged.
 
 ## What this pipeline produces
 
-A trustworthy research record where every claim is gated by an explicit metric, every metric is backed by
-a verified artifact, every direction has one declared next route, and every adopted win or archived failure
-leaves a structured `methodsTried` trace the next session can learn from. The skills bundled with this repo
-install the HTML surfaces, Scope/Triage gates, orchestration, and mutation tooling that enforce this.
-`workflow.ts` is the executable package controller the agent follows inside any package.
+The pipeline produces an auditable research record in which:
 
-`research_html/` is the shared context surface, not the authority by itself. For research-affecting tasks,
-load the narrow owning layer: `outputs/_scope/transitions.jsonl` for intent, package pages for
-plan/tracker/result witnesses, `outputs/<pkg>/` plus live process state for measurements, and
-`research_html/data/research-packages.js` for dashboard index state. Derived pages such as `scope.html`,
-`context.html`, `learnings.html`, lane pages, and `scope-projection.json/js` are read-only context unless
-their owning skill says otherwise.
+- research intent is ratified before it becomes active;
+- each executable Experiment has one specification and measurable gate;
+- every Run binds its command to an immutable context snapshot;
+- every claimed result resolves to protocol-aware evidence;
+- every terminal route remains a visible human decision;
+- useful wins, failures, and rules remain available to later queries.
+
+`workflow.ts` is the executable package controller. The installed
+`research-*` skills provide the task-specific entrypoints. Guarded commands,
+not generated HTML or chat memory, mutate research state.
+
+## One root and four storage roles
+
+Resolve all managed data through `RESEARCH_ROOT`. Its default is
+`<workspace>/.research`.
+
+```text
+.research/
+|-- VERSION
+|-- state/
+|   |-- events.jsonl
+|   |-- current.json
+|   |-- migration.json                 # present after an explicit migration
+|   `-- notes/
+|-- audit/
+|   `-- actions.jsonl
+|-- experiments/
+|   `-- <package>/<experiment>/<run>/
+`-- interface/
+```
+
+The authority order is:
+
+1. `.research/state/events.jsonl` for ratified intent and management history.
+2. `.research/experiments/<package>/<experiment>/<run>/` for executed commands,
+   measurements, and evidence.
+3. `.research/audit/actions.jsonl` for command outcomes and rejections.
+4. `.research/state/current.json` and `.research/interface/` as rebuildable
+   projections.
+
+Use state queries instead of parsing the event log directly. Use bounded Run
+files instead of unbounded terminal scrollback.
+
+### Human interface boundary
+
+`.research/interface/` is a generated read model for people. Its existing
+multi-page dashboard, package pages, modules, tables, navigation, and visual
+layout remain intact. The interface is not an agent context store, a mutation
+surface, or proof of a result.
+
+Agents must not read interface HTML, JavaScript, or projected data to infer
+Scope, package state, Experiment status, evidence, learnings, or the next
+action. Query typed state and inspect the relevant Run directory. If the
+interface disagrees with an authority, repair the typed source if needed and
+rebuild the interface.
+
+## Research object model
+
+Scope is the versioned intent hierarchy:
+
+```text
+Project -> Direction -> Experiment
+```
+
+- `Project` owns the ratified objective and project constraints.
+- `Direction` owns one approved research strategy.
+- `Experiment` is the only executable specification. `Experiment.spec` owns
+  purpose, configuration reference, gate, and control mode.
+- `Package` groups working state and Experiments for a bounded research unit. It
+  is not a Scope level.
+- `Run` is one execution attempt for one Experiment.
+
+There is no independent Task object. Any former Task is represented by
+`Experiment.spec`; do not recreate Task as a parallel plan, milestone, page, or
+runtime entity.
 
 ## The five protocols the agent obeys
 
-The protocols form a stack. Keep this file as the always-loaded protocol index; load the owning skill,
-script help, or reference only when the current task reaches that surface.
+The protocols form a stack. Keep this file as the always-loaded index. Load the
+owning skill, command help, or reference only when the current task reaches that
+surface.
 
-### 1. Research Workflow (`workflow.ts` in the toolbox repo)
+### 1. Research Workflow
 
-`workflow.ts` is the executable controller for package work: legal states, run tickets, open-run stop gates,
-adaptive live monitoring, and multi-experiment routing. Call it from a consuming project through the
-installed toolbox path:
+`workflow.ts` defines legal package states, Run tickets, open-Run stop gates,
+adaptive monitoring, and multi-Experiment routing:
 
 ```bash
 node <pipeline-root>/workflow.ts next --json '<snapshot>'
 node <pipeline-root>/workflow.ts schema
 ```
 
-Strictly follow the returned ticket: apply its `requiredMutations` through `research-op`, emit each
-`perRun[].statusLine`, and do not end a turn unless `stopGate.ok` is true or the ticket records the
-smallest blocking user decision.
+Follow the returned ticket. Apply `requiredMutations` through `research-op`,
+emit each `perRun[].statusLine`, and end the turn only when `stopGate.ok` is true
+or the ticket identifies the smallest blocking human decision.
 
-### 2. Research Output Contract
+### 2. Research State and Experiment Contract
 
-Research packages live under `research_html/packages/<YYYY-MM-DD>-<slug>/` and are created or materially
-restructured through `/research-package`, never by ad-hoc folders. Materialization reads only committed
-Scope state, not pending Triage proposals. Runtime logs, metrics, event manifests, checkpoints, and
-temporary artifacts go under `outputs/<YYYY-MM-DD>-<slug>/`.
+Create or materially restructure packages through `research-package`, never
+through ad hoc directories. Materialization reads only ratified Scope. Pending
+Triage proposals do not authorize execution.
 
-Package page canon, field ownership, and large structural rules live in
-`skills/research-package/references/package-contract.md`. Load that reference only for package creation,
-material restructuring, or ownership disputes.
+All package and Experiment mutations go through `research-op`. Do not hand-edit
+the EventStore, its current projection, audit records, or generated interface.
+Run launch goes through `research-run` and `lib.experiments`, which place
+canonical Run artifacts under:
+
+```text
+.research/experiments/<package>/<experiment>/<run>/
+```
+
+A Run directory may contain specialized checkpoints or artifacts, but its
+canonical envelope is `run.json`, `context.json`, `status.json`,
+`events.jsonl`, `metrics.jsonl`, `log.txt`, and `result.json`.
 
 ### 3. Fact Propagation Contract
 
-Every artifact that lands during a research run is a locked fact. Checkpoints, candidate JSONs, sentinels,
-phase markers, chain-done markers, and comparable runtime artifacts must be propagated to every owning
-surface in the same turn they are observed: results, tracker chosen route, registry fields, and tracker
-Resume Block.
+Every observed artifact is evidence, not automatically a scientific verdict.
+Checkpoints, candidate records, sentinels, phase markers, terminal markers, and
+comparable files must be registered through the owning operation in the same
+turn they are observed.
 
-Directive changes are locked facts too. A user instruction that changes constraints, plan, metric, baseline,
-roster, or scope must be written to its typed home and propagated to tracker/registry state in the same
-turn. Use the `research-op` skill for `scan-events`, explicit event fan-out, rule inserts, status repair,
-and the exact command/cursor details.
+A user instruction that changes a constraint, plan, metric, baseline, roster,
+or scope is also a locked fact. Write it to its typed owner and propagate the
+affected status in the same turn. Use `research-op` for event reconciliation,
+explicit fanout, rule changes, status repair, and audited mutations.
 
-### 4. Learnings Update Protocol
+### 4. Learning and Rule Protocol
 
-The cross-package learnings index at `research_html/learnings.html` is a derived view over
-`research_html/data/research-packages.js`. The data file is the canonical store; `learnings.html`
-re-renders on page load. This protocol fixes *when* to write to the data file and *how* to keep it
-trustworthy.
+Verified results may create typed `learning` records. Generalizable,
+evidence-backed guidance may be promoted into governed `rule` records. Failed
+methods remain retrievable so later work does not repeat them blindly.
 
-Core principles:
+Upstream Run evidence remains the witness. A learning or rule is an indexed
+claim that must resolve back to that witness. In-progress facts may update after
+their evidence exists. Terminal adoption, supersession, archival, reopening,
+and Scope impact require the relevant human ratification.
 
-- Upstream surfaces are witnesses; `research-packages.js` is the index. Write `methodsTried[]` only from
-  verified `results.html` rows with resolving evidence paths.
-- In-progress facts can update after their source surface exists. Terminal lane moves, adoption,
-  supersession, and reopen decisions require T1 user ack.
-- Any learnings-relevant turn must close atomically: witness surface, registry, tracker Resume Block, and
-  `learnings_lint.py all` must agree before the turn ends.
-
-Event names, `methodsTried` field details, lint subcommands, and draft writers belong to the dashboard
-scripts and `research-op` / `research-analysis` references. Load those only when the turn mutates or audits
-learnings-relevant state.
+Do not read a generated learnings page before proposing work. Request bounded
+package context or query the relevant learning and rule aggregates.
 
 ### 5. Refinement Guardrails
 
-Treat the consuming project's contribution spine as a compatibility constraint unless the user explicitly
-asks to replace it. Every refinement must explain why the design sharpens the current research story, not
-just why it is novel in isolation. Project-specific examples and cleanup rules belong in the prepended
-project profile or the owning refinement/package skill.
+Treat the consuming project's contribution spine as a compatibility constraint
+unless the user explicitly asks to replace it. Every refinement must explain
+how it sharpens the current research claim under the approved metric, protocol,
+and budget.
 
-## The state model that ties protocols 2-4 together
+## Context and Run binding
 
-`research_html/data/schema.js` declares the `(category, status)` state machine and required-field rules.
-The card renderer and `learnings_lint.py` import from it, so it is the machine-readable authority.
+Before package work, request bounded context:
 
-**Naming convention:** Package *category* (lane) values are lowercase-kebab (`in-progress`, `success`,
-`fail`) — they are URL/CSS/attribute facets. Package *status* values are SCREAMING_SNAKE — they are
-state-machine positions. Never recase the lane values; never use lowercase for status values.
+```bash
+python <research-op-script> context <package-id> --workspace <workspace>
+```
 
-Brainstorm is **not** a package category. Pre-package, pre-SSOT ideas live on the dashboard brainstorm
-lane (`research_html/data/brainstorms.js`); they become a package only at conversion (`/research-brainstorm`
-→ a ratified Direction → `create_from_scope`), which freezes the source idea(s) into the package's
-`brainstorm.html` provenance sub-page.
+The response is ephemeral. Do not persist it as a package-level context file,
+copy it into the interface, or treat it as authority after state changes.
 
-Terminal transitions (any status change that crosses a lane boundary) require user ack per Trust rule T1.
+At Run authorization, the launcher performs a fresh state query and freezes the
+selected content into:
+
+```text
+.research/experiments/<package>/<experiment>/<run>/context.json
+```
+
+That file is immutable and bound by hash from `run.json`. It answers which
+ratified intent, rules, learnings, and Experiment spec governed that exact Run.
+Later management changes apply to later Runs; they do not rewrite history.
+
+## Scope and Triage
+
+Project, Direction, Experiment, and scope revisions enter Triage before
+commitment. The agent may draft a proposal and explain its effect. It may not
+accept its own proposal.
+
+A committed Scope transition requires explicit human ratification and the gated
+writer documented by `research-scope` and `research-op`. Terminal transitions
+that change adoption or archive state also require the T1 acknowledgement.
+
+If execution discovers that the approved Experiment is insufficient, stop and
+propose a revision. Do not smuggle new intent into a command, config file, Run
+note, package page, or generated interface.
 
 ## Cross-cutting agent rules
 
-- **Build context first.** Read the invocation, project profile, Scope SSOT, package state, active plan,
-  results, docs, and runtime evidence required by the task before work.
-- **Use the source-routing model.** Load the SSOT or package witness that owns the decision; use derived
-  `research_html` pages for in-context learning, not as mutation targets or final proof.
-- **Runtime truth wins.** Validate live runs, logs, outputs, summaries, and artifact roots before changing
-  state. Recalled content is unverified (T3).
-- **Use live-run artifacts.** For long-running experiment commands, use the project live-run skill when available. Routine live state comes from structured runtime artifacts, not ad hoc raw scrollback parsing; raw logs are bounded debug fallback.
-- **Use the resource registry.** When a project resource registry (`outputs/_resources/servers.json`) exists,
-  server connection/capacity facts and experiment placement come from it and its allocation ledger via the
-  resource skill — not from recalled prose; occupancy claims cite ledger entries.
-- **Consult Learnings before new directions.** Open `research_html/learnings.html` before proposing a new
-  direction, refinement, or experiment idea, and before converting a brainstorm idea into a package.
-- **Surgical changes.** Touch only what the task requires. Match existing style. Do not refactor adjacent code.
-- **No A0 reproduction by default.** Trust the recorded checkpoint and `AGENTS.md` / `CLAUDE.md` unless
-  the user explicitly asks to revalidate the anchor.
-- **All long-running work goes in `tmux`.** Named sessions/windows so the run can be monitored live; report
-  the attach command.
-- **ETA discipline.** Do not pre-estimate run duration. Plan rows, launcher manifests, allocation rows, and
-  live-check rows record `est_time=unknown` until the run has executed at least 30 minutes of stable
-  throughput; after that, derive ETA from observed throughput and update on every 10-minute report.
+- **Build context first.** Read the invocation and project profile, then query
+  the smallest relevant Project, Direction, Package, Experiment, learning, and
+  rule slice. Inspect only the Run evidence required by the task.
+- **Runtime truth wins.** Validate the live process, structured Run status,
+  logs, metrics, and files before changing management state. Recalled content is
+  unverified.
+- **Use guarded writes.** Research-affecting mutations go through the owning
+  skill or `research-op`. Direct edits to managed state and generated interface
+  files are violations.
+- **Use live Run artifacts.** Long experiments use `research-exp-live` when
+  available. Structured status is the routine source; bounded logs are a debug
+  fallback.
+- **Use the resource registry.** Compute facts and placements come from
+  `resource` and `resource_allocation` state through `research-resource`, not
+  recalled prose.
+- **Keep long work observable.** Launch long training, preprocessing, download,
+  sync, and remote jobs in named `tmux` sessions unless the user requests
+  another supported runner.
+- **Preserve ETA honesty.** Keep ETA unknown until observed throughput supports
+  it, then update it from measurements.
+- **Make surgical changes.** Touch only the owning source and run its contract
+  checks. Do not refactor adjacent code without authorization.
+- **Do not rerun the anchor by default.** Trust verified checkpoint evidence and
+  the project protocol unless the user asks to revalidate it.
+
+## Interface rebuild
+
+The human interface is rebuilt atomically from current state and Run evidence:
+
+```bash
+cd <pipeline-root>
+python -m lib.interface.serve --workspace <workspace> ensure --json
+```
+
+This command may initialize an empty greenfield root. It must fail closed over
+unversioned installed data, which requires the explicit inventory, migration,
+and check sequence. Starting or rebuilding the interface never authorizes a
+Scope change or Run.
 
 ## Per-project customization
 
-A consuming project's CLAUDE.md should prepend (above this file's content) sections for:
+A consuming project prepends sections for:
 
-- **Project** — one-paragraph description (system, datasets, agent stack).
-- **Motivation and Goal** — the central bottleneck the project attacks.
-- **Global Optimization Objective** — the primary objective and the success rule (e.g., "metric X must
-  improve under budget Y").
-- **Project-specific rules** — non-negotiable dataset / budget / evaluation constraints.
-- **Refinement Guardrails — Contribution Spine** — the project's non-negotiable spine components (mirrored
-  into `RESEARCH_PROJECT_PROFILE.cards`).
-- **Current Best** — the live anchor record (checkpoint path, metric values, validation seeds).
+- **Project:** system, datasets, agent stack, and one-paragraph purpose.
+- **Motivation and Goal:** the central bottleneck.
+- **Global Optimization Objective:** the primary metric and success rule.
+- **Project-specific rules:** dataset, compute, budget, and evaluation
+  constraints.
+- **Contribution Spine:** the non-negotiable components of the research story.
+- **Current Best:** checkpoint, metric values, protocol, and validation seeds.
 
-These project-specific sections are written by the user. The five protocols above stay verbatim.
+Project-specific content is user-owned. The five shared protocols remain
+unchanged.

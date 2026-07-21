@@ -1,132 +1,293 @@
-"""Stage-1 walking skeleton: one thin idea->verified-result pass through all six roles + the real gates.
+"""L1 fixture for a state-backed Experiment and canonical run directory.
 
-Each role is thin/stub; what is real is the wiring — the scope write routes through the SSOT's
-gated writer, R5 reads the spec back from the SSOT node, L1 cite-exists partitions citations,
-and the terminal acquit routes through research-op's acquit gate at Supervised (T1 ack), blocked
-when the metric oracle fails. Scope and package mutation are handled by their current skills; the
-package execution controller is research-run.
+This module does not create Project, Direction, Package, or Experiment state.
+Tests must seed those prerequisites first, matching the production
+``/research-run`` admission boundary.
 """
+
+from __future__ import annotations
 
 import json
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
-_PIPE = Path(__file__).resolve().parents[3]  # scripts -> research-run -> skills -> pipeline root
-sys.path.insert(0, str(_PIPE / "lib"))
-sys.path.insert(0, str(_PIPE / "skills" / "research-op" / "scripts"))
-import scope_ssot  # noqa: E402
-import validate  # noqa: E402
+PIPELINE_ROOT = Path(__file__).resolve().parents[3]
+if str(PIPELINE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PIPELINE_ROOT))
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from lib.experiments.contracts import (  # noqa: E402
+    file_evidence_ref,
+    verify_result_evidence,
+)
+from lib.experiments.report import run_summary  # noqa: E402
+from lib.experiments.status import canonical_status  # noqa: E402
+from lib.research_state import ResearchPaths, StateQuery  # noqa: E402
+from lib.research_state.io import (  # noqa: E402
+    append_jsonl_fsync,
+    canonical_json,
+    write_json_atomic,
+)
+
+import driver  # noqa: E402
 
 
-def scope(intent, pkg_id):
-    """R1 (thin): turn a fixed intent into a typed Direction node."""
-    hypothesis = (
-        f"The supplied intent, {intent}, should produce measurable improvement in the toy retrieval "
-        "benchmark while keeping the fixed dataset, baseline, and evaluation budget unchanged."
+def _paths(
+    workspace_or_paths: str | Path | ResearchPaths,
+    *,
+    research_root: str | Path | None = None,
+) -> ResearchPaths:
+    if isinstance(workspace_or_paths, ResearchPaths):
+        if research_root is not None:
+            raise ValueError("research_root cannot accompany ResearchPaths")
+        return workspace_or_paths
+    return ResearchPaths.resolve(
+        workspace=workspace_or_paths,
+        research_root=research_root,
     )
-    success_gate = (
-        "The measured toy metric must satisfy measured >= 0.80 on the persisted artifact before any "
-        "terminal success transition is allowed by this walking skeleton."
-    )
-    return {
-        "id": f"dir/{pkg_id}",
-        "level": "direction",
-        "parents": ["project/main"],
-        "version": 1,
-        "status": "ACTIVE",
-        "spec": {
-            "hypothesis": hypothesis,
-            "metric": {"name": "toy_metric", "dir": "higher"},
-            "baselines": ["Fixed toy baseline measured by the same persisted artifact reader."],
-            "success_gate": success_gate,
-        },
-        "source": "txn-0",
-    }
 
 
-def search_read(citations):
-    """R2 + L1 cite-exists: partition citations by whether their source resolves on disk."""
+def search_read(citations: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
+    """Partition citations by whether their source resolves on disk."""
     verified, rejected = [], []
-    for c in citations:
-        (verified if Path(c["source"]).exists() else rejected).append(c["id"])
+    for citation in citations:
+        target = verified if Path(citation["source"]).is_file() else rejected
+        target.append(str(citation["id"]))
     return verified, rejected
 
 
-def ideate(node):
-    """R3 (stub): adopt the direction's hypothesis as the idea under test."""
-    return node["spec"]["hypothesis"]
+def _resolve_experiment(
+    paths: ResearchPaths,
+    package_id: str,
+    requested_id: str,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    snapshot = StateQuery(paths).show("experiment")
+    matches = [
+        (aggregate_id, record)
+        for aggregate_id, record in snapshot["data"].items()
+        if isinstance(record, dict)
+        and record.get("package_id") == package_id
+        and (
+            aggregate_id == requested_id
+            or record.get("id") == requested_id
+            or record.get("local_id") == requested_id
+            or requested_id in (record.get("aliases") or [])
+        )
+    ]
+    if len(matches) != 1:
+        raise KeyError(
+            f"expected one Experiment {requested_id!r} in {package_id}, "
+            f"found {len(matches)}"
+        )
+    aggregate_id, record = matches[0]
+    return aggregate_id, record, snapshot
 
 
-def experiment(pkg_id, runtime_root, measured):
-    """R4 (toy): run the experiment and persist its metric as a verified artifact on disk."""
-    artifact_id = "exp-001"
-    artifact_path = Path(runtime_root) / pkg_id / "artifacts" / f"{artifact_id}.json"
-    artifact_path.parent.mkdir(parents=True, exist_ok=True)
-    artifact_path.write_text(
-        json.dumps({"artifact_id": artifact_id, "metric": "toy_metric", "measured": measured}),
-        encoding="utf-8")
-    return {"artifact_id": artifact_id, "path": str(artifact_path)}
-
-
-def verify(artifact_path, spec):
-    """R5 L1 metric oracle: read the measured value from the artifact on disk, compare to the SSOT predicate."""
-    artifact = json.loads(Path(artifact_path).read_text(encoding="utf-8"))  # missing artifact => no fabricated metric
-    match = re.search(r">=\s*([0-9]+(?:\.[0-9]+)?)", spec["success_gate"])
-    if not match:
-        raise ValueError(f"success_gate must contain a numeric >= threshold: {spec['success_gate']!r}")
-    threshold = float(match.group(1))
-    measured = artifact["measured"]
-    return {"judge": "L1-metric-oracle",
-            "result": "PASS" if measured >= threshold else "FAIL",
-            "measured": measured, "artifact_id": artifact["artifact_id"]}
-
-
-def run(intent, *, pkg_id, runtime_root, citations, measured):
-    """Drive one thin idea->verified-result pass through R1..R6 and the real gates. Returns the run record."""
-    runtime_root = Path(runtime_root)
-    log_path = runtime_root / "_scope" / "transitions.jsonl"
-    chain = []
-
-    node = scope(intent, pkg_id)
-    scope_ssot.propose_transition(node, op="create", gate="USER_CROSS_MODEL_AUDIT", log_path=log_path,
-                                  trigger=f"intent:{intent}", cause="R1 scope")
-    chain.append("R1:scope")
-
-    verified, rejected = search_read(citations)
-    chain.append("R2:search")
-
-    idea = ideate(node)
-    chain.append("R3:ideate")
-
-    artifact = experiment(pkg_id, runtime_root, measured)
-    chain.append("R4:experiment")
-
-    spec = node["spec"]  # read the bar from the SSOT node, not a prompt
-    verdict = verify(artifact["path"], spec)  # read the number from the artifact, not a prompt
-    chain.append("R5:verify")
-
-    # R6 remember + terminal acquit at Supervised — gated by the L1 metric oracle.
-    acquitted, ack_token = False, None
-    if verdict["result"] == "PASS":
-        payload = {
-            "to_status": "ADOPTED_UNCONFIRMED", "to_category": "success",
-            "ack_token": "T1:supervised-ack",
-            "terminationMessage": f"measured={verdict['measured']} meets gate",
-            "adoptionPath": "CLAUDE.md#current-best",
-            "verdict": verdict,
-        }
-        rej = validate.validate(pkg_id, "update", "status", payload,
-                                {"category": "in-progress", "status": "RESULT_ANALYSIS"})
-        if rej is not None:
-            raise RuntimeError(f"acquit unexpectedly blocked: {rej.rule}")
-        acquitted, ack_token = True, "T1:supervised-ack"
-    chain.append("R6:remember")
-
-    record = {
-        "chain": chain, "idea": idea, "spec": spec, "verdict": verdict,
-        "verified_citations": verified, "rejected_citations": rejected,
-        "acquitted": acquitted, "ack_token": ack_token,
+def experiment(
+    package_id: str,
+    workspace_or_paths: str | Path | ResearchPaths,
+    measured: float,
+    *,
+    experiment_id: str = "exp-001",
+    run_id: str = "run-001",
+    research_root: str | Path | None = None,
+) -> dict[str, Any]:
+    """Write one toy measurement inside the canonical Experiment run tree."""
+    paths = _paths(workspace_or_paths, research_root=research_root)
+    paths.load_version()
+    aggregate_id, record, experiment_snapshot = _resolve_experiment(
+        paths,
+        package_id,
+        experiment_id,
+    )
+    package = StateQuery(paths).show("package", package_id)
+    if (
+        experiment_snapshot["source_seq"],
+        experiment_snapshot["source_hash"],
+    ) != (package["source_seq"], package["source_hash"]):
+        raise RuntimeError("research state changed while building the fixture")
+    local_id = str(record.get("local_id") or record.get("id") or experiment_id)
+    run_dir = paths.run_dir(package_id, local_id, run_id)
+    if run_dir.exists():
+        raise FileExistsError(f"run already exists: {run_dir}")
+    files = run_dir / "files"
+    files.mkdir(parents=True)
+    artifact_path = files / "metric.json"
+    artifact = {
+        "artifact_id": f"{run_id}:metric",
+        "metric": "toy_metric",
+        "measured": measured,
     }
-    (runtime_root / "run.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
-    return record
+    write_json_atomic(artifact_path, artifact)
+    context = {
+        "schema_version": 1,
+        "source_seq": package["source_seq"],
+        "source_hash": package["source_hash"],
+        "package": package["data"],
+        "experiment": record,
+    }
+    run = {
+        "schema_version": 1,
+        "run_id": run_id,
+        "package_id": package_id,
+        "experiment_id": aggregate_id,
+        "experiment_local_id": local_id,
+        "fixture": "research-run-l1",
+    }
+    evidence = file_evidence_ref(
+        paths,
+        run,
+        artifact_path,
+        kind="METRIC",
+    )
+    status = {
+        "schema_version": 1,
+        "run_id": run_id,
+        "package_id": package_id,
+        "experiment_id": aggregate_id,
+        "experiment_local_id": local_id,
+        "status": canonical_status("COMPLETED"),
+    }
+    result = {
+        "schema_version": 1,
+        "kind": "runtime-terminal",
+        "run_id": run_id,
+        "package_id": package_id,
+        "experiment_id": aggregate_id,
+        "status": status["status"],
+        "exit_code": 0,
+        "ended_at": None,
+        "protocol": {},
+        "measurements": {"toy_metric": measured},
+        "verdict": "INCONCLUSIVE",
+        "validity": "UNMEASURED",
+        "supported_claims": [],
+        "unsupported_claims": [],
+        "decision_candidate": None,
+        "evidence": [evidence],
+    }
+    write_json_atomic(run_dir / "run.json", run)
+    write_json_atomic(run_dir / "context.json", context)
+    append_jsonl_fsync(
+        run_dir / "events.jsonl",
+        {"kind": "measurement", **artifact},
+    )
+    append_jsonl_fsync(
+        run_dir / "metrics.jsonl",
+        {"metric": "toy_metric", "value": measured},
+    )
+    write_json_atomic(run_dir / "status.json", status)
+    write_json_atomic(run_dir / "result.json", result)
+    verify_result_evidence(paths, run, result)
+    (run_dir / "log.txt").write_text(
+        canonical_json({"toy_metric": measured}) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "artifact_id": artifact["artifact_id"],
+        "path": str(artifact_path),
+        "run_id": run_id,
+        "run_dir": str(run_dir),
+        "evidence": evidence,
+        "experiment": record,
+        "source_seq": experiment_snapshot["source_seq"],
+        "source_hash": experiment_snapshot["source_hash"],
+    }
+
+
+def verify(artifact_path: str | Path, spec: dict[str, Any]) -> dict[str, Any]:
+    """Read the persisted metric and compare it with the Experiment gate."""
+    artifact = json.loads(Path(artifact_path).read_text(encoding="utf-8"))
+    gate = spec.get("gate") or spec.get("success_gate")
+    match = re.search(r">=\s*([0-9]+(?:\.[0-9]+)?)", str(gate or ""))
+    if not match:
+        raise ValueError(f"Experiment gate needs a numeric >= threshold: {gate!r}")
+    threshold = float(match.group(1))
+    measured = float(artifact["measured"])
+    return {
+        "judge": "L1-metric-oracle",
+        "result": "PASS" if measured >= threshold else "FAIL",
+        "measured": measured,
+        "threshold": threshold,
+        "artifact_id": artifact["artifact_id"],
+    }
+
+
+def run(
+    intent: str,
+    *,
+    pkg_id: str,
+    workspace: str | Path | ResearchPaths,
+    experiment_id: str = "exp-001",
+    run_id: str = "run-001",
+    citations: list[dict[str, Any]],
+    measured: float,
+    research_root: str | Path | None = None,
+) -> dict[str, Any]:
+    """Run the fixture and return research-op envelopes for result ingestion."""
+    paths = _paths(workspace, research_root=research_root)
+    verified_citations, rejected_citations = search_read(citations)
+    artifact = experiment(
+        pkg_id,
+        paths,
+        measured,
+        experiment_id=experiment_id,
+        run_id=run_id,
+    )
+    aggregate_id = str(artifact["evidence"]["experiment_id"])
+    selected = artifact["experiment"]
+    verdict = verify(artifact["path"], selected["spec"])
+    summary = run_summary(Path(artifact["run_dir"]))
+    local_id = str(selected.get("local_id") or selected.get("id"))
+    validity = "VALID" if verdict["result"] == "PASS" else "RESULT_FAIL"
+    result_envelope = {
+        "op": "insert",
+        "target": "results-gate-row",
+        "payload": {
+            "exp_id": local_id,
+            "run_id": run_id,
+            "validity": validity,
+            "baseline": "fixture",
+            "plan_gate": selected["spec"]["gate"],
+            "observed_metric": verdict["measured"],
+            "budget_use": "fixture",
+            "seed_status": "single",
+            "artifact_completeness": "complete",
+            "verdict": "PASS" if verdict["result"] == "PASS" else "FAIL",
+            "reason": (
+                f"measured={verdict['measured']} "
+                f"{'>=' if verdict['result'] == 'PASS' else '<'} "
+                f"{verdict['threshold']}"
+            ),
+            "evidence": [artifact["evidence"]],
+        },
+        "idempotency_key": f"fixture:{run_id}:result",
+    }
+    status_envelope = {
+        "op": "update",
+        "target": "experiments-status",
+        "payload": {
+            "id": local_id,
+            "to": "COMPLETE" if verdict["result"] == "PASS" else "FAILED",
+        },
+        "idempotency_key": f"fixture:{run_id}:experiment-status",
+    }
+    envelopes = [result_envelope, status_envelope]
+    return {
+        "chain": ["R2:search", "R4:experiment", "R5:verify"],
+        "intent": intent,
+        "experiment_id": aggregate_id,
+        "spec": selected["spec"],
+        "verdict": verdict,
+        "verified_citations": verified_citations,
+        "rejected_citations": rejected_citations,
+        "run": summary,
+        "required_mutations": envelopes,
+        "research_op_commands": [
+            driver.research_op_argv(paths, pkg_id, envelope)
+            for envelope in envelopes
+        ],
+    }

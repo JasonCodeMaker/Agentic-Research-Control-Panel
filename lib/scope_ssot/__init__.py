@@ -1,104 +1,156 @@
-"""Scope SSOT — the passive, versioned home of intent (Project -> Direction -> Task).
+"""Pure validation for governed Project, Direction, and Experiment intent.
 
-Owns the spec (what to measure / what counts as success), never the reading
-(the measured value). Read freely; write only through the one gated writer,
-propose_transition. See plan/prototype/scope-ssot-design.html.
+This module owns no persistence.  Research skills validate candidate Scope
+nodes here, then route proposals and accepted transitions through the
+``research-op`` management gateway.
 """
 
-import copy
-import json
+from __future__ import annotations
+
 import re
-import uuid
-from pathlib import Path
+from typing import Any
 
-LEVELS = ("project", "direction", "task")
+from lib.research_state.schema import enum, scope_contract
 
-# Each level's allowed spec fields: intent only, never a measured value.
+
+# This module owns validation behavior, while schema.json owns every field,
+# enum, word bound, and gate vocabulary.
+_SCOPE = scope_contract()
+FIELD_CONTRACTS = {
+    level: contract["fields"]
+    for level, contract in _SCOPE["specs"].items()
+}
 SPEC_FIELDS = {
-    "project":   frozenset({"goal", "contributions", "out_of_scope"}),
-    "direction": frozenset({"hypothesis", "metric", "baselines", "success_gate"}),
-    "task":      frozenset({"experiment", "config", "gate", "control_mode"}),
+    level: frozenset(fields)
+    for level, fields in FIELD_CONTRACTS.items()
 }
-
 SCALAR_TEXT_FIELDS = {
-    "project":   frozenset({"goal"}),
-    "direction": frozenset({"hypothesis", "metric", "success_gate"}),
-    "task":      frozenset({"experiment", "gate"}),
+    level: frozenset(
+        field
+        for field, contract in fields.items()
+        if contract["kind"] in {"scalar_text", "metric"}
+    )
+    for level, fields in FIELD_CONTRACTS.items()
 }
-
 LIST_TEXT_FIELDS = {
-    "project":   frozenset({"contributions", "out_of_scope"}),
-    "direction": frozenset({"baselines"}),
-    "task":      frozenset(),
+    level: frozenset(
+        field
+        for field, contract in fields.items()
+        if contract["kind"] == "list_text"
+    )
+    for level, fields in FIELD_CONTRACTS.items()
 }
-
 REF_FIELDS = {
-    "task": frozenset({"config"}),
+    level: frozenset(
+        field
+        for field, contract in fields.items()
+        if contract["kind"] == "reference"
+    )
+    for level, fields in FIELD_CONTRACTS.items()
 }
 
-CONTROL_MODES = frozenset({"SUPERVISED", "CHECKPOINTED", "DEFERRED", "AUTONOMOUS"})
-SCALAR_TEXT_WORDS = (20, 100)
-PROJECT_GOAL_WORDS = (3, 100)
-LIST_ITEM_WORDS = (5, 50)
-WORD_RE = re.compile(r"[A-Za-z0-9]+(?:[@._:/+-][A-Za-z0-9]+)*|[\u4e00-\u9fff]")
+CONTROL_MODES = frozenset(enum("control_mode"))
+COMMITTED_STATUSES = frozenset(enum("scope_status"))
+WORD_RE = re.compile(
+    r"[A-Za-z0-9]+(?:[@._:/+-][A-Za-z0-9]+)*|[\u4e00-\u9fff]"
+)
 
-# Reading (empirical) fields that must never appear inside a spec.
-READING_FIELDS = frozenset({
-    "measured", "result", "verdict", "metric_value", "current_best",
-    "primaryMetricVsGate", "methodsTried",
-})
-
-OPS = ("create", "revise", "supersede", "reopen", "archive")
-
-# Graduated gating: the node's level fixes the change-gate (design §3, Table 1).
-# Values are SCREAMING_SNAKE; REQUIRED_GATE is the SSOT for scope_required_gate.
-REQUIRED_GATE = {
-    "project":   "USER_ONLY",
-    "direction": "USER_CROSS_MODEL_AUDIT",
-    "task":      "AGENT_DEFERRED_ACK",
-}
-
-# Node lifecycle status values — SCREAMING_SNAKE state-machine values.
-# Two-tier convention: LANE = lowercase-kebab; STATE = SCREAMING_SNAKE.
-# PENDING_TRIAGE = awaiting human Triage disposition (not yet in objective cascade).
-NODE_STATUS = frozenset({"ACTIVE", "SUPERSEDED", "ARCHIVED", "PENDING_TRIAGE"})
-
-# Triage decision outcomes (human PM disposition of a proposed scope change).
-TRIAGE_DECISION = ("ACCEPTED", "REJECTED")
-
-# Propagate outcome bucket keys (results of a metric-revising memory pass).
-PROPAGATE_OUTCOME = ("INVALIDATE", "REOPEN_IDEA", "RETAIN")
-
-# Memory entry kind values.
-MEMORY_KIND = frozenset({"RESULT", "IDEA"})
-
-FIELD_LABELS = {
-    "goal": "Goal",
-    "contributions": "Contributions",
-    "out_of_scope": "Out of scope",
-    "hypothesis": "Hypothesis",
-    "metric": "Metric",
-    "baselines": "Baselines",
-    "success_gate": "Success gate",
-    "experiment": "Experiment",
-    "config": "Config",
-    "gate": "Gate",
-    "control_mode": "Control mode",
-}
-
-PRIMARY_FIELDS = {
-    "project": ("goal",),
-    "direction": ("hypothesis", "metric"),
-    "task": ("experiment", "control_mode"),
-}
+READING_FIELDS = frozenset(_SCOPE["reading_fields"])
+OPS = enum("scope_operation")
+REQUIRED_GATE = dict(_SCOPE["required_gate"])
 
 
 class RuleViolation(Exception):
-    """Raised when a node or transition breaks an SSOT invariant (reject-before-write)."""
+    """A candidate Scope node violates its intent contract."""
 
 
-def validate_node(node):
-    """Reject a node with an illegal level, an unknown spec field, or a reading in its spec."""
+def _word_count(value: str) -> int:
+    return len(WORD_RE.findall(value))
+
+
+def _check_word_range(
+    *,
+    field: str,
+    text: str,
+    bounds: tuple[int, int],
+) -> None:
+    low, high = bounds
+    count = _word_count(text)
+    if count < low or count > high:
+        raise RuleViolation(
+            f"spec field {field!r} must be {low}-{high} words, got {count}"
+        )
+
+
+def _word_bounds(level: str, field: str) -> tuple[int, int]:
+    contract = FIELD_CONTRACTS[level][field]
+    return int(contract["min_words"]), int(contract["max_words"])
+
+
+def _validate_spec_value(level: str, field: str, value: Any) -> None:
+    contract = FIELD_CONTRACTS[level][field]
+    kind = contract["kind"]
+    if kind == "list_text":
+        if not isinstance(value, list) or not value:
+            raise RuleViolation(
+                f"spec field {field!r} must be a non-empty list"
+            )
+        for index, item in enumerate(value):
+            if not isinstance(item, str):
+                raise RuleViolation(
+                    f"spec field {field!r}[{index}] must be a string"
+                )
+            _check_word_range(
+                field=f"{field}[{index}]",
+                text=item,
+                bounds=_word_bounds(level, field),
+            )
+        return
+
+    if kind == "reference":
+        if not isinstance(value, str) or not value.strip():
+            raise RuleViolation(
+                f"spec field {field!r} must be a non-empty reference string"
+            )
+        return
+
+    if kind == "enum":
+        allowed = frozenset(enum(str(contract["enum"])))
+        if value not in allowed:
+            raise RuleViolation(
+                f"spec field {field!r} must be one of {sorted(allowed)}"
+            )
+        return
+
+    if kind in {"scalar_text", "metric"}:
+        if isinstance(value, str):
+            _check_word_range(
+                field=field,
+                text=value,
+                bounds=_word_bounds(level, field),
+            )
+        elif kind != "metric":
+            raise RuleViolation(f"spec field {field!r} must be a string")
+        elif not isinstance(value, dict) or not value:
+            raise RuleViolation(
+                "spec field 'metric' must be a non-empty object or a "
+                f"{_word_bounds(level, field)[0]}-"
+                f"{_word_bounds(level, field)[1]} word string"
+            )
+
+
+def validate_node(node: dict[str, Any]) -> None:
+    """Validate a complete, persistence-independent Scope node."""
+    if not isinstance(node, dict):
+        raise RuleViolation("Scope node must be an object")
+
+    required = set(_SCOPE["required_node_fields"])
+    missing_node_fields = sorted(required - set(node))
+    if missing_node_fields:
+        raise RuleViolation(
+            f"Scope node missing required field(s): {missing_node_fields}"
+        )
+
     level = node.get("level")
     if level not in SPEC_FIELDS:
         raise RuleViolation(f"illegal level: {level!r}")
@@ -106,211 +158,60 @@ def validate_node(node):
         raise RuleViolation("old field 'yardstick' is rejected; use 'spec'")
     if "provenance" in node:
         raise RuleViolation("old field 'provenance' is rejected; use 'source'")
+
+    node_id = node.get("id")
+    if not isinstance(node_id, str) or not node_id.strip():
+        raise RuleViolation("Scope node id must be a non-empty string")
+
+    parents = node.get("parents")
+    if not isinstance(parents, list) or not all(
+        isinstance(parent, str) and parent.strip() for parent in parents
+    ):
+        raise RuleViolation(
+            "Scope node parents must be a list of non-empty ids"
+        )
+    if level == "project" and parents:
+        raise RuleViolation("Project Scope nodes cannot have parents")
+    if level != "project" and not parents:
+        raise RuleViolation(f"{level} Scope nodes require a parent")
+
+    version = node.get("version")
+    if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+        raise RuleViolation("Scope node version must be a positive integer")
+    if node.get("status") not in COMMITTED_STATUSES:
+        raise RuleViolation(
+            "Scope node status must be one of "
+            f"{sorted(COMMITTED_STATUSES)}"
+        )
+    if not isinstance(node.get("source"), str) or not node["source"].strip():
+        raise RuleViolation("Scope node source must be a non-empty string")
+
     spec = node.get("spec")
     if not isinstance(spec, dict):
-        raise RuleViolation("node must carry a spec object")
+        raise RuleViolation("Scope node must carry a spec object")
     allowed = SPEC_FIELDS[level]
-    missing = sorted(allowed - set(spec))
-    if missing:
-        raise RuleViolation(f"missing spec field(s) for level {level!r}: {missing}")
-    for field in spec:
+    missing_spec_fields = sorted(allowed - set(spec))
+    if missing_spec_fields:
+        raise RuleViolation(
+            f"missing spec field(s) for level {level!r}: "
+            f"{missing_spec_fields}"
+        )
+    for field, value in spec.items():
         if field in READING_FIELDS:
-            raise RuleViolation(f"reading field {field!r} cannot live in a spec")
+            raise RuleViolation(
+                f"reading field {field!r} cannot live in a spec"
+            )
         if field not in allowed:
-            raise RuleViolation(f"unknown spec field {field!r} for level {level!r}")
-        _validate_spec_value(level, field, spec[field])
+            raise RuleViolation(
+                f"unknown spec field {field!r} for level {level!r}"
+            )
+        _validate_spec_value(level, field, value)
 
-
-def _word_count(value):
-    return len(WORD_RE.findall(value))
-
-
-def _check_word_range(*, field, text, bounds):
-    low, high = bounds
-    count = _word_count(text)
-    if count < low or count > high:
-        raise RuleViolation(f"spec field {field!r} must be {low}-{high} words, got {count}")
-
-
-def _scalar_text_bounds(level, field):
-    if level == "project" and field == "goal":
-        return PROJECT_GOAL_WORDS
-    return SCALAR_TEXT_WORDS
-
-
-def _validate_spec_value(level, field, value):
-    if field in LIST_TEXT_FIELDS.get(level, frozenset()):
-        if not isinstance(value, list) or not value:
-            raise RuleViolation(f"spec field {field!r} must be a non-empty list")
-        for idx, item in enumerate(value):
-            if not isinstance(item, str):
-                raise RuleViolation(f"spec field {field!r}[{idx}] must be a string")
-            _check_word_range(field=f"{field}[{idx}]", text=item, bounds=LIST_ITEM_WORDS)
-        return
-    if field in REF_FIELDS.get(level, frozenset()):
-        if not isinstance(value, str) or not value.strip():
-            raise RuleViolation(f"spec field {field!r} must be a non-empty reference string")
-        return
-    if field == "control_mode":
-        if value not in CONTROL_MODES:
-            raise RuleViolation(f"spec field 'control_mode' must be one of {sorted(CONTROL_MODES)}")
-        return
-    if field in SCALAR_TEXT_FIELDS.get(level, frozenset()):
-        if isinstance(value, str):
-            _check_word_range(field=field, text=value, bounds=_scalar_text_bounds(level, field))
-        elif field != "metric":
-            raise RuleViolation(f"spec field {field!r} must be a string")
-        elif not isinstance(value, dict) or not value:
-            raise RuleViolation("spec field 'metric' must be a non-empty object or a 20-100 word string")
-
-
-def scope_schema():
-    """Return the browser-facing Scope schema snapshot exported from the SSOT constants."""
-    levels = {}
-    for level, fields in SPEC_FIELDS.items():
-        ordered = [field for field in (
-            "goal", "contributions", "out_of_scope",
-            "hypothesis", "metric", "baselines", "success_gate",
-            "experiment", "config", "gate", "control_mode",
-        ) if field in fields]
-        spec = {}
-        for field in ordered:
-            entry = {"label": FIELD_LABELS[field]}
-            if field in LIST_TEXT_FIELDS.get(level, frozenset()):
-                entry.update({"kind": "list", "minWords": LIST_ITEM_WORDS[0], "maxWords": LIST_ITEM_WORDS[1]})
-            elif field in REF_FIELDS.get(level, frozenset()):
-                entry.update({"kind": "ref"})
-            elif field == "control_mode":
-                entry.update({"kind": "enum", "values": sorted(CONTROL_MODES)})
-            elif field == "metric":
-                entry.update({"kind": "metric", "minWords": SCALAR_TEXT_WORDS[0], "maxWords": SCALAR_TEXT_WORDS[1]})
-            else:
-                bounds = _scalar_text_bounds(level, field)
-                entry.update({"kind": "text", "minWords": bounds[0], "maxWords": bounds[1]})
-            spec[field] = entry
-        levels[level] = {
-            "order": ordered,
-            "primary": list(PRIMARY_FIELDS[level]),
-            "fields": spec,
-        }
-    return {
-        "levels": levels,
-        "oldNodeFields": ["yardstick", "provenance"],
-        "readingFields": sorted(READING_FIELDS),
-    }
-
-
-def node_to_json(node):
-    """Serialize a node deterministically."""
-    return json.dumps(node, sort_keys=True, ensure_ascii=False)
-
-
-def node_from_json(text):
-    """Parse a node from its serialized form."""
-    return json.loads(text)
-
-
-def propose_transition(node, *, op, gate, log_path, trigger=None, cause=None,
-                       invalidates=None, reopens=None, dial_revert=None):
-    """The single gated writer: validate node + gate, then append one transition. Reject-before-write."""
-    validate_node(node)
-    if op not in OPS:
-        raise RuleViolation(f"illegal op: {op!r}")
-    required = REQUIRED_GATE[node["level"]]
-    if gate != required:
-        raise RuleViolation(f"{node['level']} transition requires gate {required!r}, got {gate!r}")
-    record = {
-        "transaction_id": uuid.uuid4().hex[:12],
-        "scope_version": node["version"],
-        "node_id": node["id"],
-        "level": node["level"],
-        "op": op,
-        "gate": gate,
-        "trigger": trigger,
-        "cause": cause,
-        "invalidates": list(invalidates or []),
-        "reopens": list(reopens or []),
-        "dial_revert": list(dial_revert or []),
-        "node": node,  # post-transition snapshot — the log is the store, so it carries the content
-    }
-    _append(log_path, record)
-    return record
-
-
-def _append(log_path, record):
-    """Append one JSON line to the transition log."""
-    log_path = Path(log_path)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with log_path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-
-def read_log(log_path):
-    """Read the append-only transition log into a list of records (empty if absent)."""
-    log_path = Path(log_path)
-    if not log_path.exists():
-        return []
-    return [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-
-
-def global_version(records):
-    """Global Scope version: the deterministic position of the append-only transition log."""
-    return len(records)
-
-
-def history(node_id, records):
-    """The transition timeline for one node."""
-    return [r for r in records if r["node_id"] == node_id]
-
-
-def fold(records):
-    """The current scope: replay the append-only log, last write per node_id wins."""
-    projection = {}
-    for r in records:
-        projection[r["node_id"]] = copy.deepcopy(r["node"])  # detached — never alias the store
-    return projection
-
-
-def active_nodes(projection, level):
-    """Active folded nodes for one Scope level, ordered by id for deterministic consumers."""
-    return sorted(
-        (n for n in projection.values() if n.get("level") == level and n.get("status") == "ACTIVE"),
-        key=lambda n: n.get("id", ""),
-    )
-
-
-def intent(node_id, records):
-    """Read: the node's current (folded) spec."""
-    return fold(records)[node_id]["spec"]
-
-
-def assert_consistent(projection, records):
-    """A projection is only valid if it equals fold(records); a planted drift is rejected."""
-    if projection != fold(records):
-        raise RuleViolation("projection drift: does not equal fold(transitions)")
-
-
-def propagate(*, old_metric, new_metric, memory):
-    """Carry / invalidate / reopen pass for a metric-revising transition (exact-metric-match v1)."""
-    out = {"INVALIDATE": [], "REOPEN_IDEA": [], "RETAIN": []}
-    for item in memory:
-        if item.get("kind") == "RESULT" and item.get("metric") == old_metric:
-            out["INVALIDATE"].append(item["id"])
-        elif item.get("kind") == "IDEA" and item.get("failed_on_metric") == old_metric:
-            out["REOPEN_IDEA"].append(item["id"])
-        else:
-            out["RETAIN"].append(item["id"])
-    return out
-
-
-def should_invalidate(node, active_parent_ids):
-    """Reference-counted invalidation: a node dies only when none of its parents is still active."""
-    return not any(p in active_parent_ids for p in node["parents"])
-
-
-def append_memory(memory_log, entry):
-    """Scope-stamped memory writer: an entry must carry scope_version, else reject before write."""
-    if "scope_version" not in entry:
-        raise RuleViolation("memory entry must carry scope_version")
-    _append(memory_log, entry)
-    return entry
+    if level == "experiment":
+        package_id = node.get("package_id")
+        if package_id is not None and (
+            not isinstance(package_id, str) or not package_id.strip()
+        ):
+            raise RuleViolation(
+                "Experiment package_id must be null or a non-empty string"
+            )

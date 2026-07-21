@@ -1,11 +1,17 @@
 .superpowers/
 /docs/
-/tests/
 /CLAUDE.md
-# research-op local audit logs and runtime state
+# Legacy pre-.research runtime data; migration input only.
 outputs/
 /demo/
 .source
+
+# Rebuildable or operational .research projections.
+.research/state/current.json
+.research/state/*.lock
+.research/audit/
+.research/experiments/
+.research/interface/
 
 # Python bytecode
 __pycache__/

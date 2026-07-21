@@ -1,137 +1,54 @@
-"""(category, status, op, target) legality table.
+"""Compatibility import for the central research-state mutation policy.
 
-Generated from references/matrix.md (spec section 4). When you change a row in
-the matrix, change it here. The CLI looks up legality via is_legal().
+The policy owner is ``lib.research_state.policy``. This module remains only
+because existing research-op handlers and one-release compatibility tests
+import ``transitions`` by filename.
 """
 
-# 14-cell (category, status) state machine — must match schema.js. Brainstorm is
-# no longer a package category: pre-package ideas live on the dashboard brainstorm
-# lane (data/brainstorms.js) and are not research-op surfaces.
-STATES = {
-    "in-progress": ["CONTEXT_LOADED", "IMPLEMENTING", "IMPLEMENTATION_REVIEW",
-                    "READY_TO_LAUNCH", "EXPERIMENT_RUNNING", "LIVE_ANALYSIS",
-                    "RESULT_ANALYSIS", "NEXT_ACTION_READY", "BLOCKED",
-                    "DECISION_ADJUDICATION", "STOPPED"],
-    "success":     ["ADOPTED_UNCONFIRMED", "ADOPTED", "WIN_SUPERSEDED"],
-    "fail":        ["ARCHIVED", "ARCHIVED_CONDITIONAL"],
-}
+from __future__ import annotations
 
-# Targets the matrix recognizes.
-TARGETS = {
-    # Inventory targets (paint multiple HTML surfaces via renderers)
-    "status", "activeGate", "primaryMetricVsGate", "lastAction", "lastUpdated",
-    "openRuns", "currentBlocker", "terminationMessage", "adoptionPath",
-    "supersededBy", "reopenTrigger", "objectiveContract",
-    "experiments-row", "experiments-status",
-    "methodsTried", "rule",
-    # HTML in-place targets (single-home, no painter)
-    "tracker-live-check-row", "tracker-resource-allocation-row",
-    "tracker-impl-review-row", "tracker-chosen-route",
-    "results-gate-row", "results-block", "results-verdict",
-    "analysis-insight",
-    "doc-file", "doc-card",
-    "approval-ack-slot",
-    "last-updated-time",
-}
+import sys
+from pathlib import Path
 
-# Retired targets → pointer message (Pattern-B reject with guidance, not silence).
+
+PIPELINE_ROOT = Path(__file__).resolve().parents[3]
+if str(PIPELINE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PIPELINE_ROOT))
+
+from lib.research_state.policy import (  # noqa: E402,F401
+    DELETE_LEGAL,
+    INSERT_LEGAL,
+    STATES,
+    TARGETS,
+    UPDATE_LEGAL,
+)
+
+__all__ = [
+    "CHECK_LEGAL",
+    "DELETE_LEGAL",
+    "INSERT_LEGAL",
+    "RETIRED_TARGETS",
+    "STATES",
+    "TARGETS",
+    "UPDATE_LEGAL",
+    "is_legal",
+]
+
+
 RETIRED_TARGETS = {
     "package-invariant": "use --target rule (level=package, kind=binding)",
-    "analysis-rule":     "use --target rule (level=package, kind=lesson)",
+    "analysis-rule": "use --target rule (level=package, kind=lesson)",
 }
 
-# Insert legality: target -> set of (category, status) cells where the Insert is allowed.
-INSERT_LEGAL = {
-    "experiments-row": {
-        ("in-progress", s) for s in ("CONTEXT_LOADED", "IMPLEMENTING", "READY_TO_LAUNCH")
-    },
-    "methodsTried": (
-        {("in-progress", s) for s in ("RESULT_ANALYSIS", "NEXT_ACTION_READY")}
-        | {("success", s)  for s in STATES["success"]}
-        | {("fail", s)     for s in STATES["fail"]}
-    ),
-    "tracker-live-check-row": {
-        ("in-progress", s) for s in ("EXPERIMENT_RUNNING", "LIVE_ANALYSIS")
-    },
-    "tracker-resource-allocation-row": {
-        ("in-progress", s) for s in ("READY_TO_LAUNCH", "EXPERIMENT_RUNNING")
-    },
-    "tracker-impl-review-row": {
-        ("in-progress", s) for s in ("IMPLEMENTATION_REVIEW", "IMPLEMENTING")
-    },
-    "results-gate-row": {
-        ("in-progress", s) for s in ("EXPERIMENT_RUNNING", "LIVE_ANALYSIS", "RESULT_ANALYSIS")
-    },
-    "results-block": {
-        ("in-progress", "RESULT_ANALYSIS")
-    },
-    "analysis-insight": {("in-progress", s) for s in STATES["in-progress"]},
-    # A rule row (binding directive or distilled lesson) may be added at any in-progress stage;
-    # per-kind constraints (lesson needs a finalized result) live in validate.py.
-    "rule": {("in-progress", s) for s in STATES["in-progress"]},
-    "doc-file": {("in-progress", s) for s in STATES["in-progress"]},
-    "doc-card": {("in-progress", s) for s in STATES["in-progress"]},
-    "tracker-chosen-route": {("in-progress", "NEXT_ACTION_READY")},
+CHECK_LEGAL = {
+    (category, status)
+    for category, statuses in STATES.items()
+    for status in statuses
 }
-
-# Update legality: target -> set of cells where update is allowed.
-# Lane-crossing status updates require T1 ack; that's checked in validate.py, not here.
-UPDATE_LEGAL = {
-    "status": (
-        {(c, s) for c, statuses in STATES.items() for s in statuses}
-        - {("success", "ADOPTED"), ("fail", "ARCHIVED")}  # terminal-frozen
-    ),
-    "activeGate":           {("in-progress", s) for s in STATES["in-progress"]},
-    "primaryMetricVsGate":  {("in-progress", s) for s in STATES["in-progress"]},
-    "lastAction":           {("in-progress", s) for s in STATES["in-progress"]},
-    "lastUpdated":          {(c, s) for c, statuses in STATES.items() for s in statuses},
-    "openRuns":             {("in-progress", s) for s in STATES["in-progress"]},
-    "currentBlocker":       {("in-progress", s) for s in STATES["in-progress"]},
-    "objectiveContract":    {("in-progress", s) for s in STATES["in-progress"]},
-    "experiments-row":      {
-        ("in-progress", s) for s in ("CONTEXT_LOADED", "IMPLEMENTING", "READY_TO_LAUNCH")
-    },
-    "experiments-status":   {("in-progress", s) for s in STATES["in-progress"]},
-    "terminationMessage":   ({("success", s) for s in STATES["success"]}
-                             | {("fail", s) for s in STATES["fail"]}
-                             | {("in-progress", "STOPPED")}),
-    "adoptionPath":         {("success", "ADOPTED_UNCONFIRMED"), ("success", "ADOPTED")},
-    "supersededBy":         {("success", "WIN_SUPERSEDED")},
-    "reopenTrigger":        {("fail", "ARCHIVED_CONDITIONAL")},
-    "approval-ack-slot":    {(c, s) for c, statuses in STATES.items() for s in statuses},
-    "results-gate-row":     {("in-progress", s) for s in STATES["in-progress"]},
-    "results-block":        {
-        ("in-progress", s) for s in ("EXPERIMENT_RUNNING", "LIVE_ANALYSIS", "RESULT_ANALYSIS", "NEXT_ACTION_READY")
-    },
-    "results-verdict":      {("in-progress", "RESULT_ANALYSIS")},
-    "last-updated-time":    {(c, s) for c, statuses in STATES.items() for s in statuses},
-    "rule":                 {("in-progress", s) for s in STATES["in-progress"]},
-}
-
-# Delete legality: target -> set of cells where delete is allowed.
-DELETE_LEGAL = {
-    "experiments-row": {
-        ("in-progress", s) for s in ("CONTEXT_LOADED", "IMPLEMENTING")
-    },
-    "tracker-live-check-row":    {("in-progress", s) for s in STATES["in-progress"]},
-    "tracker-impl-review-row":   {("in-progress", "IMPLEMENTING")},
-    "methodsTried":              {("in-progress", s) for s in STATES["in-progress"]},
-    "doc-file":                  {("in-progress", s) for s in STATES["in-progress"]},
-    "doc-card":                  {("in-progress", s) for s in STATES["in-progress"]},
-    # Hard rule delete is a pre-launch correction only; landed rules retire via update.
-    "rule": {("in-progress", s) for s in ("CONTEXT_LOADED", "IMPLEMENTING", "READY_TO_LAUNCH")},
-    # results-block and inventory-entry are intentionally never legal — see spec D7, D8.
-}
-
-# Check is universal — every (category, status) cell allows it.
-CHECK_LEGAL = {(c, s) for c, statuses in STATES.items() for s in statuses}
 
 
 def is_legal(category: str, status: str, op: str, target: str | None) -> bool:
-    """Return True iff (category, status, op, target) is a legal mutation.
-
-    target may be None only when op == "check" (universal across all cells).
-    """
+    """Compatibility lookup over the frozen legacy cell representation."""
     cell = (category, status)
     if op == "check":
         return cell in CHECK_LEGAL

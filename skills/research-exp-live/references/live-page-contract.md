@@ -1,24 +1,35 @@
-# Exp-live Page Contract
+# Exp-live page contract
 
-`research_html/live.html` is a global read-only dashboard page. It is scaffolded by `/research-dashboard`.
+`$RESEARCH_ROOT/interface/live.html` is a generated, read-only view. A missing page does not block
+launch, monitoring, reconciliation, or completion.
 
-Data flow:
+## Data flow
 
-1. Prefer `GET /api/live/runs?include_status=1` from the local dashboard server.
-2. The server reads `outputs/_live/runs.jsonl`, folds launch and terminal
-   records, and attaches each eligible run's `status.json`.
-3. If the API is unavailable, fall back to the legacy direct file path:
-   fetch `../outputs/_live/runs.jsonl`, fold records in the browser, then fetch
-   each eligible run's `status.json`.
-4. Join package metadata from `data/research-packages.js`.
-5. Render measured state, the launched config (the run's command, the open-run disambiguator), progress, latest metrics, bounded health (state + at most one truncated reason), last-output age, resource sample, and evidence links. The verdict-flavored gate is not rendered here — it lives on tracker/results.
+When the interface server is running, the page prefers:
 
-Trust boundaries:
+```text
+GET /api/live/runs?include_status=1
+GET /api/live/status/<run-id>
+GET /api/live/log/<run-id>
+```
 
-- The page renders readings, not verdicts.
-- The page does not write package surfaces or runtime artifacts.
-- `eta` is copied literally from `status.json`.
-- STALE and RUN_FAILED runs appear in the attention rail as compact cards. A failure clears from the rail and the alarm counts when it is either relaunched with `--retry-of <run_id>` (superseded) or listed in `outputs/_live/acknowledged.json` (a JSON array of `run_id`s, or `{"run_ids": [...]}`, fetched read-only). Either way the run stays in the terminal history, annotated. This is data-driven, not a page write.
-- Empty, fetch-failed, and parse-failed states must be explicit and visible.
-- The API server is an observation/data-plane boundary. Its failure is
-  `repair_required` dashboard debt, not experiment completion or launch truth.
+The server reads Run aggregates from `$RESEARCH_ROOT/state/` and resolves each Run directory below
+`$RESEARCH_ROOT/experiments/`. It rejects runtime paths outside that tree.
+
+If the API is unavailable, the page may read `data/live-runs.jsonl` and
+`data/live-acknowledged.json` from the generated interface. These files are short-lived projections
+created during an interface rebuild. They can be stale and must not authorize a workflow decision.
+
+## Trust boundary
+
+- The page displays observations. It does not write state or Run files.
+- The page never renders a scientific verdict from a live metric.
+- Runtime status comes from `status.json`; Run identity and lifecycle come from management state.
+- Failed or stale fetches are visible rather than converted into empty success states.
+- Attention acknowledgment and retry relationships originate in state. Their interface JSON files
+  are projections.
+- All API endpoints are read-only.
+
+The server's static document root is `$RESEARCH_ROOT/interface/`. Its process metadata and log live
+under `$XDG_RUNTIME_DIR/trustworthy-research/<workspace-hash>/`, or the per-user temporary fallback
+selected by `ResearchPaths`. Server failure creates interface debt only.

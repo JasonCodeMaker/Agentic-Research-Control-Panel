@@ -1,546 +1,711 @@
 #!/usr/bin/env python3
-"""research-op CLI — the single mutation surface for research packages.
+"""The state-backed mutation and bounded-query facade for research work."""
 
-MVP supports `--op check`. Insert/Update/Delete + composite events arrive in Phase 3.
-"""
+from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
-import importlib.util
 import json
-import re
 import sys
-import time
 from pathlib import Path
+from typing import Any
 
-# Make sibling modules importable when invoked as `python3 skills/.../research_op.py`.
-sys.path.insert(0, str(Path(__file__).parent))
+SCRIPT_DIR = Path(__file__).resolve().parent
+PIPELINE_ROOT = Path(__file__).resolve().parents[3]
+for candidate in (SCRIPT_DIR, PIPELINE_ROOT, PIPELINE_ROOT / "lib"):
+    if str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
 
-import audit
-import transitions  # noqa: E402
-import validate
-
-
-def _read_inventory(pkg: str) -> dict:
-    """Parse the package entry out of research_html/data/research-packages.js."""
-    js = Path("research_html/data/research-packages.js").read_text()
-    # Find the line containing id: "<pkg>", then extract category and status nearby.
-    # The entry is large and may contain nested structures, so we search forwards
-    # from the id line for the next occurrences of category and status.
-    pattern = r'id:\s*["\']' + re.escape(pkg) + r'["\']'
-    m_id = re.search(pattern, js)
-    if not m_id:
-        raise SystemExit(f"package id not found in inventory: {pkg}")
-
-    # Search forward from the id line for category and status.
-    # Assume they appear within the next 50 lines (conservative).
-    search_start = m_id.start()
-    search_region = js[search_start:search_start + 10000]  # ~50–100 lines ahead
-
-    m_cat = re.search(r"category:\s*['\"]([^'\"]+)['\"]", search_region)
-    m_stat = re.search(r"status:\s*['\"]([^'\"]+)['\"]", search_region)
-
-    if not m_cat or not m_stat:
-        raise SystemExit(f"could not parse (category, status) for {pkg}")
-    return {"category": m_cat.group(1), "status": m_stat.group(1)}
+import management  # noqa: E402
 
 
-def _refresh_scope_projection(log_path: Path) -> list[str]:
-    """Refresh dashboard scope projection when dashboard data exists in this workspace."""
-    projection_path = Path("research_html/data/scope-projection.json")
-    if not projection_path.parent.exists():
-        return []
-    renderer_path = (
-        Path(__file__).resolve().parents[3]
-        / "skills" / "research-dashboard" / "scripts" / "render_scope_projection.py"
+def _interface_fields(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Expose the projection receipt from the last committed domain event."""
+    projection = (
+        events[-1].get("_interface_projection")
+        if events and isinstance(events[-1], dict)
+        else None
     )
-    if not renderer_path.exists():
-        return []
-    spec = importlib.util.spec_from_file_location("render_scope_projection_for_research_op", renderer_path)
-    if spec is None or spec.loader is None:
-        return []
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    module.render(log_path, projection_path)
-    module.check(log_path, projection_path)
-    return [str(projection_path), str(projection_path.with_suffix(".js"))]
-
-
-def _read_jsonl(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-
-
-def _triage_proposal_hash(item: dict) -> str:
-    content = {
-        k: v for k, v in item.items()
-        if k not in {"status", "proposal_hash", "accepted_proposal", "disposed_at", "decision"}
+    if not isinstance(projection, dict):
+        return {"interface_written": False}
+    fields: dict[str, Any] = {
+        "interface_written": bool(projection.get("written")),
+        "interface_root": projection.get("root"),
     }
-    encoded = json.dumps(content, sort_keys=True, ensure_ascii=False).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
+    if "files_written" in projection:
+        fields["interface_files_written"] = projection["files_written"]
+    if "source_seq" in projection:
+        fields["interface_source_seq"] = projection["source_seq"]
+    if projection.get("error"):
+        fields["interface_error"] = projection["error"]
+    return fields
 
 
-def _scope_payload_from_triage(triage_log: Path, item_id: str) -> dict:
-    records = _read_jsonl(triage_log)
-    accepted = next(
-        (rec for rec in reversed(records)
-         if rec.get("id") == item_id and rec.get("status") == "accepted"),
-        None,
+def _error(
+    exc: Exception,
+    *,
+    phase: str,
+    package_id: str | None = None,
+    operation: str | None = None,
+    target: str | None = None,
+    paths=None,
+    payload: dict[str, Any] | None = None,
+    actor: dict[str, str] | None = None,
+    idempotency_key: str | None = None,
+) -> int:
+    audit_error: str | None = None
+    if paths is not None and not bool(getattr(exc, "audited", False)):
+        try:
+            management.record_rejected_attempt(
+                paths,
+                command_name="research-op-cli",
+                actor=actor or {"type": "agent", "id": "main"},
+                payload={
+                    "package_id": package_id,
+                    "operation": operation,
+                    "target": target,
+                    "input": copy.deepcopy(payload or {}),
+                },
+                rule=str(getattr(exc, "rule", type(exc).__name__)),
+                detail=str(exc),
+                entry_skill="research-op/cli",
+                idempotency_key=idempotency_key,
+            )
+            if hasattr(exc, "audited"):
+                exc.audited = True
+        except Exception as audit_exc:  # preserve the original rejection
+            audit_error = str(audit_exc)
+    print(
+        json.dumps(
+            {
+                "rejected": True,
+                "phase": phase,
+                "rule": getattr(exc, "rule", type(exc).__name__),
+                "pkg": package_id,
+                "op": operation,
+                "target": target,
+                "detail": str(exc),
+                **({"audit_error": audit_error} if audit_error else {}),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
     )
-    if accepted is None:
-        raise SystemExit(f"accepted triage item not found: {item_id}")
-    proposal = accepted.get("accepted_proposal")
-    if not isinstance(proposal, dict):
-        proposal = next(
-            (rec for rec in reversed(records)
-             if rec.get("id") == item_id and rec.get("status") == "pending"),
-            None,
+    return 2
+
+
+def _management_query(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog=f"research-op {argv[0]}")
+    parser.add_argument("command", choices=("show", "context", "history", "audit"))
+    parser.add_argument("subject")
+    parser.add_argument("aggregate_id", nargs="?")
+    parser.add_argument("--phase")
+    parser.add_argument("--workspace", default=".")
+    parser.add_argument("--research-root")
+    args = parser.parse_args(argv)
+    from lib.research_state import ResearchPaths, StateQuery
+
+    paths = ResearchPaths.resolve(
+        workspace=args.workspace,
+        research_root=args.research_root,
+    )
+    query = StateQuery(paths)
+    try:
+        if args.command == "show":
+            result = query.show(args.subject, args.aggregate_id)
+        elif args.command == "context":
+            if args.aggregate_id is not None:
+                parser.error("context accepts one package id")
+            result = query.context(args.subject, phase=args.phase)
+        elif args.command == "history":
+            if args.aggregate_id is not None or "/" not in args.subject:
+                parser.error("history requires <type>/<id>")
+            aggregate_type, aggregate_id = args.subject.split("/", 1)
+            result = query.history(aggregate_type, aggregate_id)
+        else:
+            if args.aggregate_id is not None:
+                parser.error("audit accepts one command id")
+            result = query.audit(args.subject)
+    except Exception as exc:
+        return _error(exc, phase="query")
+    print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
+    return 0
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="research-op")
+    parser.add_argument("--pkg")
+    parser.add_argument(
+        "--op",
+        choices=[
+            "check",
+            "insert",
+            "update",
+            "delete",
+            "scan-events",
+            "scope-transition",
+            "registry-add",
+            "evolution-observe",
+            "evolution-create",
+            "evolution-evidence-add",
+            "evolution-transition",
+            "evolution-project",
+            "evolution-check",
+            "evolution-approve",
+            "evolution-install-skill",
+            "evolution-suspend-skill",
+            "evolution-rollback-skill",
+        ],
+    )
+    parser.add_argument("--event")
+    parser.add_argument("--target")
+    parser.add_argument("--scope", default="package")
+    parser.add_argument("--payload", default="{}")
+    parser.add_argument("--from-triage")
+    parser.add_argument("--workspace", default=".")
+    parser.add_argument("--research-root")
+    parser.add_argument("--idempotency-key")
+    parser.add_argument("--expected-version", type=int)
+    parser.add_argument(
+        "--actor-type",
+        choices=("user", "agent", "system"),
+        default="agent",
+    )
+    parser.add_argument("--actor-id", default="main")
+    parser.add_argument("--nl")
+    return parser
+
+
+def _payload(raw: str) -> dict[str, Any]:
+    value = json.loads(raw)
+    if not isinstance(value, dict):
+        raise ValueError("--payload must be a JSON object")
+    return value
+
+
+def _evolution(args: argparse.Namespace, payload: dict[str, Any], paths) -> int:
+    """Route project memory to state; keep only skill bundles outside it."""
+    from ops import evolution
+
+    try:
+        status, files, message = evolution.run(
+            args.op,
+            payload,
+            paths,
+            project_root=paths.workspace,
         )
-    if not isinstance(proposal, dict):
-        raise SystemExit(f"accepted triage item has no proposal snapshot: {item_id}")
-    if accepted.get("proposal_hash") and _triage_proposal_hash(proposal) != accepted.get("proposal_hash"):
-        raise SystemExit(f"accepted triage proposal hash mismatch: {item_id}")
-    node = proposal.get("proposed_node")
-    if not isinstance(node, dict):
-        raise SystemExit(f"accepted triage item has no proposed_node: {item_id}")
-    payload = {k: node[k] for k in ("id", "level", "parents", "version", "status", "spec", "source") if k in node}
-    for key in ("op", "gate", "invalidates", "reopens", "dial_revert"):
-        if key in proposal:
-            payload[key] = proposal[key]
-    payload["trigger"] = f"triage:{item_id}"
-    payload["cause"] = proposal.get("change") or proposal.get("rationale") or accepted.get("decision")
-    payload["_triage_id"] = item_id
-    if accepted.get("proposal_hash"):
-        payload["_proposal_hash"] = accepted["proposal_hash"]
-    return payload
-
-
-def _existing_triage_commit(log_path: Path, item_id: str, node: dict, payload: dict) -> dict | None:
-    trigger = f"triage:{item_id}"
-    for rec in _read_jsonl(log_path):
-        if rec.get("trigger") != trigger:
-            continue
-        if rec.get("node") == node and rec.get("op") == payload.get("op") and rec.get("gate") == payload.get("gate"):
-            return rec
-        raise SystemExit(f"triage item already committed with different payload: {item_id}")
-    return None
-
-
-def main() -> int:
-    p = argparse.ArgumentParser(prog="research-op")
-    p.add_argument("--pkg", help="package id under research_html/packages/ (required unless --nl)")
-    p.add_argument("--op", choices=["check", "insert", "update", "delete", "scan-events",
-                                    "scope-transition", "registry-add",
-                                    "evolution-observe", "evolution-create",
-                                    "evolution-evidence-add", "evolution-transition",
-                                    "evolution-project", "evolution-check",
-                                    "evolution-approve", "evolution-install-skill",
-                                    "evolution-suspend-skill", "evolution-rollback-skill"],
-                   help="primitive op (one of --op or --event required)")
-    p.add_argument("--event", help="composite event (chain-done, checkpoint-saved, ...) "
-                   "(one of --op or --event required)")
-    p.add_argument("--target", help="target name from references/matrix.md (required for insert/update/delete)")
-    p.add_argument("--scope", default="package", help="check scope: package | all")
-    p.add_argument("--payload", default="{}", help="JSON payload for insert/update/delete")
-    p.add_argument("--from-triage", help="accepted Triage item id to commit via scope-transition")
-    p.add_argument("--triage-log", default="outputs/_scope/triage.jsonl",
-                   help="Triage log path for --from-triage")
-    p.add_argument("--nl", help="natural-language form: e.g. 'update: set status of <pkg> to BLOCKED'")
-    args = p.parse_args()
-
-    # NL escape hatch — real parsing lives in the SKILL.md body (the agent reads the prose,
-    # produces the structured form, and calls the CLI again with explicit --pkg/--op/--target/--payload).
-    if args.nl:
-        print("Natural-language parsing is best done from the SKILL.md body. "
-              "Re-invoke with explicit --pkg / --op / --target / --payload.", file=sys.stderr)
-        return 4
-
-    if not args.pkg:
-        print("error: --pkg is required (unless --nl)", file=sys.stderr)
-        return 1
-
-    t0 = time.monotonic()
-
-    # Self-evolve path — project-level Rule Store ops. Like scope-transition/registry-add
-    # these are cross-package, so they bypass the package (category, status) state machine.
-    # `--pkg _selfevolve` is a synthetic project-level context with no inventory entry, so
-    # this branch runs BEFORE _read_inventory (which would raise on a non-package pkg).
-    if args.op and args.op.startswith("evolution-"):
-        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
-        from ops import evolution  # noqa: E402
-        try:
-            payload = json.loads(args.payload)
-        except json.JSONDecodeError as e:
-            print(json.dumps({"rejected": True, "phase": "evolution-validate",
-                              "rule": "payload-json-valid", "pkg": args.pkg, "op": args.op,
-                              "detail": str(e)}, indent=2))
-            return 2
-        root = audit.runtime_root("_selfevolve")
-        try:
-            status_, files, message = evolution.run(args.op, payload, root)
-        except evolution.EvolutionReject as e:
-            audit.append("_selfevolve", op=args.op, target=None, event=None,
-                         state_before={}, state_after={}, validation="OP_REJECTED", rule=e.rule,
-                         files_touched=[], payload=payload, user_intent=None,
-                         duration_ms=int((time.monotonic() - t0) * 1000))
-            print(json.dumps({"rejected": True, "phase": "evolution-validate", "rule": e.rule,
-                              "pkg": args.pkg, "op": args.op, "detail": e.detail}, indent=2))
-            return 2
-        audit.append("_selfevolve", op=args.op, target=None, event=None,
-                     state_before={}, state_after={}, validation="PASSED", rule=None,
-                     files_touched=files, payload=payload, user_intent=None,
-                     duration_ms=int((time.monotonic() - t0) * 1000))
-        print(f"{args.op} {status_}: {message}")
-        return 0
-
-    # Unified-rules path (cross-package levels). level=package flows the normal
-    # state-gated path below; level=project (and check) use the synthetic _project
-    # context like _selfevolve, because there is no package (category, status) cell.
-    if args.target == "rule" and (args.pkg == "_project" or args.op == "check"):
-        import subprocess  # noqa: E402
-        import rules_store  # noqa: E402
-        allowed_rule_ops = {"check", "insert", "update", "delete"}
-        try:
-            payload = json.loads(args.payload)
-        except json.JSONDecodeError as e:
-            print(json.dumps({"rejected": True, "phase": "rules-validate",
-                              "rule": "payload-json-valid", "pkg": args.pkg, "op": args.op,
-                              "detail": str(e)}, indent=2))
-            return 2
-
-        def _reject(rule, detail):
-            audit.append(args.pkg, op=args.op, target="rule", event=None,
-                         state_before={}, state_after={}, validation="OP_REJECTED", rule=rule,
-                         files_touched=[], payload=payload, user_intent=None,
-                         duration_ms=int((time.monotonic() - t0) * 1000))
-            print(json.dumps({"rejected": True, "phase": "rules-validate", "rule": rule,
-                              "pkg": args.pkg, "op": args.op, "target": "rule",
-                              "detail": detail, "suggested_fix": detail}, indent=2))
-            return 2
-
-        if args.op not in allowed_rule_ops:
-            return _reject("rule-op-supported",
-                           "Rule ops support only check, insert, update, and delete.")
-        if args.op == "check":
-            r = subprocess.run(["python3", "research_html/scripts/learnings_lint.py",
-                                "lint-rules"], capture_output=True, text=True)
-            print(r.stdout, end="")
-            return 0 if r.returncode == 0 else 2
-        if payload.get("level") == "universal":
-            return _reject("rule-universal-writelock",
-                           "Universal rules (R/T) are write-locked; edit the dashboard skill assets.")
-        if args.op == "insert" and payload.get("level") != "project":
-            return _reject("rule-level-routable",
-                           "Use --pkg <package-id> for level=package rule ops.")
-        if args.op == "insert" and payload.get("kind", "constraint") != "constraint":
-            return _reject("rule-kind-mismatch", "Project rules must use kind=constraint.")
-        if not str(payload.get("ack", "")).strip():
-            return _reject("rule-project-needs-ack",
-                           "Landing a project rule requires a distinct human action (payload.ack).")
-        if args.op == "insert" and payload.get("origin", "user") in ("mirror", "selfevolve"):
-            return _reject("rule-origin-reserved",
-                           "Do not set origin=mirror/selfevolve; those rows are exporter-owned.")
-        if args.op in ("insert", "update") and re.search(r"<[^>]+>", str(payload.get("text", ""))):
-            return _reject("rule-text-plain",
-                           "Rule text must be plain natural-language prose with no HTML tags.")
-        root = Path("research_html")
-        try:
-            rows = rules_store.load_rules(root)
-        except rules_store.RuleRowError as e:
-            return _reject("rule-store-malformed", str(e))
-        if args.op == "insert":
-            for f in ("slug", "title", "text", "rationale", "addedAt"):
-                if not str(payload.get(f, "")).strip():
-                    return _reject("rule-required-fields", f"missing {f}")
-            if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", payload["slug"]):
-                return _reject("rule-required-fields", "slug must be kebab-case")
-            row = {"id": f"PRJ-{payload['slug']}", "level": "project",
-                   "kind": payload.get("kind", "constraint"), "title": payload["title"],
-                   "text": payload["text"], "rationale": payload["rationale"],
-                   "source": payload.get("source", "user directive"),
-                   "origin": payload.get("origin", "user"), "status": "ACTIVE",
-                   "addedAt": payload["addedAt"]}
-            if any(r_["id"] == row["id"] for r_ in rows):
-                return _reject("rule-required-fields", f"rule id exists: {row['id']}")
-            rows.append(row)
-        elif args.op in ("update", "delete"):
-            rid = payload.get("id", "")
-            row = next((r_ for r_ in rows if r_["id"] == rid), None)
-            if row is None:
-                return _reject("rule-required-fields", f"unknown rule id: {rid}")
-            if row.get("origin") in ("mirror", "selfevolve"):
-                return _reject("rule-origin-immutable",
-                               "export-owned row; regenerate via its exporter")
-            if row.get("level") != "project":
-                return _reject("rule-level-routable",
-                               "Use --pkg <package-id> for level=package rule ops.")
-            if args.op == "delete":
-                return _reject("rule-no-hard-delete",
-                               "Project rules retire (update status=RETIRED).")
-            if payload.get("status") == "RETIRED" and not str(payload.get("retireReason", "")).strip():
-                return _reject("rule-lifecycle-fields", "RETIRED needs retireReason")
-            if payload.get("status") == "PROMOTED" and not str(payload.get("promotedTo", "")).strip():
-                return _reject("rule-lifecycle-fields", "PROMOTED needs promotedTo")
-            for f in ("title", "text", "rationale", "status", "retireReason", "promotedTo"):
-                if f in payload:
-                    row[f] = payload[f]
-        try:
-            path = rules_store.save_rules(root, rows)
-        except rules_store.RuleRowError as e:
-            return _reject("rule-row-schema", str(e))
-        audit.append(args.pkg, op=args.op, target="rule", event=None,
-                     state_before={}, state_after={}, validation="PASSED", rule=None,
-                     files_touched=[str(path)], payload=payload, user_intent=None,
-                     duration_ms=int((time.monotonic() - t0) * 1000))
-        print(f"{args.op} OK pkg={args.pkg} target=rule files=['{path}']")
-        return 0
-
-    # Scope-transition path — the one gated writer for the Scope SSOT. Gated by node level
-    # (not the package (category, status) state machine), so it bypasses the state-gate.
-    # The first Project node has no package inventory by design, so this must run before
-    # _read_inventory. Use --pkg _scope for project-level onboarding commits.
-    if args.op == "scope-transition":
-        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "lib"))
-        import scope_ssot  # noqa: E402
-        payload = (
-            _scope_payload_from_triage(Path(args.triage_log), args.from_triage)
-            if args.from_triage else json.loads(args.payload)
+    except evolution.EvolutionReject as exc:
+        return _error(
+            exc,
+            phase="evolution-validate",
+            package_id=args.pkg,
+            operation=args.op,
+            paths=paths,
+            payload=payload,
+            actor={"type": args.actor_type, "id": args.actor_id},
+            idempotency_key=args.idempotency_key,
         )
-        node = {k: payload[k] for k in ("id", "level", "parents", "version", "status",
-                                        "spec", "source") if k in payload}
-        log_path = audit.runtime_root("_scope") / "transitions.jsonl"
-        state = {}
-        if args.from_triage:
-            existing = _existing_triage_commit(log_path, args.from_triage, node, payload)
-            if existing:
-                try:
-                    projection_files = _refresh_scope_projection(log_path)
-                except Exception as e:
-                    audit.append(args.pkg, op="scope-transition", target=node.get("id"), event=None,
-                                 state_before=state, state_after={"node": node},
-                                 validation="POST_COMMIT_PROJECTION_FAILED", rule="scope-projection-refresh",
-                                 files_touched=[str(log_path)], payload=payload,
-                                 user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-                    print(json.dumps({
-                        "rejected": False,
-                        "committed": True,
-                        "phase": "scope-projection-refresh",
-                        "rule": "scope-projection-refresh",
-                        "pkg": args.pkg,
-                        "op": "scope-transition",
-                        "node_id": node.get("id"),
-                        "detail": str(e),
-                    }, indent=2))
-                    return 2
-                audit.append(args.pkg, op="scope-transition", target=node.get("id"), event=None,
-                             state_before=state, state_after={"node": node},
-                             validation="IDEMPOTENT", rule=None,
-                             files_touched=projection_files, payload=payload,
-                             user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-                print(
-                    "scope-transition already committed "
-                    f"node={node.get('id')} txn={existing.get('transaction_id')}"
-                )
-                return 0
-        try:
-            record = scope_ssot.propose_transition(
-                node, op=payload.get("op"), gate=payload.get("gate"), log_path=log_path,
-                trigger=payload.get("trigger"), cause=payload.get("cause"),
-                invalidates=payload.get("invalidates"), reopens=payload.get("reopens"),
-                dial_revert=payload.get("dial_revert"))
-        except scope_ssot.RuleViolation as e:
-            audit.append(args.pkg, op="scope-transition", target=node.get("id"), event=None,
-                         state_before=state, state_after=state,
-                         validation="OP_REJECTED", rule="scope-gate",
-                         files_touched=[], payload=payload,
-                         user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-            print(json.dumps({
-                "rejected": True, "phase": "scope-gate", "rule": "scope-gate",
-                "pkg": args.pkg, "op": "scope-transition", "node_id": node.get("id"),
-                "detail": str(e),
-            }, indent=2))
-            return 2
-        try:
-            projection_files = _refresh_scope_projection(log_path)
-        except Exception as e:  # projection is derived; the Scope transition already committed.
-            audit.append(args.pkg, op="scope-transition", target=node.get("id"), event=None,
-                         state_before=state, state_after={"node": node},
-                         validation="POST_COMMIT_PROJECTION_FAILED", rule="scope-projection-refresh",
-                         files_touched=[str(log_path)], payload=payload,
-                         user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-            print(json.dumps({
-                "rejected": False,
-                "committed": True,
-                "phase": "scope-projection-refresh",
-                "rule": "scope-projection-refresh",
-                "pkg": args.pkg,
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "op": args.op,
+                "status": status,
+                "message": message,
+                "files": files,
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def _scope_transition(args: argparse.Namespace, paths, payload) -> int:
+    if args.pkg != "_scope":
+        return _error(
+            ValueError("scope-transition requires --pkg _scope"),
+            phase="scope-gate",
+            package_id=args.pkg,
+            operation=args.op,
+            paths=paths,
+            payload=payload,
+            actor={"type": args.actor_type, "id": args.actor_id},
+            idempotency_key=args.idempotency_key,
+        )
+    try:
+        if not args.from_triage:
+            raise ValueError(
+                "scope-transition requires --from-triage <accepted-proposal-id>"
+            )
+        payload, causation_id = management.accepted_scope_payload(
+            paths,
+            args.from_triage,
+        )
+        event, record, idempotent = management.commit_scope_transition(
+            paths,
+            payload,
+            actor={"type": args.actor_type, "id": args.actor_id},
+            idempotency_key=args.idempotency_key,
+            expected_version=args.expected_version,
+            causation_id=causation_id,
+        )
+    except Exception as exc:
+        return _error(
+            exc,
+            phase="scope-gate",
+            package_id=args.pkg,
+            operation=args.op,
+            paths=paths,
+            payload=payload,
+            actor={"type": args.actor_type, "id": args.actor_id},
+            idempotency_key=args.idempotency_key,
+        )
+    print(
+        json.dumps(
+            {
+                "ok": True,
                 "op": "scope-transition",
-                "node_id": node.get("id"),
-                "detail": str(e),
-            }, indent=2))
-            return 2
-        files_touched = [str(log_path), *projection_files]
-        audit.append(args.pkg, op="scope-transition", target=node.get("id"), event=None,
-                     state_before=state, state_after={"node": node},
-                     validation="PASSED", rule=None,
-                     files_touched=files_touched, payload=payload,
-                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-        print(f"scope-transition OK node={node.get('id')} txn={record['transaction_id']}")
-        return 0
+                "aggregate": f"{event['aggregate_type']}/{event['aggregate_id']}",
+                "event_id": event["event_id"],
+                "aggregate_version": event["aggregate_version"],
+                "idempotent": idempotent,
+                "record": record,
+                **_interface_fields([event]),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    return 0
 
-    state = _read_inventory(args.pkg)
 
-    # Scan-events path (read-only, no state-gate, no validation).
-    if args.op == "scan-events":
-        import scan_events  # noqa: E402
-        found = scan_events.scan(args.pkg)
-        for ev in found:
-            print(json.dumps(ev))
-        # Caller is expected to invoke --event for each; bump only after the agent confirms.
-        return 0
+def _registry_add(args: argparse.Namespace, paths, payload) -> int:
+    try:
+        status, record, event = management.commit_registry_add(
+            paths,
+            args.target or "",
+            payload,
+            package_id=str(args.pkg),
+            actor={"type": args.actor_type, "id": args.actor_id},
+            idempotency_key=args.idempotency_key,
+        )
+    except Exception as exc:
+        return _error(
+            exc,
+            phase="registry-validate",
+            package_id=args.pkg,
+            operation=args.op,
+            target=args.target,
+            paths=paths,
+            payload=payload,
+            actor={"type": args.actor_type, "id": args.actor_id},
+            idempotency_key=args.idempotency_key,
+        )
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "op": args.op,
+                "status": status,
+                "aggregate": f"{event['aggregate_type']}/{event['aggregate_id']}",
+                "event_id": event["event_id"],
+                "record": record,
+                **_interface_fields([event]),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    return 0
 
-    # Registry-add path — project-level knowledge stores (papers / edges / gaps). Like
-    # scope-transition these are cross-package, so they bypass the package (category, status)
-    # state-gate; reject-before-write validators live in registry.py.
+
+def _check(args: argparse.Namespace, paths) -> int:
+    from lib.research_state import StateQuery
+
+    try:
+        if args.pkg == "_project":
+            result = StateQuery(paths).show("rule")
+        else:
+            result = StateQuery(paths).context(str(args.pkg))
+    except Exception as exc:
+        return _error(
+            exc,
+            phase="state-check",
+            package_id=args.pkg,
+            operation="check",
+            target=args.target,
+            paths=paths,
+            payload={},
+            actor={"type": args.actor_type, "id": args.actor_id},
+            idempotency_key=args.idempotency_key,
+        )
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "scope": args.scope,
+                **result,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def _scan_events(args: argparse.Namespace, paths) -> int:
+    from lib.experiments.reconcile import reconcile_runs
+
+    try:
+        result = reconcile_runs(paths)
+    except Exception as exc:
+        return _error(
+            exc,
+            phase="run-reconcile",
+            package_id=args.pkg,
+            operation="scan-events",
+            paths=paths,
+            payload={},
+            actor={"type": args.actor_type, "id": args.actor_id},
+            idempotency_key=args.idempotency_key,
+        )
+    actions = [
+        {
+            "run_id": action.run_id,
+            "event_type": action.event_type,
+            "event_id": action.event_id,
+        }
+        for action in result.actions
+    ]
+    print(
+        json.dumps(
+            {
+                "ok": not result.errors,
+                "scanned": result.scanned,
+                "actions": actions,
+                "errors": list(result.errors),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    return 2 if result.errors else 0
+
+
+def _chosen_route(args: argparse.Namespace, paths, payload) -> list[dict[str, Any]]:
+    decision = management.commit_decision(
+        paths,
+        str(args.pkg),
+        payload,
+        actor={"type": args.actor_type, "id": args.actor_id},
+        idempotency_key=(
+            f"{args.idempotency_key}:decision"
+            if args.idempotency_key
+            else None
+        ),
+    )
+    return [decision]
+
+
+def _doc_payload(paths, operation: str, payload: dict[str, Any]) -> dict[str, Any]:
+    if operation == "delete":
+        return payload
+    content = payload.get("content")
+    if content is None:
+        content = payload.get("html")
+    if not isinstance(content, str):
+        raise ValueError("doc-file requires string content")
+    slug = str(payload.get("slug") or "")
+    if not slug:
+        raise ValueError("doc-file requires slug")
+    path = str(payload.get("path") or f"docs/{slug}.html")
+    if not path.startswith("docs/") or ".." in Path(path).parts:
+        raise ValueError("doc-file path must stay below docs/")
+    note_ref = management.write_note(
+        paths,
+        content,
+        mime="text/html" if path.endswith(".html") else "text/markdown",
+        title=str(payload.get("title") or slug),
+    )
+    return {
+        **copy.deepcopy(payload),
+        "path": path,
+        "_note_ref": note_ref,
+    }
+
+
+def _event(args: argparse.Namespace, paths, payload) -> int:
+    event_name = str(args.event or "").upper().replace("-", "_")
+    try:
+        if event_name == "RUN_RESULT_FINALIZED":
+            events = management.propagate_run_result(
+                paths,
+                str(args.pkg),
+                str(payload.get("run_id") or ""),
+                actor={"type": args.actor_type, "id": args.actor_id},
+            )
+        elif event_name == "CHAIN_DONE":
+            run_id = str(payload.get("run_id") or "")
+            state = __import__(
+                "lib.research_state",
+                fromlist=["EventStore"],
+            ).EventStore(paths).state()
+            run = state["aggregates"]["run"].get(run_id)
+            if not isinstance(run, dict) or run.get("package_id") != args.pkg:
+                raise ValueError("CHAIN_DONE requires a package-owned run_id")
+            if run.get("status") not in {"COMPLETED", "FAILED", "HALTED", "SKIPPED"}:
+                raise ValueError("CHAIN_DONE requires a terminal run")
+            events = management.apply_package_operation(
+                paths,
+                str(args.pkg),
+                operation="update",
+                target="lastAction",
+                payload={"to": f"run {run_id} terminal: {run.get('status')}"},
+                actor={"type": args.actor_type, "id": args.actor_id},
+                idempotency_key=args.idempotency_key,
+            )
+        elif event_name in {
+            "CHECKPOINT_SAVED",
+            "CANDIDATE_SUBMITTED",
+            "SENTINEL_WRITE",
+            "PHASE_MARKER",
+        }:
+            # These are evidence observations, never scientific verdicts.
+            events = management.apply_package_operation(
+                paths,
+                str(args.pkg),
+                operation="update",
+                target="lastAction",
+                payload={
+                    "to": f"{event_name}: {payload.get('artifact') or payload.get('run_id') or 'recorded'}"
+                },
+                actor={"type": args.actor_type, "id": args.actor_id},
+                idempotency_key=args.idempotency_key,
+            )
+        else:
+            raise ValueError(f"unknown composite event: {args.event}")
+    except Exception as exc:
+        return _error(
+            exc,
+            phase="event-fanout",
+            package_id=args.pkg,
+            operation="event",
+            target=args.event,
+            paths=paths,
+            payload=payload,
+            actor={"type": args.actor_type, "id": args.actor_id},
+            idempotency_key=args.idempotency_key,
+        )
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "event": event_name,
+                "events": [
+                    {
+                        "event_id": event["event_id"],
+                        "event_type": event["event_type"],
+                        "aggregate": (
+                            f"{event['aggregate_type']}/{event['aggregate_id']}"
+                        ),
+                    }
+                    for event in events
+                ],
+                **_interface_fields(events),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in {"show", "context", "history", "audit"}:
+        return _management_query(argv)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.nl:
+        print(
+            "Translate the request into explicit --pkg/--op/--target/--payload "
+            "using the research-op contract.",
+            file=sys.stderr,
+        )
+        return 4
+    if not args.pkg:
+        parser.error("--pkg is required")
+    if bool(args.op) == bool(args.event):
+        parser.error("choose exactly one of --op or --event")
+    from lib.research_state import ResearchPaths
+
+    paths = ResearchPaths.resolve(
+        workspace=args.workspace,
+        research_root=args.research_root,
+    )
+    try:
+        payload = _payload(args.payload)
+    except (ValueError, json.JSONDecodeError) as exc:
+        raw = args.payload.encode("utf-8")
+        return _error(
+            exc,
+            phase="payload-validate",
+            package_id=args.pkg,
+            operation=args.op or "event",
+            target=args.target or args.event,
+            paths=paths,
+            payload={
+                "raw_payload_sha256": hashlib.sha256(raw).hexdigest(),
+                "size_bytes": len(raw),
+            },
+            actor={"type": args.actor_type, "id": args.actor_id},
+            idempotency_key=args.idempotency_key,
+        )
+    if args.op and args.op.startswith("evolution-"):
+        return _evolution(args, payload, paths)
+    if args.op == "scope-transition":
+        return _scope_transition(args, paths, payload)
     if args.op == "registry-add":
-        import registry  # noqa: E402
-        try:
-            payload = json.loads(args.payload)
-        except json.JSONDecodeError as e:
-            print(json.dumps({"rejected": True, "phase": "registry-validate", "rule": "payload-json-valid",
-                              "pkg": args.pkg, "op": "registry-add", "target": args.target,
-                              "detail": str(e)}, indent=2))
-            return 2
-        try:
-            status_, record, path = registry.add(args.target, payload)
-        except registry.RegistryReject as e:
-            audit.append(args.pkg, op="registry-add", target=args.target, event=None,
-                         state_before=state, state_after=state, validation="OP_REJECTED", rule=e.rule,
-                         files_touched=[], payload=payload, user_intent=None,
-                         duration_ms=int((time.monotonic() - t0) * 1000))
-            print(json.dumps({"rejected": True, "phase": "registry-validate", "rule": e.rule,
-                              "pkg": args.pkg, "op": "registry-add", "target": args.target,
-                              "detail": e.detail}, indent=2))
-            return 2
-        audit.append(args.pkg, op="registry-add", target=args.target, event=None,
-                     state_before=state, state_after=state, validation="PASSED", rule=None,
-                     files_touched=[str(path)] if status_ == "added" else [], payload=payload,
-                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-        print(f"registry-add {status_} target={args.target} store={path}")
-        return 0
-
-    if not args.op and not args.event:
-        print("error: one of --op or --event is required", file=sys.stderr)
-        return 1
-    if args.op and args.event:
-        print("error: cannot use --op and --event together", file=sys.stderr)
-        return 1
-
-    # Composite event path
-    if args.event:
-        import events  # noqa: E402
-        import router as _router  # noqa: E402
-        payload_obj = json.loads(args.payload)
-        validation, files = events.fanout(args.event, args.pkg, payload_obj,
-                                          dispatch_fn=lambda o, p, t, pl: _router.dispatch(o, p, t, pl, state))
-        audit.append(args.pkg, op="event", target=None, event=args.event,
-                     state_before=state, state_after=state,
-                     validation=validation, rule=None,
-                     files_touched=files, payload=payload_obj,
-                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-        print(f"event={args.event} OK files={files}")
-        return 0 if validation == "PASSED" else 2
-
-    # Universal pre-checks (must run before state-gate so malformed inputs produce envelopes).
-    rej_json = validate.rule_payload_json_valid(args.pkg, args.op, args.target, args.payload)
-    if rej_json:
-        audit.append(args.pkg, op=args.op, target=args.target, event=None,
-                     state_before=state, state_after=state,
-                     validation="OP_REJECTED", rule=rej_json.rule,
-                     files_touched=[], payload={"_raw": args.payload},
-                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-        print(json.dumps(rej_json.envelope(op=args.op, target=args.target, phase="universal-check"), indent=2))
-        return 2
-    if args.target in transitions.RETIRED_TARGETS:
-        envelope = {
-            "rejected": True, "phase": "universal-check", "rule": "retired-target",
-            "pkg": args.pkg, "op": args.op, "target": args.target,
-            "expected": "a live target from references/matrix.md",
-            "actual": f"retired target {args.target}",
-            "suggested_fix": transitions.RETIRED_TARGETS[args.target],
-        }
-        audit.append(args.pkg, op=args.op, target=args.target, event=None,
-                     state_before=state, state_after=state,
-                     validation="OP_REJECTED", rule="retired-target",
-                     files_touched=[], payload=json.loads(args.payload),
-                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-        print(json.dumps(envelope, indent=2))
-        return 2
-
-    target = args.target if args.op != "check" else None
-    rej_tgt = validate.rule_target_known(args.pkg, args.op, target, json.loads(args.payload), transitions.TARGETS)
-    if rej_tgt:
-        audit.append(args.pkg, op=args.op, target=target, event=None,
-                     state_before=state, state_after=state,
-                     validation="OP_REJECTED", rule=rej_tgt.rule,
-                     files_touched=[], payload=json.loads(args.payload),
-                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-        print(json.dumps(rej_tgt.envelope(op=args.op, target=target, phase="universal-check"), indent=2))
-        return 2
-
-    # Phase 1 state-gate.
-    if not transitions.is_legal(state["category"], state["status"], args.op, target):
-        envelope = {
-            "rejected": True,
-            "phase": "state-gate",
-            "rule": "illegal-transition",
-            "pkg": args.pkg,
-            "op": args.op,
-            "target": target,
-            "expected": f"(category={state['category']}, status={state['status']}) "
-                        f"to allow op={args.op} on target={target}",
-            "actual": "not in transitions table",
-            "suggested_fix": "Adjust the package status first via /research-op update --target status, "
-                             "or use a target legal in this cell (see references/matrix.md).",
-        }
-        audit.append(args.pkg, op=args.op, target=target, event=None,
-                     state_before=state, state_after=state,
-                     validation="OP_REJECTED", rule="illegal-transition",
-                     files_touched=[], payload=json.loads(args.payload),
-                     user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-        print(json.dumps(envelope, indent=2))
-        return 2
-
-    payload = json.loads(args.payload)
-
-    # For check op, inject scope into payload so the handler can access it.
+        return _registry_add(args, paths, payload)
     if args.op == "check":
-        payload["scope"] = args.scope
+        return _check(args, paths)
+    if args.op == "scan-events":
+        return _scan_events(args, paths)
+    if args.event:
+        return _event(args, paths, payload)
+    if not args.target:
+        parser.error("--target is required for insert/update/delete")
 
-    # Phase 2 invariant check — SKIP for check op (no payload to validate).
-    if args.op != "check":
-        rej = validate.validate(args.pkg, args.op, target, payload, state)
-        if rej:
-            audit.append(args.pkg, op=args.op, target=target, event=None,
-                         state_before=state, state_after=state,
-                         validation="OP_REJECTED", rule=rej.rule,
-                         files_touched=[], payload=payload,
-                         user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-            print(json.dumps(rej.envelope(op=args.op, target=target), indent=2))
-            return 2
+    try:
+        if args.target == "rule":
+            events = [
+                management.commit_rule_operation(
+                    paths,
+                    str(args.pkg),
+                    str(args.op),
+                    payload,
+                    actor={"type": args.actor_type, "id": args.actor_id},
+                    idempotency_key=args.idempotency_key,
+                )
+            ]
+        elif args.target == "tracker-chosen-route":
+            if args.op != "insert":
+                raise ValueError("tracker-chosen-route is insert-only")
+            events = _chosen_route(args, paths, payload)
+        elif args.target == "analysis-insight":
+            learning = management.commit_learning_operation(
+                paths,
+                str(args.pkg),
+                str(args.op),
+                payload,
+                actor={"type": args.actor_type, "id": args.actor_id},
+                idempotency_key=(
+                    f"{args.idempotency_key}:learning"
+                    if args.idempotency_key
+                    else None
+                ),
+            )
+            events = [learning]
+        elif args.target == "tracker-impl-review-row":
+            change = management.commit_change_operation(
+                paths,
+                str(args.pkg),
+                str(args.op),
+                payload,
+                actor={"type": args.actor_type, "id": args.actor_id},
+                idempotency_key=(
+                    f"{args.idempotency_key}:change"
+                    if args.idempotency_key
+                    else None
+                ),
+            )
+            events = [change]
+        elif args.target == "results-verdict":
+            if args.op != "update":
+                raise ValueError(
+                    "results-verdict is an immutable Decision and requires --op update"
+                )
+            verdict = management.commit_verifier_decision(
+                paths,
+                str(args.pkg),
+                payload,
+                actor={"type": args.actor_type, "id": args.actor_id},
+                idempotency_key=(
+                    f"{args.idempotency_key}:verifier"
+                    if args.idempotency_key
+                    else None
+                ),
+            )
+            events = [verdict]
+        elif args.target == "approval-ack-slot":
+            if args.op == "delete":
+                raise ValueError(
+                    "acknowledgements are immutable decisions and cannot be deleted"
+                )
+            acknowledgement = management.commit_acknowledgement(
+                paths,
+                str(args.pkg),
+                payload,
+                actor={"type": args.actor_type, "id": args.actor_id},
+                idempotency_key=(
+                    f"{args.idempotency_key}:decision"
+                    if args.idempotency_key
+                    else None
+                ),
+            )
+            events = [acknowledgement]
+        else:
+            if args.target == "doc-file":
+                payload = _doc_payload(paths, str(args.op), payload)
+            events = management.apply_package_operation(
+                paths,
+                str(args.pkg),
+                operation=str(args.op),
+                target=str(args.target),
+                payload=payload,
+                actor={"type": args.actor_type, "id": args.actor_id},
+                idempotency_key=args.idempotency_key,
+                expected_version=args.expected_version,
+            )
+    except Exception as exc:
+        return _error(
+            exc,
+            phase="package-gate",
+            package_id=args.pkg,
+            operation=args.op,
+            target=args.target,
+            paths=paths,
+            payload=payload,
+            actor={"type": args.actor_type, "id": args.actor_id},
+            idempotency_key=args.idempotency_key,
+        )
 
-    # Phase 3 dispatch — router calls into ops/<op>.py.
-    import router  # noqa: E402
-    validation, files = router.dispatch(args.op, args.pkg, target, payload, state)
-    audit.append(args.pkg, op=args.op, target=target, event=None,
-                 state_before=state, state_after=state,
-                 validation="PASSED", rule=None,
-                 files_touched=files, payload=payload,
-                 user_intent=None, duration_ms=int((time.monotonic() - t0) * 1000))
-    print(f"{args.op} OK pkg={args.pkg} target={target} files={files}")
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "op": args.op,
+                "pkg": args.pkg,
+                "target": args.target,
+                "events": [
+                    {
+                        "event_id": event["event_id"],
+                        "event_type": event["event_type"],
+                        "aggregate": (
+                            f"{event['aggregate_type']}/{event['aggregate_id']}"
+                        ),
+                    }
+                    for event in events
+                ],
+                **_interface_fields(events),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

@@ -1,182 +1,189 @@
 ---
 name: research-onboard
-description: "Use when bridging a raw or existing workspace into the Scope SSOT with /research-onboard: detect/scaffold or analyze the workspace, write prior knowledge, draft a Project objective, and create a PM-ratifiable Project Scope proposal. Always show the proposed Scope clearly to the PM with the next ratification step. The skill only proposes through Triage; it never commits the SSOT or creates packages."
-argument-hint: "[<cwd, defaults to .>]"
-allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob
-disable-model-invocation: false
+description: "Use when turning a new or existing workspace into a PM-ratifiable Project proposal."
 ---
 
-# research-onboard (the steps 1->3 bridge)
+# research-onboard
 
-`/research-dashboard` stands up the HTML chrome; `/research-scope` ratifies intent into the Scope SSOT.
-Between them is a gap: a raw workspace has no objective yet, and the agent has historically dropped the
-user at an empty dashboard with no help. This skill closes that gap. It turns "I opened a repo" into a
-**pending Project proposal** the PM can ratify — without ever writing the SSOT itself.
+Onboarding turns a workspace into a pending Project proposal. It does not
+commit Project intent or create a Package.
 
-The trust invariant is unchanged: **the agent proposes; the PM disposes.** This skill submits a pending
-Triage item through the same `triage.py` gate `research-scope` uses; the human accepts and commits the
-`scope-transition`. Onboarding never mutates `transitions.jsonl`.
+The agent proposes; the PM decides. Show the exact objective before asking for
+confirmation, then submit it through the same hash-bound Triage gate used by
+`research-scope`.
 
-The PM visibility invariant is also mandatory: **never ask the PM to accept, reject, or revise a Scope
-proposal without showing the exact Scope content first.** Every candidate or pending Project Scope must
-be presented as a clear review block that names the current state and the next PM action.
+## Authority
 
-## Resources
+Trustworthy-managed state lives under `.research`:
 
-**Pipeline root:** `/home/uqzzha35/Project/Trustworthy-Research-Pipeline/Trustworthy-Research-Pipeline`
+- Project, proposal, and disposition state is event-backed.
+- Prior knowledge is a content-addressed NoteRef under
+  `.research/state/notes`.
+- `.research/interface` is a disposable projection. Onboarding never reads it
+  as authority.
 
-| Resource | Path |
-|---|---|
-| Onboard CLI | `<pipeline-root>/skills/research-onboard/scripts/onboard.py` |
-| Scope SSOT lib | `<pipeline-root>/lib/scope_ssot/__init__.py` |
-| Triage CLI | `<pipeline-root>/skills/research-scope/scripts/triage.py` |
-| Prior-knowledge artifact | `outputs/_scope/prior_knowledge.md` |
-| Transition log (SSOT commits) | `outputs/_scope/transitions.jsonl` |
-| Triage queue | `outputs/_scope/triage.jsonl` |
-| Hand-off skill (commit path) | `research-scope` |
+The skill does not edit state JSON, event logs, audit rows, HTML, JavaScript,
+or CSV. Note and proposal writes call the typed `research-op` management
+gateway.
 
-Onboard CLI commands (drive via `Bash(python3 *)`):
+Every CLI accepts `--research-root`; omit it for the default `.research` root.
 
 ```bash
-python3 skills/research-onboard/scripts/onboard.py detect --cwd .
-python3 skills/research-onboard/scripts/onboard.py scaffold --cwd .
-python3 skills/research-onboard/scripts/onboard.py write-prior-knowledge --state-root outputs --content '<markdown>'
-python3 skills/research-onboard/scripts/onboard.py build-proposal --node-id project/<slug> --spec '<json>' --source '<files read>'
-python3 skills/research-onboard/scripts/onboard.py has-project-scope --transitions outputs/_scope/transitions.jsonl
+python3 skills/research-onboard/scripts/onboard.py --workspace . detect
+python3 skills/research-onboard/scripts/onboard.py --workspace . has-project-scope
+python3 skills/research-onboard/scripts/onboard.py --workspace . scaffold
+python3 skills/research-onboard/scripts/onboard.py --workspace . \
+  write-prior-knowledge --content '<markdown>'
+python3 skills/research-onboard/scripts/onboard.py --workspace . \
+  build-proposal \
+  --node-id project/<slug> \
+  --spec '<json>' \
+  --source '<user dialogue or files read>' \
+  --prior-knowledge '<note-ref-json>'
 ```
 
-## Precondition
-
-The dashboard must exist (run `/research-dashboard` first). If a Project node is already committed
-(`has-project-scope` prints `true`), there is nothing to bootstrap — stop and point the user at
-`/research-brainstorm` (vague idea) or `/research-scope` (clear Direction) to add a **Direction** (step 3) instead.
+The installed-workspace gate is fail closed. If the workspace contains legacy
+managed data or an unversioned research root, stop and run the explicit
+migration. Do not scaffold over it.
 
 ## Procedure
 
-**1. Detect the workspace state.**
+### 1. Detect and check existing intent
+
+Run:
 
 ```bash
-python3 skills/research-onboard/scripts/onboard.py detect --cwd .
+python3 skills/research-onboard/scripts/onboard.py --workspace . detect
+python3 skills/research-onboard/scripts/onboard.py --workspace . has-project-scope
 ```
 
-`"state": "empty"` means nothing but pipeline-managed/noise entries exist. `"existing"` means there is
-project content to analyze (listed under `"content"`).
+`empty` means the workspace contains no project files beyond ignored noise and
+the managed research root. `existing` means the command found project content
+to inspect.
 
-**2a. Empty workspace — scaffold, then elicit.**
+If an active Project already exists, onboarding is complete. Use
+`/research-brainstorm` when the next Direction is vague, or
+`/research-scope` when it is already clear.
 
-Scaffold the in-place deep-learning skeleton (idempotent; writes `AGENTS.md` and `CLAUDE.md` stubs
-only if absent):
+### 2. Empty workspace
+
+Create the source-side deep-learning skeleton:
 
 ```bash
-python3 skills/research-onboard/scripts/onboard.py scaffold --cwd .
+python3 skills/research-onboard/scripts/onboard.py --workspace . scaffold
 ```
 
-There is no repo to mine, so **elicit** the objective from the user in plain dialogue, one question at a
-time: the goal, the core contributions, and what is out of scope. Do not invent these. Source for the
-proposal is `user-dialogue:onboarding`.
+The command initializes the versioned research root, creates source,
+configuration, data-reference, baseline, and figure directories, and writes
+`AGENTS.md` and `CLAUDE.md` stubs only when absent. Run output does not get a
+second source-side folder; the experiment harness owns it under
+`.research/experiments`.
 
-**2b. Existing workspace — analyze, then draft.**
+Ask for the Project goal, contributions, and out-of-scope boundary one
+question at a time. Do not invent them. Use
+`user-dialogue:onboarding` as the source.
 
-Read the content entries `detect` reported — typically `README.md`, any `AGENTS.md` / `CLAUDE.md`,
-`configs/`, the `src/` tree, dataset locations, and existing `baselines/` or reported metrics. From them, draft:
+### 3. Existing workspace
 
-- **prior knowledge** — a human-readable digest the later roles (R2 lit, R3 ideate, R4 experiment) read:
-  dataset inventory, existing baselines and any current-best metric, the key file map, training/eval
-  commands. Write it (this is content, not an SSOT write):
+Read the files reported by `detect`. Usually this includes `README.md`,
+`AGENTS.md`, `CLAUDE.md`, source and configuration trees, dataset references,
+baseline code, and documented commands.
 
-  ```bash
-  python3 skills/research-onboard/scripts/onboard.py write-prior-knowledge --state-root outputs --content '<markdown>'
-  ```
+Write a compact prior-knowledge digest containing:
 
-- **a candidate objective** — `goal`, `contributions`, `out_of_scope` inferred from what you read.
-  Keep these as *intent*, never readings (no measured values inside the spec). Provenance lists the
-  files you read, e.g. `read:README.md,AGENTS.md,CLAUDE.md,configs/train.yaml`.
-  `goal` is a 3-100 word string so an exact short Project objective can be ratified; `contributions` and `out_of_scope` are non-empty lists where each
-  item is 5-50 words.
+- dataset and baseline inventory;
+- the relevant source and configuration map;
+- known train and evaluation commands;
+- clearly labelled observed readings, if any.
 
-Confirm the drafted objective with the user before proposing — they may correct the goal. This is the
-HCI-alignment moment (核心问题 #2): the agent shows its inferred understanding and the user steers it.
-Do not call `triage.py propose` until this clear review has been shown and the user has confirmed that
-the displayed content is the proposal they want to ratify.
+Store it:
 
-Use this PM-facing format whenever showing a candidate or pending Project Scope:
+```bash
+python3 skills/research-onboard/scripts/onboard.py --workspace . \
+  write-prior-knowledge --content '<markdown>'
+```
+
+The command returns a NoteRef with `uri`, `sha256`, `mime`, and `title`.
+Preserve that exact JSON for the Project proposal. The NoteRef is included in
+the proposal hash and is attached to the Project only after acceptance.
+
+Draft Project intent from the workspace:
+
+- `goal`: 3 to 100 words;
+- `contributions`: a non-empty list, 5 to 50 words per item;
+- `out_of_scope`: a non-empty list, 5 to 50 words per item.
+
+Readings can appear in the prior-knowledge note, but never inside the Project
+spec. List the files read in `source`, for example
+`read:README.md,CLAUDE.md,configs/train.yaml`.
+
+### 4. Build and review the candidate
+
+Build the proposal with `build-proposal`. For an existing workspace, pass the
+NoteRef returned in step 3 through `--prior-knowledge`. The command validates
+the complete Project node but does not submit it.
+
+Show:
 
 ```markdown
 **Project Scope Review**
-- Status: Candidate, not yet proposed to Triage | Pending Triage, not yet committed
+- Status: Candidate, not yet submitted
 - Level: project
 - Node: project/<slug>
-- Objective / Goal: <exact text that would enter the Project node>
-- Contributions: <each proposed contribution exactly as it would enter the Project node>
-- Out of Scope: <each boundary exactly as it would enter the Project node>
-- Provenance: <user dialogue and/or files read>
-- Next Step: <CONFIRM to submit to Triage, REVISE with changes, or REJECT the draft; if already pending, ACCEPT to ratify or REJECT to archive>
+- Objective / Goal: <exact proposed text>
+- Contributions: <each exact list item>
+- Out of Scope: <each exact list item>
+- Prior Knowledge: <NoteRef, or none for user-dialogue onboarding>
+- Source: <user dialogue and/or files read>
+- Next Step: CONFIRM to submit, REVISE with changes, or REJECT the draft
 ```
 
-If the user supplied an exact objective, show it verbatim in `Objective / Goal`. Any inferred wording,
-interpretation, or rationale must be shown separately and cannot replace the user's exact objective
-unless the PM explicitly accepts that rewritten text.
+If the user supplied exact wording, show it verbatim. Keep any agent
+interpretation outside the proposed spec. Do not submit until the PM confirms
+the displayed content.
 
-**3. Build the validated Project proposal.**
+### 5. Submit and stop
+
+Submit the confirmed JSON:
 
 ```bash
-python3 skills/research-onboard/scripts/onboard.py build-proposal \
-    --node-id project/<slug> \
-    --spec '{"goal":"<3-100 word project goal>","contributions":["<5-50 word contribution>"],"out_of_scope":["<5-50 word boundary>"]}' \
-    --source '<dialogue or files read>'
+python3 skills/research-scope/scripts/triage.py --workspace . propose \
+  --item '<proposal-json>'
+python3 skills/research-scope/scripts/triage.py --workspace . pending
 ```
 
-`build-proposal` validates the spec against the SSOT schema (reject-before-propose): a reading or a
-non-project field is refused before anything is written. Fix the spec if it raises.
+Show the same Project Scope Review again with:
 
-**4. Submit through the Triage gate and STOP.**
+- `Status: Pending Triage, not yet committed`
+- the Triage item id;
+- the proposal hash;
+- the exact next decision syntax.
 
-Pipe the proposal into the same gate `research-scope` uses:
+The next decision must be one of:
 
-```bash
-python3 skills/research-scope/scripts/triage.py propose --log outputs/_scope/triage.jsonl --item '<proposal json>'
-python3 skills/research-scope/scripts/triage.py pending --log outputs/_scope/triage.jsonl
-```
+- `ACCEPT <item-id> <proposal-hash>`
+- `REVISE <item-id> <proposal-hash>` with requested changes
+- `REJECT <item-id> <proposal-hash>`
 
-Show the pending item using the same **Project Scope Review** format, including the exact next PM
-action. Then stop. Onboarding is done — committing the objective is the PM's decision.
+Stop after showing the pending review. `research-scope` owns the hash check,
+disposition, and accepted `scope-transition`.
 
-## Hand-off (PM action, not agent)
+## Boundaries
 
-This mirrors `research-scope`'s human-accept path. Tell the PM which one applies:
+Onboarding does not:
 
-1. **Accept**: dispose the Triage item with `--decision ACCEPTED`, then commit the Project node with
-   `research-op --pkg _scope --op scope-transition --from-triage <item-id>` (the Project gate is
-   carried by the accepted proposal).
-2. **Revise**: say what field should change; the agent updates the proposal and shows the full
-   **Project Scope Review** again before any new Triage proposal.
-3. **Reject**: dispose or archive the Triage item; no Scope SSOT transition is written.
-4. Once the Project is committed, the journey advances to **step 3** — forming a Direction under the
-   ratified Project. If the user only has a vague idea, route through **`/research-brainstorm`** (shape it,
-   ground uncertainties, converge to a Direction proposal). If they already have a
-   clear Direction (`hypothesis / metric / baselines / success_gate`), `/research-scope` proposes it
-   directly.
-
-## Scope (what this skill does NOT do)
-
-- Does not commit the SSOT — only proposes a pending Triage item.
-- Does not create Directions, Tasks, milestones, or research packages — those are `/research-scope` and
-  `/research-package`, after the Project is ratified.
-- Does not edit the dashboard chrome or rule files.
-
-## Output contract
-
-| Path | Written by | Contents |
-|---|---|---|
-| `<cwd>/src`, `configs/`, … + `AGENTS.md` / `CLAUDE.md` stubs | this skill (empty case only) | in-place DL skeleton |
-| `outputs/_scope/prior_knowledge.md` | this skill (existing case) | analysis digest for later roles |
-| `outputs/_scope/triage.jsonl` | `triage.py propose` | one pending Project item |
-| `outputs/_scope/transitions.jsonl` | PM only (via research-op) | committed Project node — never this skill |
+- commit a Project, Direction, or Experiment;
+- create a Package or launch a Run;
+- read or mutate the interface projection;
+- treat a NoteRef as accepted Project intent before proposal acceptance.
 
 ## Done condition
 
-A pending **project**-level Triage item is visible in `triage.jsonl` and has been shown to the user in
-the **Project Scope Review** format with an explicit next step; for an empty workspace the skeleton is
-scaffolded; for an existing one `prior_knowledge.md` is written.
-The objective is not yet in effect — it takes effect only after PM acceptance and the
-`research-op --pkg _scope --op scope-transition --from-triage <item-id>` commit.
+For an empty workspace, the source skeleton and versioned research root exist.
+For an existing workspace, prior knowledge has a stable NoteRef. In both
+cases, a validated Project proposal is pending and the PM has seen its exact
+content, item id, proposal hash, and next decision syntax.
+
+The Project becomes active only after a matching PM acceptance and the gated
+`research-op --pkg _scope --op scope-transition --from-triage <item-id>`
+command succeed.

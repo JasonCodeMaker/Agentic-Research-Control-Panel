@@ -1,281 +1,97 @@
 #!/usr/bin/env python3
-"""Create or repair a research_html dashboard from bundled chrome files."""
+"""Build the read-only dashboard projection under .research/interface."""
 
 from __future__ import annotations
 
 import argparse
-import json
-import re
-import shutil
+import sys
 from pathlib import Path
 
 
-SKILL_ROOT = Path(__file__).resolve().parent.parent
-DASHBOARD_BUNDLE = SKILL_ROOT / "assets" / "dashboard"
-RULE_FILES = ("html-rules.html", "trustworthy-research-rules.html")
-HELPER_SCRIPTS = ("render_scope_projection.py",)
+PIPELINE_ROOT = Path(__file__).resolve().parents[3]
+if str(PIPELINE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PIPELINE_ROOT))
 
-# data/research-packages.js stays inline so every new project gets a clean
-# minimal inventory — bundling the live file would leak the source project's
-# package list into every fresh scaffold.
-#
-# The chrome owns no protocol content (核心问题 #1): the objective renders from
-# the Scope SSOT projection, routes from schema.js (NEXT_ROUTE + meanings), and
-# binding rules from data/rules.js — each fact has exactly one owning module.
-DATA_JS = """window.RESEARCH_PROJECT_PROFILE = {};
-
-window.RESEARCH_CATEGORIES = [
-  { id: "brainstorm", title: "Brainstorm", summary: "Pre-package ideas (not packages, not in the SSOT). Convert one or more into a Direction + package.", href: "categories/brainstorm/" },
-  { id: "in-progress", title: "In Progress", summary: "Active packages with ongoing implementation, execution, or analysis.", href: "categories/in-progress/" },
-  { id: "success", title: "Success", summary: "Packages adopted into the active project system.", href: "categories/success/" },
-  { id: "fail", title: "Fail", summary: "Directions judged failed, stopped, or not promotable.", href: "categories/fail/" },
-];
-
-window.RESEARCH_TAG_ROLES = {
-  brainstorm: { role: "optimization_direction", label: "Optimization direction", meaning: "The research or optimization direction this package explores.", examples: ["metric contract", "data quality"] },
-  "in-progress": { role: "current_status", label: "Current status", meaning: "The current execution state or next active workflow status.", examples: ["pilot running", "paused analysis"] },
-  success: { role: "adapted_model_part", label: "Adapted model part", meaning: "The model or pipeline part adopted into the active project system.", examples: ["export path", "quality gate"] },
-  fail: { role: "failure_reason", label: "Failure reason", meaning: "The core technical reason the direction failed or was not promoted.", examples: ["budget miss", "training collapse"] },
-};
-
-// Package object schema. Required-by-(category, status) is enforced by
-// data/schema.js; missing required fields render with a ⚠ marker on the
-// card. Universal fields (additive, optional unless noted):
-//   id (required), name (required), category (required), tag, tagMeaning,
-//   status (enum from schema.js — the (category, status) state machine),
-//   sourcePath, runtime, detailPath, problem, objective, motivation,
-//   hypothesis, noChangeBoundary, activeGate, primaryMetricVsGate,
-//   lastDecision, lastDecisionEvidencePath, nextRoute, currentBlocker,
-//   lastAction, openRuns, lastUpdated (ISO date), pages, experiments,
-//   contributionSpineFlag (id from RESEARCH_CONTRIBUTION_SPINE in schema.js).
-// Terminal-state fields (success / fail):
-//   terminationMessage (≤200 char one-sentence why-this-ended),
-//   methodsTried (array of {method, hypothesis, gate, measured, verdict,
-//     evidencePath} rows; verdict ∈ {PASS, FAIL, INCONCLUSIVE, DIAGNOSTIC}),
-//   adoptionPath (success only — where the win was adopted),
-//   supersededBy / promotedTo / reopenTrigger (per (category, status)).
-// Brainstorm is not a package category — pre-package ideas live in
-// data/brainstorms.js (window.BRAINSTORMS), rendered on the brainstorm lane.
-// Run `python research_html/scripts/learnings_lint.py all` to verify
-// schema compliance and evidencePath resolution across all packages.
-window.RESEARCH_PACKAGES = [];
-"""
-
-SCOPE_PROJECTION_JSON = "{}\n"
-SCOPE_PROJECTION_JS = "window.RESEARCH_SCOPE_PROJECTION = {};\n"
-
-# Pre-package idea store for the brainstorm lane. Written inline-empty (like
-# research-packages.js) so a fresh scaffold never inherits another project's ideas.
-BRAINSTORMS_JS = "window.BRAINSTORMS = [];\n"
-
-RULES_PREFIX = "window.RESEARCH_RULES = "
-RULE_CARD_RE = re.compile(
-    r'data-rule="([RT]\d+)"[^>]*data-kind="([^"]+)"[\s\S]*?<h3 class="title">([^<]+)</h3>')
-RULE_FILE_KIND = {"html-rules.html": "form", "trustworthy-research-rules.html": "trust"}
-
-
-def mirror_universal_rules(root: Path) -> list[dict]:
-    """Parse data-rule cards out of <root>/rules/*.html into write-locked mirror rows."""
-    rows = []
-    for name, kind in RULE_FILE_KIND.items():
-        f = root / "rules" / name
-        if not f.exists():
-            continue
-        for rid, _card_kind, title in RULE_CARD_RE.findall(f.read_text(encoding="utf-8")):
-            rows.append({"id": rid, "level": "universal", "kind": kind,
-                         "title": title.strip(), "source": f"rules/{name}#{rid}",
-                         "origin": "mirror", "status": "ACTIVE", "addedAt": "bundled"})
-    return rows
-
-
-def write_rules_store(root: Path) -> list[Path]:
-    """Create/refresh data/rules.js: rebuild the universal mirror, keep all other rows."""
-    dst = root / "data" / "rules.js"
-    existing = []
-    if dst.exists():
-        text = dst.read_text(encoding="utf-8").strip()
-        if not text.startswith(RULES_PREFIX):
-            raise ValueError(f"Refusing to overwrite malformed rules registry: {dst}")
-        existing = json.loads(text[len(RULES_PREFIX):].rstrip(";"))
-    kept = [r for r in existing if r.get("origin") != "mirror"]
-    rows = mirror_universal_rules(root) + kept
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    new_text = RULES_PREFIX + json.dumps(rows, indent=2, ensure_ascii=False) + ";\n"
-    if dst.exists() and dst.read_text(encoding="utf-8") == new_text:
-        return []
-    dst.write_text(new_text, encoding="utf-8")
-    return [dst]
-
-
-def write_if_missing(path: Path, source: Path | None, text: str | None, force: bool) -> bool:
-    """Copy/write a file when it does not already exist (or when force is set)."""
-    if path.exists() and not force:
-        return False
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if source is not None:
-        shutil.copyfile(source, path)
-    else:
-        assert text is not None, "either source or text must be provided"
-        path.write_text(text, encoding="utf-8")
-    return True
-
-
-# data/ files that hold project state — never overwritten by --refresh-chrome.
-USER_DATA = {"data/research-packages.js", "data/brainstorms.js",
-             "data/scope-projection.json", "data/scope-projection.js", "data/rules.js"}
-OBSOLETE_DASHBOARD_SURFACES = (
-    "context.html",
-    "assets/research-context.js",
-    "data/context-core.js",
-    "templates/module-library.html",
+from lib.interface import BuildResult, build_interface  # noqa: E402
+from lib.research_state import (  # noqa: E402
+    EventStore,
+    ResearchPaths,
+    UnsupportedResearchVersion,
+    UpgradeRequired,
 )
+from lib.research_state.paths import add_research_root_argument  # noqa: E402
 
 
-def copy_bundled_chrome(root: Path, force: bool, refresh: bool = False) -> list[Path]:
-    """Mirror every file under assets/dashboard/ into <root>/. With refresh,
-    chrome files are overwritten but USER_DATA stores are never touched."""
-    written: list[Path] = []
-    if not DASHBOARD_BUNDLE.is_dir():
-        raise FileNotFoundError(f"Missing dashboard bundle: {DASHBOARD_BUNDLE}")
-    for src in DASHBOARD_BUNDLE.rglob("*"):
-        if not src.is_file():
-            continue
-        rel = src.relative_to(DASHBOARD_BUNDLE)
-        if "__pycache__" in rel.parts or rel.suffix == ".pyc":
-            continue
-        dst = root / rel
-        overwrite = force or (refresh and rel.as_posix() not in USER_DATA)
-        if write_if_missing(dst, src, None, overwrite):
-            written.append(dst)
-    return written
+def ensure_dashboard(
+    workspace: Path | ResearchPaths = Path("."),
+    *,
+    research_root: str | Path | None = None,
+) -> list[Path]:
+    """Initialize a safe greenfield store and rebuild its interface."""
+    paths = (
+        workspace
+        if isinstance(workspace, ResearchPaths)
+        else ResearchPaths.resolve(
+            workspace=workspace,
+            research_root=research_root,
+        )
+    )
+    EventStore(paths).initialize()
+    result = build_interface(paths)
+    return list(result.files)
 
 
-def copy_rule_files(root: Path, force: bool) -> list[Path]:
-    """Copy the binding rule HTMLs from the skill's assets/ into <root>/rules/."""
-    written: list[Path] = []
-    for name in RULE_FILES:
-        src = SKILL_ROOT / "assets" / name
-        if not src.exists():
-            continue
-        dst = root / "rules" / name
-        if write_if_missing(dst, src, None, force):
-            written.append(dst)
-    return written
+def build_dashboard(
+    *,
+    workspace: str | Path = ".",
+    research_root: str | Path | None = None,
+) -> BuildResult:
+    paths = ResearchPaths.resolve(
+        workspace=workspace,
+        research_root=research_root,
+    )
+    EventStore(paths).initialize()
+    return build_interface(paths)
 
 
-def write_data_js(root: Path, force: bool) -> list[Path]:
-    """Write the project-agnostic minimal inventory if missing."""
-    written: list[Path] = []
-    dst = root / "data" / "research-packages.js"
-    if write_if_missing(dst, None, DATA_JS, force):
-        written.append(dst)
-    return written
-
-
-def write_brainstorms_store(root: Path, force: bool) -> list[Path]:
-    """Write the empty pre-package idea store if missing."""
-    written: list[Path] = []
-    dst = root / "data" / "brainstorms.js"
-    if write_if_missing(dst, None, BRAINSTORMS_JS, force):
-        written.append(dst)
-    return written
-
-
-def remove_obsolete_dashboard_surfaces(root: Path) -> list[Path]:
-    """Delete retired global dashboard reference surfaces if present."""
-    written: list[Path] = []
-    for rel in OBSOLETE_DASHBOARD_SURFACES:
-        path = root / rel
-        if path.exists():
-            path.unlink()
-            written.append(path)
-    return written
-
-
-def write_scope_projection_defaults(root: Path, force: bool) -> list[Path]:
-    """Write empty read-only Scope projection files when missing."""
-    written: list[Path] = []
-    for rel, text in (
-        ("data/scope-projection.json", SCOPE_PROJECTION_JSON),
-        ("data/scope-projection.js", SCOPE_PROJECTION_JS),
-    ):
-        dst = root / rel
-        if write_if_missing(dst, None, text, force):
-            written.append(dst)
-    return written
-
-
-def copy_helper_scripts(root: Path, force: bool) -> list[Path]:
-    """Install project-local helpers that operate on dashboard data."""
-    written: list[Path] = []
-    for name in HELPER_SCRIPTS:
-        src = SKILL_ROOT / "scripts" / name
-        if not src.exists():
-            continue
-        dst = root / "scripts" / name
-        if write_if_missing(dst, src, None, force):
-            written.append(dst)
-    return written
-
-
-LIVE_PILL = '<a class="pill" href="live.html">Live Runs</a>'
-SCOPE_PILLS = (
-    '<a class="pill" href="scope.html">Live Scope</a>',
-    '<a class="pill" href="scope.html">Scope Tree</a>',
-)
-DASHBOARD_NAV_GLOBAL_LINK_RE = re.compile(
-    r'\n\s*<a href="(?:scope|live|learnings|context)\.html">'
-    r'(?:Live Scope|Scope Tree|Live Runs|Learnings|Agent Context)</a>'
-)
-
-
-def ensure_live_nav(root: Path) -> list[Path]:
-    """Keep legacy index.html navigation aligned with the current chrome split."""
-    index = root / "index.html"
-    if not index.exists():
-        return []
-    text = index.read_text(encoding="utf-8")
-    patched = text
-    if LIVE_PILL not in patched:
-        for anchor in SCOPE_PILLS:
-            if anchor in patched:
-                patched = patched.replace(anchor, anchor + "\n        " + LIVE_PILL, 1)
-                break
-    patched = DASHBOARD_NAV_GLOBAL_LINK_RE.sub("", patched)
-    if patched == text:
-        return []
-    index.write_text(patched, encoding="utf-8")
-    return [index]
-
-
-def ensure_dashboard(root: Path, force: bool, refresh: bool = False) -> list[Path]:
-    written: list[Path] = []
-    written.extend(copy_bundled_chrome(root, force, refresh))
-    written.extend(write_data_js(root, force))
-    written.extend(write_brainstorms_store(root, force))
-    written.extend(write_scope_projection_defaults(root, force))
-    written.extend(copy_helper_scripts(root, force or refresh))
-    written.extend(copy_rule_files(root, force or refresh))
-    written.extend(write_rules_store(root))
-    written.extend(ensure_live_nav(root))
-    written.extend(remove_obsolete_dashboard_surfaces(root))
-    return written
-
-
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", default="research_html", help="dashboard root directory")
-    parser.add_argument("--force", action="store_true", help="overwrite existing dashboard files")
-    parser.add_argument("--refresh-chrome", action="store_true",
-                        help="overwrite chrome files (index, assets, scripts, rules, schema) "
-                             "but never the data/ user stores — the safe upgrade path")
-    args = parser.parse_args()
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=("build",),
+        default="build",
+        help="projection operation (default: build)",
+    )
+    parser.add_argument("--workspace", default=".", help="managed project workspace")
+    add_research_root_argument(parser)
+    return parser
 
-    root = Path(args.root)
-    written = ensure_dashboard(root, args.force, args.refresh_chrome)
-    print(f"dashboard_root={root}")
-    print(f"files_written={len(written)}")
-    for path in written:
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        result = build_dashboard(
+            workspace=args.workspace,
+            research_root=args.research_root,
+        )
+    except UpgradeRequired as exc:
+        print(str(exc), file=sys.stderr)
+        print(
+            "Run research-migrate after inventory and backup checks; "
+            "the dashboard will not initialize over legacy data.",
+            file=sys.stderr,
+        )
+        return 2
+    except UnsupportedResearchVersion as exc:
+        print(f"upgrade-required: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"interface_root={result.root}")
+    print(f"source_seq={result.source_seq}")
+    print(f"source_hash={result.source_hash}")
+    print(f"files_written={len(result.files)}")
+    for path in result.files:
         print(path)
     return 0
 

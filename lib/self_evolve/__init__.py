@@ -1,6 +1,6 @@
-"""Self-evolve Rule Store (v1) — typed in-context anti-regression + recipe-rule memory.
+"""Typed self-evolve logic over the unified research state.
 
-Pure, node-free libraries (schema / lifecycle / store / oracles / induce). All
-authoritative writes go through research-op `evolution-*`; nothing here touches disk
-except the append-only store log. See plan/2026-06-04-self-evolving-self-learning-research.md.
+Learning, Decision, and Rule writes go through :mod:`self_evolve.state` and the
+shared ``EventStore``.  ``self_evolve.store`` remains only for generated Skill
+bundle lifecycle state outside ``.research``.
 """

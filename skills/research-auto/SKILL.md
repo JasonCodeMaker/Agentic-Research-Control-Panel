@@ -1,242 +1,368 @@
 ---
 name: research-auto
-description: "Use when the user invokes /research-auto or asks to run an autonomous research campaign over one Direction toward a measurable gate."
-argument-hint: "<direction text or committed direction-id> --gate \"<measurable gate>\" [--dial SUPERVISED|CHECKPOINTED|DEFERRED|AUTONOMOUS] [--max-cycles N]"
-allowed-tools: Bash(python3 *), Bash(node *), Read, Edit, Write, Grep, Glob, Agent
+description: "Use when the user invokes /research-auto or asks to run an autonomous research campaign over one committed Direction toward a measurable gate."
+argument-hint: "<direction text or direction-id> --gate \"<measurable gate>\" [--dial SUPERVISED|CHECKPOINTED|DEFERRED|AUTONOMOUS] [--max-cycles N]"
+allowed-tools: Bash(python3 *), Read, Grep, Glob, Agent
 disable-model-invocation: false
 ---
 
-# research-auto (the Direction-campaign conductor)
+# research-auto
 
 ## Purpose
 
-`/research-auto` turns one **Direction + gate** into a completed research campaign. Where
-`/research-run` completes exactly one already-scoped package and stops, `/research-auto` owns the loop
-around it: when a package finishes short of the gate, it designs the next experiment from what the last
-one taught plus the current Context Pack, routes it through the same scoped surfaces, runs it, and
-re-checks the gate — until the Direction's success gate clears with verified evidence, the cycle
-budget is exhausted, or a decision surfaces that belongs to the human.
+`/research-auto` runs a campaign over one Direction. `/research-run` advances one materialized
+package; `/research-auto` decides what happens after each terminal experiment:
 
 ```text
-/research-auto  =  campaign over one Direction   (cycles until the gate clears or an honest stop)
-   per cycle:   research-brainstorm + ranking     form: grounded, ranked Direction framing
-                research-scope (+ Triage)         design: scope formation / milestone revision
-                research-package                  design: materialize surfaces from committed scope
-                research-run                      run: one package tick to its next terminal outcome
-                research-analysis                 harvest: rules + insights worth keeping
-                research-op                       every mutation (via the skills above)
+Direction + measurable gate
+  -> resolve or ratify the charter
+  -> materialize a package
+  -> run one experiment
+  -> verify its result
+  -> record the Campaign cycle
+  -> stop, or design the next experiment
 ```
 
-The conductor itself is deterministic (`scripts/conductor.py`): gate evaluation, the typed cycle
-ledger, the route for every tick, and the authority guard are all reproducible from disk — campaign
-state never lives in conversational memory.
+The loop ends when verified evidence clears the Direction's gate, the cycle budget is exhausted, no
+legal candidate remains, or the campaign reaches a decision reserved for the user.
 
-## Authority (what this skill may never do)
+`scripts/conductor.py` owns deterministic routing, gate evaluation, Campaign cycle records, away-mode
+handoff bundles, and the authority guard. It does not own Project, Direction, Experiment, Package,
+Run, Learning, Rule, or Decision mutations.
 
-The campaign adds **zero** new mutation paths. All trust contracts hold:
+## Authority
 
-It never disposes Triage, never commits project/direction scope, and never edits package surfaces
-directly.
+The campaign adds no independent writer. The conductor submits `CampaignUpdated` through the
+`research-op` management gateway. Every other mutation stays with its owning use case;
+materialization also uses that gateway, while the experiment harness writes only its own Run
+directory.
 
-| Decision | Owner | Mechanism |
+| Decision | Owner | Route |
 | --- | --- | --- |
-| Project / Direction commits | human | Triage propose → PM dispose → `research-op scope-transition`. The campaign pauses at `AWAIT_RATIFICATION`; it never disposes. |
-| Charter (gate, dial, max-cycles) | human | Ratified with the Direction — the gate *is* the Direction's `success_gate`. |
-| New / revised milestone Task mid-campaign | dial-keyed | `SUPERVISED`/`CHECKPOINTED`: Triage pause per proposal. `DEFERRED`/`AUTONOMOUS`: self-commit with the SSOT task gate `AGENT_DEFERRED_ACK` **and** a queued `deferred_ack` entry the exit report surfaces. Checked by `conductor.validate_campaign_action` before any commit. |
-| Concrete per-cycle experiments | agent | `research-op insert --target experiments-row` under an owning milestone (`sourceTask`) — the existing package contract. |
-| Terminal package transitions, adoption | human (T1) | `/research-run`'s existing gates; away dials queue the ack (present-only QA). |
-| Campaign exit | conductor routes; human owns acks | `SUCCESS_EXIT` needs a ledgered `gate_eval=PASS` with evidence; every `HALT_*` ends in a typed Triage proposal (extend / revise / archive), never a silent goalpost move. |
+| Project or Direction acceptance | human | Triage proposal, then user disposition |
+| Gate, dial, and max cycles | human | Ratified as the campaign charter |
+| New validation Experiment spec | dial-dependent | Triage pause for `SUPERVISED` and `CHECKPOINTED`; `AGENT_DEFERRED_ACK` Experiment commit plus queued acknowledgement for `DEFERRED` and `AUTONOMOUS` |
+| Bind an accepted Experiment to a Package | agent within ratified scope | `research-op --target experiments-row` |
+| Run launch, monitoring, and terminal result | `/research-run` | Experiment and Run contracts |
+| Insight or package Rule | explicit editorial decision | `/research-analysis` |
+| Package terminal transition or adoption | human acknowledgement | `/research-run` |
+| Campaign cycle or handoff bundle | conductor | `research-op` campaign gateway |
 
-The conductor's only writes are the campaign ledger and PACK under `outputs/_auto/<slug>/`. Package
-HTML, registry, facts, and the SSOT are mutated only through the delegated skills (hence research-op).
+The conductor never disposes Triage, commits Project or Direction scope, edits an interface file, or
+moves the gate after a failure.
+
+## Storage model
+
+The workspace has one managed root:
+
+```text
+.research/
+├── state/          # authoritative events and current fold
+├── audit/          # command/action audit
+├── experiments/    # immutable run evidence
+└── interface/      # derived human view
+```
+
+Campaign cycles and handoff bundles are fields of the `Campaign` aggregate whose id equals the
+Direction id. There is no separate campaign ledger file and no separate PACK file. The Context Pack
+is an ephemeral query over state; a Run freezes the exact launch context in its own
+`.research/experiments/<pkg>/<experiment>/<run>/context.json`.
+
+Do not edit files below `.research/state/` or `.research/interface/`. Use bounded queries for reads
+and typed commands for writes.
 
 ## Resources
 
-`<pipeline-root>` = `/home/uqzzha35/Project/Trustworthy-Research-Pipeline/Trustworthy-Research-Pipeline`
+`<pipeline-root>` is the Trustworthy Research Pipeline checkout.
 
 | Asset | Path |
 | --- | --- |
-| Campaign conductor (this skill) | `skills/research-auto/scripts/conductor.py` |
-| Admission state machine (reused) | `skills/research-run/scripts/admission.py` |
-| Triage CLI | `skills/research-scope/scripts/triage.py` |
-| Milestone planner | `skills/research-scope/scripts/plan_milestones.py` |
-| Direction→package materializer | `skills/research-package/scripts/create_from_scope.py` |
-| Context Pack builder | `lib/context_pack/build.py` |
-| research-op CLI | `skills/research-op/scripts/research_op.py` |
-| Campaign ledger | `outputs/_auto/<direction-slug>/campaign.jsonl` |
-| Campaign PACK | `outputs/_auto/<direction-slug>/_pack.jsonl` |
+| Campaign conductor | `skills/research-auto/scripts/conductor.py` |
+| Admission logic | `skills/research-run/scripts/admission.py` |
+| Scope and Triage workflow | `/research-scope` |
+| Direction-to-package materializer | `skills/research-package/scripts/create_from_scope.py` |
+| Mutation and query gateway | `skills/research-op/scripts/research_op.py` |
+| Experiment evidence | `.research/experiments/<pkg>/<experiment>/<run>/` |
+| Human interface | `.research/interface/` |
 
-Conductor CLI:
+Conductor commands:
 
 ```bash
-python3 skills/research-auto/scripts/conductor.py status --root . --direction-id <dir-id> \
-  --max-cycles <N> --dial <DIAL> [--gate "<gate>"] [--no-candidate]
-python3 skills/research-auto/scripts/conductor.py gate-eval --measured <x> --gate "<gate>"
-python3 skills/research-auto/scripts/conductor.py append-cycle --root . --direction-id <dir-id> --record '<json>'
-python3 skills/research-auto/scripts/conductor.py pack --root . --direction-id <dir-id> --bundle '<json>'
+python3 skills/research-auto/scripts/conductor.py status \
+  --workspace . \
+  --direction-id <direction-id> \
+  --max-cycles <N> \
+  --dial <DIAL> \
+  [--gate "<gate>"] \
+  [--no-candidate]
+
+python3 skills/research-auto/scripts/conductor.py gate-eval \
+  --measured <value> \
+  --gate "<gate>"
+
+python3 skills/research-auto/scripts/conductor.py append-cycle \
+  --workspace . \
+  --direction-id <direction-id> \
+  --record '<cycle-json>'
+
+python3 skills/research-auto/scripts/conductor.py pack \
+  --workspace . \
+  --direction-id <direction-id> \
+  --bundle '<handoff-json>'
 ```
 
-## The Charter
+Use `--research-root <path>` only when the workspace intentionally overrides the default
+`.research` root.
 
-An invocation carries up to four facts; everything else is derived:
+## Charter
 
-- **direction** — a committed direction node id (`dir/<slug>`), or free text to be shaped.
-- **gate** — a measurable gate (`R@1 >= 48`). It becomes the Direction's `success_gate`;
-  if the Direction is already committed and the given gate conflicts with its `success_gate`,
-  that is a Direction *revise* → Triage proposal, never an in-place edit.
-- **dial** — defaults `AUTONOMOUS`. Surfaced at ratification with all four choices.
-- **max-cycles** — defaults 5. A cycle = one designed-and-verified experiment outcome.
+An invocation has four inputs:
 
-The human ratifies the charter once, with the Direction, through Triage. That single ratification is
-the standing authorization the campaign operates inside.
+- `direction`: a committed Direction id such as `dir/retrieval-v2`, or free text that must be shaped;
+- `gate`: one numeric comparator clause such as `R@1 >= 48`;
+- `dial`: one of `SUPERVISED`, `CHECKPOINTED`, `DEFERRED`, or `AUTONOMOUS`;
+- `max-cycles`: a positive campaign budget, default 5.
+
+For a committed Direction, its `spec.success_gate` is authoritative. If the invocation supplies a
+different gate, submit a Direction revision through Triage and pause. Do not override the committed
+gate in Campaign state.
 
 ## Procedure
 
-**0. Admission.** Run the reused front door first — missing prerequisites hand off exactly as
-`/research-run` does (`NO_DASHBOARD` → `/research-dashboard`, `NO_PROJECT` → `/research-onboard`):
+### 0. Read admission state
+
+Use the state-backed `/research-run` admission logic. The generated interface is not an execution
+prerequisite.
 
 ```python
-import sys; sys.path.insert(0, "<pipeline-root>/skills/research-run/scripts"); import admission
-state = admission.detect_admission_state(".")          # NO_DASHBOARD | NO_PROJECT | ...
-actions = admission.build_admission_actions(state, context, root=".")
+import sys
+sys.path.insert(0, "<pipeline-root>/skills/research-run/scripts")
+import admission
+
+context = admission.build_research_context(".")
+state = admission.detect_admission_state(".")
+actions = admission.build_admission_actions(
+    state,
+    {
+        "pending": context["pending_proposals"],
+        "direction_id": (context["direction"] or {}).get("id"),
+    },
+    root=".",
+)
 ```
 
-Surface each action's `next_step` fields verbatim. Unlike `/research-run`, this skill does not stop at
-`NO_DIRECTION`/`NO_TASK`/`NO_PACKAGE` — those are campaign work (steps 1–2). A missing dashboard or
-Project node still stops the turn: those belong to the user and `/research-onboard`.
+Route missing prerequisites as follows:
 
-**1. Resolve the charter → a committed Direction.** Run `conductor.py status` with the direction id
-(or the id the direction text most plausibly maps to; when in doubt list active directions from the
-SSOT fold and ask). Route on `action.type`:
+- `NO_PROJECT`: hand off to `/research-onboard` and pause.
+- `NO_DIRECTION`: shape and ratify the campaign Direction in step 1.
+- `NO_EXPERIMENT` or `NO_PACKAGE`: continue to campaign design and materialization.
+- `NOT_READY` or `READY`: continue through the normal `/research-run` path.
 
-- `FORM_DIRECTION` — invoke **`/research-brainstorm`** with the direction text: ground factual
-  unknowns against available sources and project evidence, rank competing framings when needed
-  (`lib/ranking`), then build the Direction proposal with the charter gate as `success_gate` and
-  submit through Triage. Declare the dial and max-cycles in the proposal's `change`/`rationale` so the
-  human ratifies the whole charter. **Pause.**
-- `AWAIT_RATIFICATION` — show the pending item; **pause**. Never dispose it.
-- `ASK_USER` — the gate is not machine-checkable; ask for a comparator-clause restatement. **Pause.**
-- anything else — the Direction is committed; continue.
+Surface any returned `next_step` object without paraphrasing its authority boundary.
 
-**2. Materialize once per campaign.** When `status` routes `MATERIALIZE_PACKAGE`:
+### 1. Resolve the charter
 
-1. Milestones: if the Direction has no active task children, run
-   `plan_milestones.py --direction-id <id> --control-mode <dial> --dry-run` to shape them, then
-   commit per the dial — at `SUPERVISED`/`CHECKPOINTED` submit through Triage and **pause**; at
-   `DEFERRED`/`AUTONOMOUS` commit each node via `research-op --pkg _scope --op scope-transition`
-   (`gate=AGENT_DEFERRED_ACK`, payload carrying a non-empty `deferred_ack`), after
-   `conductor.validate_campaign_action` clears the action. Record each deferred ack in the ledger turn.
-2. Package: run the same path as `/research-package from-scope <id>`. First call
-   `create_from_scope.py --check --json --direction-id <id>` and stop if it returns a handoff. If
-   `materializable` is true, call `create_from_scope.py --direction-id <id>` (committed transitions
-   only). If a previous campaign package for this direction went terminal, materialize the next one as
-   `--id <YYYY-MM-DD>-<slug>-c<N>` — fresh package, same committed scope; Context Pack and active
-   rules carry the history forward.
-
-**3. The campaign cycle.** Every tick starts from disk:
+Run:
 
 ```bash
-python3 skills/research-auto/scripts/conductor.py status --root . --direction-id <dir-id> \
-  --max-cycles <N> --dial <DIAL>
+python3 skills/research-auto/scripts/conductor.py status \
+  --workspace . \
+  --direction-id <direction-id> \
+  --max-cycles <N> \
+  --dial <DIAL> \
+  --gate "<gate>"
 ```
 
-Then act on `action.type`; one tick per route, re-run `status` after each:
+Handle `action.type`:
 
-- **`RUN_PACKAGE`** — invoke **`/research-run`** on the open package and let it own everything inside
-  the package: readiness at the dial, implementation/review (TDD, coder ≠ reviewer),
-  launch via **`/research-exp-live`** and **`/research-resource`**, monitoring, `scan-events`
-  propagation, result verification, terminal routing. Do not re-implement any of its loop here. Apply
-  its model-tiering: light roles on small models, code/analysis on the strong one.
-- **`DESIGN_EXPERIMENT`** — the gate is unmet and the spine has nothing executable:
-  1. `python3 lib/context_pack/build.py --pkg <pkg> --if-stale` and read the pack (read-only;
-     it is project context, not a mutation path). Treat the pack's `global_scope_version`,
-     Project, Direction, Tasks, and package provenance as the current agent context. Pending Triage is
-     only a collision warning unless the user accepts it into Scope.
-  2. Draft the next hypothesis from the pack, verified package facts, and the committed Direction.
-     If multiple candidates are plausible, rank them with an independent sub-agent (`lib/ranking`).
-  3. Map the selected hypothesis to its owning milestone. Fits an active milestone → add one
-     experiments-row through research-op (id `P<n>`, action-verb purpose ≤ 12 words, one gate, one
-     output, `sourceTask` = the milestone id):
-     ```bash
-     python3 skills/research-op/scripts/research_op.py --pkg <pkg> --op insert \
-       --target experiments-row --payload '{"id":"P3","purpose":"Evaluate reranker variant",...}'
-     ```
-     Needs a genuinely new validation objective → shape it with
-     `conductor.milestone_task_node(...)` and commit per the dial rule in step 2.1.
-  4. At `SUPERVISED`/`CHECKPOINTED`, present the selected hypothesis + designed row and **pause** for
-     the pick; at away dials proceed.
-- **`SUCCESS_EXIT` / `HALT_BUDGET` / `HALT_NO_CANDIDATE` / `ASK_USER`** — go to step 5.
+- `FORM_DIRECTION`: invoke `/research-brainstorm`, then submit the Direction, gate, dial, and cycle
+  budget through Triage. Pause for ratification.
+- `AWAIT_RATIFICATION`: show the pending proposal and pause.
+- `ASK_USER`: ask for a gate with one comparator clause.
+- any other route: the committed charter is usable.
 
-**4. Harvest every terminal experiment outcome (same turn as the verdict).** When `/research-run`
-records a verdict for the cycle's experiment:
+### 2. Materialize package scope
 
-1. Read `verdict` + `measured` only from the package's verified facts (the `methodsTried` row /
-   result-gate row and its `evidencePath`, themselves written from runtime artifacts). Never from chat.
-2. Gate-check: `conductor.py gate-eval --measured <x> --gate "<gate>"`.
-3. On `FAIL`, make the failure visible in the package facts and cycle ledger so future designs do not
-   repeat it without explicit justification.
-4. When the cycle taught a mechanism-level lesson, record it via **`/research-analysis`**
-   (Insight, optionally distilled to a Rule).
-5. Close the cycle in the ledger — a cycle without a ledger record may not close:
-   ```bash
-   python3 skills/research-auto/scripts/conductor.py append-cycle --root . --direction-id <dir-id> \
-     --record '{"cycle":<n>,"direction_id":"<dir-id>","pkg_id":"<pkg>","exp_id":"P3",
-                "hypothesis":"...","verdict":"FAIL","measured":"46.1","gate_eval":"FAIL",
-                "evidence":"outputs/<pkg>/P3/result.json","next_action":"DESIGN_EXPERIMENT"}'
-   ```
-6. At `DEFERRED`/`AUTONOMOUS`, also write the campaign PACK bundle (`conductor.py pack`) — attempted /
-   found / hypothesis-state / next-action / blocking-decision, so an absent reader never meets a gap.
-7. If a lesson should become durable project memory, route it through the governed Rule Store or
-   `research-op` registry path with explicit acknowledgement.
+For `MATERIALIZE_PACKAGE`, first make sure the Direction has accepted Scope Experiments.
 
-Then loop to step 3.
+- At `SUPERVISED` or `CHECKPOINTED`, use `/research-scope` to propose missing Experiments and pause for
+  Triage.
+- At `DEFERRED` or `AUTONOMOUS`, shape a formal `level=experiment` node containing only
+  `purpose`, `config_ref`, `gate`, and `control_mode`; validate the intended action with
+  `conductor.validate_campaign_action(...)`, and commit it through
+  `research-op --op scope-transition` with `gate=AGENT_DEFERRED_ACK` and a non-empty
+  `deferred_ack`.
 
-**5. Exit.** Every exit produces the **campaign report** from the ledger: cycles used, per-cycle
-`hypothesis → verdict (measured vs gate)` with evidence paths, queued deferred acks, staged
-learning actions, and the route's `next_step` copy. Then:
+Then check materialization:
 
-- **`SUCCESS_EXIT`** — the gate cleared (`gate_eval=PASS`, verdict `PASS`, evidence resolves). Let
-  `/research-run` route the terminal success transition with its T1 ack — live dials collect the ack
-  now; away dials queue it and say so in the report. Adoption (`ADOPTED`) remains a human decision.
-- **`HALT_BUDGET`** — report, then propose through Triage: extend max-cycles, revise the
-  metric/scope, or archive. **Pause.**
-- **`HALT_NO_CANDIDATE`** — no legal next experiment remains under the current scope; propose a scope
-  revise, add constraints/evidence, or archive through Triage. **Pause.**
-- **`ASK_USER`** — ask the single blocking question.
+```bash
+python3 skills/research-package/scripts/create_from_scope.py \
+  --workspace . \
+  --direction-id <direction-id> \
+  --check \
+  --json
+```
 
-## Directive changes mid-campaign
+If `materializable` is true:
 
-A user instruction that changes the campaign's constraints (new rule, different metric/baseline,
-redesigned experiment) is a locked fact (`DIRECTIVE_CHANGE`): propagate it through research-op to its
-typed home in the same turn, re-run `conductor.py status`, and re-route. A direction-level change is a
-Triage proposal + pause — the campaign never rewrites its own charter. If a scope transition carries
-`dial_revert`, affected Tasks revert to `SUPERVISED` and lock until re-grounded (existing dial rule).
+```bash
+python3 skills/research-package/scripts/create_from_scope.py \
+  --workspace . \
+  --direction-id <direction-id>
+```
+
+For a later campaign package under the same Direction, provide a fresh
+`--id <YYYY-MM-DD>-<slug>-c<N>`. Never reopen a terminal package by editing its projection.
+
+### 3. Execute one route at a time
+
+Re-run `status` after every accepted action.
+
+- `RUN_PACKAGE`: delegate the open package to `/research-run`. That skill owns readiness, resource
+  allocation, launch, monitoring, result verification, and terminal routing.
+- `DESIGN_EXPERIMENT`: follow the design procedure below.
+- `SUCCESS_EXIT`, `HALT_BUDGET`, `HALT_NO_CANDIDATE`, or `ASK_USER`: go to step 5.
+
+Do not reproduce `/research-run` logic inside the conductor.
+
+### 4. Design and harvest a cycle
+
+For `DESIGN_EXPERIMENT`, query the current Context Pack through the gateway:
+
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  context <package-id> \
+  --workspace .
+```
+
+The query is ephemeral. Use its Project, Direction, package controls, Experiment specs, pending
+Decisions, applicable Rules and Learnings, failed methods, and evidence references. Pending proposals
+are collision warnings, not accepted Scope.
+
+Draft the next hypothesis from that context and verified run evidence. If several candidates remain
+plausible, rank them independently. First ratify the new Experiment through Scope. Then bind that
+same accepted aggregate to the Package:
+
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  --workspace . \
+  --pkg <package-id> \
+  --op insert \
+  --target experiments-row \
+  --payload '{
+    "scope_experiment_id":"experiment/<direction>/reranker-variant",
+    "local_id":"P3",
+    "status":"READY",
+    "output":".research/experiments/<package-id>/P3/<run-id>/result.json"
+  }'
+```
+
+`experiments-row` binds execution metadata only. It rejects `purpose`, `config_ref`, `gate`,
+`control_mode`, or a copied `spec`. Do not attach an Experiment to invented or pending scope.
+
+When `/research-run` reaches a terminal Run:
+
+1. read the verdict and measured value from the finalized result;
+2. evaluate the campaign gate with `conductor.py gate-eval`;
+3. record useful mechanism-level learning through `/research-analysis`;
+4. append the witnessed Campaign cycle.
+
+The cycle command requires an existing Package, Experiment, and terminal Run:
+
+```bash
+python3 skills/research-auto/scripts/conductor.py append-cycle \
+  --workspace . \
+  --direction-id <direction-id> \
+  --record '{
+    "cycle":3,
+    "direction_id":"<direction-id>",
+    "pkg_id":"<package-id>",
+    "exp_id":"P3",
+    "run_id":"<run-id>",
+    "hypothesis":"The reranker improves recall under fixed controls.",
+    "verdict":"FAIL",
+    "measured":"46.1",
+    "gate_eval":"FAIL",
+    "evidence":".research/experiments/<pkg>/P3/<run-id>/result.json",
+    "next_action":"DESIGN_EXPERIMENT"
+  }'
+```
+
+`append-cycle` rejects incomplete records, illegal verdicts, a non-terminal Run, mismatched ownership,
+duplicate cycle numbers, and `gate_eval=PASS` without `verdict=PASS`.
+
+For `DEFERRED` and `AUTONOMOUS`, append an away-mode handoff bundle after the cycle:
+
+```bash
+python3 skills/research-auto/scripts/conductor.py pack \
+  --workspace . \
+  --direction-id <direction-id> \
+  --bundle '{
+    "attempted":"cycle 3: P3 reranker",
+    "found":"FAIL, 46.1 against R@1 >= 48",
+    "hypothesis_state":"unsupported",
+    "next_action":"DESIGN_EXPERIMENT",
+    "blocking_decision":"none"
+  }'
+```
+
+This bundle is part of the Campaign aggregate. It is not a second context store.
+
+### 5. Exit
+
+Build the report from Campaign cycles and referenced run evidence.
+
+- `SUCCESS_EXIT`: require a recorded `gate_eval=PASS`, `verdict=PASS`, and resolvable evidence. Let
+  `/research-run` handle the package transition and T1 acknowledgement. Adoption remains a human
+  decision.
+- `HALT_BUDGET`: report the exhausted budget, propose extend, revise, or archive through Triage, then
+  pause.
+- `HALT_NO_CANDIDATE`: report why no legal Experiment remains, propose a scope revision or archive,
+  then pause.
+- `ASK_USER`: ask the single blocking question.
+
+Every exit report includes cycles used, each hypothesis and verdict, measured value against the gate,
+evidence path, queued acknowledgements, and the route's `next_step`.
+
+## Directive changes
+
+A user instruction that changes constraints, metrics, baselines, or experiment design is a
+`DIRECTIVE_CHANGE`. Route it to its typed owner in the same turn and re-run `status`.
+
+- Package or Experiment changes go through `research-op`.
+- Direction changes become Triage proposals and pause.
+- A `dial_revert` returns affected Experiment specs to `SUPERVISED` until they are grounded again.
+
+The campaign never rewrites its own charter.
 
 ## Output contract
 
-| Output | Location | Written by |
+| Output | Authoritative home | Writer |
 | --- | --- | --- |
-| Campaign ledger (typed cycle records) | `outputs/_auto/<slug>/campaign.jsonl` | `conductor.py append-cycle` (reject-before-write) |
-| Campaign PACK bundles | `outputs/_auto/<slug>/_pack.jsonl` | `conductor.py pack` (away dials) |
-| Direction/milestone proposals | `outputs/_scope/triage.jsonl` | `triage.py propose` via the formation skills |
-| Committed scope, packages, runs, facts, verdicts | their existing homes | the delegated skills, all through research-op |
+| Campaign cycles and handoff bundles | `Campaign` aggregate in `.research/state/` | conductor through `research-op` |
+| Project, Direction, Experiment, Package, Decision, Learning, Rule | unified research state | owning use case through `research-op` |
+| Run context, logs, metrics, and result | `.research/experiments/<pkg>/<experiment>/<run>/` | experiment runtime |
+| Command audit | `.research/audit/actions.jsonl` | management gateway |
+| Human pages | `.research/interface/` | `lib.interface` atomic rebuild |
 
 ## Done condition
 
-The campaign is done when the ledger shows an evidence-backed `gate_eval=PASS` cycle and the terminal
-success routing (with its T1 ack, collected or queued) has been applied through `/research-run` — or
-when a `HALT_*`/`ASK_USER` exit has been reported with its Triage proposal or blocking question in the
-user's hands. A long wait is never a stop: open runs stay armed via `/research-run`'s stop gate, and
-away-mode ticks always leave a fresh PACK bundle.
+The campaign is complete only when one of these conditions holds:
+
+1. a witnessed Campaign cycle records `gate_eval=PASS`, and `/research-run` has completed terminal
+   routing with its acknowledgement collected or queued;
+2. a halt route has produced its report and Triage proposal;
+3. `ASK_USER` has surfaced the blocking question.
+
+An open Run is not a stopping condition. Continue monitoring through `/research-run`.
 
 ## Error path
 
-| Symptom | Meaning | Action |
-| --- | --- | --- |
-| `GateUnparseable` from status/gate-eval | The gate has no comparator clause | Route `ASK_USER`; never self-judge an unmeasurable gate |
-| `validate_campaign_action` returns rejected | The planned action smuggles authority (disposal, direction commit, gateless task commit) | Drop the action; take the Triage-pause path instead |
-| `append-cycle` raises ValueError | Cycle record incomplete or verdict/gate_eval illegal | Fill the missing field from facts; an unproven verdict cannot clear the gate |
-| `create_from_scope --check` reports a handoff | Direction or validation Tasks are missing or pending | Stop and surface the returned `nextSkill` and `nextAction` |
-| `create_from_scope` rejects | Pending-only scope or duplicate package id | Wait for ratification, or materialize with the `-c<N>` id |
-| research-op rejects an envelope | A package-state invariant fired | Read the structured rejection, repair the payload, retry; never patch files directly |
-| No legal next experiment | The scope's design space is exhausted | `HALT_NO_CANDIDATE` → propose metric/scope revise or archive through Triage |
+| Symptom | Action |
+| --- | --- |
+| `GateUnparseable` | Ask for one numeric comparator clause |
+| `validate_campaign_action` rejects | Drop the action and use the Triage pause route |
+| `append-cycle` rejects | Repair the record from authoritative Run state; do not invent evidence |
+| `create_from_scope --check` returns a handoff | Surface its `nextSkill` and `nextAction` |
+| `research-op` rejects | Read the structured rule and repair the payload |
+| No legal Experiment remains | Route `HALT_NO_CANDIDATE` and propose a scope decision |

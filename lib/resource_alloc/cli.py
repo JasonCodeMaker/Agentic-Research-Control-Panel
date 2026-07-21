@@ -14,6 +14,43 @@ if __package__ in {None, ""}:
 from lib import resource_alloc as ra  # noqa: E402
 from lib.resource_alloc import allocate as alc  # noqa: E402
 from lib.resource_alloc import probe  # noqa: E402
+from lib.research_state.paths import ResearchPaths, add_research_root_argument  # noqa: E402
+
+
+class _ArgumentRejected(ValueError):
+    pass
+
+
+class _ResourceArgumentParser(argparse.ArgumentParser):
+    def error(self, message):
+        raise _ArgumentRejected(message)
+
+
+_COMMANDS = {
+    "register",
+    "list",
+    "snapshot",
+    "recommend",
+    "allocate",
+    "link",
+    "release",
+    "status",
+}
+
+
+def _root_from_raw_argv(argv):
+    for index, value in enumerate(argv):
+        if value == "--research-root" and index + 1 < len(argv):
+            candidate = argv[index + 1]
+            if not candidate.startswith("--"):
+                return candidate
+        if value.startswith("--research-root="):
+            return value.split("=", 1)[1]
+    return None
+
+
+def _command_from_raw_argv(argv):
+    return next((value for value in argv if value in _COMMANDS), "unknown")
 
 
 def _requirement(args):
@@ -39,9 +76,33 @@ def _add_requirement_args(parser):
     parser.add_argument("--tag", action="append")
 
 
+def _audit_summary(args):
+    """Return only typed resource identifiers, never argv or raw input."""
+    summary = {"operation": args.command}
+    for source, target in (
+        ("server", "server"),
+        ("pkg", "package_id"),
+        ("exp", "experiment_local_id"),
+        ("gpu_count", "gpu_count"),
+        ("gpu_type", "gpu_type"),
+        ("alloc", "alloc_id"),
+        ("run_id", "run_id"),
+        ("job_id", "job_id"),
+        ("outcome", "outcome"),
+    ):
+        value = getattr(args, source, None)
+        if value is not None:
+            summary[target] = value
+    gpu_ids = getattr(args, "gpu_ids", None)
+    if gpu_ids is not None:
+        summary["gpu_ids"] = gpu_ids.split(",")
+    return summary
+
+
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--outputs-root", default="outputs")
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    parser = _ResourceArgumentParser(description=__doc__)
+    add_research_root_argument(parser)
     sub = parser.add_subparsers(dest="command", required=True)
 
     register = sub.add_parser("register", help="upsert one server (JSON on stdin or --file)")
@@ -75,18 +136,63 @@ def main(argv=None):
 
     sub.add_parser("status", help="occupancy, snapshot ages, open allocations, leaks")
 
-    args = parser.parse_args(argv)
-    root = Path(args.outputs_root)
+    try:
+        args = parser.parse_args(raw_argv)
+    except _ArgumentRejected:
+        root = ResearchPaths.resolve(research_root=_root_from_raw_argv(raw_argv))
+        command = _command_from_raw_argv(raw_argv)
+        violation = ra.RuleViolation(
+            "invalid resource CLI arguments",
+            rule="resource-cli-arguments-invalid",
+        )
+        ra.audit_rejection(
+            root,
+            command=f"resource-{command}",
+            payload={"operation": command},
+            error=violation,
+            actor={"type": "user", "id": "resource-cli"},
+        )
+        print(f"REJECTED: {violation}", file=sys.stderr)
+        return 2
+    root = ResearchPaths.resolve(research_root=args.research_root)
 
     try:
         if args.command == "register":
-            text = Path(args.file).read_text(encoding="utf-8") if args.file else sys.stdin.read()
-            result = ra.register_server(root, json.loads(text))
+            try:
+                text = (
+                    Path(args.file).read_text(encoding="utf-8")
+                    if args.file
+                    else sys.stdin.read()
+                )
+            except OSError as exc:
+                raise ra.RuleViolation(
+                    "register input file could not be read",
+                    rule="resource-register-input-unreadable",
+                ) from exc
+            try:
+                server = json.loads(text)
+            except json.JSONDecodeError as exc:
+                raise ra.RuleViolation(
+                    "register input must be one valid JSON object",
+                    rule="resource-register-json-invalid",
+                ) from exc
+            result = ra.register_server(root, server)
         elif args.command == "list":
             result = ra.load_registry(root)
         elif args.command == "snapshot":
-            gpus = probe.probe_local() if args.probe else probe.parse_nvidia_smi(
-                Path(args.from_nvidia_smi).read_text(encoding="utf-8"))
+            try:
+                gpus = (
+                    probe.probe_local()
+                    if args.probe
+                    else probe.parse_nvidia_smi(
+                        Path(args.from_nvidia_smi).read_text(encoding="utf-8")
+                    )
+                )
+            except OSError as exc:
+                raise ra.RuleViolation(
+                    "probe input file could not be read",
+                    rule="resource-probe-input-unreadable",
+                ) from exc
             result = {"path": str(probe.write_snapshot(root, args.server, gpus)), "gpus": gpus}
         elif args.command == "recommend":
             result = alc.recommend(root, _requirement(args))
@@ -100,6 +206,13 @@ def main(argv=None):
         else:
             result = alc.status(root)
     except ra.RuleViolation as exc:
+        ra.audit_rejection(
+            root,
+            command=f"resource-{args.command}",
+            payload=_audit_summary(args),
+            error=exc,
+            actor={"type": "user", "id": "resource-cli"},
+        )
         print(f"REJECTED: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(result, indent=2, sort_keys=True))

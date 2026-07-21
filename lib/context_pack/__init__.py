@@ -1,13 +1,9 @@
-"""Context Pack — a deterministic, read-only projection of pipeline knowledge.
+"""Deterministic, read-only Context Pack projection.
 
-To agent-context what learnings.html is to the human: a budgeted, evidence-linked
-compile of stores we already maintain (scope spec, cross-package methodsTried,
-learned rules, and project knowledge registries). No LLM in assembly (a hallucination
-cannot enter at compile time); no mutation of any store (writes still go through
-research-op).
-
-Pure core (assemble/render_md/render_json/is_stale) — node-free, deterministic.
-The I/O loader that reads the stores from disk lives in `build.py`.
+The pack is an ephemeral query result over management state.  It is never a
+second store and is not an input to policy.  ``assemble`` remains a pure
+function so callers can freeze the exact rendered JSON into a Run's
+``context.json`` when execution begins.
 """
 
 from __future__ import annotations
@@ -16,20 +12,33 @@ import json
 from dataclasses import dataclass, field
 
 # Sections in canonical order. Scope intent and the learned-rule floor are
-# protected: an agent should never lose the active objective, task gates, or
+# protected: an agent should never lose the active objective, experiment gates, or
 # proven failures because of a tight context budget.
-PROTECTED_KEYS = ("project", "direction", "tasks", "package_provenance",
-                  "pending_scope", "scope_warnings", "rules", "failed_methods")
+PROTECTED_KEYS = (
+    "project",
+    "direction",
+    "package_control",
+    "experiments",
+    "package_provenance",
+    "pending_scope",
+    "pending_decisions",
+    "scope_warnings",
+    "rules",
+    "failed_methods",
+)
 
 # Canonical section key names (snake_case identifiers, not state-machine values — casing carve-out).
 SECTION_KEYS = (
     "project",
     "direction",
-    "tasks",
+    "package_control",
+    "experiments",
     "package_provenance",
     "pending_scope",
+    "pending_decisions",
     "scope_warnings",
     "rules",
+    "learnings",
     "failed_methods",
     "adopted_wins",
     "papers_registry",
@@ -107,7 +116,23 @@ def _direction_section(node) -> Section | None:
     return Section("direction", "Active Direction (spec)", lines, protected=True)
 
 
-def _tasks_section(nodes) -> Section | None:
+def _package_control_section(package) -> Section | None:
+    if not package:
+        return None
+    lines = [f"- Package: {package.get('id', '')}"]
+    for key in ("lifecycle", "phase", "blocker"):
+        value = package.get(key)
+        if value not in (None, "", []):
+            lines.append(f"- {key}: {value}")
+    return Section(
+        "package_control",
+        "Package execution boundary",
+        lines,
+        protected=True,
+    )
+
+
+def _experiments_section(nodes) -> Section | None:
     nodes = sorted(nodes or [], key=lambda n: n.get("id", ""))
     if not nodes:
         return None
@@ -115,13 +140,13 @@ def _tasks_section(nodes) -> Section | None:
     for node in nodes:
         spec = node.get("spec", {})
         bits = [
-            f"experiment={spec.get('experiment', 'unmeasured')}",
-            f"config={spec.get('config', 'unmeasured')}",
+            f"purpose={spec.get('purpose', 'unmeasured')}",
+            f"config_ref={spec.get('config_ref', 'unmeasured')}",
             f"gate={spec.get('gate', 'unmeasured')}",
             f"control_mode={spec.get('control_mode', 'unmeasured')}",
         ]
         lines.append(f"- {node.get('id', '')}: " + "; ".join(bits))
-    return Section("tasks", "Active Tasks (spec)", lines, protected=True)
+    return Section("experiments", "Experiments (ratified spec)", lines, protected=True)
 
 
 def _package_provenance_section(provenance) -> Section | None:
@@ -131,18 +156,16 @@ def _package_provenance_section(provenance) -> Section | None:
     for key in ("sourceDirection", "sourceVersion", "sourceChange"):
         if provenance.get(key) not in (None, "", []):
             lines.append(f"- {key}: {provenance.get(key)}")
-    source_tasks = provenance.get("sourceTasks") or []
-    if source_tasks:
-        task_ids = []
-        for item in source_tasks:
-            if isinstance(item, dict):
-                task_ids.append(str(item.get("id", "")))
-            else:
-                task_ids.append(str(item))
-        lines.append(f"- sourceTasks: {', '.join(t for t in task_ids if t)}")
-    exp_tasks = provenance.get("experimentSourceTasks") or []
-    if exp_tasks:
-        lines.append(f"- experimentSourceTasks: {', '.join(str(t) for t in exp_tasks)}")
+    source_experiments = provenance.get("sourceExperiments") or []
+    if source_experiments:
+        source_ids = [
+            str(item.get("id", "")) if isinstance(item, dict) else str(item)
+            for item in source_experiments
+        ]
+        lines.append(
+            "- sourceExperiments: "
+            + ", ".join(value for value in source_ids if value)
+        )
     if not lines:
         return None
     return Section("package_provenance", "Package Scope provenance", lines, protected=True)
@@ -163,6 +186,28 @@ def _pending_scope_section(items) -> Section | None:
     return Section("pending_scope", "Pending Scope proposals (advisory)", lines, protected=True)
 
 
+def _pending_decisions_section(items) -> Section | None:
+    items = sorted(items or [], key=lambda item: item.get("id", ""))
+    if not items:
+        return None
+    lines = []
+    for item in items:
+        outcome = (
+            item.get("outcome")
+            or item.get("route")
+            or item.get("status")
+            or "PENDING"
+        )
+        subject = item.get("subject_id") or item.get("package_id") or "unknown"
+        lines.append(f"- {item.get('id', '')}: {outcome}; subject={subject}")
+    return Section(
+        "pending_decisions",
+        "Pending Decisions",
+        lines,
+        protected=True,
+    )
+
+
 def _scope_warnings_section(warnings) -> Section | None:
     warnings = [str(w) for w in (warnings or []) if str(w).strip()]
     if not warnings:
@@ -178,6 +223,30 @@ def _rules_section(learned_rules, analysis_rules) -> Section | None:
     if not lines:
         return None
     return Section("rules", "Learned Rules (constraints)", lines, protected=True)
+
+
+def _learnings_section(learnings) -> Section | None:
+    lines = []
+    for learning in sorted(learnings or [], key=lambda row: row.get("id", "")):
+        text = (
+            learning.get("observation")
+            or learning.get("content")
+            or learning.get("text")
+            or learning.get("summary")
+            or ""
+        )
+        evidence = learning.get("evidence_refs") or learning.get("evidenceRefs") or []
+        refs = []
+        for ref in evidence:
+            if isinstance(ref, dict):
+                refs.append(str(ref.get("uri") or ref.get("sha256") or ""))
+            elif ref:
+                refs.append(str(ref))
+        suffix = f" — evidence: {', '.join(value for value in refs if value)}" if refs else ""
+        lines.append(f"- [{learning.get('id', '')}] {text}{suffix}")
+    if not lines:
+        return None
+    return Section("learnings", "Evidence-backed Learnings (non-binding)", lines, protected=False)
 
 
 def _failed_methods_section(packages) -> Section | None:
@@ -283,11 +352,14 @@ def assemble(inputs: dict, *, budget_chars: int = 8000) -> ContextPack:
     """Build a ContextPack from already-loaded stores. Pure + deterministic."""
     project = _project_section(inputs.get("project_node"))
     direction = _direction_section(inputs.get("direction_node"))
-    tasks = _tasks_section(inputs.get("task_nodes", []))
+    package_control = _package_control_section(inputs.get("package"))
+    experiments = _experiments_section(inputs.get("experiment_nodes", []))
     provenance = _package_provenance_section(inputs.get("package_provenance"))
     pending_scope = _pending_scope_section(inputs.get("pending_scope", []))
+    pending_decisions = _pending_decisions_section(inputs.get("pending_decisions", []))
     warnings = _scope_warnings_section(inputs.get("scope_warnings", []))
     rules = _rules_section(inputs.get("learned_rules", []), inputs.get("analysis_rules", []))
+    learnings = _learnings_section(inputs.get("learnings", []))
     failed = _failed_methods_section(inputs.get("packages", []))
     wins = _adopted_wins_section(inputs.get("packages", []))
     registry = _papers_registry_section(inputs.get("papers_registry", []))
@@ -295,8 +367,9 @@ def assemble(inputs: dict, *, budget_chars: int = 8000) -> ContextPack:
     gaps = _open_gaps_section(inputs.get("gaps", []))
 
     ordered = [s for s in (
-        project, direction, tasks, provenance, pending_scope, warnings,
-        rules, failed, wins, registry, relationships, gaps,
+        project, direction, package_control, experiments, provenance,
+        pending_scope, pending_decisions, warnings,
+        rules, failed, learnings, wins, registry, relationships, gaps,
     )
                if s is not None]
     included, truncated = _apply_budget(ordered, budget_chars)
@@ -312,9 +385,13 @@ def assemble(inputs: dict, *, budget_chars: int = 8000) -> ContextPack:
         "sourceDirection": package_provenance.get("sourceDirection"),
         "sourceVersion": package_provenance.get("sourceVersion"),
         "sourceChange": package_provenance.get("sourceChange"),
-        "sourceTasks": package_provenance.get("sourceTasks", []),
+        "sourceExperiments": package_provenance.get(
+            "sourceExperiments",
+            [],
+        ),
         "pendingScope": [item.get("id") for item in inputs.get("pending_scope", []) if item.get("id")],
-        "learning_fingerprint": inputs.get("learning_fingerprint", ""),
+        "source_seq": inputs.get("source_seq", 0),
+        "source_hash": inputs.get("source_hash", ""),
         "budget_chars": budget_chars,
         "sources_present": sources_present,
         "truncated": truncated,
@@ -326,7 +403,8 @@ def render_md(pack: ContextPack) -> str:
     """Agent-facing markdown render with stamp header."""
     s = pack.stamp
     out = ["# Context Pack",
-           f"_scope_version={s.get('scope_version')} · global_scope_version={s.get('global_scope_version')} · "
+           f"_source_seq={s.get('source_seq')} · source_hash={s.get('source_hash')} · "
+           f"scope_version={s.get('scope_version')} · global_scope_version={s.get('global_scope_version')} · "
            f"generated_at={s.get('generated_at')} · "
            f"sources={','.join(s.get('sources_present', [])) or 'none'} · "
            f"truncated={s.get('truncated')}_"]
@@ -346,19 +424,3 @@ def render_json(pack: ContextPack) -> dict:
             for s in pack.sections
         ],
     }
-
-
-def is_stale(pack_json: dict, current_scope_version=None, *, current_global_scope_version=None,
-             current_triage_version=None, current_learning_fingerprint=None) -> bool:
-    """A pack is stale once the scope it was compiled against has advanced."""
-    stamp = pack_json.get("stamp", {})
-    if current_learning_fingerprint is not None:
-        if stamp.get("learning_fingerprint", "") != current_learning_fingerprint:
-            return True
-    if current_triage_version is not None and stamp.get("triage_version", 0) != current_triage_version:
-        return True
-    if current_global_scope_version is not None:
-        return stamp.get("global_scope_version") != current_global_scope_version
-    if "global_scope_version" in stamp:
-        return stamp.get("global_scope_version") != current_scope_version
-    return stamp.get("scope_version") != current_scope_version

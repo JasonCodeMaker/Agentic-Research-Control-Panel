@@ -4,24 +4,48 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+type ResearchStateSchema = {
+  schema_version: number;
+  enums: {
+    package_lifecycle: string[];
+    package_phase: string[];
+    experiment_status: string[];
+    run_status: string[];
+    run_status_compat: string[];
+    live_action: string[];
+    decision_route: string[];
+  };
+  compatibility: {
+    run_status: Record<string, string>;
+    experiment_status: Record<string, string>;
+    package_terminal_status: Record<string, string>;
+  };
+  transitions: {
+    package_phase: Record<string, string[]>;
+  };
+  status_groups: {
+    run: {
+      active: string[];
+      terminal: string[];
+    };
+  };
+};
+
+const researchStateSchema = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL("./lib/research_state/schema.json", import.meta.url)),
+    "utf-8",
+  ),
+) as ResearchStateSchema;
+
 export const workflowSchema = {
-  schemaVersion: 1,
-  workflowStates: [
-    "CONTEXT_LOADED",
-    "IMPLEMENTING",
-    "IMPLEMENTATION_REVIEW",
-    "DECISION_ADJUDICATION",
-    "READY_TO_LAUNCH",
-    "EXPERIMENT_RUNNING",
-    "LIVE_ANALYSIS",
-    "RESULT_ANALYSIS",
-    "NEXT_ACTION_READY",
-    "BLOCKED",
-    "STOPPED",
-  ],
-  runStatus: ["QUEUED", "RUNNING", "COMPLETED", "RUN_FAILED", "RUN_HALTED", "STALE", "SKIPPED"],
-  liveAction: ["CONTINUE_RUN", "EARLY_STOP", "REPAIR", "ASK_USER", "ESCALATE"],
-  nextRoute: ["RUN_NEXT_EXPERIMENT", "FIX_IMPLEMENTATION", "REVISE_PLAN", "TERMINATE", "ASK_USER"],
+  schemaVersion: researchStateSchema.schema_version,
+  packageLifecycle: Object.freeze([...researchStateSchema.enums.package_lifecycle]),
+  workflowStates: Object.freeze([...researchStateSchema.enums.package_phase]),
+  experimentStatus: Object.freeze([...researchStateSchema.enums.experiment_status]),
+  runStatus: Object.freeze([...researchStateSchema.enums.run_status]),
+  liveAction: Object.freeze([...researchStateSchema.enums.live_action]),
+  nextRoute: Object.freeze([...researchStateSchema.enums.decision_route]),
   tableSchemas: {
     liveCheck: [
       "Time",
@@ -50,12 +74,14 @@ export const workflowSchema = {
       "Reason",
     ],
   },
-} as const;
+};
 
-export type WorkflowState = (typeof workflowSchema.workflowStates)[number];
-export type RunStatus = (typeof workflowSchema.runStatus)[number];
-export type LiveAction = (typeof workflowSchema.liveAction)[number];
-export type NextRoute = (typeof workflowSchema.nextRoute)[number];
+export type PackageLifecycle = string;
+export type WorkflowState = string;
+export type ExperimentStatus = string;
+export type RunStatus = string;
+export type LiveAction = string;
+export type NextRoute = string;
 
 export type ExperimentSnapshot = {
   expId: string;
@@ -108,6 +134,11 @@ export type ResearchOpEnvelope = {
 
 export type WorkflowSnapshot = {
   pkgId: string;
+  packageLifecycle?: PackageLifecycle | string;
+  packagePhase?: WorkflowState | string | null;
+  packageBlocker?: Blocker | null;
+  packageVersion?: number;
+  /** One-version compatibility input. Prefer packageLifecycle/packagePhase. */
   packageStatus?: WorkflowState | string;
   nextRoute?: NextRoute | string;
   now?: string | number;
@@ -133,6 +164,12 @@ export type PerRunTicket = {
   evidence: string[];
 };
 
+export type Blocker = {
+  code: string;
+  summary: string;
+  evidence?: Record<string, unknown> | null;
+};
+
 export type StopGateReport = {
   ok: boolean;
   blockers: string[];
@@ -156,9 +193,13 @@ export type NextAction =
   | { kind: "TERMINATE"; reason: string };
 
 export type RunTicket = {
-  schemaVersion: 1;
+  schemaVersion: number;
   pkgId: string;
   expId: string | null;
+  packageLifecycle: PackageLifecycle;
+  packagePhase: WorkflowState | null;
+  packageBlocker: Blocker | null;
+  /** Compatibility projection for existing callers; never an authority field. */
   workflowState: WorkflowState;
   route: NextRoute;
   readiness: "PASS" | "BLOCKED" | "NOT_RUN" | string;
@@ -177,33 +218,23 @@ export type RunTicket = {
   blocker: string | null;
 };
 
-const transitionGraph: Record<string, string[]> = {
-  START: ["CONTEXT_LOADED"],
-  CONTEXT_LOADED: ["IMPLEMENTING", "READY_TO_LAUNCH"],
-  IMPLEMENTING: ["IMPLEMENTATION_REVIEW"],
-  IMPLEMENTATION_REVIEW: ["IMPLEMENTING", "DECISION_ADJUDICATION", "READY_TO_LAUNCH"],
-  DECISION_ADJUDICATION: ["IMPLEMENTING", "IMPLEMENTATION_REVIEW", "READY_TO_LAUNCH", "BLOCKED"],
-  READY_TO_LAUNCH: ["EXPERIMENT_RUNNING"],
-  EXPERIMENT_RUNNING: ["LIVE_ANALYSIS"],
-  LIVE_ANALYSIS: ["EXPERIMENT_RUNNING", "RESULT_ANALYSIS", "IMPLEMENTING"],
-  RESULT_ANALYSIS: ["NEXT_ACTION_READY"],
-  NEXT_ACTION_READY: ["READY_TO_LAUNCH", "IMPLEMENTING", "BLOCKED", "STOPPED"],
-  BLOCKED: [],
-  STOPPED: [],
-};
-
-const terminalStatuses = new Set(["COMPLETED", "RUN_FAILED", "RUN_HALTED", "SKIPPED"]);
-const activeStatuses = new Set(["QUEUED", "RUNNING", "STALE"]);
+const transitionGraph: Record<string, string[]> = researchStateSchema.transitions.package_phase;
+const terminalStatuses = new Set(researchStateSchema.status_groups.run.terminal);
+const activeStatuses = new Set(researchStateSchema.status_groups.run.active);
 
 export function isLegalTransition(from: string, to: string): boolean {
+  if (from === "START") {
+    return to === "CONTEXT_LOADED";
+  }
   return (transitionGraph[from] || []).includes(to);
 }
 
 export function evaluateWorkflow(snapshot: WorkflowSnapshot): RunTicket {
   const now = parseTime(snapshot.now ?? Date.now());
-  const currentState = coerceWorkflowState(snapshot.packageStatus, "CONTEXT_LOADED");
+  const packageState = normalizePackageState(snapshot);
+  const currentState = packageState.phase ?? "CONTEXT_LOADED";
   const runs = normalizeRuns(snapshot.openRuns || [], now);
-  const perRun = runs.map((run) => buildPerRunTicket(run, now));
+  const perRun = runs.map((run) => buildPerRunTicket(run, now, snapshot.pkgId));
   const nonTerminal = perRun.filter((run) => !run.terminal);
   const terminal = perRun.filter((run) => run.terminal);
   const scanEvents = snapshot.scanEvents || [];
@@ -211,14 +242,21 @@ export function evaluateWorkflow(snapshot: WorkflowSnapshot): RunTicket {
   const dashboardServer = evaluateDashboardServer(snapshot.dashboardServer || null);
   const nextQueued = findNextQueuedExperiment(snapshot.experiments || []);
 
-  let workflowState: WorkflowState;
+  let packagePhase: WorkflowState | null;
   let route: NextRoute;
   let expId: string | null = null;
   let nextAction: NextAction;
-  let blocker: string | null = null;
+  let packageBlocker = packageState.blocker;
 
-  if (nonTerminal.length > 0) {
-    workflowState = "LIVE_ANALYSIS";
+  if (packageState.lifecycle !== "ACTIVE") {
+    packagePhase = packageState.phase;
+    route = "TERMINATE";
+    nextAction = {
+      kind: "TERMINATE",
+      reason: `package lifecycle is ${packageState.lifecycle}`,
+    };
+  } else if (nonTerminal.length > 0) {
+    packagePhase = "LIVE_ANALYSIS";
     route = "RUN_NEXT_EXPERIMENT";
     expId = nonTerminal[0].expId;
     nextAction = {
@@ -227,58 +265,79 @@ export function evaluateWorkflow(snapshot: WorkflowSnapshot): RunTicket {
       due: earliest(nonTerminal.map((run) => run.nextCheck).filter(isString)),
     };
   } else if (terminal.length > 0) {
-    workflowState = "RESULT_ANALYSIS";
+    packagePhase = "RESULT_ANALYSIS";
     route = "TERMINATE";
     expId = terminal[0].expId;
     nextAction = { kind: "ANALYZE_RESULTS", expIds: terminal.map((run) => run.expId) };
+  } else if (packageBlocker) {
+    packagePhase = currentState;
+    route = "ASK_USER";
+    nextAction = { kind: "ASK_USER", reason: packageBlocker.summary };
   } else if (nextQueued) {
     if (canMoveTo(currentState, "READY_TO_LAUNCH")) {
-      workflowState = "READY_TO_LAUNCH";
+      packagePhase = "READY_TO_LAUNCH";
       route = "RUN_NEXT_EXPERIMENT";
       expId = nextQueued.expId;
       nextAction = { kind: "LAUNCH_EXPERIMENT", expId: nextQueued.expId };
     } else {
-      workflowState = currentState;
+      packagePhase = currentState;
       route = "FIX_IMPLEMENTATION";
-      blocker = `${currentState} cannot transition to READY_TO_LAUNCH; finish implementation/review first`;
-      nextAction = { kind: "REPAIR", reason: blocker };
+      packageBlocker = {
+        code: "PHASE_TRANSITION_REQUIRED",
+        summary: `${currentState} cannot transition to READY_TO_LAUNCH; finish implementation/review first`,
+      };
+      nextAction = { kind: "REPAIR", reason: packageBlocker.summary };
     }
   } else if (snapshot.nextRoute === "ASK_USER") {
-    workflowState = "BLOCKED";
+    packagePhase = currentState;
     route = "ASK_USER";
     nextAction = { kind: "ASK_USER", reason: "package nextRoute asks for a user-level decision" };
-    blocker = nextAction.reason;
+    packageBlocker = { code: "USER_DECISION_REQUIRED", summary: nextAction.reason };
   } else if (snapshot.nextRoute === "REVISE_PLAN") {
-    workflowState = "BLOCKED";
+    packagePhase = currentState;
     route = "REVISE_PLAN";
     nextAction = { kind: "ASK_USER", reason: "package nextRoute requests plan revision approval or scope handoff" };
-    blocker = nextAction.reason;
+    packageBlocker = { code: "PLAN_REVISION_REQUIRED", summary: nextAction.reason };
   } else if (snapshot.nextRoute === "FIX_IMPLEMENTATION") {
-    workflowState = "IMPLEMENTING";
+    packagePhase = "IMPLEMENTING";
     route = "FIX_IMPLEMENTATION";
     nextAction = { kind: "REPAIR", reason: "package nextRoute requests implementation repair" };
   } else {
-    workflowState = coerceWorkflowState(snapshot.packageStatus, "NEXT_ACTION_READY");
+    packagePhase = packageState.phase ?? "NEXT_ACTION_READY";
     route = coerceNextRoute(snapshot.nextRoute, "TERMINATE");
     nextAction = { kind: "TERMINATE", reason: "no open or queued experiments remain" };
   }
 
-  if (!stopGate.ok && nonTerminal.length === 0 && workflowState !== "READY_TO_LAUNCH") {
-    workflowState = "BLOCKED";
+  if (!stopGate.ok && nonTerminal.length === 0 && packagePhase !== "READY_TO_LAUNCH") {
     route = "ASK_USER";
-    blocker = stopGate.blockers.join("; ");
-    nextAction = { kind: "ASK_USER", reason: blocker };
+    packageBlocker = {
+      code: "STOP_GATE_BLOCKED",
+      summary: stopGate.blockers.join("; "),
+    };
+    nextAction = { kind: "ASK_USER", reason: packageBlocker.summary };
   }
 
   const requiredMutations = [
-    ...mutationsForWorkflowState(snapshot, workflowState, route, nonTerminal, blocker, nextAction),
+    ...mutationsForWorkflowState(
+      snapshot,
+      packageState.lifecycle,
+      packagePhase,
+      packageBlocker,
+      route,
+      nonTerminal,
+      nextAction,
+    ),
     ...perRun.flatMap((run) => run.requiredMutations),
   ];
+  const workflowState = packagePhase ?? packageState.lifecycle;
 
   return {
-    schemaVersion: 1,
+    schemaVersion: researchStateSchema.schema_version,
     pkgId: snapshot.pkgId,
     expId,
+    packageLifecycle: packageState.lifecycle,
+    packagePhase,
+    packageBlocker,
     workflowState,
     route,
     readiness: snapshot.readiness || "NOT_RUN",
@@ -288,7 +347,7 @@ export function evaluateWorkflow(snapshot: WorkflowSnapshot): RunTicket {
     dashboardServer,
     nextAction,
     artifactsSeen: scanEvents,
-    blocker,
+    blocker: packageBlocker?.summary ?? null,
   };
 }
 
@@ -319,18 +378,32 @@ function canMoveTo(from: WorkflowState, to: WorkflowState): boolean {
 
 function mutationsForWorkflowState(
   snapshot: WorkflowSnapshot,
-  workflowState: WorkflowState,
+  lifecycle: PackageLifecycle,
+  phase: WorkflowState | null,
+  packageBlocker: Blocker | null,
   route: NextRoute,
   nonTerminal: PerRunTicket[],
-  blocker: string | null,
   nextAction: NextAction,
 ): ResearchOpEnvelope[] {
   const mutations: ResearchOpEnvelope[] = [];
-  if (snapshot.packageStatus !== workflowState) {
+  const current = normalizePackageState(snapshot);
+  if (
+    current.lifecycle !== lifecycle
+    || current.phase !== phase
+    || JSON.stringify(current.blocker) !== JSON.stringify(packageBlocker)
+  ) {
+    const payload: Record<string, unknown> = {
+      lifecycle,
+      phase,
+      blocker: packageBlocker,
+    };
+    if (snapshot.packageVersion !== undefined) {
+      payload.expected_version = snapshot.packageVersion;
+    }
     mutations.push({
       op: "update",
       target: "status",
-      payload: { to: workflowState, to_status: workflowState },
+      payload,
     });
   }
 
@@ -349,14 +422,14 @@ function mutationsForWorkflowState(
   mutations.push({
     op: "update",
     target: "lastAction",
-    payload: { to: formatLastAction(workflowState, route, nextAction) },
+    payload: { to: formatLastAction(phase ?? lifecycle, route, nextAction) },
   });
 
-  if (blocker) {
+  if (packageBlocker) {
     mutations.push({
       op: "update",
       target: "currentBlocker",
-      payload: { to: blocker },
+      payload: { to: packageBlocker.summary },
     });
   }
   return mutations;
@@ -364,9 +437,9 @@ function mutationsForWorkflowState(
 
 function normalizeRuns(runs: RunSnapshot[], now: number): RunSnapshot[] {
   return runs.map((run) => {
-    const status = String(run.status || "RUNNING");
+    const status = normalizeRunStatus(run.status || "RUNNING");
     if (!activeStatuses.has(status)) {
-      return run;
+      return { ...run, status };
     }
     const ref = run.lastOutputAt ?? run.startedAt;
     const ageSeconds = ref == null ? null : Math.max(0, Math.floor((now - parseTime(ref)) / 1000));
@@ -378,13 +451,13 @@ function normalizeRuns(runs: RunSnapshot[], now: number): RunSnapshot[] {
   });
 }
 
-function buildPerRunTicket(run: RunSnapshot, now: number): PerRunTicket {
-  const status = String(run.status || "RUNNING");
+function buildPerRunTicket(run: RunSnapshot, now: number, pkgId: string): PerRunTicket {
+  const status = normalizeRunStatus(run.status || "RUNNING");
   const terminal = terminalStatuses.has(status);
   const health = String(run.health || "OK");
   const liveAction = decideLiveAction(status, health);
   const nextCheck = terminal ? null : iso(now + cadenceMillis(run, status, health));
-  const runtimeRoot = run.runtimeRoot || `outputs/<pkg>/runs/${run.runId}`;
+  const runtimeRoot = run.runtimeRoot || `.research/experiments/${pkgId}/${run.expId}/${run.runId}`;
   const evidence = [
     `${runtimeRoot}/status.json`,
     `${runtimeRoot}/events.jsonl`,
@@ -401,13 +474,13 @@ function buildPerRunTicket(run: RunSnapshot, now: number): PerRunTicket {
     runtimeRoot,
     nextCheck,
     statusLine: formatStatusLine(run, liveAction),
-    requiredMutations: mutationsForRun(run, status, terminal, liveAction, nextCheck, now),
+    requiredMutations: mutationsForRun(run, status, terminal, liveAction, nextCheck, now, pkgId),
     evidence,
   };
 }
 
 function decideLiveAction(status: string, health: string): LiveAction {
-  if (status === "RUN_FAILED" || status === "RUN_HALTED" || health === "ERROR") {
+  if (status === "FAILED" || status === "HALTED" || health === "ERROR") {
     return "REPAIR";
   }
   if (status === "STALE" || health === "WARN") {
@@ -447,8 +520,9 @@ function mutationsForRun(
   liveAction: LiveAction,
   nextCheck: string | null,
   now: number,
+  pkgId: string,
 ): ResearchOpEnvelope[] {
-  const runtimeRoot = run.runtimeRoot || `outputs/<pkg>/runs/${run.runId}`;
+  const runtimeRoot = run.runtimeRoot || `.research/experiments/${pkgId}/${run.expId}/${run.runId}`;
   const liveCheck: ResearchOpEnvelope = {
     op: "insert",
     target: "tracker-live-check-row",
@@ -501,7 +575,7 @@ function mutationsForRun(
       target: "experiments-status",
       payload: {
         id: run.expId,
-        to: status,
+        to: experimentStatusFromRun(status),
       },
     },
   ];
@@ -548,7 +622,9 @@ function buildStopGate(
 }
 
 function findNextQueuedExperiment(experiments: ExperimentSnapshot[]): ExperimentSnapshot | null {
-  return experiments.find((exp) => ["QUEUED", "NOT_STARTED", ""].includes(String(exp.status || ""))) || null;
+  return experiments.find((exp) =>
+    ["PLANNED", "READY"].includes(normalizeExperimentStatus(exp.status || "PLANNED"))
+  ) || null;
 }
 
 function formatStatusLine(run: RunSnapshot, liveAction: LiveAction): string {
@@ -565,12 +641,100 @@ function formatLastAction(workflowState: WorkflowState, route: NextRoute, nextAc
   return `workflow.ts routed state=${workflowState} route=${route}; next=${nextAction.kind}`;
 }
 
-function coerceWorkflowState(value: unknown, fallback: WorkflowState): WorkflowState {
-  return workflowSchema.workflowStates.includes(value as WorkflowState) ? (value as WorkflowState) : fallback;
+function normalizePackageState(snapshot: WorkflowSnapshot): {
+  lifecycle: PackageLifecycle;
+  phase: WorkflowState | null;
+  blocker: Blocker | null;
+} {
+  const legacyStatus = snapshot.packageStatus == null ? null : String(snapshot.packageStatus);
+  const inferredLifecycle = legacyStatus == null
+    ? "ACTIVE"
+    : researchStateSchema.compatibility.package_terminal_status[legacyStatus] ?? "ACTIVE";
+  const lifecycle = String(snapshot.packageLifecycle ?? inferredLifecycle);
+  if (!workflowSchema.packageLifecycle.includes(lifecycle)) {
+    throw new Error(`unknown package lifecycle: ${lifecycle}`);
+  }
+
+  let phase: WorkflowState | null;
+  if (snapshot.packagePhase !== undefined) {
+    phase = snapshot.packagePhase == null ? null : String(snapshot.packagePhase);
+  } else if (legacyStatus && workflowSchema.workflowStates.includes(legacyStatus)) {
+    phase = legacyStatus;
+  } else if (lifecycle === "ACTIVE" && legacyStatus !== "BLOCKED") {
+    phase = "CONTEXT_LOADED";
+  } else {
+    phase = null;
+  }
+  if (phase !== null && !workflowSchema.workflowStates.includes(phase)) {
+    throw new Error(`unknown package phase: ${phase}`);
+  }
+  if (lifecycle === "ACTIVE" && phase === null) {
+    throw new Error(
+      legacyStatus === "BLOCKED"
+        ? "legacy BLOCKED input requires packagePhase; BLOCKED is now a blocker, not a phase"
+        : "ACTIVE package requires packagePhase",
+    );
+  }
+  if (lifecycle !== "ACTIVE" && phase !== null) {
+    throw new Error(`${lifecycle} package must not carry an active packagePhase`);
+  }
+
+  const blocker = snapshot.packageBlocker ?? null;
+  if (
+    blocker !== null
+    && (
+      typeof blocker !== "object"
+      || typeof blocker.code !== "string"
+      || !blocker.code
+      || typeof blocker.summary !== "string"
+      || !blocker.summary
+    )
+  ) {
+    throw new Error("packageBlocker requires non-empty code and summary");
+  }
+  return { lifecycle, phase, blocker };
+}
+
+function normalizeRunStatus(value: unknown): RunStatus {
+  const raw = String(value);
+  const canonical = researchStateSchema.compatibility.run_status[raw] ?? raw;
+  if (!workflowSchema.runStatus.includes(canonical)) {
+    throw new Error(`unknown run status: ${raw}`);
+  }
+  return canonical;
+}
+
+function normalizeExperimentStatus(value: unknown): ExperimentStatus {
+  const raw = String(value);
+  const canonical = researchStateSchema.compatibility.experiment_status[raw] ?? raw;
+  if (!workflowSchema.experimentStatus.includes(canonical)) {
+    throw new Error(`unknown experiment status: ${raw}`);
+  }
+  return canonical;
+}
+
+function experimentStatusFromRun(status: RunStatus): ExperimentStatus {
+  const mapping: Record<string, string> = {
+    QUEUED: "READY",
+    RUNNING: "ACTIVE",
+    STALE: "ACTIVE",
+    COMPLETED: "COMPLETE",
+    FAILED: "FAILED",
+    HALTED: "FAILED",
+    SKIPPED: "SKIPPED",
+  };
+  return normalizeExperimentStatus(mapping[status]);
 }
 
 function coerceNextRoute(value: unknown, fallback: NextRoute): NextRoute {
-  return workflowSchema.nextRoute.includes(value as NextRoute) ? (value as NextRoute) : fallback;
+  if (value == null || value === "") {
+    return fallback;
+  }
+  const route = String(value);
+  if (!workflowSchema.nextRoute.includes(route)) {
+    throw new Error(`unknown decision route: ${route}`);
+  }
+  return route;
 }
 
 function stringifyField(value: unknown, fallback = "unmeasured"): string {
