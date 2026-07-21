@@ -190,7 +190,7 @@ class ResearchPaths:
             raise UpgradeRequired(
                 "upgrade-required: existing unversioned research data found at "
                 + ", ".join(str(path) for path in markers)
-                + "; run research-migrate before initialization"
+                + "; run research-init before initialization"
             )
 
         self.root.mkdir(parents=True, exist_ok=True)
@@ -204,7 +204,7 @@ class ResearchPaths:
                     raise UpgradeRequired(
                         "upgrade-required: existing unversioned research data found at "
                         + str(self.root)
-                        + "; run research-migrate before initialization"
+                        + "; run research-init before initialization"
                     )
             created = self._create_layout()
             if existing_version is None:

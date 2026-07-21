@@ -5,8 +5,9 @@ description: "Use when turning a new or existing workspace into a PM-ratifiable 
 
 # research-onboard
 
-Onboarding turns a workspace into a pending Project proposal. It does not
-commit Project intent or create a Package.
+Onboarding turns a setup-ready workspace into a pending Project proposal. It
+does not initialize ARC, attach protocols, commit Project intent, or create a
+Package.
 
 The agent proposes; the PM decides. Show the exact objective before asking for
 confirmation, then submit it through the same hash-bound Triage gate used by
@@ -42,9 +43,9 @@ python3 skills/research-onboard/scripts/onboard.py --workspace . \
   --prior-knowledge '<note-ref-json>'
 ```
 
-The installed-workspace gate is fail closed. If the workspace contains legacy
-managed data or an unversioned research root, stop and run the explicit
-migration. Do not scaffold over it.
+The setup gate is fail closed. If the workspace lacks a current versioned root,
+contains legacy managed data, or has an unsupported version, stop and use
+`research-init`. Do not initialize or migrate from onboarding.
 
 ## Procedure
 
@@ -67,17 +68,17 @@ If an active Project already exists, onboarding is complete. Use
 
 ### 2. Empty workspace
 
-Create the source-side deep-learning skeleton:
+After `research-init` reports `READY_NO_PROJECT`, create the optional
+source-side deep-learning skeleton:
 
 ```bash
 python3 skills/research-onboard/scripts/onboard.py --workspace . scaffold
 ```
 
-The command initializes the versioned research root, creates source,
-configuration, data-reference, baseline, and figure directories, and writes
-`AGENTS.md` and `CLAUDE.md` stubs only when absent. Run output does not get a
-second source-side folder; the experiment harness owns it under
-`.research/experiments`.
+The command creates source, configuration, data-reference, baseline, and figure
+directories. It does not initialize `.research` or write protocol files. Run
+output does not get a second source-side folder; the experiment harness owns it
+under `.research/experiments`.
 
 Ask for the Project goal, contributions, and out-of-scope boundary one
 question at a time. Do not invent them. Use
@@ -172,6 +173,7 @@ disposition, and accepted `scope-transition`.
 
 Onboarding does not:
 
+- install skills, attach protocols, initialize state, or migrate legacy data;
 - commit a Project, Direction, or Experiment;
 - create a Package or launch a Run;
 - read or mutate the interface projection;

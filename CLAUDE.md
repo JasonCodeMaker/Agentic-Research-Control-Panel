@@ -230,10 +230,9 @@ cd <pipeline-root>
 python -m lib.interface.serve --workspace <workspace> ensure --json
 ```
 
-This command may initialize an empty greenfield root. It must fail closed over
-unversioned installed data, which requires the explicit inventory, migration,
-and check sequence. Starting or rebuilding the interface never authorizes a
-Scope change or Run.
+This command requires an already versioned managed root. If setup or migration
+is required, stop and use `research-init`. Starting or rebuilding the interface
+never authorizes a Scope change or Run.
 
 ## Per-project customization
 

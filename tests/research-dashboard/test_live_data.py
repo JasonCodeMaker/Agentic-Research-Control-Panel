@@ -5,6 +5,10 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO))
+
+from lib.research_state import EventStore, ResearchPaths  # noqa: E402
+
 BUNDLE = REPO / "skills/research-dashboard/assets/dashboard"
 ASSETS = BUNDLE / "assets"
 
@@ -150,6 +154,7 @@ def test_live_html_not_wired():
 
 def test_scaffold_emits_live_data(tmp_path):
     root = tmp_path / ".research" / "interface"
+    EventStore(ResearchPaths.resolve(workspace=tmp_path)).initialize()
     script = REPO / "skills/research-dashboard/scripts/ensure_dashboard.py"
     result = subprocess.run(
         [sys.executable, str(script), "--workspace", str(tmp_path), "build"],
@@ -181,12 +186,12 @@ def test_skill_documents_build_serve_ensure_and_status_commands():
         "python3 skills/research-dashboard/scripts/ensure_dashboard.py "
         "--workspace . build"
     ) in compact
-    for command in ("serve", "ensure", "status"):
+    for command in ("serve", "ensure", "status", "stop"):
         assert (
             f"python3 -m lib.interface.serve --workspace . {command}"
         ) in compact
     assert "XDG_RUNTIME_DIR" in skill
-    assert "upgrade-required" in skill
+    assert "research-init" in skill
     assert "python3 -m lib.interface.parity check" in skill
 
 

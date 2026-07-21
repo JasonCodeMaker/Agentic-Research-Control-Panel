@@ -6,6 +6,7 @@ import argparse
 import functools
 import json
 import os
+import signal
 import socket
 import subprocess
 import sys
@@ -366,6 +367,8 @@ def _paths(args: argparse.Namespace) -> ResearchPaths:
 def _emit(payload: Mapping[str, Any], *, as_json: bool) -> None:
     if as_json:
         print(json.dumps(dict(payload), ensure_ascii=False, sort_keys=True))
+    elif payload.get("action") in {"stopped", "already-stopped"}:
+        print(payload.get("action"))
     elif payload.get("ok"):
         print(payload.get("live_url") or payload.get("url"))
     else:
@@ -428,7 +431,7 @@ def _start_background(paths: ResearchPaths, host: str, port: int) -> None:
 
 def _command_ensure(args: argparse.Namespace) -> int:
     paths = _paths(args)
-    EventStore(paths).initialize()
+    paths.load_version()
     build_interface(paths)
     existing = _read_json(paths.dashboard_server_state)
     if existing.get("api_base"):
@@ -490,6 +493,98 @@ def _command_status(args: argparse.Namespace) -> int:
     return 1
 
 
+def _command_stop(args: argparse.Namespace) -> int:
+    """Stop only the healthy Dashboard recorded for this workspace."""
+    paths = _paths(args)
+    existing = _read_json(paths.dashboard_server_state)
+    healthy = None
+    if existing.get("api_base"):
+        healthy = _check_health(
+            str(existing["api_base"]) + "/health", paths, timeout=1.0
+        )
+    if healthy is None:
+        payload = {
+            **existing,
+            "ok": True,
+            "status": "stopped",
+            "action": "already-stopped",
+            "health": "stopped",
+            "workspace": str(paths.workspace),
+            "research_root": str(paths.root),
+            "document_root": str(static_document_root(paths)),
+        }
+        _emit(payload, as_json=args.json)
+        return 0
+
+    try:
+        pid = int(healthy["pid"])
+    except (KeyError, TypeError, ValueError):
+        payload = {
+            **healthy,
+            "ok": False,
+            "status": "error",
+            "action": "stop-failed",
+            "error": "healthy Dashboard did not report a valid PID",
+        }
+        _emit(payload, as_json=args.json)
+        return 1
+    if pid <= 1 or pid == os.getpid():
+        payload = {
+            **healthy,
+            "ok": False,
+            "status": "error",
+            "action": "stop-failed",
+            "error": f"refusing to signal unsafe Dashboard PID: {pid}",
+        }
+        _emit(payload, as_json=args.json)
+        return 1
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        pass
+    except PermissionError as exc:
+        payload = {
+            **healthy,
+            "ok": False,
+            "status": "error",
+            "action": "stop-failed",
+            "error": str(exc),
+        }
+        _emit(payload, as_json=args.json)
+        return 1
+
+    health_url = str(healthy["api_base"]) + "/health"
+    deadline = time.monotonic() + args.timeout
+    while time.monotonic() < deadline:
+        if _check_health(health_url, paths, timeout=0.2) is None:
+            break
+        time.sleep(0.1)
+    else:
+        payload = {
+            **healthy,
+            "ok": False,
+            "status": "error",
+            "action": "stop-failed",
+            "error": f"Dashboard PID {pid} did not stop within {args.timeout:g}s",
+        }
+        _emit(payload, as_json=args.json)
+        return 1
+
+    stopped = {
+        **healthy,
+        "ok": False,
+        "status": "stopped",
+        "health": "stopped",
+        "stopped_at": time.time(),
+        "repair_required": False,
+    }
+    write_json_atomic(paths.dashboard_server_state, stopped)
+    payload = {**stopped, "ok": True, "action": "stopped"}
+    _emit(payload, as_json=args.json)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", default=".")
@@ -512,6 +607,11 @@ def build_parser() -> argparse.ArgumentParser:
     status = subcommands.add_parser("status", help="check the recorded dashboard server")
     status.add_argument("--json", action="store_true")
     status.set_defaults(func=_command_status)
+
+    stop = subcommands.add_parser("stop", help="stop the recorded workspace dashboard")
+    stop.add_argument("--timeout", type=float, default=5.0)
+    stop.add_argument("--json", action="store_true")
+    stop.set_defaults(func=_command_stop)
     return parser
 
 

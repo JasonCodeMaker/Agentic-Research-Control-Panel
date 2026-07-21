@@ -39,6 +39,7 @@ import scope_ssot  # noqa: E402
 # Entries that never count as "project content" when deciding empty vs existing.
 IGNORE = frozenset({
     ".git", ".gitignore", ".gitkeep", ".pytest_cache", "__pycache__", ".DS_Store",
+    "AGENTS.md", "CLAUDE.md",
 })
 
 # Source and configuration stay in the workspace.  Managed Run output belongs
@@ -49,48 +50,6 @@ SKELETON_DIRS = (
 )
 GITKEEP_DIRS = ("data", "dataset", "baselines", "figures")
 
-CLAUDE_STUB = """# CLAUDE.md
-
-<!-- Prepend your project specifics above the Trustworthy Research Pipeline protocols.
-     See the pipeline's CLAUDE.md -> "Per-project customization". -->
-
-## Project
-One-paragraph description (system, datasets, agent stack).
-
-## Motivation and Goal
-The central bottleneck this project attacks.
-
-## Global Optimization Objective
-The primary objective and the success rule (metric X must improve under budget Y).
-
-## Current Best
-The live anchor record (checkpoint path, metric values, validation seeds).
-"""
-
-AGENTS_STUB = """# AGENTS.md
-
-This file is the Codex adapter for a project managed by the Trustworthy Research Pipeline.
-
-## Project Context
-
-Prepend project-specific Codex rules above this section: project objective, datasets, metrics,
-compute constraints, non-goals, and current best checkpoint.
-
-## Trustworthy Pipeline Protocols
-
-- Read `CLAUDE.md` for the full project operating contract.
-- Use the toolbox `workflow.ts` ticket before any research-package implementation, launch, monitoring,
-  or analysis work.
-- When a protocol or skill body shows `skills/<name>/scripts/...`, resolve it through the installed
-  Codex symlink first, e.g. `$HOME/.codex/skills/<name>/scripts/...`.
-- Keep the Trustworthy pipeline protocol sections project-agnostic; prepend local context instead of
-  rewriting the universal rules.
-- If `CLAUDE.md` is absent, attach the pipeline protocol from the toolbox repo before
-  running `/research-onboard` or `/research-run`.
-- Treat `.research/state` as management authority and `.research/interface` as a disposable projection.
-"""
-
-
 def resolve_paths(*, workspace=".", research_root=None) -> ResearchPaths:
     return ResearchPaths.resolve(
         workspace=workspace,
@@ -99,7 +58,7 @@ def resolve_paths(*, workspace=".", research_root=None) -> ResearchPaths:
 
 
 def _require_safe_workspace(paths: ResearchPaths) -> None:
-    """Fail closed on legacy or unversioned managed data."""
+    """Require setup completion before onboarding reads or writes intent."""
     version = paths.load_version()
     if version is not None:
         return
@@ -109,11 +68,9 @@ def _require_safe_workspace(paths: ResearchPaths) -> None:
             "upgrade-required: legacy research data exists; run the explicit "
             "research migration before onboarding"
         )
-    if paths.root.exists() and any(paths.root.iterdir()):
-        raise UpgradeRequired(
-            "upgrade-required: the research root is unversioned; run the "
-            "explicit research migration before onboarding"
-        )
+    raise UpgradeRequired(
+        "setup-required: ARC is not initialized; run research-init before onboarding"
+    )
 
 
 def _is_managed_entry(entry: Path, paths: ResearchPaths) -> bool:
@@ -153,29 +110,12 @@ def scaffold_skeleton(cwd) -> list[str]:
     return list(SKELETON_DIRS)
 
 
-def write_project_claude_stub(cwd) -> bool:
-    """Write a CLAUDE.md stub only if absent. Returns True if written, False if left untouched."""
-    path = Path(cwd) / "CLAUDE.md"
-    if path.exists():
-        return False
-    path.write_text(CLAUDE_STUB, encoding="utf-8")
-    return True
-
-
-def write_project_agents_stub(cwd) -> bool:
-    """Write an AGENTS.md stub for Codex only if absent. Returns True if written."""
-    path = Path(cwd) / "AGENTS.md"
-    if path.exists():
-        return False
-    path.write_text(AGENTS_STUB, encoding="utf-8")
-    return True
-
-
 def write_prior_knowledge(
     paths: ResearchPaths,
     markdown: str,
 ) -> dict[str, Any]:
     """Store prior knowledge once and return its stable NoteRef."""
+    _require_safe_workspace(paths)
     if not isinstance(markdown, str) or not markdown.strip():
         raise CommandRejected(
             "prior-knowledge-required",
@@ -270,7 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("detect", help="classify the workspace as empty|existing")
 
-    sub.add_parser("scaffold", help="create the in-place DL skeleton + protocol stubs")
+    sub.add_parser("scaffold", help="create the in-place DL source skeleton")
 
     pw = sub.add_parser(
         "write-prior-knowledge",
@@ -318,16 +258,11 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.cmd == "scaffold":
             _require_safe_workspace(paths)
-            management.initialize(paths)
             created = scaffold_skeleton(paths.workspace)
-            wrote_claude = write_project_claude_stub(paths.workspace)
-            wrote_agents = write_project_agents_stub(paths.workspace)
             print(
                 json.dumps(
                     {
                         "created_dirs": created,
-                        "claude_md_written": wrote_claude,
-                        "agents_md_written": wrote_agents,
                     },
                     ensure_ascii=False,
                 )

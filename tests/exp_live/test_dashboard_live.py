@@ -16,6 +16,7 @@ ACTOR = {"type": "agent", "id": "dashboard-live-test"}
 
 
 def _projected_root(tmp_path: Path) -> Path:
+    EventStore(ResearchPaths.resolve(workspace=tmp_path)).initialize()
     ensure_dashboard.ensure_dashboard(tmp_path)
     return tmp_path / ".research" / "interface"
 

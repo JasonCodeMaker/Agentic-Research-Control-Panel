@@ -14,7 +14,6 @@ if str(PIPELINE_ROOT) not in sys.path:
 
 from lib.interface import BuildResult, build_interface  # noqa: E402
 from lib.research_state import (  # noqa: E402
-    EventStore,
     ResearchPaths,
     UnsupportedResearchVersion,
     UpgradeRequired,
@@ -27,7 +26,7 @@ def ensure_dashboard(
     *,
     research_root: str | Path | None = None,
 ) -> list[Path]:
-    """Initialize a safe greenfield store and rebuild its interface."""
+    """Rebuild the interface for an explicitly initialized workspace."""
     paths = (
         workspace
         if isinstance(workspace, ResearchPaths)
@@ -36,7 +35,7 @@ def ensure_dashboard(
             research_root=research_root,
         )
     )
-    EventStore(paths).initialize()
+    paths.load_version()
     result = build_interface(paths)
     return list(result.files)
 
@@ -50,7 +49,7 @@ def build_dashboard(
         workspace=workspace,
         research_root=research_root,
     )
-    EventStore(paths).initialize()
+    paths.load_version()
     return build_interface(paths)
 
 
@@ -78,8 +77,8 @@ def main(argv: list[str] | None = None) -> int:
     except UpgradeRequired as exc:
         print(str(exc), file=sys.stderr)
         print(
-            "Run research-migrate after inventory and backup checks; "
-            "the dashboard will not initialize over legacy data.",
+            "Run research-init before building the dashboard; the dashboard "
+            "does not initialize or migrate managed state.",
             file=sys.stderr,
         )
         return 2

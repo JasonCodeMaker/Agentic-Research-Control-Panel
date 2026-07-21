@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
 from lib.interface.project import render_scope_schema_js
+from lib.research_state import EventStore, ResearchPaths
 from lib.research_state.schema import enum, scope_contract
 
 DASH = ROOT / "skills" / "research-dashboard" / "assets" / "dashboard"
@@ -187,6 +188,7 @@ def test_interface_contains_scope_schema_but_no_installed_python_renderer(tmp_pa
     sys.path.insert(0, str(ROOT / "skills" / "research-dashboard" / "scripts"))
     import ensure_dashboard  # noqa: WPS433
 
+    EventStore(ResearchPaths.resolve(workspace=tmp_path)).initialize()
     ensure_dashboard.ensure_dashboard(tmp_path)
     dashboard_root = tmp_path / ".research" / "interface"
     assert not (dashboard_root / "scripts").exists()

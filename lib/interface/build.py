@@ -286,7 +286,7 @@ def _build_interface_unlocked(
     if unversioned and not allow_unversioned_migration:
         raise UpgradeRequired(
             f"upgrade-required: {paths.version_file} is missing; initialize a new "
-            "workspace or run research-migrate before building the interface"
+            "workspace or run research-init before building the interface"
         )
     # This escape hatch is deliberately explicit and read-only.  It exists
     # solely so the migration command can prove that the interface is

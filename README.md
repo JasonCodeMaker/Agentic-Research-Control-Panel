@@ -151,112 +151,84 @@ two competing objects.
 
 ## Quick Start
 
-Setup has three parts: install the skills, attach the project protocol, and
-initialize or migrate the managed root.
+Give the agent two things: the target workspace and whether the setup is for
+Codex, Claude Code, or both. `research-init` inspects first, preserves existing
+project instructions, initializes or migrates the managed root, installs the
+skills, builds the interface, and starts the Dashboard Server by default.
 
-### 1. Install the skills
+### 1. Bootstrap `research-init` once
 
-Symlink the skills from this toolbox checkout. Do not copy them because their
-scripts resolve the shared `lib/` code from this repo.
+The setup skill must be discoverable before it can install its siblings. Link
+only this skill from the toolbox checkout, then open a new agent session:
 
-| Agent | Global skill directory | Invocation |
+| Agent | Bootstrap destination | Invocation |
 | --- | --- | --- |
-| Claude Code | `$HOME/.claude/skills` | `/research-dashboard` |
-| Codex | `$HOME/.agents/skills` | `$research-dashboard` |
+| Claude Code | `$HOME/.claude/skills/research-init` | `/research-init` |
+| Codex | `$HOME/.agents/skills/research-init` | `$research-init` |
 
 ```bash
-cd /path/to/Agentic-Research-Control-Panel
-REPO="$(pwd)"
-DEST="$HOME/.agents/skills"  # use $HOME/.claude/skills for Claude Code
-
-mkdir -p "$DEST"
-for src in "$REPO"/skills/*/; do
-  name="$(basename "$src")"
-  if [ -e "$DEST/$name" ] && [ ! -L "$DEST/$name" ]; then
-    mv "$DEST/$name" "$DEST/$name.bak.$(date +%Y%m%d%H%M%S)"
-  fi
-  ln -sfn "${src%/}" "$DEST/$name"
-done
-
-ls -l "$DEST" | grep research
-```
-
-Open a new agent session after installation.
-
-### 2. Attach the protocol
-
-Copy or merge the protocol files into the research workspace. Never overwrite
-existing project instructions without reviewing them.
-
-```bash
-WORKSPACE=/path/to/your-research-workspace
 PIPELINE=/path/to/Agentic-Research-Control-Panel
-
-test -f "$WORKSPACE/AGENTS.md" || cp "$PIPELINE/AGENTS.md" "$WORKSPACE/AGENTS.md"
-test -f "$WORKSPACE/CLAUDE.md" || cp "$PIPELINE/CLAUDE.md" "$WORKSPACE/CLAUDE.md"
+mkdir -p "$HOME/.agents/skills"
+ln -s "$PIPELINE/skills/research-init" "$HOME/.agents/skills/research-init"
 ```
 
-Prepend project-specific objectives, datasets, budgets, and contribution
-constraints to the copied protocol.
+Use `$HOME/.claude/skills` instead for Claude Code. If the destination already
+contains a real file or directory, stop and review it; setup does not replace
+user-owned skill content.
 
-### 3A. Initialize a greenfield workspace
+### 2. Ask the agent to set up the workspace
 
-Use this path only when the workspace has no prior ARC-managed data:
+For Codex:
+
+```text
+Use $research-init to set up /path/to/my-research-project for Codex.
+```
+
+For Claude Code:
+
+```text
+Use /research-init to set up /path/to/my-research-project for Claude Code.
+```
+
+The agent first reports whether the workspace is `ABSENT`, `LEGACY`,
+`MIGRATION_STAGED`, `CURRENT`, or `INVALID`. Normal greenfield setup then runs:
 
 ```bash
-cd "$PIPELINE"
-python3 -m lib.research_state.cli --workspace "$WORKSPACE" init
+python3 "$HOME/.agents/skills/research-init/scripts/research_init.py" \
+  --workspace /path/to/my-research-project \
+  setup --agent codex
 ```
 
-Initialization creates the versioned `.research/` layout. It fails closed when
-it detects prior unversioned managed data.
+By default this command starts a new Dashboard Server or reuses the healthy
+server already attached to the same workspace. The result explicitly reports
+`started` or `reused`, health, URL, host, port, and an SSH forwarding command.
+It also reports the exact `stop` command. Use `--no-serve` only for an
+explicitly requested headless or CI setup.
 
-### 3B. Migrate an installed workspace
+### 3. Resolve only the gates that apply
 
-Do not run `init` over an installed workspace. Inventory first, take a backup,
-then migrate explicitly:
+- Existing unmarked `AGENTS.md` or `CLAUDE.md`: inspect the proposed managed
+  block, approve the merge, then rerun with `--merge-protocols`. Existing text
+  stays intact.
+- Legacy `research_html/` or `outputs/`: inspect the inventory, make a
+  recoverable backup, then run `migrate --backup-confirmed`. Migration never
+  deletes the legacy roots.
+- External `RESEARCH_ROOT`: confirm the resolved path, then use
+  `--allow-external-research-root`.
+- `INVALID`: stop and repair the unknown version or unversioned root conflict;
+  setup does not guess.
 
-```bash
-cd "$PIPELINE"
-python3 -m lib.research_state.migration --workspace "$WORKSPACE" inventory
-python3 -m lib.research_state.migration --workspace "$WORKSPACE" migrate
-python3 -m lib.research_state.migration --workspace "$WORKSPACE" check
-```
+### 4. Read the completion report
 
-`inventory` is read-only and creates nothing. `migrate` is idempotent, imports
-management records, maps former Task records into `Experiment.spec`, copies
-terminal run evidence, and publishes `VERSION` only after parity gates pass.
-Active runs, missing identities, unsafe paths, and source drift remain explicit
-blockers. `check` verifies the sealed migration and copied evidence.
+Successful setup ends in one of two states:
 
-The migration does not delete old managed roots. Archive them outside the
-workspace only after `check` reports `"ok": true`, then run `check` once more.
+- `READY_NO_PROJECT`: setup is healthy; continue with `research-onboard`.
+- `READY_WITH_PROJECT`: setup is healthy; continue with `research-brainstorm`
+  for a vague direction or `research-scope` for clear intent.
 
-### 4. Build and serve the interface
-
-Run the commands from the toolbox checkout and point them at the managed
-workspace:
-
-```bash
-cd "$PIPELINE"
-python3 skills/research-dashboard/scripts/ensure_dashboard.py \
-  --workspace "$WORKSPACE"
-
-python3 -m lib.interface.serve --workspace "$WORKSPACE" ensure \
-  --host 127.0.0.1 --port 8904 --max-port 8904 --json
-```
-
-Open [http://127.0.0.1:8904/index.html](http://127.0.0.1:8904/index.html).
-The server exposes only the generated interface plus narrow read-only run APIs.
-
-Check a previously started server with:
-
-```bash
-python3 -m lib.interface.serve --workspace "$WORKSPACE" status --json
-```
-
-The interface builder performs an atomic full rebuild. Do not hand-edit files
-under `.research/interface/`; the next build will replace them.
+`REPAIR_REQUIRED` means at least one state, protocol, skill, interface, or
+Server check failed. The setup report names the failed invariant. Do not
+hand-edit `.research/interface/`; it is an atomic projection of managed state.
 
 ## The Research Loop
 
@@ -395,7 +367,8 @@ knowledge.
 
 | Capability | Primary skill | Durable result |
 | --- | --- | --- |
-| Initialize or rebuild the human view | `research-dashboard` | `.research/interface/` |
+| Set up, attach, migrate, or repair ARC | `research-init` | Verified setup plus a running Dashboard Server |
+| Rebuild or inspect the human view | `research-dashboard` | `.research/interface/` |
 | Establish the first Project objective | `research-onboard` | Proposal, then ratified Project state |
 | Explore an uncommitted idea | `research-brainstorm` | Brainstorm record and optional Direction proposal |
 | Change approved intent | `research-scope` | Ratified Project, Direction, or Experiment event |

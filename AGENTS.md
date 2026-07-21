@@ -65,14 +65,15 @@ that skill body and its directly referenced contract files.
 
 ## Setup And Script Resolution
 
-Setup and attach work is occasional, not ordinary cold-start context. For target-repo setup, use `README.md`
-and the owning setup skills without overwriting existing target `AGENTS.md` / `CLAUDE.md` instructions.
-Initialize the governed state first; build the human interface independently. The pipeline is not active
-for research execution until a Project node is committed.
+Setup and attach work is occasional, not ordinary cold-start context. Route target-repo setup, attach,
+migration, and setup repair through `research-init`; do not overwrite existing target `AGENTS.md` /
+`CLAUDE.md` instructions. Setup starts or reuses the Dashboard Server by default and must report its URL,
+health, host, port, and stop command. The pipeline is not active for research execution until a Project node
+is committed.
 
 In a target research project, do not assume this toolbox source tree is vendored into the repo. Resolve
 relative `skills/<name>/scripts/...` commands through the installed Codex skill first
-(`$HOME/.codex/skills/<name>/...`). When editing this toolbox repo itself, use the local `skills/<name>/...`
+(`$HOME/.agents/skills/<name>/...`). When editing this toolbox repo itself, use the local `skills/<name>/...`
 path and run the relevant maintainer checks available in this checkout.
 
 ## Scope And Triage Contract

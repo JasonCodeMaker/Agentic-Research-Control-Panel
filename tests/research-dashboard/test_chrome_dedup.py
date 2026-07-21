@@ -6,11 +6,17 @@ import subprocess
 import sys
 from pathlib import Path
 
-SKILL = Path(__file__).resolve().parents[2] / "skills" / "research-dashboard"
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
+from lib.research_state import EventStore, ResearchPaths  # noqa: E402
+
+SKILL = ROOT / "skills" / "research-dashboard"
 SCRIPT = SKILL / "scripts" / "ensure_dashboard.py"
 
 
 def _scaffold(tmp_path):
+    EventStore(ResearchPaths.resolve(workspace=tmp_path)).initialize()
     r = subprocess.run(
         [sys.executable, str(SCRIPT), "--workspace", str(tmp_path), "build"],
         capture_output=True,

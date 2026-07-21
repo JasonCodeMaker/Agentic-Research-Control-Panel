@@ -6,9 +6,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "skills" / "research-dashboard" / "scripts"))
 
 import ensure_dashboard  # noqa: E402
+from lib.research_state import EventStore, ResearchPaths  # noqa: E402
 
 
 def _scaffold(tmp_path):
+    EventStore(ResearchPaths.resolve(workspace=tmp_path)).initialize()
     ensure_dashboard.ensure_dashboard(tmp_path)
     return tmp_path / ".research" / "interface"
 

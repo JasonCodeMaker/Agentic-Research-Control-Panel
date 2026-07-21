@@ -709,3 +709,22 @@ def test_dashboard_entrypoint_refuses_implicit_legacy_upgrade(tmp_path: Path) ->
     assert result.returncode == 2
     assert "upgrade-required" in result.stderr
     assert not (tmp_path / ".research" / "VERSION").exists()
+
+
+def test_dashboard_entrypoint_refuses_implicit_greenfield_init(tmp_path: Path) -> None:
+    script = (
+        REPO
+        / "skills"
+        / "research-dashboard"
+        / "scripts"
+        / "ensure_dashboard.py"
+    )
+    result = subprocess.run(
+        [sys.executable, str(script), "--workspace", str(tmp_path)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 2
+    assert "research-init" in result.stderr
+    assert not (tmp_path / ".research").exists()

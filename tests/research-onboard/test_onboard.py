@@ -13,7 +13,12 @@ sys.path.insert(0, str(ROOT / "skills" / "research-op" / "scripts"))
 sys.path.insert(0, str(ROOT / "skills" / "research-scope" / "scripts"))
 
 import onboard  # noqa: E402
-from lib.research_state import ResearchPaths, StateQuery, UpgradeRequired  # noqa: E402
+from lib.research_state import (  # noqa: E402
+    EventStore,
+    ResearchPaths,
+    StateQuery,
+    UpgradeRequired,
+)
 import management  # noqa: E402
 import scope_ssot  # noqa: E402
 import triage  # noqa: E402
@@ -22,16 +27,34 @@ from tests.scope_fixtures import commit_accepted_scope, project_spec  # noqa: E4
 
 # --- workspace_state -------------------------------------------------------
 
+def _initialized_paths(tmp_path):
+    paths = ResearchPaths.resolve(workspace=tmp_path)
+    EventStore(paths).initialize()
+    return paths
+
+
 def test_workspace_state_empty(tmp_path):
     (tmp_path / ".git").mkdir()
     (tmp_path / ".gitignore").write_text(".research/interface/\n")
-    assert onboard.workspace_state(ResearchPaths.resolve(workspace=tmp_path)) == "empty"
+    assert onboard.workspace_state(_initialized_paths(tmp_path)) == "empty"
+
+
+def test_workspace_state_ignores_setup_protocol_files(tmp_path):
+    (tmp_path / "AGENTS.md").write_text("managed protocol\n")
+    (tmp_path / "CLAUDE.md").write_text("managed protocol\n")
+    assert onboard.workspace_state(_initialized_paths(tmp_path)) == "empty"
 
 
 def test_workspace_state_existing(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "README.md").write_text("# My DL project\n")
-    assert onboard.workspace_state(ResearchPaths.resolve(workspace=tmp_path)) == "existing"
+    assert onboard.workspace_state(_initialized_paths(tmp_path)) == "existing"
+
+
+def test_workspace_state_requires_research_init_when_absent(tmp_path):
+    paths = ResearchPaths.resolve(workspace=tmp_path)
+    with pytest.raises(UpgradeRequired, match="setup-required.*research-init"):
+        onboard.workspace_state(paths)
 
 
 def test_workspace_state_requires_explicit_legacy_upgrade(tmp_path):
@@ -58,36 +81,10 @@ def test_scaffold_skeleton_idempotent(tmp_path):
     assert (tmp_path / "src").is_dir()
 
 
-# --- write project protocol stubs ------------------------------------------
-
-def test_claude_stub_written_when_absent(tmp_path):
-    assert onboard.write_project_claude_stub(tmp_path) is True
-    assert (tmp_path / "CLAUDE.md").exists()
-
-
-def test_claude_stub_no_clobber(tmp_path):
-    (tmp_path / "CLAUDE.md").write_text("USER CONTENT\n")
-    assert onboard.write_project_claude_stub(tmp_path) is False
-    assert (tmp_path / "CLAUDE.md").read_text() == "USER CONTENT\n"
-
-
-def test_agents_stub_written_when_absent(tmp_path):
-    assert onboard.write_project_agents_stub(tmp_path) is True
-    text = (tmp_path / "AGENTS.md").read_text()
-    assert "CLAUDE.md" in text
-    assert "workflow.ts" in text
-
-
-def test_agents_stub_no_clobber(tmp_path):
-    (tmp_path / "AGENTS.md").write_text("USER CONTENT\n")
-    assert onboard.write_project_agents_stub(tmp_path) is False
-    assert (tmp_path / "AGENTS.md").read_text() == "USER CONTENT\n"
-
-
 # --- write_prior_knowledge -------------------------------------------------
 
 def test_write_prior_knowledge(tmp_path):
-    paths = ResearchPaths.resolve(workspace=tmp_path)
+    paths = _initialized_paths(tmp_path)
     note_ref = onboard.write_prior_knowledge(
         paths,
         "# Prior knowledge\n\n- dataset: MSRVTT\n",
@@ -124,7 +121,7 @@ def test_build_project_proposal_accepts_short_exact_objective():
 
 
 def test_build_project_proposal_binds_prior_knowledge_note(tmp_path):
-    paths = ResearchPaths.resolve(workspace=tmp_path)
+    paths = _initialized_paths(tmp_path)
     note_ref = onboard.write_prior_knowledge(paths, "# Prior knowledge\n")
     item = onboard.build_project_proposal(
         "project/cifar10",
@@ -136,7 +133,7 @@ def test_build_project_proposal_binds_prior_knowledge_note(tmp_path):
 
 
 def test_accepted_project_keeps_the_bound_prior_knowledge_note(tmp_path):
-    paths = ResearchPaths.resolve(workspace=tmp_path)
+    paths = _initialized_paths(tmp_path)
     note_ref = onboard.write_prior_knowledge(paths, "# Prior knowledge\n")
     item = onboard.build_project_proposal(
         "project/cifar10",
@@ -179,7 +176,7 @@ def test_build_project_proposal_rejects_reading_in_spec():
 # --- has_project_scope -----------------------------------------------------
 
 def test_has_project_scope_false_when_empty(tmp_path):
-    paths = ResearchPaths.resolve(workspace=tmp_path)
+    paths = _initialized_paths(tmp_path)
     assert onboard.has_project_scope(paths) is False
 
 

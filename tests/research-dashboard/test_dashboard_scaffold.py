@@ -12,6 +12,7 @@ import ensure_dashboard  # noqa: E402
 
 
 def _scaffold(tmp_path: Path) -> Path:
+    EventStore(ResearchPaths.resolve(workspace=tmp_path)).initialize()
     ensure_dashboard.ensure_dashboard(tmp_path)
     return tmp_path / ".research" / "interface"
 

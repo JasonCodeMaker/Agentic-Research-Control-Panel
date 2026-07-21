@@ -42,8 +42,7 @@ must not contain Python files or a `scripts/` directory.
 
 ## Build
 
-From the pipeline checkout, build a greenfield store or rebuild an existing
-versioned store:
+From the pipeline checkout, rebuild an existing versioned store:
 
 ```bash
 python3 skills/research-dashboard/scripts/ensure_dashboard.py \
@@ -59,19 +58,8 @@ The builder creates the complete projection in a staging directory and swaps it
 into place. A rebuild therefore repairs missing files and removes stale files.
 Do not patch generated files to repair drift. Rebuild them.
 
-`build` may initialize a genuinely empty workspace. It must stop with
-`upgrade-required` when it sees an unversioned legacy workspace, an unsupported
-`VERSION`, or any condition that requires migration judgment. It must not
-silently adopt or overwrite existing data. At that boundary, inventory and
-migrate explicitly:
-
-```bash
-python3 -m lib.research_state.migration --workspace . inventory
-python3 -m lib.research_state.migration --workspace . migrate
-python3 -m lib.research_state.migration --workspace . check
-```
-
-Review inventory and backup requirements before running `migrate`.
+`build` never initializes or migrates managed state. A missing, legacy,
+unversioned, or unsupported root must stop with a handoff to `research-init`.
 
 ## Serve
 
@@ -113,7 +101,17 @@ python3 -m lib.interface.serve \
   --json
 ```
 
-`ensure` performs a full rebuild before checking or starting the server.
+Stop only the healthy server recorded for this workspace:
+
+```bash
+python3 -m lib.interface.serve \
+  --workspace . \
+  stop \
+  --json
+```
+
+`ensure` requires a versioned root and performs a full rebuild before checking
+or starting the server.
 `serve` builds only when the interface directory is absent. Use `build` or
 `ensure` when state has changed and a fresh projection is required.
 
@@ -187,12 +185,14 @@ python3 skills/research-onboard/scripts/onboard.py \
   has-project-scope
 ```
 
-If no Project exists, hand the next decision to `research-onboard`. Do not
-invent Project, Direction, or Experiment intent in dashboard data.
+If managed state is absent, hand off to `research-init`. If no Project exists
+in a valid setup, hand the next decision to `research-onboard`. Do not invent
+Project, Direction, or Experiment intent in dashboard data.
 
 ## Report
 
 Report the resolved research root, generated interface root, source sequence and
-hash, server URL when started, parity result, and whether a committed Project
-exists. If the command stops at `upgrade-required`, report that no migration or
-overwrite was attempted.
+hash, server URL and stop command when started, parity result, and whether a
+committed Project exists. If setup is missing or invalid, report the
+`research-init` handoff and that no initialization, migration, or overwrite was
+attempted.

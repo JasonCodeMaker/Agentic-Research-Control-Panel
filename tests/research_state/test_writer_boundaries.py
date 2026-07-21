@@ -275,6 +275,11 @@ def test_low_level_json_writers_are_explicitly_allowlisted():
                 "_command_ensure",
                 "write_json_atomic",
             ): 1,
+            (
+                "lib/interface/serve.py",
+                "_command_stop",
+                "write_json_atomic",
+            ): 1,
         }
     )
     _assert_allowlist(actual, expected)
