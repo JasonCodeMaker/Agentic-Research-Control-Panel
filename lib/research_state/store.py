@@ -431,16 +431,14 @@ def management_lock(path: Path, *, timeout: float = 5.0, retry_interval: float =
 class EventStore:
     """The sole writer for management state and command audit."""
 
-    def __init__(self, paths: ResearchPaths, *, migration_mode: bool = False):
+    def __init__(self, paths: ResearchPaths, *, fixture_mode: bool = False):
+        """Create a store; ``fixture_mode`` is only for deterministic test data."""
         self.paths = paths
-        self.migration_mode = migration_mode
+        self.fixture_mode = fixture_mode
         self.database = StateDatabase(paths.database)
 
     def initialize(self) -> list[Path]:
-        if self.migration_mode:
-            created = self.paths.prepare_migration()
-        else:
-            created = self.paths.initialize()
+        created = self.paths.initialize()
         # Bootstrap the transactional authority from a pre-kernel JSONL ledger
         # once. JSONL and current.json remain rebuildable compatibility exports.
         with management_lock(self.paths.state_lock):
@@ -490,10 +488,10 @@ class EventStore:
         include_audit: bool = False,
     ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
         """Read one transactional snapshot and optionally verify JSON exports."""
-        if self.paths.load_version() is None and not self.migration_mode:
+        if self.paths.load_version() is None:
             raise UpgradeRequired(
                 f"research state is not initialized at {self.paths.root}; "
-                "initialize a new workspace or run the explicit migration"
+                "initialize it with research-init"
             )
         with management_lock(self.paths.state_lock):
             authoritative, events, audit = self.database.snapshot(
@@ -530,10 +528,10 @@ class EventStore:
         need the transactional current state, so their cost does not grow with
         the number of prior events.
         """
-        if self.paths.load_version() is None and not self.migration_mode:
+        if self.paths.load_version() is None:
             raise UpgradeRequired(
                 f"research state is not initialized at {self.paths.root}; "
-                "initialize a new workspace or run the explicit migration"
+                "initialize it with research-init"
             )
         with management_lock(self.paths.state_lock):
             authoritative = self.database.state()
@@ -601,14 +599,14 @@ class EventStore:
                 command_error = CommandRejected(
                     "event-type-unknown", f"unknown event_type: {event_type}"
                 )
-            elif event_type == "AggregateImported" and not self.migration_mode:
+            elif event_type == "AggregateImported" and not self.fixture_mode:
                 command_error = CommandRejected(
-                    "migration-mode-required",
-                    "AggregateImported is restricted to the explicit migration path",
+                    "historical-import-read-only",
+                    "AggregateImported is retained for replay and fixture seeding only",
                 )
             elif (
                 event_type == "ExperimentBoundToPackage"
-                and not self.migration_mode
+                and not self.fixture_mode
             ):
                 command_error = CommandRejected(
                     "atomic-package-event-required",
@@ -616,7 +614,7 @@ class EventStore:
                     "PackageMaterialized or PackageExperimentBound",
                 )
             elif (
-                not self.migration_mode
+                not self.fixture_mode
                 and aggregate_type in SCOPE_AGGREGATES
                 and event_type in GENERIC_AGGREGATE_EVENTS
             ):
@@ -634,7 +632,7 @@ class EventStore:
                     "ScopeCommitted owns only Project and Direction aggregates",
                 )
             elif (
-                not self.migration_mode
+                not self.fixture_mode
                 and event_type in SCOPE_COMMIT_EVENTS
                 and (
                     not isinstance(causation_id, str)
@@ -651,7 +649,7 @@ class EventStore:
                 )
             elif (
                 event_type in {"ProposalAccepted", "ProposalRejected"}
-                and not self.migration_mode
+                and not self.fixture_mode
                 and (
                     not isinstance(actor, dict)
                     or actor.get("type") != "user"
@@ -713,14 +711,14 @@ class EventStore:
                 command_error = CommandRejected(
                     "payload-invalid", "payload must be a JSON object"
                 )
-            elif "_migration" in payload and not self.migration_mode:
+            elif "_migration" in payload and not self.fixture_mode:
                 command_error = CommandRejected(
-                    "migration-mode-required",
-                    "migration-marked events are restricted to the explicit migration path",
+                    "historical-import-read-only",
+                    "migration-marked events are retained for replay and fixture seeding only",
                 )
             if (
                 command_error is None
-                and not self.migration_mode
+                and not self.fixture_mode
                 and event_type in SCOPE_COMMIT_EVENTS
             ):
                 command_error = _validate_scope_proposal_binding(
@@ -734,7 +732,7 @@ class EventStore:
                 )
             if (
                 command_error is None
-                and not self.migration_mode
+                and not self.fixture_mode
                 and event_type == "ExperimentStatusChanged"
             ):
                 command_error = _validate_experiment_status_semantics(
@@ -1090,45 +1088,6 @@ class EventStore:
                 started,
             )
         return selected_command_id
-
-    def import_legacy_audit(
-        self,
-        record: dict[str, Any],
-        *,
-        source: str,
-        source_line: int,
-    ) -> bool:
-        """Import one legacy audit row without copying sensitive raw values."""
-        if not self.migration_mode:
-            raise CommandRejected(
-                "migration-mode-required",
-                "legacy audit import is restricted to explicit migration",
-            )
-        if not isinstance(record, dict):
-            raise CommandRejected(
-                "legacy-audit-record-invalid",
-                "legacy audit record must be an object",
-            )
-        envelope = {
-            "source": source,
-            "source_line": source_line,
-            "record": record,
-        }
-        digest = _payload_digest(envelope)
-        audit_id = f"aud_legacy_{digest[:24]}"
-        with management_lock(self.paths.state_lock):
-            row = {
-                "audit_id": audit_id,
-                "occurred_at": record.get("ts") or _now(),
-                "outcome": "LEGACY_COMMAND_OUTCOME",
-                "legacy_record_sha256": _payload_digest(record),
-                "source": source,
-                "source_line": source_line,
-            }
-            imported = self.database.import_audit(row)
-            if imported:
-                append_jsonl_fsync(self.paths.audit_actions, row)
-        return imported
 
     def recover(self, *, lease_seconds: float = 30.0) -> dict[str, int]:
         """Verify SQLite authority and rebuild compatibility exports.

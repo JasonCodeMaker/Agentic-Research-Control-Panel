@@ -12,7 +12,7 @@ selected with `--research-root` or `RESEARCH_ROOT`.
 
 | Path | Responsibility | Mutability |
 | --- | --- | --- |
-| `VERSION` | Managed-root schema version | Written only by initialization or explicit migration |
+| `VERSION` | Managed-root schema version | Written only by initialization |
 | `state/research.sqlite3` | Transactional event, current-state, receipt, and audit authority | Written only through management commands |
 | `state/events.jsonl` | Compatibility event export | Appended after a database commit and rebuildable from SQLite |
 | `state/current.json` | Compatibility current-state export | Rebuildable from SQLite |
@@ -43,8 +43,8 @@ deleted or damaged projection without consulting prior interface output.
 
 Initialization is allowed only for a genuinely empty managed root. Legacy
 markers, a missing version beside existing data, or an unsupported version
-produce `upgrade-required`. Migration is explicit and never part of
-`build_interface()`, `ensure_dashboard.py`, or the server startup path.
+produce `upgrade-required`. Automatic migration is unsupported and is never
+part of `build_interface()`, `ensure_dashboard.py`, or the server startup path.
 
 ## Required global surface
 
@@ -111,6 +111,24 @@ The first viewport of every Package page uses one shared status projection:
 Active gates and metric-versus-gate values do not belong in this universal
 strip. Their authoritative detail remains in Scope and Plan, while observed
 measurements and gate verdicts remain in Results.
+
+On the Package Overview, the masthead is an identity summary rather than a
+marketing hero. It stays compact enough to keep the whole status strip in the
+first viewport. Current State is the primary visual anchor. Current Process and
+Last Transition are supporting context, and every legal next-state branch uses
+the same neutral treatment until the transition is recorded. Empty optional
+headline content stays hidden, while declared experiments render in the
+Experiment queue.
+
+The Research Intent card renders exactly four state-backed rows in causal
+order: **Problem**, **Motivation**, **Objective**, and **Hypothesis**. Problem
+states the known or high-probability research gap; Motivation gives its value
+and high-level solution rationale; Objective gives the verifiable target for
+judging that rationale; Hypothesis is the falsifiable natural-language
+synthesis of Motivation and Objective. The renderer never hides a row because
+its text duplicates another field and never invents `*Tldr` alternatives.
+Missing or duplicated content is an upstream Package/Scope validation error,
+not a presentation rule.
 
 ## Required generated data
 

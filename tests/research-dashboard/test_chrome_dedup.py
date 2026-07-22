@@ -82,6 +82,19 @@ def test_package_status_strip_uses_state_process_transition_and_next_states(
     assert "pkg.nextAction" not in renderer
 
 
+def test_overview_painters_hide_empty_content_and_bind_the_experiment_queue(tmp_path):
+    root = _scaffold(tmp_path)
+    js = (root / "assets" / "research.js").read_text(encoding="utf-8")
+
+    assert "'[data-card=\"plan-progress\"] [data-field=\"plan-status-list\"]'" in js
+    assert 'card.removeAttribute("hidden")' in js
+    assert '"problem-tldr": pkg.problem' in js
+    assert '"motivation-tldr": pkg.motivation' in js
+    assert '"objective-tldr": pkg.objective' in js
+    assert '"hypothesis-tldr": pkg.hypothesis' in js
+    assert "problemRow.hidden" not in js
+
+
 def test_index_keeps_required_anchors(tmp_path):
     root = _scaffold(tmp_path)
     html = (root / "index.html").read_text()

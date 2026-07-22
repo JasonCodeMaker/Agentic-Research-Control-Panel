@@ -540,10 +540,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--problem", default="")
     parser.add_argument("--objective", default="")
-    parser.add_argument(
-        "--motivation",
-        default="Accepted Scope Direction materialized as a package",
-    )
+    parser.add_argument("--motivation", default="")
     parser.add_argument("--budget", default="unmeasured")
     parser.add_argument(
         "--no-change-boundary",
@@ -646,6 +643,42 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(draft, dict) and isinstance(draft.get("pages"), list)
         else create_research_package.parse_scope(args.scope, args.category)
     )
+    problem = args.problem or (
+        str(draft.get("problem") or "") if isinstance(draft, dict) else ""
+    )
+    motivation = args.motivation or (
+        str(draft.get("motivation") or "") if isinstance(draft, dict) else ""
+    )
+    objective = args.objective or (
+        str(draft.get("objective") or "") if isinstance(draft, dict) else ""
+    )
+    missing_intent = [
+        label
+        for label, value in (
+            ("--problem", problem),
+            ("--motivation", motivation),
+            ("--objective", objective),
+        )
+        if not value.strip()
+    ]
+    if missing_intent:
+        raise SystemExit(
+            "Package activation requires explicit Research Intent fields: "
+            + ", ".join(missing_intent)
+        )
+    draft_hypothesis = (
+        str(draft.get("hypothesis") or "").strip()
+        if isinstance(draft, dict)
+        else ""
+    )
+    if (
+        draft_hypothesis
+        and " ".join(draft_hypothesis.split()).casefold()
+        != " ".join(hypothesis.split()).casefold()
+    ):
+        raise SystemExit(
+            "Draft Package Hypothesis must match the accepted Direction hypothesis"
+        )
     record: dict[str, Any] = copy.deepcopy(draft) if isinstance(draft, dict) else {}
     record.update({
         "id": package_id,
@@ -656,9 +689,9 @@ def main(argv: list[str] | None = None) -> int:
         "blocker": None,
         "tag": args.tag,
         "tagMeaning": args.tag_meaning,
-        "problem": args.problem or hypothesis,
-        "objective": args.objective or hypothesis,
-        "motivation": args.motivation,
+        "problem": problem,
+        "objective": objective,
+        "motivation": motivation,
         "hypothesis": hypothesis,
         "primaryMetric": metric,
         "baseline": _baseline_label(spec.get("baselines")),

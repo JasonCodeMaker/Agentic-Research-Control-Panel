@@ -51,6 +51,18 @@ def _draft(paths: ResearchPaths, package_id: str = "package-one") -> dict:
             "id": package_id,
             "title": "One governed proposal",
             "idea": "Refine an idea before it receives Package authority.",
+            "problem": (
+                "The current retrieval workflow lacks a governed way to test "
+                "whether a proposed method transfers across tasks."
+            ),
+            "motivation": (
+                "A matched evaluation can expose whether the shared retrieval "
+                "structure makes that transfer plausible."
+            ),
+            "objective": (
+                "Run the bounded comparison and record enough evidence to judge "
+                "whether the proposed transfer is realized."
+            ),
             "document_html": (
                 "<section><h2>Research question</h2>"
                 "<p>Keep both approval boundaries explicit.</p></section>"
@@ -109,6 +121,12 @@ def test_scope_bundle_is_one_approval_and_one_atomic_event(tmp_path):
         direction,
         [experiment],
     )
+    assert review["review"]["research_intent"] == {
+        "problem": draft["problem"],
+        "motivation": draft["motivation"],
+        "objective": draft["objective"],
+        "hypothesis": direction["spec"]["hypothesis"],
+    }
     before_count = len(EventStore(paths).events())
 
     event = management.finalize_scope_bundle(
@@ -162,6 +180,44 @@ def test_scope_bundle_is_one_approval_and_one_atomic_event(tmp_path):
     )
     assert replay["event_id"] == event["event_id"]
     assert len(EventStore(paths).events()) == before_count + 1
+
+
+@pytest.mark.parametrize(
+    ("patch", "message"),
+    [
+        ({"motivation": ""}, "explicit Problem, Motivation, Objective"),
+        (
+            {
+                "objective": (
+                    "The current retrieval workflow lacks a governed way to test "
+                    "whether a proposed method transfers across tasks."
+                )
+            },
+            "distinct roles",
+        ),
+        (
+            {"hypothesis": "A different draft hypothesis."},
+            "must match the reviewed Direction hypothesis",
+        ),
+    ],
+)
+def test_scope_bundle_rejects_invalid_research_intent(tmp_path, patch, message):
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    _draft(paths)
+    draft_package.revise(
+        paths,
+        package_id="package-one",
+        patch=patch,
+        actor_id="test",
+    )
+
+    with pytest.raises(CommandRejected, match=message):
+        management.prepare_scope_bundle(
+            paths,
+            "package-one",
+            direction_node(source="draft-package:package-one"),
+            [experiment_node(source="draft-package:package-one")],
+        )
 
 
 def test_scope_bundle_review_is_invalidated_by_draft_revision(tmp_path):

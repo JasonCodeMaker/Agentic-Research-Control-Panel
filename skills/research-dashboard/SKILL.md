@@ -58,8 +58,8 @@ The builder creates the complete projection in a staging directory and swaps it
 into place. A rebuild therefore repairs missing files and removes stale files.
 Do not patch generated files to repair drift. Rebuild them.
 
-`build` never initializes or migrates managed state. A missing, legacy,
-unversioned, or unsupported root must stop with a handoff to `research-init`.
+`build` never initializes managed state. A missing, legacy, unversioned, or
+unsupported root must stop with a handoff to `research-init`.
 
 ## Serve
 
@@ -146,8 +146,12 @@ Keep the current human layout and navigation:
 - A Package Overview Hero lead renders the state-backed `Package.abstract` as
   its Abstract / TLDR. Only legacy Packages without `abstract` fall back to
   `problem`; the renderer never derives this copy from Direction Scope.
+- The Research Intent card renders the canonical state-backed Problem,
+  Motivation, Objective, and Hypothesis in that order. It neither hides
+  duplicate rows nor reads optional `*Tldr` aliases; invalid intent is repaired
+  through Package and Scope authority rather than in the projection.
 - Legacy standalone Brainstorms remain readable through their historical
-  routes during migration, but new work must not create a second card type.
+  routes, but new work must not create a second card type.
 - Each package keeps its own plan, implementation, results, analysis, tracker,
   and docs pages.
 - Each Package page uses the shared first-view status strip: Current State,
@@ -159,6 +163,10 @@ Keep the current human layout and navigation:
   graph and remain neutral until a verified transition occurs. Gates and
   measurements remain in Scope, Plan, and Results rather than the universal
   status strip.
+- The Package Overview keeps identity compact enough for the complete status
+  strip to remain in the first viewport. Current State has the strongest
+  emphasis; Current Process and Last Transition are supporting context; legal
+  next-state branches have equal, neutral weight until a transition occurs.
 - `module.html` remains available. Preserve the existing
   `module.html?package=<id>&module=<name>` route.
 - `live.html` keeps its own API poller. Other pages may use
@@ -220,5 +228,4 @@ Project, Direction, or Experiment intent in dashboard data.
 Report the resolved research root, generated interface root, source sequence and
 hash, server URL and stop command when started, parity result, and whether a
 committed Project exists. If setup is missing or invalid, report the
-`research-init` handoff and that no initialization, migration, or overwrite was
-attempted.
+`research-init` handoff and that no initialization or overwrite was attempted.

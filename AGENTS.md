@@ -33,7 +33,7 @@ from HTML, chat memory, raw terminal scrollback, or a compatibility export.
 
 Do not load every skill at startup. Select one owner from skill metadata:
 
-- setup, attach, migration, repair: `research-init`;
+- setup, attach, repair: `research-init`;
 - first Project charter: `research-onboard`;
 - standalone idea discussion: `research-brainstorm`;
 - Draft, Scope Bundle, Package outcome or restructuring: `research-package`;
@@ -93,8 +93,8 @@ decision. Do not invent it or patch a projection.
 - Preserve unrelated worktree changes.
 - A `lib/` helper must have a live skill, CLI, dashboard, install, or test
   caller. Remove or move orphan helpers.
-- Put normal-path guidance in a short `SKILL.md`; put migration and
-  compatibility details in routed references.
+- Put normal-path guidance in a short `SKILL.md`; put compatibility details in
+  routed references.
 - Run the smallest relevant test layer while iterating: `core`, `integration`,
-  `projection`, `migration`, or `release`. Run the full suite before release.
+  `projection` or `release`. Run the full suite before release.
 - Report changed surfaces, validation, and any remaining human decision.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inspect, install, initialize, migrate, and validate one ARC workspace."""
+"""Inspect, install, initialize, and validate one ARC workspace."""
 
 from __future__ import annotations
 
@@ -30,9 +30,6 @@ from lib.research_state import (  # noqa: E402
     UnsupportedResearchVersion,
     UpgradeRequired,
 )
-from lib.research_state import migration as migration_api  # noqa: E402
-
-
 PROTOCOL_FILES = ("AGENTS.md", "CLAUDE.md")
 PROTOCOL_BEGIN = "<!-- ARC-PROTOCOL:BEGIN source={source} sha256={sha256} -->"
 PROTOCOL_END = "<!-- ARC-PROTOCOL:END source={source} -->"
@@ -139,26 +136,24 @@ def classify_arc(paths: ResearchPaths) -> dict[str, Any]:
             "detail": None,
             "legacy_markers": [str(path) for path in markers],
         }
-    migration_manifest = paths.state / "migration.json"
-    if migration_manifest.is_file():
-        return {
-            "state": "MIGRATION_STAGED",
-            "version": None,
-            "detail": "an explicit migration exists but VERSION is not finalized",
-            "legacy_markers": [str(path) for path in markers],
-        }
     if paths.root.exists() and any(paths.root.iterdir()):
         return {
             "state": "INVALID",
             "version": None,
-            "detail": f"unversioned research root contains data: {paths.root}",
+            "detail": (
+                f"unversioned research root contains unsupported data: {paths.root}; "
+                "automatic migration is not available"
+            ),
             "legacy_markers": [str(path) for path in markers],
         }
     if markers:
         return {
-            "state": "LEGACY",
+            "state": "INVALID",
             "version": None,
-            "detail": "legacy ARC-managed roots require explicit migration",
+            "detail": (
+                "legacy ARC-managed roots are unsupported; preserve or archive "
+                "them outside the workspace before a fresh setup"
+            ),
             "legacy_markers": [str(path) for path in markers],
         }
     return {
@@ -550,12 +545,8 @@ def _has_project(paths: ResearchPaths) -> bool:
 
 
 def _next_action(arc_state: str, has_project: bool | None) -> str:
-    if arc_state == "LEGACY":
-        return "review inventory, confirm a recoverable backup, then run research-init migrate"
-    if arc_state == "MIGRATION_STAGED":
-        return "resume research-init migrate or inspect migration check blockers"
     if arc_state == "INVALID":
-        return "repair the version or unversioned research-root conflict"
+        return "resolve the unsupported legacy or unversioned research-root conflict"
     if arc_state == "ABSENT":
         return "run research-init setup"
     return "use research-brainstorm or research-scope" if has_project else "use research-onboard"
@@ -751,12 +742,6 @@ def setup_workspace(
         claude_root=claude_root,
     )
     arc = classify_arc(paths)
-    if arc["state"] in {"LEGACY", "MIGRATION_STAGED"}:
-        raise InitBlocked(
-            "MIGRATION_REQUIRED",
-            "legacy or staged state requires research-init migrate after backup review",
-            report=arc,
-        )
     if arc["state"] == "INVALID":
         raise InitBlocked("INVALID_RESEARCH_ROOT", str(arc["detail"]), report=arc)
     created: list[str] = []
@@ -782,79 +767,6 @@ def setup_workspace(
         "arc_before": arc["state"],
         "version": paths.load_version(),
         "created": created,
-        **common,
-    }
-
-
-def migrate_workspace(
-    paths: ResearchPaths,
-    *,
-    backup_confirmed: bool,
-    agent: str,
-    merge_protocols: bool,
-    skip_skill_install: bool,
-    no_serve: bool,
-    allow_external_research_root: bool,
-    host: str,
-    port: int,
-    max_port: int,
-    codex_root: str | Path | None = None,
-    claude_root: str | Path | None = None,
-) -> dict[str, Any]:
-    _require_external_root_permission(paths, allow_external_research_root)
-    _preflight_apply(
-        paths,
-        agent=agent,
-        merge_protocols=merge_protocols,
-        skip_skill_install=skip_skill_install,
-        codex_root=codex_root,
-        claude_root=claude_root,
-    )
-    arc = classify_arc(paths)
-    if arc["state"] == "ABSENT":
-        raise InitBlocked("NO_LEGACY_STATE", "no legacy ARC state exists; use research-init setup")
-    if arc["state"] == "INVALID":
-        raise InitBlocked("INVALID_RESEARCH_ROOT", str(arc["detail"]), report=arc)
-    if arc["state"] in {"LEGACY", "MIGRATION_STAGED"} and not backup_confirmed:
-        inventory = migration_api.inventory(paths.workspace, paths=paths)
-        raise InitBlocked(
-            "BACKUP_CONFIRMATION_REQUIRED",
-            "review inventory and confirm a recoverable backup before migration",
-            report=inventory,
-        )
-    if arc["state"] == "CURRENT" and not (paths.state / "migration.json").is_file():
-        raise InitBlocked("NO_MIGRATION_MANIFEST", "current workspace was not created by legacy migration")
-    inventory = migration_api.inventory(paths.workspace, paths=paths)
-    migration = migration_api.migrate(paths)
-    check = migration_api.check(paths)
-    if not migration.get("ok") or not check.get("ok"):
-        raise InitBlocked(
-            "MIGRATION_BLOCKED",
-            "legacy migration did not pass every parity and evidence gate",
-            report={"inventory": inventory, "migration": migration, "check": check},
-        )
-    common = _apply_common(
-        paths,
-        agent=agent,
-        merge_protocols=merge_protocols,
-        skip_skill_install=skip_skill_install,
-        no_serve=no_serve,
-        host=host,
-        port=port,
-        max_port=max_port,
-        codex_root=codex_root,
-        claude_root=claude_root,
-    )
-    return {
-        "ok": True,
-        "action": "migrate",
-        "workspace": str(paths.workspace),
-        "research_root": str(paths.root),
-        "arc_before": arc["state"],
-        "version": paths.load_version(),
-        "inventory": inventory,
-        "migration": migration,
-        "check": check,
         **common,
     }
 
@@ -905,11 +817,6 @@ def check_workspace(
     server = dashboard_status(paths) if arc["state"] == "CURRENT" else {"ok": False}
     if require_server and not server.get("ok"):
         failures.append({"code": "DASHBOARD_SERVER_UNHEALTHY", "detail": server})
-    migration_check: dict[str, Any] | None = None
-    if (paths.state / "migration.json").is_file():
-        migration_check = migration_api.check(paths)
-        if not migration_check.get("ok"):
-            failures.append({"code": "MIGRATION_CHECK_FAILED", "detail": migration_check})
     has_project = _has_project(paths) if state is not None else None
     return {
         "ok": not failures,
@@ -927,7 +834,6 @@ def check_workspace(
         "skill_links": skills,
         "interface": interface,
         "server": server,
-        "migration": migration_check,
         "has_project": has_project,
         "setup_status": (
             "READY_WITH_PROJECT"
@@ -969,12 +875,8 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.add_argument("--codex-skills-root")
     inspect.add_argument("--claude-skills-root")
 
-    setup = sub.add_parser("setup", help="initialize or reconcile a non-legacy workspace")
+    setup = sub.add_parser("setup", help="initialize or reconcile a workspace")
     _common_apply_arguments(setup)
-
-    migrate = sub.add_parser("migrate", help="explicitly migrate a legacy workspace")
-    _common_apply_arguments(migrate)
-    migrate.add_argument("--backup-confirmed", action="store_true")
 
     check = sub.add_parser("check", help="validate setup without repairing it")
     check.add_argument("--agent", choices=("codex", "claude", "both"), default="codex")
@@ -1029,21 +931,6 @@ def main(argv: Iterable[str] | None = None) -> int:
                     codex_root=args.codex_skills_root,
                     claude_root=args.claude_skills_root,
                 )
-            elif args.command == "migrate":
-                payload = migrate_workspace(
-                    paths,
-                    backup_confirmed=args.backup_confirmed,
-                    agent=args.agent,
-                    merge_protocols=args.merge_protocols,
-                    skip_skill_install=args.skip_skill_install,
-                    no_serve=args.no_serve,
-                    allow_external_research_root=args.allow_external_research_root,
-                    host=args.host,
-                    port=args.port,
-                    max_port=args.max_port,
-                    codex_root=args.codex_skills_root,
-                    claude_root=args.claude_skills_root,
-                )
             else:
                 payload = check_workspace(
                     paths,
@@ -1054,7 +941,7 @@ def main(argv: Iterable[str] | None = None) -> int:
                 )
         print(json.dumps(_json_ready(payload), ensure_ascii=False, indent=2, sort_keys=True))
         return 0 if payload.get("ok", False) else 2
-    except (InitBlocked, UnsupportedResearchVersion, UpgradeRequired, migration_api.MigrationError) as exc:
+    except (InitBlocked, UnsupportedResearchVersion, UpgradeRequired) as exc:
         payload = {
             "ok": False,
             "action": args.command,

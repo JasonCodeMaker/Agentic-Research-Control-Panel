@@ -413,7 +413,7 @@ def validate_aggregate_record(
 ) -> None:
     """Validate one folded aggregate against the central field contract.
 
-    Legacy imports are intentionally shape-preserving and therefore bypass
+    Historical imports are intentionally shape-preserving and therefore bypass
     field validation. Every normal command is validated after its reducer has
     produced the complete next record.
     """

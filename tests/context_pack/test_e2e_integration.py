@@ -36,7 +36,7 @@ def _ref():
 
 
 def _import_record(store, aggregate_type, aggregate_id, record):
-    EventStore(store.paths, migration_mode=True).commit(
+    EventStore(store.paths, fixture_mode=True).commit(
         event_type="AggregateImported",
         aggregate_type=aggregate_type,
         aggregate_id=aggregate_id,

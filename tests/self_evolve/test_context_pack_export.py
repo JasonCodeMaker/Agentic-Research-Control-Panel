@@ -42,7 +42,7 @@ def _ref(package_id="pkg"):
 def _seed_workspace(tmp_path):
     paths = ResearchPaths.resolve(workspace=tmp_path)
     EventStore(paths).initialize()
-    store = EventStore(paths, migration_mode=True)
+    store = EventStore(paths, fixture_mode=True)
     rows = [
         (
             "project",
@@ -211,7 +211,7 @@ def test_learning_without_evidence_cannot_be_recorded_or_promoted(tmp_path):
 
 def test_migrated_learning_without_evidence_is_blocked_at_promotion(tmp_path):
     paths = _seed_workspace(tmp_path)
-    store = EventStore(paths, migration_mode=True)
+    store = EventStore(paths, fixture_mode=True)
     store.commit(
         event_type="AggregateImported",
         aggregate_type="learning",

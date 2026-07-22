@@ -317,7 +317,7 @@ def test_ready_to_launch_requires_an_independent_change_review(tmp_path):
 def test_terminal_success_requires_user_ack_and_bound_verifier_decision(tmp_path):
     paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
     store = _create(paths, phase="RESULT_ANALYSIS")
-    EventStore(paths, migration_mode=True).commit(
+    EventStore(paths, fixture_mode=True).commit(
         event_type="AggregateImported",
         event_id="evt-finalized-result",
         aggregate_type="run",
@@ -575,7 +575,7 @@ def test_cli_level_rejection_is_audited(tmp_path):
 def test_management_facades_emit_semantic_events_and_package_projection(tmp_path):
     paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
     store = _create(paths, phase="IMPLEMENTING")
-    EventStore(paths, migration_mode=True).commit(
+    EventStore(paths, fixture_mode=True).commit(
         event_type="AggregateImported",
         aggregate_type="run",
         aggregate_id="run",

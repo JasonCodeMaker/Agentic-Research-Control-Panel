@@ -51,7 +51,7 @@ def _upsert(
 
 def _seed_direction(paths: ResearchPaths) -> None:
     _upsert(
-        EventStore(paths, migration_mode=True),
+        EventStore(paths, fixture_mode=True),
         "direction",
         DIRECTION_ID,
         {
@@ -73,7 +73,7 @@ def _seed_direction(paths: ResearchPaths) -> None:
 
 def _seed_package(paths: ResearchPaths, *, executable: bool = True) -> None:
     store = EventStore(paths)
-    scope_store = EventStore(paths, migration_mode=True)
+    scope_store = EventStore(paths, fixture_mode=True)
     _upsert(
         store,
         "package",
@@ -236,7 +236,7 @@ def test_append_cycle_fails_closed_on_bound_experiment_alias_collision(tmp_path)
     _seed_direction(paths)
     _seed_package(paths)
     _upsert(
-        EventStore(paths, migration_mode=True),
+        EventStore(paths, fixture_mode=True),
         "experiment",
         "experiment/d1/e2",
         {

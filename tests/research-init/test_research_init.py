@@ -104,40 +104,28 @@ def test_setup_is_idempotent_and_preserves_project_protocol_prefix(tmp_path):
     assert (tmp_path / "AGENTS.md").read_text(encoding="utf-8").startswith(prefix)
 
 
-def test_setup_refuses_legacy_state_before_any_mutation(tmp_path):
+def test_legacy_state_is_unsupported_and_setup_refuses_it_before_mutation(tmp_path):
     (tmp_path / "research_html").mkdir()
     skills_root = tmp_path / "codex-skills"
+
+    inspection = research_init.inspect_workspace(
+        _paths(tmp_path), agent="codex", codex_root=skills_root
+    )
 
     with pytest.raises(research_init.InitBlocked) as blocked:
         _setup_no_server(tmp_path, skills_root)
 
-    assert blocked.value.code == "MIGRATION_REQUIRED"
+    assert inspection["arc"]["state"] == "INVALID"
+    assert "unsupported" in inspection["arc"]["detail"]
+    assert blocked.value.code == "INVALID_RESEARCH_ROOT"
     assert not (tmp_path / ".research").exists()
     assert not skills_root.exists()
     assert not (tmp_path / "AGENTS.md").exists()
 
 
-def test_migration_requires_backup_confirmation_and_returns_inventory(tmp_path):
-    (tmp_path / "research_html").mkdir()
-    paths = _paths(tmp_path)
-
-    with pytest.raises(research_init.InitBlocked) as blocked:
-        research_init.migrate_workspace(
-            paths,
-            backup_confirmed=False,
-            agent="codex",
-            merge_protocols=False,
-            skip_skill_install=True,
-            no_serve=True,
-            allow_external_research_root=False,
-            host="127.0.0.1",
-            port=8904,
-            max_port=8999,
-        )
-
-    assert blocked.value.code == "BACKUP_CONFIRMATION_REQUIRED"
-    assert blocked.value.report["workspace"] == str(tmp_path.resolve())
-    assert not (tmp_path / ".research").exists()
+def test_cli_does_not_expose_legacy_migration(tmp_path):
+    with pytest.raises(SystemExit):
+        research_init.main(["--workspace", str(tmp_path), "migrate"])
 
 
 def test_external_research_root_requires_explicit_permission(tmp_path):

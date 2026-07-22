@@ -117,7 +117,7 @@ def _transition(eid, ver, frm, to, **over):
 
 def _seed_package(paths):
     EventStore(paths).initialize()
-    store = EventStore(paths, migration_mode=True)
+    store = EventStore(paths, fixture_mode=True)
     rows = [
         (
             "project",

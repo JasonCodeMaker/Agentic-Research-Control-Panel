@@ -1413,9 +1413,9 @@ def apply_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
         raise EventIntegrityError(f"unhandled event_type: {event_type}")
 
     key = f"{aggregate_type}/{aggregate_id}"
-    # Legacy records may be structurally incomplete by construction.  Follow-up
-    # migration events carry a signed source marker, so replay can distinguish
-    # them deterministically from ordinary post-cutover mutations.  The first
+    # Historical imported records may be structurally incomplete by
+    # construction. Their source marker lets replay distinguish them
+    # deterministically from ordinary post-cutover mutations. The first
     # normal event against an imported aggregate still enforces the current
     # schema and therefore fails closed until the record is normalized.
     migration_event = event_type == "AggregateImported" or isinstance(

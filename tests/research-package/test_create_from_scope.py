@@ -40,6 +40,14 @@ from tests.scope_fixtures import (  # noqa: E402
 
 ACTOR = {"type": "agent", "id": "test"}
 EXPERIMENT_ID = "experiment/retrieval-v2/M0-baseline-validity"
+INTENT_ARGS = [
+    "--problem",
+    "The current retrieval workflow lacks a validated cross-task transfer path.",
+    "--motivation",
+    "A matched evaluation can test whether shared retrieval structure enables transfer.",
+    "--objective",
+    "Run the bounded comparison and collect evidence that judges the proposed transfer.",
+]
 EXPERIMENT_SPEC = {
     "purpose": (
         "Run a baseline reproduction study that verifies the declared retrieval "
@@ -150,6 +158,18 @@ def test_materializes_scope_as_package_scoped_experiment(tmp_path):
     paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
     _commit_scope(paths)
 
+    with pytest.raises(SystemExit, match="explicit Research Intent fields"):
+        create_from_scope.main(
+            [
+                "--workspace",
+                str(tmp_path),
+                "--direction-id",
+                "dir/retrieval-v2",
+                "--id",
+                "retrieval-package",
+            ]
+        )
+
     result = create_from_scope.main(
         [
             "--workspace",
@@ -158,6 +178,7 @@ def test_materializes_scope_as_package_scoped_experiment(tmp_path):
             "dir/retrieval-v2",
             "--id",
             "retrieval-package",
+            *INTENT_ARGS,
         ]
     )
 
@@ -257,6 +278,7 @@ def test_activates_the_same_reviewed_draft_package(tmp_path):
             "dir/retrieval-v2",
             "--id",
             package_id,
+            *INTENT_ARGS,
         ]
     ) == 0
 
@@ -339,6 +361,7 @@ def _activated_retrieval_package(
             "dir/retrieval-v2",
             "--id",
             package_id,
+            *INTENT_ARGS,
         ]
     ) == 0
     state = EventStore(paths).state()
@@ -551,6 +574,7 @@ def test_materialization_transfers_source_brainstorm_into_package_docs(tmp_path)
                 "retrieval-package",
                 "--source-brainstorms",
                 "[]",
+                *INTENT_ARGS,
             ]
         )
     failed_state = EventStore(paths).state()
@@ -565,6 +589,7 @@ def test_materialization_transfers_source_brainstorm_into_package_docs(tmp_path)
             "dir/retrieval-v2",
             "--id",
             "retrieval-package",
+            *INTENT_ARGS,
         ]
     ) == 0
 
@@ -653,6 +678,7 @@ def test_reopens_legacy_materialized_package_from_owned_source_proposal(tmp_path
             "dir/retrieval-v2",
             "--id",
             "retrieval-package",
+            *INTENT_ARGS,
         ]
     ) == 0
     active = EventStore(paths).state()["aggregates"]["package"][
@@ -689,6 +715,7 @@ def test_existing_package_repair_transfers_and_removes_brainstorm_atomically(
             "dir/retrieval-v2",
             "--id",
             "retrieval-package",
+            *INTENT_ARGS,
         ]
     ) == 0
     _add_legacy_brainstorm(

@@ -74,7 +74,7 @@ launch-ack flows are compatibility paths, not the normal loop.
 
 Use skill metadata to choose one owner:
 
-- `research-init`: setup, attach, migration, repair;
+- `research-init`: setup, attach, repair;
 - `research-onboard`: first Project charter;
 - `research-brainstorm`: idea creation and refinement;
 - `research-package`: Draft, Scope Bundle, Package decision, restructuring;
@@ -86,8 +86,8 @@ Use skill metadata to choose one owner:
 - `research-dashboard`: read-only interface build and serve.
 
 Use `research-op context` for bounded agent context. The launcher independently
-freezes full authority context for the Run. Detailed schema, migration, and
-compatibility commands belong in skill references or command help.
+freezes full authority context for the Run. Detailed schema and compatibility
+commands belong in skill references or command help.
 
 ## Runtime and interface
 

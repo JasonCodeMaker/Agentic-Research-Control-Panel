@@ -160,7 +160,7 @@ def build_research_context(
         markers = paths.legacy_markers()
         if markers:
             raise UpgradeRequired(
-                "upgrade-required: /research-run requires migrated state; "
+                "upgrade-required: /research-run does not support legacy state; "
                 + ", ".join(str(path) for path in markers)
             )
         return _empty_context()

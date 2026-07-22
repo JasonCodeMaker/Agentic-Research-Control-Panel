@@ -24,7 +24,7 @@ def _seed_package(workspace):
     paths = ResearchPaths.resolve(workspace=workspace, research_root=".research")
     store = EventStore(paths)
     store.initialize()
-    EventStore(paths, migration_mode=True).commit(
+    EventStore(paths, fixture_mode=True).commit(
         event_type="AggregateImported",
         aggregate_type="package",
         aggregate_id="test-pkg",

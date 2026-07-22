@@ -62,8 +62,9 @@ python skills/research-op/scripts/research_op.py \
   show package <package-id> --workspace .
 ```
 
-If the Package is missing, use `/research-package`. If the workspace needs migration, stop and use
-the migration path. The generated interface is not an execution prerequisite.
+If the Package is missing, use `/research-package`. If the workspace is legacy
+or unversioned, stop; automatic migration is unsupported. The generated
+interface is not an execution prerequisite.
 
 ## Operations
 

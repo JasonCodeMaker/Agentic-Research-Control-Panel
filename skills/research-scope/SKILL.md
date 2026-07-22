@@ -43,6 +43,14 @@ a vague Brainstorm into fixed fields merely to create a Package shell. The
 non-executable Draft is an authoring container, while the single Scope Bundle
 approval freezes Direction and Experiments and activates it.
 
+Before that review, resolve the Package's four-field Research Intent. Problem
+states the known or high-probability research gap. Motivation explains why it
+matters and the high-level solution rationale. Objective states how evidence
+will judge whether that rationale was realized. Hypothesis is the concise,
+falsifiable natural-language synthesis of Motivation and Objective, and the
+same text becomes `Direction.spec.hypothesis`. These fields must not be filled
+by copying one sentence into multiple labels.
+
 ## Decompose a Direction into Experiments
 
 Treat an Experiment as the smallest independently governable evidence

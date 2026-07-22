@@ -29,8 +29,6 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             or "interface_projection" in relative
         ):
             item.add_marker(pytest.mark.projection)
-        elif "migration" in relative or relative.startswith("tests/research-init/"):
-            item.add_marker(pytest.mark.migration)
         elif (
             relative.startswith("tests/demo/")
             or "parity" in relative

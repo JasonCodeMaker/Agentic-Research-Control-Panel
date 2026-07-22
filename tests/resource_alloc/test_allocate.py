@@ -24,7 +24,7 @@ def _seed(tmp_path):
                                   "gpus": [{"type": "h100", "count": 3, "mem_gb": 80}],
                                   "slurm": {"account": "a_eecs_ds", "max_hours": 168},
                                   "tags": ["msrvtt-features"]})
-    store = EventStore(ra.research_paths(tmp_path), migration_mode=True)
+    store = EventStore(ra.research_paths(tmp_path), fixture_mode=True)
     store.commit(
         event_type="AggregateImported",
         aggregate_type="package",

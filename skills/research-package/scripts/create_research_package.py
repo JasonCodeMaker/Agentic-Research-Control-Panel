@@ -127,8 +127,7 @@ def _canonical_state(args: argparse.Namespace) -> dict[str, Any]:
     if args.category != "in-progress" or status != "CONTEXT_LOADED":
         raise SystemExit(
             "New Packages must use category=in-progress and "
-            "status=CONTEXT_LOADED; import historical terminal state through "
-            "the explicit migration path."
+            "status=CONTEXT_LOADED; historical terminal imports are unsupported."
         )
     record: dict[str, Any] = {}
     if args.current_blocker:

@@ -57,7 +57,7 @@ def _seed(tmp_path):
     paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
     store = EventStore(paths)
     store.initialize()
-    EventStore(paths, migration_mode=True).commit(
+    EventStore(paths, fixture_mode=True).commit(
         event_type="AggregateImported",
         aggregate_type="direction",
         aggregate_id="direction/pkg",
@@ -96,7 +96,7 @@ def _seed(tmp_path):
         idempotency_key="seed-package",
         expected_version=0,
     )
-    EventStore(paths, migration_mode=True).commit(
+    EventStore(paths, fixture_mode=True).commit(
         event_type="AggregateUpserted",
         aggregate_type="experiment",
         aggregate_id="exp",
@@ -277,7 +277,7 @@ def test_composite_experiment_key_uses_package_local_path_segment(tmp_path):
     paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
     store = EventStore(paths)
     store.initialize()
-    EventStore(paths, migration_mode=True).commit(
+    EventStore(paths, fixture_mode=True).commit(
         event_type="AggregateImported",
         aggregate_type="direction",
         aggregate_id="direction/vision",
@@ -317,7 +317,7 @@ def test_composite_experiment_key_uses_package_local_path_segment(tmp_path):
         actor=ACTOR,
         idempotency_key="composite-package",
     )
-    EventStore(paths, migration_mode=True).commit(
+    EventStore(paths, fixture_mode=True).commit(
         event_type="AggregateUpserted",
         aggregate_type="experiment",
         aggregate_id="vision::P1",

@@ -32,7 +32,7 @@ def _workspace(tmp_path: Path) -> tuple[ResearchPaths, EventStore]:
     paths = ResearchPaths.resolve(workspace=tmp_path)
     store = EventStore(paths)
     store.initialize()
-    scope_store = EventStore(paths, migration_mode=True)
+    scope_store = EventStore(paths, fixture_mode=True)
     scope_store.commit(
         event_type="AggregateUpserted",
         aggregate_type="project",
@@ -246,6 +246,18 @@ def test_package_overview_toolbar_only_links_dashboard(tmp_path: Path) -> None:
     assert toolbar.count('<a class="pill"') == 1
     assert 'href="../../index.html">Dashboard</a>' in toolbar
     assert 'class="tag"' not in toolbar
+    assert 'data-card="headline" data-headline-kind="freeform" hidden' in page
+    assert "<h2>Experiment queue</h2>" in page
+    intent_fields = [
+        'data-field="problem-tldr"',
+        'data-field="motivation-tldr"',
+        'data-field="objective-tldr"',
+        'data-field="hypothesis-tldr"',
+    ]
+    assert all(field in page for field in intent_fields)
+    assert [page.index(field) for field in intent_fields] == sorted(
+        page.index(field) for field in intent_fields
+    )
 
 
 def test_package_status_projection_separates_state_process_and_next_states(
@@ -267,7 +279,7 @@ def test_package_status_projection_separates_state_process_and_next_states(
     }
     assert projected["currentProcess"] == {
         "step": "Implement the scoped changes and produce reviewable artifacts.",
-        "evidence": "Current phase: IMPLEMENTING",
+        "evidence": "",
     }
     assert "Review implementation and run preflight" not in json.dumps(
         projected["currentProcess"]
@@ -321,7 +333,7 @@ def test_context_loaded_shows_current_work_and_all_neutral_next_states(
             "Inspect the loaded Scope, Package plan, implementation, and evidence "
             "needed to choose the first executable phase."
         ),
-        "evidence": "Current phase: CONTEXT_LOADED",
+        "evidence": "",
     }
     assert "Do not launch" not in json.dumps(projected["currentProcess"])
     assert projected["nextStateConditions"] == [
@@ -442,7 +454,7 @@ def test_package_tracker_rows_are_derived_from_run_and_resource_state(
     assert projected["openRuns"] == "run-one"
     assert projected["currentProcess"] == {
         "step": "Implement the scoped changes and produce reviewable artifacts.",
-        "evidence": "Current phase: IMPLEMENTING",
+        "evidence": "",
     }
 
 

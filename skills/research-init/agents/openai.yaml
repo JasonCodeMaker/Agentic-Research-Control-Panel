@@ -1,4 +1,4 @@
 interface:
   display_name: "Research Init"
-  short_description: "Set up or migrate an ARC research workspace"
+  short_description: "Set up or repair an ARC research workspace"
   default_prompt: "Use $research-init to inspect and set up this research workspace, start or reuse its Dashboard Server, and report the connection details."

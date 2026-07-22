@@ -1321,7 +1321,7 @@
   }
 
   function renderPlanStatus() {
-    var host = document.querySelector('[data-card="plan-status"] [data-field="plan-status-list"]');
+    var host = document.querySelector('[data-card="plan-progress"] [data-field="plan-status-list"]');
     if (!host) return;
     var pkg = currentPackage();
     if (!pkg) return;
@@ -1333,7 +1333,7 @@
     host.innerHTML = items.map(function (e) {
       var internalId = e && e.id ? String(e.id) : "unmeasured";
       var id = experimentDisplayId(e);
-      var label = e && e.label ? String(e.label) : "";
+      var label = e && e.label ? String(e.label) : internalId.split("/").pop();
       var status = e && e.status ? String(e.status) : "QUEUED";
       var run = e && e.runLink ? String(e.runLink) : "tracker.html#resource-allocation";
       return [
@@ -1341,7 +1341,7 @@
         '<span class="exp-id"><a href="plan.html#experiments">' + htmlEscape(id) + "</a></span>",
         label ? '<span class="exp-label">' + htmlEscape(label) + "</span>" : "",
         '<span class="chip" data-status="' + htmlEscape(status) + '">' + htmlEscape(status) + "</span>",
-        '<a class="exp-run-link" href="' + htmlEscape(run) + '">run</a>',
+        '<a class="exp-run-link" href="' + htmlEscape(run) + '">Tracker</a>',
         "</div>",
       ].join("");
     }).join("");
@@ -1796,9 +1796,10 @@
     var pkg = currentPackage();
     if (!pkg) return;
     var map = {
-      "problem-tldr": pkg.problemTldr,
-      "objective-tldr": pkg.objectiveTldr,
-      "motivation-tldr": pkg.motivationTldr,
+      "problem-tldr": pkg.problem,
+      "motivation-tldr": pkg.motivation,
+      "objective-tldr": pkg.objective,
+      "hypothesis-tldr": pkg.hypothesis,
     };
     Object.keys(map).forEach(function (field) {
       var v = map[field];
@@ -1813,6 +1814,7 @@
     if (!card) return;
     var pkg = currentPackage();
     if (!pkg || !pkg.headline) return;
+    card.removeAttribute("hidden");
     var h = pkg.headline;
     var kind = String(h.kind || "freeform");
     card.setAttribute("data-headline-kind", kind);
@@ -1828,7 +1830,7 @@
     } else if (kind === "baseline") {
       var rows = Array.isArray(h.baselines) ? h.baselines : [];
       html = "<ul>" + rows.map(function (b) {
-        return "<li><code>" + htmlEscape(b.id || "baseline") + "</code> &mdash; " +
+        return "<li><code>" + htmlEscape(b.id || "baseline") + "</code>: " +
                htmlEscape(b.note || "unmeasured") + "</li>";
       }).join("") + "</ul>";
     } else if (kind === "evaluation" || kind === "infrastructure") {

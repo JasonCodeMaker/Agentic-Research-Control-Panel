@@ -423,9 +423,9 @@ def test_atomic_package_event_cannot_bypass_experiment_contract(
     bindings,
 ):
     paths, _ = _store(tmp_path)
-    migration_store = EventStore(paths, migration_mode=True)
+    fixture_store = EventStore(paths, fixture_mode=True)
     for experiment_id in ("experiment/one", "experiment/two"):
-        migration_store.commit(
+        fixture_store.commit(
             event_type="AggregateImported",
             aggregate_type="experiment",
             aggregate_id=experiment_id,
@@ -462,7 +462,7 @@ def test_atomic_package_event_cannot_bypass_experiment_contract(
 
 def test_status_event_cannot_reconfirm_scope_without_proposal(tmp_path):
     paths, _ = _store(tmp_path)
-    EventStore(paths, migration_mode=True).commit(
+    EventStore(paths, fixture_mode=True).commit(
         event_type="AggregateImported",
         aggregate_type="experiment",
         aggregate_id="experiment/one",

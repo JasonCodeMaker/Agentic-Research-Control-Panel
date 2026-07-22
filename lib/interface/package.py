@@ -271,7 +271,7 @@ def _merge_rows(
     existing: Any,
     derived: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Merge migration-era rows with canonical projections by stable id."""
+    """Merge retained imported rows with canonical projections by stable id."""
     rows = (
         [copy.deepcopy(row) for row in existing if isinstance(row, Mapping)]
         if isinstance(existing, list)
@@ -448,12 +448,12 @@ def _current_process_projection(
     if lifecycle == "DRAFT":
         return {
             "step": "Refine the Package document and prepare its Scope bundle for ratification.",
-            "evidence": "Package lifecycle: DRAFT",
+            "evidence": "",
         }
     if lifecycle != "ACTIVE":
         return {
             "step": f"No active process; the Package lifecycle is {lifecycle or 'unmeasured'}.",
-            "evidence": "Package lifecycle",
+            "evidence": "",
         }
 
     active_runs = [
@@ -468,9 +468,9 @@ def _current_process_projection(
         for row in live_rows
         if row.get("run_state") in {"QUEUED", "RUNNING", "STALE"}
     ]
-    evidence = f"Current phase: {phase or 'unmeasured'}"
+    evidence = ""
     if phase in {"EXPERIMENT_RUNNING", "LIVE_ANALYSIS"} and active_runs:
-        evidence += f" · Active runs: {'; '.join(active_runs)}"
+        evidence = f"Active runs: {'; '.join(active_runs)}"
     return {
         "step": PHASE_PROCESS.get(
             phase,

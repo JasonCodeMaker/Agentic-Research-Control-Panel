@@ -1,4 +1,4 @@
-"""Read-only projection of raw package facts retained by legacy migration."""
+"""Read-only projection of imported facts already stored in CURRENT roots."""
 
 from __future__ import annotations
 
@@ -29,11 +29,10 @@ def _source(
 def legacy_package_fact_projection(
     package: dict[str, Any],
 ) -> dict[str, Any]:
-    """Decode a staged migration snapshot without inventing causal facts.
+    """Decode an existing imported snapshot without inventing causal facts.
 
-    This compatibility view is useful while migration parity is checked. A
-    measured or governed row that cannot be normalized to its canonical owner
-    remains marked ``legacy_unbound`` and is handled by the migration gate.
+    This is read compatibility for CURRENT roots created before legacy import
+    was retired. It does not discover or import legacy workspace data.
     """
     projected: dict[str, Any] = {
         "methodsTried": [],

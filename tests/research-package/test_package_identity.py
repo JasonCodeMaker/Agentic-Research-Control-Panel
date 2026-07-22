@@ -100,7 +100,7 @@ def _experiment() -> dict:
 
 
 def _seed(paths: ResearchPaths) -> None:
-    store = EventStore(paths, migration_mode=True)
+    store = EventStore(paths, fixture_mode=True)
     store.commit(
         event_type="AggregateImported",
         aggregate_type="brainstorm",

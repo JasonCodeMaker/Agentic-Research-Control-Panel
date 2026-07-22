@@ -23,7 +23,7 @@ def seed(
 ) -> ResearchPaths:
     paths = ResearchPaths.resolve(workspace=root, environ={})
     store = EventStore(paths)
-    scope_store = EventStore(paths, migration_mode=True)
+    scope_store = EventStore(paths, fixture_mode=True)
     store.initialize()
 
     def commit(aggregate_type: str, aggregate_id: str, record: dict[str, Any]) -> None:

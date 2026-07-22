@@ -306,7 +306,7 @@ def test_scope_spec_version_is_independent_from_aggregate_version(tmp_path):
     assert _seed_project(tmp_path).returncode == 0
     first = _direction_payload("USER_CROSS_MODEL_AUDIT")
     assert _commit_payload(tmp_path, first).returncode == 0
-    store = EventStore(paths, migration_mode=True)
+    store = EventStore(paths, fixture_mode=True)
     store.commit(
         event_type="AggregatePatched",
         aggregate_type="direction",

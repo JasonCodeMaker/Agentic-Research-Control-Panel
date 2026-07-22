@@ -1,6 +1,6 @@
 ---
 name: research-init
-description: "Use when installing, attaching, initializing, migrating, repairing, or validating ARC in a research workspace."
+description: "Use when installing, attaching, initializing, repairing, or validating ARC in a research workspace."
 ---
 
 # Research init
@@ -10,8 +10,7 @@ infrastructure work, not research intent. Stop with a precise handoff to
 `research-onboard`, `research-brainstorm`, or `research-scope`.
 
 Read [references/setup-contract.md](references/setup-contract.md) before a
-legacy migration, protocol merge, external `RESEARCH_ROOT`, or skill-path
-repair.
+protocol merge, external `RESEARCH_ROOT`, or skill-path repair.
 
 ## Boundary
 
@@ -23,13 +22,13 @@ Own setup orchestration only:
 - attach `AGENTS.md` and `CLAUDE.md` through managed blocks without replacing
   project-owned text;
 - initialize an empty managed root through `lib.research_state`;
-- invoke the official inventory, migration, and check implementation;
+- validate the current managed state;
 - build the interface and start or reuse a healthy Dashboard Server by default;
 - report the resolved roots, mutations, Server URL, health, and next skill.
 
 Do not infer or commit Project, Direction, or Experiment intent. Do not create
 a Package, launch a Run, modify source/data/environments, write management
-events directly, delete legacy roots, or commit Git changes.
+events directly, adopt unsupported legacy roots, or commit Git changes.
 
 ## Procedure
 
@@ -50,11 +49,9 @@ through the installed `research-init` symlink in a target project.
 Interpret the state exactly:
 
 - `ABSENT`: safe greenfield setup candidate.
-- `LEGACY`: `research_html/` or `outputs/` requires explicit migration.
-- `MIGRATION_STAGED`: resume or diagnose the explicit migration.
 - `CURRENT`: reconcile protocols, skills, interface, and Server.
-- `INVALID`: stop. Do not repair an unknown version or unversioned root by
-  guessing.
+- `INVALID`: stop. Legacy data, an unknown version, or an unversioned managed
+  root is unsupported; do not adopt or rewrite it by guessing.
 
 ### 2. Review protocol conflicts
 
@@ -78,25 +75,7 @@ and starts or reuses the Dashboard Server. Use `--merge-protocols` only after
 step 2. Use `--no-serve` only when the user explicitly requests a headless or
 CI setup.
 
-### 4. Migrate a legacy workspace
-
-First show the inventory from `inspect`. Confirm that the user has a
-recoverable backup of `research_html/`, `outputs/`, and the target protocol
-files. Then run:
-
-```bash
-python3 skills/research-init/scripts/research_init.py \
-  --workspace <workspace> \
-  migrate \
-  --backup-confirmed \
-  --agent codex
-```
-
-Add `--merge-protocols` only after review. Do not archive or delete the legacy
-roots. A migration is complete only when the official migration report and
-post-migration check both return `ok: true`.
-
-### 5. Validate and report
+### 4. Validate and report
 
 ```bash
 python3 skills/research-init/scripts/research_init.py \
@@ -113,7 +92,6 @@ Report all of the following:
 - interface root and Dashboard Server action, `started` or `reused`;
 - Dashboard URL, host, port, health, and SSH forwarding command;
 - the exact Dashboard stop command;
-- migration result when applicable;
 - `READY_NO_PROJECT`, `READY_WITH_PROJECT`, or `REPAIR_REQUIRED`;
 - the single next action.
 
@@ -125,5 +103,5 @@ intent.
 
 An agent must discover `research-init` before this skill can install its
 siblings. Keep one minimal bootstrap command in the toolbox README. After the
-skill is available, route all setup, attach, migration, and setup-repair work
+skill is available, route all setup, attach, and setup-repair work
 through this skill.

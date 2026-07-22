@@ -116,18 +116,13 @@ def _assert_allowlist(
 
 
 def test_event_store_commit_callers_are_owned_gateways():
-    """Only semantic gateways, migration, and parity fixtures may commit."""
+    """Only semantic gateways and parity fixtures may commit."""
     actual = _select(_production_calls(), {"commit"})
     expected = Counter(
         {
             (
                 "skills/research-op/scripts/management.py",
                 "_commit",
-                "commit",
-            ): 1,
-            (
-                "lib/research_state/migration.py",
-                "_commit_legacy",
                 "commit",
             ): 1,
             (
@@ -178,21 +173,13 @@ def test_low_level_json_writers_stay_inside_owned_modules():
     owners = {
         "lib/research_state/store.py": {
             "EventStore.initialize",
-            "EventStore.import_legacy_audit",
             "EventStore.write_note",
             "EventStore._audit",
             "EventStore._sync_audit_export",
             "EventStore._sync_commit_exports",
             "EventStore._sync_compatibility_exports",
         },
-        "lib/research_state/paths.py": {
-            "ResearchPaths.initialize",
-            "ResearchPaths.finalize_migration",
-        },
-        "lib/research_state/migration.py": {
-            "_copy_terminal_run",
-            "_write_migration_manifest",
-        },
+        "lib/research_state/paths.py": {"ResearchPaths.initialize"},
         "lib/experiments/extract.py": {"extract_result"},
         "lib/experiments/harvest.py": {
             "RunState.write_status",

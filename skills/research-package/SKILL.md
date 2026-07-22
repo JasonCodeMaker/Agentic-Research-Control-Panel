@@ -75,13 +75,19 @@ python3 skills/research-package/scripts/draft_package.py \
 ```
 
 Each change advances `draftRevision` and keeps `draftStatus=REFINING`. Refine
-the research question, method, complete Experiment map, gates, control modes,
-risks, and assumptions in this one Package. Do not manually set `SCOPE_READY`.
+the Research Intent, method, complete Experiment map, gates, control modes,
+risks, and assumptions in this one Package. Research Intent must contain four
+explicit, distinct fields: Problem is the known or high-probability research
+gap; Motivation explains its importance and the high-level solution rationale;
+Objective defines how evidence will judge whether that rationale was realized;
+and Hypothesis is the falsifiable natural-language synthesis of Motivation and
+Objective. Do not manually set `SCOPE_READY`.
 
 ### 3. Review and commit the Scope Bundle
 
 Prepare one review containing the complete Direction and every selected
-Experiment:
+Experiment. The review also shows the exact four-field Research Intent; the
+Package Hypothesis must match `Direction.spec.hypothesis`:
 
 ```bash
 python3 skills/research-package/scripts/draft_package.py \

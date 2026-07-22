@@ -1017,6 +1017,9 @@ def _draft_record_from_active_package(
         "detailPath": f"packages/{package['id']}/docs/proposal.html",
         "reopen_reason": reason,
     }
+    for field in ("problem", "motivation", "objective", "hypothesis"):
+        if package.get(field) is not None:
+            draft[field] = copy.deepcopy(package[field])
     for field in ("idea_snapshot", "lit_refs"):
         if field in source:
             draft[field] = copy.deepcopy(source[field])
@@ -3139,8 +3142,8 @@ def resolve_package_experiment(
 ) -> tuple[str, dict[str, Any]]:
     """Resolve a bound Experiment without inventing a package-scoped id.
 
-    New records use their accepted Scope id as the aggregate id.  Legacy
-    package-scoped ids and aliases remain readable during migration.
+    New records use their accepted Scope id as the aggregate id. Historical
+    package-scoped ids and aliases remain readable for existing CURRENT roots.
     """
     try:
         return resolve_bound_experiment(
@@ -3253,7 +3256,7 @@ def _validate_package_record(record: dict[str, Any]) -> None:
         raise CommandRejected(
             "package-initial-state-invalid",
             "new Packages must start at ACTIVE/CONTEXT_LOADED without a "
-            "blocker; historical state belongs in explicit migration",
+            "blocker; historical state imports are unsupported",
         )
     pages = record.get("pages")
     if pages is not None and (
@@ -3305,6 +3308,30 @@ def _validate_package_record(record: dict[str, Any]) -> None:
         raise CommandRejected(
             "package-source-experiments-invalid",
             "sourceExperiments entries must be exact {id, version, source} records",
+        )
+
+    intent_fields = ("problem", "motivation", "objective", "hypothesis")
+    normalized: dict[str, str] = {}
+    for field in intent_fields:
+        value = record.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise CommandRejected(
+                "package-research-intent-required",
+                "Package activation requires explicit Problem, Motivation, "
+                "Objective, and Hypothesis fields",
+            )
+        normalized[field] = " ".join(value.split()).casefold()
+    duplicates = [
+        f"{left}/{right}"
+        for index, left in enumerate(intent_fields)
+        for right in intent_fields[index + 1 :]
+        if normalized[left] == normalized[right]
+    ]
+    if duplicates:
+        raise CommandRejected(
+            "package-research-intent-not-distinct",
+            "Research Intent fields must express distinct roles; duplicate pairs: "
+            + ", ".join(duplicates),
         )
 
 
@@ -3615,6 +3642,21 @@ def _commit_package_create_locked(
                 "package-direction-version-mismatch",
                 "Package sourceVersion must equal the current Direction version",
             )
+        direction_spec = direction.get("spec")
+        direction_hypothesis = (
+            direction_spec.get("hypothesis")
+            if isinstance(direction_spec, dict)
+            else None
+        )
+        if (
+            not isinstance(direction_hypothesis, str)
+            or " ".join(package["hypothesis"].split()).casefold()
+            != " ".join(direction_hypothesis.split()).casefold()
+        ):
+            raise CommandConflict(
+                "package-direction-hypothesis-mismatch",
+                "Package Hypothesis must equal its accepted Direction hypothesis",
+            )
         latest_direction_event = next(
             (
                 row
@@ -3896,6 +3938,16 @@ def _build_scope_bundle_transaction(
     finalized["draftStatus"] = "SCOPE_READY"
     spec = direction["spec"]
     hypothesis = str(spec.get("hypothesis") or "")
+    draft_hypothesis = str(draft.get("hypothesis") or "").strip()
+    if (
+        draft_hypothesis
+        and " ".join(draft_hypothesis.split()).casefold()
+        != " ".join(hypothesis.split()).casefold()
+    ):
+        raise CommandRejected(
+            "package-direction-hypothesis-mismatch",
+            "Draft Package Hypothesis must match the reviewed Direction hypothesis",
+        )
     metric = _scope_display(spec.get("metric"))
     baseline = _scope_display(spec.get("baselines"))
     gate = str(spec.get("success_gate") or "")
@@ -3933,8 +3985,8 @@ def _build_scope_bundle_transaction(
                 "direction_version": direction["version"],
                 "experiment_ids": [node["id"] for node in experiments],
             },
-            "problem": active.get("problem") or hypothesis,
-            "objective": active.get("objective") or hypothesis,
+            "problem": active.get("problem"),
+            "objective": active.get("objective"),
             "hypothesis": hypothesis,
             "direction": hypothesis,
             "primaryMetric": metric,
@@ -4003,6 +4055,10 @@ def _build_scope_bundle_transaction(
         "package_id": package_id,
         "draft_revision": draft["draftRevision"],
         "question": draft.get("idea") or draft.get("problem"),
+        "research_intent": {
+            field: copy.deepcopy(active[field])
+            for field in ("problem", "motivation", "objective", "hypothesis")
+        },
         "direction": copy.deepcopy(direction),
         "experiments": copy.deepcopy(experiments),
         "execution": "Implement and launch only the Experiments in this Scope Bundle",
@@ -4870,6 +4926,16 @@ def finalize_draft_package(
     finalized_draft["draftStatus"] = "SCOPE_READY"
     spec = direction_node["spec"]
     hypothesis = str(spec.get("hypothesis") or "")
+    draft_hypothesis = str(draft.get("hypothesis") or "").strip()
+    if (
+        draft_hypothesis
+        and " ".join(draft_hypothesis.split()).casefold()
+        != " ".join(hypothesis.split()).casefold()
+    ):
+        raise CommandRejected(
+            "package-direction-hypothesis-mismatch",
+            "Draft Package Hypothesis must match the reviewed Direction hypothesis",
+        )
     metric = _scope_display(spec.get("metric"))
     baseline = _scope_display(spec.get("baselines"))
     gate = str(spec.get("success_gate") or "")
@@ -4898,8 +4964,8 @@ def finalize_draft_package(
                 "direction_version": direction_node["version"],
                 "experiment_ids": [node["id"] for node in experiment_nodes],
             },
-            "problem": active.get("problem") or hypothesis,
-            "objective": active.get("objective") or hypothesis,
+            "problem": active.get("problem"),
+            "objective": active.get("objective"),
             "hypothesis": hypothesis,
             "direction": hypothesis,
             "primaryMetric": metric,

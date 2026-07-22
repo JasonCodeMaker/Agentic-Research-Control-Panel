@@ -361,7 +361,7 @@ def _commit_project(workspace, node_id="project/main"):
             "status": "ACTIVE", "spec": _project_spec(), "source": "accepted"}
     paths = ResearchPaths.resolve(workspace=workspace, environ={})
     EventStore(paths).initialize()
-    EventStore(paths, migration_mode=True).commit(
+    EventStore(paths, fixture_mode=True).commit(
         event_type="AggregateUpserted",
         aggregate_type="project",
         aggregate_id=node_id,

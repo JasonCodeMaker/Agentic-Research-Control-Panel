@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         print(str(exc), file=sys.stderr)
         print(
             "Run research-init before building the dashboard; the dashboard "
-            "does not initialize or migrate managed state.",
+            "does not initialize managed state.",
             file=sys.stderr,
         )
         return 2

@@ -842,7 +842,7 @@ def scope_projection(state: Mapping[str, Any]) -> ScopeProjection:
                     raw.get("package_id") not in (None, "")
                     or not (raw.get("direction_id") or raw.get("parents"))
                 ):
-                    # Retain migration compatibility for old execution-only
+                    # Retain read compatibility for old execution-only
                     # rows, but a bound formal Experiment remains a Scope node:
                     # package binding does not create or hide a second object.
                     continue

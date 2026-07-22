@@ -137,7 +137,7 @@ The Package owns package-level decision context:
 
 - identity: `id`, `slug`, `name`, `title`, `tag`, and `tagMeaning`;
 - lifecycle: `lifecycle`, `phase`, and `blocker`;
-- research question: `problem`, `objective`, `motivation`, and `hypothesis`;
+- research intent: `problem`, `motivation`, `objective`, and `hypothesis`;
 - evaluation summary: `primaryMetric`, `baseline`, `budget`, and
   `activeGate`;
 - execution summary: `nextAction`, `lastAction`, `openRuns`, and
@@ -154,6 +154,33 @@ turning them into premature Scope fields.
 Package metadata may summarize a result for navigation, but it must cite the
 owning Experiment result. It must not become an independent measurement
 store.
+
+### Research Intent
+
+Research Intent records the reasoning chain that makes a Package worth
+executing. The four fields have different jobs and appear in this order:
+
+- **Problem** identifies a known or high-probability research limitation, gap,
+  or unresolved capability. It says what is wrong or missing at the research
+  level; it is not an implementation task or a provenance note.
+- **Motivation** explains why that Problem matters and may state the high-level
+  solution rationale: why the proposed method family could plausibly address
+  it. Detailed implementation and evaluation settings remain in Scope and
+  Plan.
+- **Objective** states the verifiable target used to judge whether the
+  Motivation's proposed solution was realized. It names the target object and
+  necessary boundaries without presuming a positive result.
+- **Hypothesis** is the concise, falsifiable natural-language synthesis of the
+  Motivation's high-level solution and the Objective's expected observable
+  outcome. It is the Package copy of `Direction.spec.hypothesis`, not an
+  independent fourth source of intent.
+
+An activated Package must contain all four fields. They must be semantically
+distinct and may not fall back to one another when content is missing. The
+Package Hypothesis must equal the accepted Direction hypothesis. A completed
+Package may conclude that the Hypothesis is supported, not supported, or only
+conditionally supported; execution completeness and hypothesis support are
+separate judgments.
 
 ### Canonical identity
 
@@ -242,7 +269,7 @@ navigation, section order, cards, tables, and stable `data-*` anchors.
 
 | Page | Human decision it supports |
 | --- | --- |
-| `index.html` | identity, status summary, source path, and evidence root |
+| `index.html` | Research Intent, status summary, source path, and evidence root |
 | `plan.html` | hypothesis, metric contract, baseline, and Experiment plan |
 | `implementation.html` | owned files, change review, tests, and adjudication |
 | `results.html` | result gates, Experiment results, validity, and figures |
@@ -259,8 +286,8 @@ reader. They are not an agent context source and do not grant HTML authority.
 
 Each field has one human home:
 
-- identity and evidence roots: `index.html`;
-- hypothesis and plan: `plan.html`;
+- Research Intent, identity, and evidence roots: `index.html`;
+- the executable plan and its reference to the canonical hypothesis: `plan.html`;
 - owned files and implementation decisions: `implementation.html`;
 - result verdicts and validity classes: `results.html`;
 - insights and rules: `analysis.html`;

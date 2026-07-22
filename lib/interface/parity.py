@@ -104,19 +104,6 @@ FONT_QUERIES = (
     "serif",
     "monospace",
 )
-MIGRATION_TEXT_MARKERS = (
-    "research_html",
-    "outputs/",
-    ".research/interface",
-    ".research/experiments",
-    ".research/state",
-    "serve_dashboard.py",
-    "lib.interface.serve",
-    "data/live-runs.jsonl",
-    "data/live-acknowledged.json",
-    "data/scope-transitions.jsonl",
-    "data/scope-triage.jsonl",
-)
 _CONTRACT_CACHE: dict[tuple[str, bool, str], Any] = {}
 _CONTRACT_CACHE_LOCK = threading.Lock()
 
@@ -239,151 +226,12 @@ def dom_digest(path: Path) -> str:
     return _dom_digest_text(path.read_text(encoding="utf-8"))
 
 
-def _contains_migration_marker(value: str) -> bool:
-    lowered = value.lower()
-    return any(marker.lower() in lowered for marker in MIGRATION_TEXT_MARKERS)
-
-
-def _canonical_migration_value(value: str) -> str:
-    replacements = (
-        (
-            "python research_html/scripts/serve_dashboard.py ensure --json",
-            "<INTERFACE_SERVE_COMMAND>",
-        ),
-        (
-            "python -m lib.interface.serve --workspace . ensure --json",
-            "<INTERFACE_SERVE_COMMAND>",
-        ),
-        (
-            "http://127.0.0.1:8904/research_html/live.html",
-            "<INTERFACE_LIVE_URL>",
-        ),
-        ("http://127.0.0.1:8904/live.html", "<INTERFACE_LIVE_URL>"),
-        ("../outputs/_scope/transitions.jsonl", "<SCOPE_TRANSITIONS>"),
-        ("outputs/_scope/transitions.jsonl", "<SCOPE_TRANSITIONS>"),
-        ("data/scope-transitions.jsonl", "<SCOPE_TRANSITIONS>"),
-        ("../outputs/_scope/triage.jsonl", "<SCOPE_TRIAGE>"),
-        ("outputs/_scope/triage.jsonl", "<SCOPE_TRIAGE>"),
-        ("data/scope-triage.jsonl", "<SCOPE_TRIAGE>"),
-        ("../outputs/_live/runs.jsonl", "<LIVE_RUNS>"),
-        ("outputs/_live/runs.jsonl", "<LIVE_RUNS>"),
-        ("data/live-runs.jsonl", "<LIVE_RUNS>"),
-        ("../outputs/_live/acknowledged.json", "<LIVE_ACKNOWLEDGED>"),
-        ("outputs/_live/acknowledged.json", "<LIVE_ACKNOWLEDGED>"),
-        ("data/live-acknowledged.json", "<LIVE_ACKNOWLEDGED>"),
-        (".research/interface/", "<INTERFACE_ROOT>/"),
-        ("research_html/", "<INTERFACE_ROOT>/"),
-        (".research/experiments/", "<EXPERIMENT_ROOT>/"),
-        ("outputs/", "<EXPERIMENT_ROOT>/"),
-    )
-    normalized = value
-    for old, replacement in replacements:
-        normalized = normalized.replace(old, replacement)
-    return normalized
-
-
-def _migration_attribute(name: str, value: str) -> str:
-    if name in {"href", "src"} and _contains_migration_marker(value):
-        return _canonical_migration_value(value)
-    return value
-
-
-def _migration_text(value: str) -> str:
-    if _contains_migration_marker(value):
-        return _canonical_migration_value(value)
-    return value
-
-
-def _migration_help_text(_tag: str, attrs: dict[str, str]) -> bool:
-    classes = set(attrs.get("class", "").split())
-    return (
-        "footer-note" in classes
-        or attrs.get("data-field") == "fetch-help"
-        or attrs.get("id") == "fetch-help"
-    )
-
-
-def normalized_migration_dom_digest(path: Path) -> str:
-    """Hash legacy/new DOM while allowing only the migration text whitelist."""
-    return _dom_digest_text(
-        path.read_text(encoding="utf-8"),
-        attribute_normalizer=_migration_attribute,
-        text_normalizer=_migration_text,
-        ignore_text=_migration_help_text,
-    )
-
-
-def legacy_dom_parity_report(
-    legacy_root: Path,
-    interface_root: Path,
-) -> dict[str, Any]:
-    """Compare every legacy HTML page with its projected replacement.
-
-    Layout, element order, selectors, and non-help copy are strict.  Only
-    documented storage paths/URLs and footer help wording are normalized.
-    """
-    checked: list[str] = []
-    missing: list[str] = []
-    drift: list[dict[str, str]] = []
-    if not legacy_root.is_dir():
-        return {
-            "ok": True,
-            "status": "not-applicable",
-            "legacy_root": str(legacy_root),
-            "checked": checked,
-            "missing": missing,
-            "drift": drift,
-            "whitelist": {
-                "path_url_markers": list(MIGRATION_TEXT_MARKERS),
-                "help_selectors": [
-                    ".footer-note",
-                    "[data-field=fetch-help]",
-                    "#fetch-help",
-                ],
-            },
-        }
-    for legacy in sorted(legacy_root.rglob("*.html")):
-        relative = legacy.relative_to(legacy_root).as_posix()
-        projected = interface_root / relative
-        if not projected.is_file():
-            missing.append(relative)
-            continue
-        legacy_digest = normalized_migration_dom_digest(legacy)
-        projected_digest = normalized_migration_dom_digest(projected)
-        checked.append(relative)
-        if legacy_digest != projected_digest:
-            drift.append(
-                {
-                    "path": relative,
-                    "legacy_digest": legacy_digest,
-                    "projected_digest": projected_digest,
-                }
-            )
-    ok = not missing and not drift
-    return {
-        "ok": ok,
-        "status": "passed" if ok else "failed",
-        "legacy_root": str(legacy_root),
-        "checked": checked,
-        "missing": missing,
-        "drift": drift,
-        "whitelist": {
-            "path_url_markers": list(MIGRATION_TEXT_MARKERS),
-            "help_selectors": [
-                ".footer-note",
-                "[data-field=fetch-help]",
-                "#fetch-help",
-            ],
-        },
-    }
-
-
 def _seed_fixture(paths: ResearchPaths) -> None:
     EventStore(paths).initialize()
     # This is a deterministic projection fixture, not a management write
-    # path.  Migration mode makes that exceptional seed explicit while the
+    # path. Fixture mode makes that exceptional seed explicit while the
     # production store rejects generic Scope mutations.
-    store = EventStore(paths, migration_mode=True)
+    store = EventStore(paths, fixture_mode=True)
     store.commit(
         event_type="AggregateUpserted",
         aggregate_type="project",
@@ -905,7 +753,7 @@ def check_contract(
 
 
 def clear_contract_cache() -> None:
-    """Clear the process-local migration gate cache (primarily for tests)."""
+    """Clear the process-local parity cache (primarily for tests)."""
     with _CONTRACT_CACHE_LOCK:
         _CONTRACT_CACHE.clear()
 

@@ -150,5 +150,5 @@ python3 -m pytest -q -m core
 python3 -m pytest -q tests/research-op tests/research_state
 ```
 
-For release, also run migration, projection, writer-boundary, and full-suite
+For release, also run projection, writer-boundary, and full-suite
 checks.

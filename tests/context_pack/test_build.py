@@ -45,7 +45,7 @@ def _ref():
 
 def _commit(store, event_type, aggregate_type, aggregate_id, record, index):
     writer = (
-        EventStore(store.paths, migration_mode=True)
+        EventStore(store.paths, fixture_mode=True)
         if event_type == "AggregateImported"
         else store
     )

@@ -19,7 +19,7 @@ def _launch(tmp_path):
     paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
     store = EventStore(paths)
     store.initialize()
-    EventStore(paths, migration_mode=True).commit(
+    EventStore(paths, fixture_mode=True).commit(
         event_type="AggregateImported",
         aggregate_type="direction",
         aggregate_id="direction/pkg",
@@ -59,7 +59,7 @@ def _launch(tmp_path):
         actor=AGENT,
         idempotency_key="seed-package",
     )
-    EventStore(paths, migration_mode=True).commit(
+    EventStore(paths, fixture_mode=True).commit(
         event_type="AggregateUpserted",
         aggregate_type="experiment",
         aggregate_id="pkg::P1",

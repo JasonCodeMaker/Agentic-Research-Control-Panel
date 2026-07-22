@@ -20,7 +20,7 @@ LEGACY_MARKERS = ("research_html", "outputs")
 
 
 class UpgradeRequired(RuntimeError):
-    """An existing legacy or unversioned workspace needs an explicit migration."""
+    """The managed root is absent, unversioned, or unsupported."""
 
 
 class UnsupportedResearchVersion(RuntimeError):
@@ -184,18 +184,13 @@ class ResearchPaths:
         return created
 
     def initialize(self) -> list[Path]:
-        """Create a versioned empty layout, refusing implicit legacy upgrades.
-
-        Explicit migration must use :meth:`prepare_migration` and
-        :meth:`finalize_migration`, so VERSION cannot be written before
-        migration parity succeeds.
-        """
+        """Create a versioned empty layout without adopting legacy data."""
         markers = self.legacy_markers()
         if markers and not self.version_file.exists():
             raise UpgradeRequired(
                 "upgrade-required: existing unversioned research data found at "
                 + ", ".join(str(path) for path in markers)
-                + "; run research-init before initialization"
+                + "; automatic migration is no longer supported"
             )
 
         self.root.mkdir(parents=True, exist_ok=True)
@@ -209,7 +204,7 @@ class ResearchPaths:
                     raise UpgradeRequired(
                         "upgrade-required: existing unversioned research data found at "
                         + str(self.root)
-                        + "; run research-init before initialization"
+                        + "; automatic migration is no longer supported"
                     )
             created = self._create_layout()
             if existing_version is None:
@@ -219,43 +214,6 @@ class ResearchPaths:
                 )
                 created.append(self.version_file)
             return created
-        finally:
-            fcntl.flock(directory_fd, fcntl.LOCK_UN)
-            os.close(directory_fd)
-
-    def prepare_migration(self) -> list[Path]:
-        """Create an unversioned staging layout for explicit migration only.
-
-        This intentionally leaves VERSION absent.  Consequently every normal
-        state writer continues to fail closed until the migration command has
-        completed its import, run-copy, and parity gates.
-        """
-        self.root.mkdir(parents=True, exist_ok=True)
-        directory_fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            fcntl.flock(directory_fd, fcntl.LOCK_EX)
-            # Existing versions are validated here; unknown or future versions
-            # must never be treated as migration staging.
-            self.load_version()
-            return self._create_layout()
-        finally:
-            fcntl.flock(directory_fd, fcntl.LOCK_UN)
-            os.close(directory_fd)
-
-    def finalize_migration(self) -> bool:
-        """Atomically publish CURRENT_VERSION after external gates pass."""
-        self.root.mkdir(parents=True, exist_ok=True)
-        directory_fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            fcntl.flock(directory_fd, fcntl.LOCK_EX)
-            existing_version = self.load_version()
-            if existing_version is not None:
-                return False
-            write_bytes_atomic(
-                self.version_file,
-                f"{CURRENT_VERSION}\n".encode("utf-8"),
-            )
-            return True
         finally:
             fcntl.flock(directory_fd, fcntl.LOCK_UN)
             os.close(directory_fd)

@@ -56,8 +56,8 @@ def _require_safe_workspace(paths: ResearchPaths) -> None:
     markers = paths.legacy_markers()
     if markers:
         raise UpgradeRequired(
-            "upgrade-required: legacy research data exists; run the explicit "
-            "research migration before onboarding"
+            "upgrade-required: legacy research data is unsupported; preserve "
+            "and resolve it manually before onboarding"
         )
     raise UpgradeRequired(
         "setup-required: ARC is not initialized; run research-init before onboarding"

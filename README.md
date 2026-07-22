@@ -62,7 +62,6 @@ ARC manages one versioned root per research workspace:
 |   |-- research.sqlite3              # transactional management authority
 |   |-- events.jsonl
 |   |-- current.json
-|   |-- migration.json                 # present after an explicit migration
 |   `-- notes/<sha256>.md
 |-- audit/
 |   `-- actions.jsonl
@@ -127,7 +126,7 @@ managed tree must live elsewhere:
 export RESEARCH_ROOT=/data/my-project/.research
 ```
 
-Every state, audit, experiment, migration, query, and interface command resolves
+Every state, audit, experiment, query, and interface command resolves
 the same root. There is no second runtime-data root.
 Process-local server metadata is not persisted research data.
 
@@ -159,7 +158,7 @@ two competing objects.
 
 Give the agent two things: the target workspace and whether the setup is for
 Codex, Claude Code, or both. `research-init` inspects first, preserves existing
-project instructions, initializes or migrates the managed root, installs the
+project instructions, initializes the managed root, installs the
 skills, builds the interface, and starts the Dashboard Server by default.
 
 ### 1. Bootstrap `research-init` once
@@ -196,8 +195,8 @@ For Claude Code:
 Use /research-init to set up /path/to/my-research-project for Claude Code.
 ```
 
-The agent first reports whether the workspace is `ABSENT`, `LEGACY`,
-`MIGRATION_STAGED`, `CURRENT`, or `INVALID`. Normal greenfield setup then runs:
+The agent first reports whether the workspace is `ABSENT`, `CURRENT`, or
+`INVALID`. Greenfield setup then runs:
 
 ```bash
 python3 "$HOME/.agents/skills/research-init/scripts/research_init.py" \
@@ -216,13 +215,13 @@ explicitly requested headless or CI setup.
 - Existing unmarked `AGENTS.md` or `CLAUDE.md`: inspect the proposed managed
   block, approve the merge, then rerun with `--merge-protocols`. Existing text
   stays intact.
-- Legacy `research_html/` or `outputs/`: inspect the inventory, make a
-  recoverable backup, then run `migrate --backup-confirmed`. Migration never
-  deletes the legacy roots.
+- Legacy `research_html/`, `outputs/`, or an unversioned managed root: stop.
+  Automatic migration is unsupported; preserve the data and resolve it manually
+  before a fresh setup.
 - External `RESEARCH_ROOT`: confirm the resolved path, then use
   `--allow-external-research-root`.
-- `INVALID`: stop and repair the unknown version or unversioned root conflict;
-  setup does not guess.
+- `INVALID`: stop. Preserve legacy data; repair an unknown version or
+  unversioned root explicitly. Setup does not guess.
 
 ### 4. Read the completion report
 
@@ -389,13 +388,12 @@ Use the smallest layer that matches the change:
 python3 -m pytest -q -m core
 python3 -m pytest -q -m integration
 python3 -m pytest -q -m projection
-python3 -m pytest -q -m migration
 python3 -m pytest -q -m release
 ```
 
 `core` covers the main Project, Brainstorm, Package, Scope Bundle, Execution
-Lease, and transactional safety paths. Projection, migration, and broad static
-parity checks stay outside the normal inner loop. A full release run still uses
+Lease, and transactional safety paths. Projection and broad static parity
+checks stay outside the normal inner loop. A full release run still uses
 `python3 -m pytest -q`.
 
 This boundary keeps the browser optimized for human comprehension while the
@@ -419,7 +417,7 @@ knowledge.
 
 | Capability | Primary skill | Durable result |
 | --- | --- | --- |
-| Set up, attach, migrate, or repair ARC | `research-init` | Verified setup plus a running Dashboard Server |
+| Set up, attach, or repair ARC | `research-init` | Verified setup plus a running Dashboard Server |
 | Rebuild or inspect the human view | `research-dashboard` | `.research/interface/` |
 | Establish the first Project objective | `research-onboard` | Project review, then one `PROJECT_COMMIT` transaction |
 | Explore an uncommitted idea | `research-brainstorm` | Standalone Brainstorm and governed document |
@@ -435,8 +433,8 @@ knowledge.
 ## Status
 
 The versioned transaction kernel, semantic review gates, package workflow,
-immutable Run envelope, result verification, governed learning store, migration
-path, and generated multi-page interface are implemented in this toolbox.
+immutable Run envelope, result verification, governed learning store, and
+generated multi-page interface are implemented in this toolbox.
 
 ## Acknowledgements
 

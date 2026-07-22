@@ -66,11 +66,11 @@ def _management_state(paths: ResearchPaths) -> dict[str, Any]:
         markers = paths.legacy_markers()
         if markers:
             raise UpgradeRequired(
-                "upgrade-required: Context Pack queries require migrated research state; "
-                f"legacy stores remain at {', '.join(str(path) for path in markers)}"
+                "upgrade-required: legacy research state is unsupported; "
+                f"preserve and resolve {', '.join(str(path) for path in markers)} manually"
             )
         raise UpgradeRequired(
-            f"research state is not initialized at {paths.root}; initialize or migrate it first"
+            f"research state is not initialized at {paths.root}; run research-init first"
         )
     return EventStore(paths).state()
 

@@ -124,7 +124,7 @@ def test_typed_agent_slices_are_stamped_and_exclude_unrelated_state(
 ) -> None:
     paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
     EventStore(paths).initialize()
-    store = EventStore(paths, migration_mode=True)
+    store = EventStore(paths, fixture_mode=True)
     _upsert(
         store,
         "project",

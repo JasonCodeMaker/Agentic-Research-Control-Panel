@@ -66,10 +66,10 @@ def _write_json(root: Path, relative: str, value: Any) -> Path:
 
 
 def _rewrite_static_asset(relative: Path, text: str) -> str:
-    """Normalize path text in imported legacy NoteRefs only.
+    """Normalize path text in retained imported NoteRefs only.
 
     Bundled assets are already canonical.  Keeping this idempotent adapter
-    allows migrated HTML notes to render without becoming an authority source.
+    allows historical HTML notes to render without becoming an authority source.
     """
     text = text.replace(
         "python research_html/scripts/serve_dashboard.py ensure --json",
@@ -132,7 +132,7 @@ def _rewrite_static_asset(relative: Path, text: str) -> str:
             ".research/state/events.jsonl.",
         )
 
-    # Filesystem path text is the only broad migration expected-diff class.
+    # Filesystem path text is the only broad imported-note expected-diff class.
     text = text.replace("/research_html/", "/")
     text = text.replace("research_html/", ".research/interface/")
     text = text.replace("outputs/", ".research/experiments/")
@@ -288,19 +288,14 @@ def _build_interface_unlocked(
     *,
     bundle: Path = DASHBOARD_BUNDLE,
     package_templates: Path = PACKAGE_TEMPLATES,
-    allow_unversioned_migration: bool = False,
 ) -> BuildResult:
     """Build a complete projection and swap it into place in one rename step."""
-    unversioned = paths.load_version() is None
-    if unversioned and not allow_unversioned_migration:
+    if paths.load_version() is None:
         raise UpgradeRequired(
             f"upgrade-required: {paths.version_file} is missing; initialize a new "
-            "workspace or run research-init before building the interface"
+            "workspace with research-init before building the interface"
         )
-    # This escape hatch is deliberately explicit and read-only.  It exists
-    # solely so the migration command can prove that the interface is
-    # rebuildable before VERSION publishes the staged state.
-    state = EventStore(paths, migration_mode=unversioned).state()
+    state = EventStore(paths).state()
     packages = package_view_models(state)
     brainstorms = brainstorm_views(state)
     self_evolution = self_evolution_projection(
@@ -329,7 +324,7 @@ def _build_interface_unlocked(
                     f"brainstorm {record.get('id')!r} has malformed detail_note"
                 )
             if isinstance(detail_note, Mapping):
-                # Compatibility path for migrated, self-contained legacy pages.
+                # Compatibility path for retained, self-contained imported pages.
                 text = read_note_text(paths, detail_note)
             else:
                 document_note = record.get("document_note")
@@ -392,7 +387,6 @@ def build_interface(
     *,
     bundle: Path = DASHBOARD_BUNDLE,
     package_templates: Path = PACKAGE_TEMPLATES,
-    allow_unversioned_migration: bool = False,
 ) -> BuildResult:
     """Build and publish the latest complete interface projection."""
     with _interface_projection_lock(paths):
@@ -400,5 +394,4 @@ def build_interface(
             paths,
             bundle=bundle,
             package_templates=package_templates,
-            allow_unversioned_migration=allow_unversioned_migration,
         )

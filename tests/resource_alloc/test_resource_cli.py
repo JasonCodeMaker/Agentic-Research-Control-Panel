@@ -22,7 +22,7 @@ def _run(tmp_path, *args, stdin=None):
 def _seed_experiment(tmp_path):
     store = EventStore(
         ResearchPaths(workspace=tmp_path.parent, root=tmp_path),
-        migration_mode=True,
+        fixture_mode=True,
     )
     for aggregate_type, aggregate_id, record in (
         (
