@@ -15,6 +15,7 @@ from .schema import (
     validate_aggregate_record,
     validate_event_shape,
 )
+from .transaction import TransactionViolation, apply_transaction
 
 
 class EventIntegrityError(ValueError):
@@ -46,6 +47,19 @@ EXPERIMENT_STATUS_PATCH_FIELDS = {
     "stale_direction_version",
     "status",
     "status_before_scope_stale",
+}
+PACKAGE_LOCAL_EXPERIMENT_FIELDS = {
+    "after",
+    "complex",
+    "docsAnchor",
+    "label",
+    "local_id",
+    "measures",
+    "output",
+    "requiresCode",
+    "resultSchema",
+    "resultSchemaRef",
+    "runLink",
 }
 
 
@@ -187,6 +201,94 @@ def _experiment_unbindings(payload: dict[str, Any]) -> list[dict[str, Any]]:
         seen.add(aggregate_id)
         normalized.append(copy.deepcopy(unbinding))
     return normalized
+
+
+def _experiment_restorations(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Validate Experiment records restored by cancelling an unchanged reopen."""
+    restorations = payload.get("experiment_restorations")
+    if not isinstance(restorations, list) or not restorations:
+        raise EventIntegrityError(
+            "Package reopen reactivation requires experiment_restorations"
+        )
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    required = {
+        "aggregate_id",
+        "expected_version",
+        "aggregate_version",
+        "record",
+    }
+    for restoration in restorations:
+        if not isinstance(restoration, dict) or set(restoration) != required:
+            raise EventIntegrityError(
+                "experiment restoration must contain aggregate_id, "
+                "expected_version, aggregate_version, and record"
+            )
+        aggregate_id = restoration.get("aggregate_id")
+        expected_version = restoration.get("expected_version")
+        aggregate_version = restoration.get("aggregate_version")
+        record = restoration.get("record")
+        if not isinstance(aggregate_id, str) or not aggregate_id:
+            raise EventIntegrityError(
+                "experiment restoration aggregate_id is required"
+            )
+        if aggregate_id in seen:
+            raise EventIntegrityError(
+                f"duplicate experiment restoration: {aggregate_id}"
+            )
+        if (
+            isinstance(expected_version, bool)
+            or not isinstance(expected_version, int)
+            or expected_version < 1
+            or isinstance(aggregate_version, bool)
+            or not isinstance(aggregate_version, int)
+            or aggregate_version != expected_version + 1
+        ):
+            raise EventIntegrityError(
+                f"experiment restoration has invalid version edge: {aggregate_id}"
+            )
+        if not isinstance(record, dict) or record.get("id") != aggregate_id:
+            raise EventIntegrityError(
+                f"experiment restoration requires the full prior record: {aggregate_id}"
+            )
+        seen.add(aggregate_id)
+        normalized.append(copy.deepcopy(restoration))
+    return normalized
+
+
+def _reopen_reactivation(payload: dict[str, Any]) -> dict[str, Any] | None:
+    value = payload.get("reopen_reactivation")
+    if value is None:
+        return None
+    required = {"reopen_event_id", "source_package", "prior_package_version"}
+    if not isinstance(value, dict) or set(value) != required:
+        raise EventIntegrityError(
+            "reopen_reactivation must contain reopen_event_id, source_package, "
+            "and prior_package_version"
+        )
+    if not isinstance(value.get("reopen_event_id"), str) or not value[
+        "reopen_event_id"
+    ]:
+        raise EventIntegrityError("reopen_reactivation reopen_event_id is required")
+    prior_version = value.get("prior_package_version")
+    if (
+        isinstance(prior_version, bool)
+        or not isinstance(prior_version, int)
+        or prior_version < 1
+    ):
+        raise EventIntegrityError(
+            "reopen_reactivation prior_package_version must be positive"
+        )
+    source = value.get("source_package")
+    if not isinstance(source, dict) or set(source) != {
+        "id",
+        "draft_revision",
+        "document_sha256",
+    }:
+        raise EventIntegrityError(
+            "reopen_reactivation source_package is malformed"
+        )
+    return copy.deepcopy(value)
 
 
 def _brainstorm_consumptions(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -392,13 +494,86 @@ def _apply_experiment_unbindings(
         state["aggregate_versions"][key] = unbinding["aggregate_version"]
 
 
+def _detached_reopen_projection(record: dict[str, Any]) -> dict[str, Any]:
+    """Reproduce the exact Experiment projection written by a reopen event."""
+    detached = copy.deepcopy(record)
+    for field in PACKAGE_LOCAL_EXPERIMENT_FIELDS:
+        detached.pop(field, None)
+    prior_status = detached.get("status")
+    if prior_status == "BLOCKED":
+        prior_status = detached.get("status_before_scope_stale") or "PLANNED"
+    detached["package_id"] = None
+    detached["status_before_scope_stale"] = prior_status
+    detached["status"] = "BLOCKED"
+    detached["scope_confirmation"] = "STALE"
+    if isinstance(detached.get("confirmed_direction_version"), int):
+        detached["stale_direction_version"] = detached[
+            "confirmed_direction_version"
+        ]
+    return detached
+
+
+def _apply_experiment_restorations(
+    state: dict[str, Any],
+    payload: dict[str, Any],
+    *,
+    package_id: str,
+    direction_id: str,
+    direction_version: int,
+) -> None:
+    """Restore only the exact Experiment records detached by an unchanged reopen."""
+    bucket = state["aggregates"]["experiment"]
+    local_owners: dict[str, str] = {}
+    for restoration in _experiment_restorations(payload):
+        aggregate_id = restoration["aggregate_id"]
+        key = f"experiment/{aggregate_id}"
+        current_version = int(state["aggregate_versions"].get(key, 0))
+        if current_version != restoration["expected_version"]:
+            raise EventIntegrityError(
+                f"{key} participant version must be "
+                f"{restoration['expected_version']}, got {current_version}"
+            )
+        current = bucket.get(aggregate_id)
+        restored = copy.deepcopy(restoration["record"])
+        if not isinstance(current, dict) or current != _detached_reopen_projection(
+            restored
+        ):
+            raise EventIntegrityError(
+                f"Experiment changed after Package reopen: {aggregate_id}"
+            )
+        if (
+            restored.get("package_id") != package_id
+            or restored.get("direction_id") != direction_id
+            or restored.get("scope_confirmation") != "CONFIRMED"
+            or restored.get("scope_status") != "ACTIVE"
+            or restored.get("confirmed_direction_version") != direction_version
+        ):
+            raise EventIntegrityError(
+                f"Experiment restoration does not match active Scope: {aggregate_id}"
+            )
+        local_id = restored.get("local_id")
+        if not isinstance(local_id, str) or not local_id:
+            raise EventIntegrityError(
+                f"Experiment restoration requires local_id: {aggregate_id}"
+            )
+        owner = local_owners.get(local_id)
+        if owner is not None and owner != aggregate_id:
+            raise EventIntegrityError(
+                f"duplicate restored local Experiment id in {package_id}: {local_id}"
+            )
+        local_owners[local_id] = aggregate_id
+        validate_aggregate_record("experiment", restored)
+        bucket[aggregate_id] = restored
+        state["aggregate_versions"][key] = restoration["aggregate_version"]
+
+
 def _apply_brainstorm_consumptions(
     state: dict[str, Any],
     payload: dict[str, Any],
     *,
     package: dict[str, Any],
 ) -> None:
-    """Move active Brainstorm documents into one Package and remove the drafts."""
+    """Bind exact Brainstorm documents to a Package without deleting history."""
     consumptions = _brainstorm_consumptions(payload)
     if not consumptions:
         return
@@ -444,7 +619,10 @@ def _apply_brainstorm_consumptions(
             raise EventIntegrityError(
                 f"Package does not own the transferred Brainstorm document: {aggregate_id}"
             )
-        bucket.pop(aggregate_id)
+        materialized = copy.deepcopy(current)
+        materialized["status"] = "MATERIALIZED"
+        materialized["materialized_as"] = package.get("id")
+        bucket[aggregate_id] = materialized
 
 
 def _scope_finalization(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -786,7 +964,19 @@ def apply_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
     event_type = event["event_type"]
     bucket = out["aggregates"][aggregate_type]
 
-    if event_type in {"AggregateImported", "AggregateUpserted", "ScopeCommitted"}:
+    if event_type == "TransactionCommitted":
+        try:
+            apply_transaction(
+                out,
+                payload,
+                actor=event["actor"],
+                aggregate_type=aggregate_type,
+                aggregate_id=aggregate_id,
+                aggregate_version=event["aggregate_version"],
+            )
+        except TransactionViolation as exc:
+            raise EventIntegrityError(str(exc)) from exc
+    elif event_type in {"AggregateImported", "AggregateUpserted", "ScopeCommitted"}:
         record = _record(payload)
         record.setdefault("id", aggregate_id)
         bucket[aggregate_id] = record
@@ -856,10 +1046,6 @@ def apply_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
                     raise EventIntegrityError(
                         "normal Draft Package conversion consumes exactly one Brainstorm"
                     )
-                if event.get("actor", {}).get("type") != "user":
-                    raise EventIntegrityError(
-                        "Brainstorm conversion requires a user-owned PackageDraftCreated event"
-                    )
             if aggregate_id in bucket:
                 raise EventIntegrityError(f"package already exists: {aggregate_id}")
             record = _record(payload)
@@ -897,6 +1083,11 @@ def apply_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
                 f"PackageActivated requires an existing Draft Package: {aggregate_id}"
             )
         finalization = _scope_finalization(payload)
+        reactivation = _reopen_reactivation(payload)
+        if finalization is not None and reactivation is not None:
+            raise EventIntegrityError(
+                "PackageActivated cannot combine Scope finalization with reopen reactivation"
+            )
         if finalization is not None:
             if event_type != "PackageActivated" or event.get("actor", {}).get(
                 "type"
@@ -910,6 +1101,28 @@ def apply_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
                 package_id=aggregate_id,
                 current_draft=current_package,
             )
+        if reactivation is not None:
+            current_version = int(
+                out["aggregate_versions"].get(f"package/{aggregate_id}", 0)
+            )
+            note = current_package.get("document_note")
+            expected_source = {
+                "id": aggregate_id,
+                "draft_revision": current_package.get("draftRevision"),
+                "document_sha256": (
+                    note.get("sha256") if isinstance(note, dict) else None
+                ),
+            }
+            if (
+                event_type != "PackageActivated"
+                or event.get("actor", {}).get("type") != "user"
+                or event.get("causation_id") != reactivation["reopen_event_id"]
+                or current_version != reactivation["prior_package_version"] + 1
+                or reactivation["source_package"] != expected_source
+            ):
+                raise EventIntegrityError(
+                    "reopen reactivation requires the unchanged user-owned Draft and causal reopen event"
+                )
         record = _record(payload)
         if record.get("id", aggregate_id) != aggregate_id:
             raise EventIntegrityError(
@@ -932,10 +1145,43 @@ def apply_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
                 raise EventIntegrityError(
                     "scope_finalization must activate the exact finalized Draft at ACTIVE/CONTEXT_LOADED"
                 )
-        binding_ids = {
-            binding["aggregate_id"]
-            for binding in _experiment_bindings(payload)
-        }
+        if reactivation is not None:
+            scope_binding = record.get("scopeBinding")
+            direction_id = record.get("direction_id")
+            direction_version = record.get("sourceVersion")
+            direction = out["aggregates"]["direction"].get(direction_id)
+            restorations = _experiment_restorations(payload)
+            participant_ids = [
+                restoration["aggregate_id"] for restoration in restorations
+            ]
+            if (
+                record.get("lifecycle") != "ACTIVE"
+                or record.get("phase") != "CONTEXT_LOADED"
+                or record.get("executionAuthorized") is not True
+                or record.get("draftStatus") != "SCOPE_READY"
+                or record.get("documentPath")
+                != current_package.get("documentPath")
+                or record.get("document_note")
+                != current_package.get("document_note")
+                or not isinstance(scope_binding, dict)
+                or scope_binding.get("source_package")
+                != reactivation["source_package"]
+                or scope_binding.get("direction_id") != direction_id
+                or scope_binding.get("direction_version") != direction_version
+                or scope_binding.get("experiment_ids") != participant_ids
+                or not isinstance(direction, dict)
+                or direction.get("status") != "ACTIVE"
+                or direction.get("version") != direction_version
+            ):
+                raise EventIntegrityError(
+                    "reopen reactivation must restore the unchanged Draft against its active Scope"
+                )
+            binding_ids = set(participant_ids)
+        else:
+            binding_ids = {
+                binding["aggregate_id"]
+                for binding in _experiment_bindings(payload)
+            }
         provenance = record.get("sourceExperiments")
         provenance_ids = {
             item.get("id")
@@ -948,10 +1194,19 @@ def apply_event(state: dict[str, Any], event: dict[str, Any]) -> dict[str, Any]:
             or len(provenance_ids) != len(provenance)
         ):
             raise EventIntegrityError(
-                "Package sourceExperiments must match experiment bindings exactly"
+                "Package sourceExperiments must match Experiment participants exactly"
             )
         bucket[aggregate_id] = record
-        _apply_experiment_bindings(out, payload, package_id=aggregate_id)
+        if reactivation is not None:
+            _apply_experiment_restorations(
+                out,
+                payload,
+                package_id=aggregate_id,
+                direction_id=str(record["direction_id"]),
+                direction_version=int(record["sourceVersion"]),
+            )
+        else:
+            _apply_experiment_bindings(out, payload, package_id=aggregate_id)
         _apply_brainstorm_consumptions(
             out,
             payload,
@@ -1212,6 +1467,27 @@ def fold(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
             )
         state = apply_event(state, event)
         versions[key] = expected_version
+        if event["event_type"] == "TransactionCommitted":
+            participants = event["payload"].get("participants", [])
+            for participant in participants:
+                participant_key = (
+                    f"{participant['aggregate_type']}/{participant['aggregate_id']}"
+                )
+                if participant_key == key:
+                    if participant["aggregate_version"] != expected_version:
+                        raise EventIntegrityError(
+                            "transaction owner participant version does not match "
+                            "the event envelope"
+                        )
+                    continue
+                participant_expected = versions.get(participant_key, 0) + 1
+                if participant["aggregate_version"] != participant_expected:
+                    raise EventIntegrityError(
+                        f"{participant_key} aggregate_version must be "
+                        f"{participant_expected}, got "
+                        f"{participant['aggregate_version']!r}"
+                    )
+                versions[participant_key] = participant_expected
         if event["event_type"] == "PackageActivated":
             finalization = _scope_finalization(event["payload"])
             if finalization is not None:
@@ -1236,11 +1512,15 @@ def fold(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
             "PackageExperimentBound",
             "PackageReopenedAsDraft",
         }:
-            participants = (
-                _experiment_unbindings(event["payload"])
-                if event["event_type"] == "PackageReopenedAsDraft"
-                else _experiment_bindings(event["payload"])
-            )
+            if event["event_type"] == "PackageReopenedAsDraft":
+                participants = _experiment_unbindings(event["payload"])
+            elif (
+                event["event_type"] == "PackageActivated"
+                and _reopen_reactivation(event["payload"]) is not None
+            ):
+                participants = _experiment_restorations(event["payload"])
+            else:
+                participants = _experiment_bindings(event["payload"])
             for binding in participants:
                 participant_key = f"experiment/{binding['aggregate_id']}"
                 participant_expected = versions.get(participant_key, 0) + 1

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+from lib.interface.serve import ensure_interface_current
 from lib.research_state import EventStore, ResearchPaths
 
 
@@ -50,15 +51,18 @@ def _package(tmp_path: Path) -> ResearchPaths:
     return paths
 
 
-def test_init_updates_state_and_rebuilds_interface(tmp_path: Path) -> None:
+def test_init_updates_state_and_leaves_interface_lazy(tmp_path: Path) -> None:
     paths = _package(tmp_path)
 
     result = init_analysis_page.enable_analysis(paths, "pkg")
 
     package = EventStore(paths).state()["aggregates"]["package"]["pkg"]
     assert result["changed"] is True
-    assert result["interface_written"] is True
+    assert result["interface_written"] is False
+    assert result["interface_stale"] is True
     assert "analysis" in package["pages"]
+    assert not (paths.interface / "packages/pkg/analysis.html").exists()
+    ensure_interface_current(paths)
     assert (paths.interface / "packages/pkg/analysis.html").is_file()
 
 

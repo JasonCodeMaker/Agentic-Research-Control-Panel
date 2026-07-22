@@ -163,7 +163,7 @@ def test_authorization_rejects_before_run_or_directory_write(
         for row in read_jsonl(paths.audit_actions)
         if row.get("aggregate_id") == "rejected"
     ]
-    assert outcomes == ["COMMAND_RECEIVED", "COMMAND_REJECTED"]
+    assert outcomes == ["COMMAND_REJECTED"]
 
 
 def test_cuda_launch_requires_matching_open_allocation(tmp_path):
@@ -270,6 +270,44 @@ def test_authorized_envelope_binds_ack_and_structured_spec(tmp_path):
     assert run["context_source_seq"] == prepared.context["source_seq"]
     assert run["context_source_hash"] == prepared.context["source_hash"]
     assert store.state()["aggregates"]["run"]["authorized"]["status"] == "QUEUED"
+
+
+def test_scope_execution_lease_replaces_per_launch_user_ack(tmp_path):
+    paths, store = _seed(tmp_path, ack=False)
+    digest = "a" * 64
+    store.commit(
+        event_type="AggregatePatched",
+        aggregate_type="package",
+        aggregate_id="pkg",
+        payload={
+            "patch": {
+                "executionAuthorized": True,
+                "executionLease": {
+                    "status": "OPEN",
+                    "scope_sha256": digest,
+                    "package_revision": 1,
+                    "experiment_ids": ["pkg::P1"],
+                    "grants": ["IMPLEMENT", "LAUNCH", "RECORD_RESULTS"],
+                },
+            }
+        },
+        actor=USER,
+        idempotency_key="seed-scope-lease",
+    )
+
+    prepared = prepare_run(
+        paths=paths,
+        package_id="pkg",
+        experiment_id="P1",
+        run_id="lease-authorized",
+        command=["true"],
+        cwd=tmp_path,
+        environment={},
+    )
+
+    run = json.loads(prepared.run_path.read_text(encoding="utf-8"))
+    assert run["launch_ack_decision_id"] == f"lease:{digest}"
+    assert store.state()["aggregates"]["decision"] == {}
 
 
 def test_caller_cannot_replace_authoritative_launch_context(tmp_path):

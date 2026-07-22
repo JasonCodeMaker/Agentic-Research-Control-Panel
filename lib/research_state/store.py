@@ -13,6 +13,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+from .database import (
+    DatabaseBusy,
+    StateDatabase,
+    bootstrap_database,
+)
 from .io import (
     append_jsonl_fsync,
     canonical_json,
@@ -22,8 +27,8 @@ from .io import (
     write_json_atomic,
 )
 from .paths import ResearchPaths, UpgradeRequired
-from .reducer import EventIntegrityError, event_hash, fold
-from .schema import SchemaViolation, load_schema
+from .reducer import EventIntegrityError, apply_event, event_hash, fold
+from .schema import SchemaViolation, load_schema, validate_event_shape
 
 
 class LockBusy(RuntimeError):
@@ -429,23 +434,53 @@ class EventStore:
     def __init__(self, paths: ResearchPaths, *, migration_mode: bool = False):
         self.paths = paths
         self.migration_mode = migration_mode
+        self.database = StateDatabase(paths.database)
 
     def initialize(self) -> list[Path]:
         if self.migration_mode:
             created = self.paths.prepare_migration()
         else:
             created = self.paths.initialize()
-        # ``current.json`` is a disposable projection, never an empty-state
-        # initializer.  Recreate it from the authoritative event log while
-        # holding the same lock used by commits so initialization cannot
-        # overwrite a concurrently advanced projection.
+        # Bootstrap the transactional authority from a pre-kernel JSONL ledger
+        # once. JSONL and current.json remain rebuildable compatibility exports.
         with management_lock(self.paths.state_lock):
+            database_created = bootstrap_database(
+                self.database,
+                events_path=self.paths.events,
+                audit_path=self.paths.audit_actions,
+            )
+            if database_created:
+                created.append(self.paths.database)
+            state = self.database.state()
+            if state.get("source_seq") and not self.paths.events.exists():
+                write_bytes_atomic(
+                    self.paths.events,
+                    self._jsonl_bytes(self.database.events()),
+                )
+                created.append(self.paths.events)
             if not self.paths.current.exists():
-                write_json_atomic(self.paths.current, fold(self.events()))
+                write_json_atomic(self.paths.current, state)
                 created.append(self.paths.current)
+            else:
+                current = read_json(self.paths.current)
+                if (
+                    current.get("source_seq") != state.get("source_seq")
+                    or current.get("source_hash") != state.get("source_hash")
+                ):
+                    # A prior command committed in SQLite but did not finish
+                    # its rebuildable exports. Repair once on the next entry.
+                    self._sync_compatibility_exports()
+            if not self.paths.audit_actions.exists() and self.database.audit():
+                write_bytes_atomic(
+                    self.paths.audit_actions,
+                    self._jsonl_bytes(self.database.audit()),
+                )
+                created.append(self.paths.audit_actions)
         return created
 
     def events(self) -> list[dict[str, Any]]:
+        if self.paths.database.exists():
+            return self.database.events()
         return read_jsonl(self.paths.events)
 
     def snapshot(
@@ -454,32 +489,63 @@ class EventStore:
         verify_projection: bool = True,
         include_audit: bool = False,
     ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
-        """Read state, events, and optional audit under one writer lock."""
+        """Read one transactional snapshot and optionally verify JSON exports."""
         if self.paths.load_version() is None and not self.migration_mode:
             raise UpgradeRequired(
                 f"research state is not initialized at {self.paths.root}; "
                 "initialize a new workspace or run the explicit migration"
             )
         with management_lock(self.paths.state_lock):
-            events = self.events()
-            authoritative = fold(events)
+            authoritative, events, audit = self.database.snapshot(
+                include_audit=include_audit,
+            )
+            if verify_projection and self.paths.events.exists():
+                exported_events = read_jsonl(self.paths.events)
+                if exported_events != events:
+                    # Replay only a drifting export. Normal reads are O(1) in
+                    # state size and never refold the complete ledger.
+                    fold(exported_events)
+                    raise CommandRejected(
+                        "event-export-drift",
+                        f"{self.paths.events} does not match {self.paths.database}",
+                    )
             if self.paths.current.exists():
                 projection = read_json(self.paths.current)
                 if verify_projection and projection != authoritative:
                     raise CommandRejected(
                         "projection-drift",
-                        f"{self.paths.current} does not equal a fold of "
-                        f"{self.paths.events}",
+                        f"{self.paths.current} does not match "
+                        f"{self.paths.database}",
                     )
                 state = projection
             else:
                 state = authoritative
-            audit = read_jsonl(self.paths.audit_actions) if include_audit else []
         return state, events, audit
 
     def state(self, *, verify_projection: bool = True) -> dict[str, Any]:
-        state, _, _ = self.snapshot(verify_projection=verify_projection)
-        return state
+        """Read current authority without loading or replaying event history.
+
+        The event ledger is verified by ``snapshot`` and ``recover`` when an
+        audit-strength read is requested. Normal commands and projections only
+        need the transactional current state, so their cost does not grow with
+        the number of prior events.
+        """
+        if self.paths.load_version() is None and not self.migration_mode:
+            raise UpgradeRequired(
+                f"research state is not initialized at {self.paths.root}; "
+                "initialize a new workspace or run the explicit migration"
+            )
+        with management_lock(self.paths.state_lock):
+            authoritative = self.database.state()
+            if verify_projection and self.paths.current.exists():
+                projection = read_json(self.paths.current)
+                if projection != authoritative:
+                    raise CommandRejected(
+                        "projection-drift",
+                        f"{self.paths.current} does not match "
+                        f"{self.paths.database}",
+                    )
+        return authoritative
 
     def commit(
         self,
@@ -506,25 +572,25 @@ class EventStore:
         projection_before_version: int | None = None
         projection_after_version: int | None = None
         with management_lock(self.paths.state_lock, timeout=lock_timeout):
-            events = self.events()
-            before = fold(events)
+            before = self.database.state()
             before_version = int(
                 before["aggregate_versions"].get(f"{aggregate_type}/{aggregate_id}", 0)
             )
-            self._audit(
-                outcome="COMMAND_RECEIVED",
-                command_id=command_id,
-                idempotency_key=idempotency_key,
-                event_type=event_type,
-                aggregate_type=aggregate_type,
-                aggregate_id=aggregate_id,
-                actor=actor,
-                entry_skill=entry_skill,
-                payload=payload,
-                state_before_version=before_version,
-                state_after_version=before_version,
-                duration_ms=0,
+            prior = (
+                self.database.event_by_idempotency_key(idempotency_key)
+                if isinstance(idempotency_key, str) and idempotency_key
+                else None
             )
+            needs_history = (
+                event_type in SCOPE_COMMIT_EVENTS
+                or event_type == "ExperimentStatusChanged"
+                or (
+                    event_type == "PackageActivated"
+                    and isinstance(payload, dict)
+                    and "reopen_reactivation" in payload
+                )
+            )
+            events = self.events() if needs_history else []
 
             command_error: CommandRejected | None = None
             if not isinstance(idempotency_key, str) or not idempotency_key.strip():
@@ -598,7 +664,10 @@ class EventStore:
             elif (
                 event_type == "PackageActivated"
                 and isinstance(payload, dict)
-                and "scope_finalization" in payload
+                and (
+                    "scope_finalization" in payload
+                    or "reopen_reactivation" in payload
+                )
                 and (
                     not isinstance(actor, dict)
                     or actor.get("type") != "user"
@@ -606,20 +675,26 @@ class EventStore:
             ):
                 command_error = CommandRejected(
                     "package-finalization-user-required",
-                    "atomic Scope finalization requires an explicit user actor",
+                    "Package finalization or reopen reactivation requires an explicit user actor",
                 )
             elif (
-                event_type == "PackageDraftCreated"
+                event_type == "PackageActivated"
                 and isinstance(payload, dict)
-                and bool(payload.get("brainstorm_consumptions"))
+                and "reopen_reactivation" in payload
                 and (
-                    not isinstance(actor, dict)
-                    or actor.get("type") != "user"
+                    not isinstance(causation_id, str)
+                    or not any(
+                        event.get("event_id") == causation_id
+                        and event.get("event_type") == "PackageReopenedAsDraft"
+                        and event.get("aggregate_type") == "package"
+                        and event.get("aggregate_id") == aggregate_id
+                        for event in events
+                    )
                 )
             ):
                 command_error = CommandRejected(
-                    "brainstorm-conversion-user-required",
-                    "converting a Brainstorm to a Draft Package requires an explicit user actor",
+                    "package-reopen-causation-required",
+                    "reopen reactivation must name the PackageReopenedAsDraft event it reverses",
                 )
             elif aggregate_type not in load_schema()["aggregate_types"]:
                 command_error = CommandRejected(
@@ -628,10 +703,7 @@ class EventStore:
             elif (
                 event_type == "DecisionRecorded"
                 and before_version != 0
-                and not any(
-                    event.get("idempotency_key") == idempotency_key
-                    for event in events
-                )
+                and prior is None
             ):
                 command_error = CommandRejected(
                     "decision-immutable",
@@ -690,10 +762,6 @@ class EventStore:
                 command_error.audited = True
                 raise command_error
 
-            prior = next(
-                (event for event in events if event["idempotency_key"] == idempotency_key),
-                None,
-            )
             if prior is not None:
                 if (
                     prior["event_type"],
@@ -741,9 +809,7 @@ class EventStore:
                 projection_before_version = before_version
                 projection_after_version = before_version
             else:
-                if event_id is not None and any(
-                    existing["event_id"] == event_id for existing in events
-                ):
+                if event_id is not None and self.database.event_by_id(event_id) is not None:
                     detail = f"event_id is already present: {event_id}"
                     self._audit_rejected(
                         command_id,
@@ -832,7 +898,7 @@ class EventStore:
                     rejected.audited = True
                     raise rejected from exc
                 event = {
-                    "seq": len(events) + 1,
+                    "seq": int(before.get("source_seq", 0)) + 1,
                     "event_id": event_id or f"evt_{uuid.uuid4().hex}",
                     "schema_version": 1,
                     "event_type": event_type,
@@ -845,13 +911,18 @@ class EventStore:
                     "actor": actor,
                     "occurred_at": _now(),
                     "payload": copy.deepcopy(payload),
-                    "prev_hash": events[-1]["hash"] if events else "",
+                    "prev_hash": str(before.get("source_hash", "")),
                 }
                 event["hash"] = event_hash(event)
-                # Validate the complete prospective chain before the first
-                # authoritative write. Reducer errors are reject-before-write.
+                # Validate only the next transition against the transactional
+                # snapshot. Full replay remains an explicit integrity check.
                 try:
-                    after = fold([*events, event])
+                    validate_event_shape(event)
+                    if event["seq"] != int(before.get("source_seq", 0)) + 1:
+                        raise EventIntegrityError("event seq does not advance current state")
+                    if event["prev_hash"] != str(before.get("source_hash", "")):
+                        raise EventIntegrityError("event prev_hash does not match current state")
+                    after = apply_event(before, event)
                 except (EventIntegrityError, SchemaViolation) as exc:
                     self._audit_rejected(
                         command_id,
@@ -870,9 +941,7 @@ class EventStore:
                     rejected = CommandRejected("event-invalid", str(exc))
                     rejected.audited = True
                     raise rejected from exc
-                append_jsonl_fsync(self.paths.events, event)
-                write_json_atomic(self.paths.current, after)
-                self._audit(
+                audit_row = self._audit_row(
                     outcome="COMMAND_COMMITTED",
                     command_id=command_id,
                     idempotency_key=idempotency_key,
@@ -885,10 +954,19 @@ class EventStore:
                     state_before_version=before_version,
                     state_after_version=before_version + 1,
                     domain_event_id=event["event_id"],
-                    files_touched=[str(self.paths.events), str(self.paths.current)],
+                    files_touched=[str(self.paths.database)],
                     validation="PASSED",
                     duration_ms=int((time.monotonic() - started) * 1000),
                 )
+                try:
+                    self.database.apply_command(
+                        event=event,
+                        state=after,
+                        audit_row=audit_row,
+                    )
+                except DatabaseBusy as exc:
+                    raise LockBusy(str(exc)) from exc
+                self._sync_commit_exports(event, after, audit_row)
                 committed = event
                 projection_before_version = before_version
                 projection_after_version = before_version + 1
@@ -995,23 +1073,8 @@ class EventStore:
         )
         started = time.monotonic()
         with management_lock(self.paths.state_lock):
-            before = fold(self.events())
+            before = self.database.state()
             version = int(before.get("source_seq") or 0)
-            self._audit(
-                outcome="COMMAND_RECEIVED",
-                command_id=selected_command_id,
-                idempotency_key=selected_key,
-                event_type="CommandAttempted",
-                aggregate_type="command",
-                aggregate_id=command_name,
-                actor=actor,
-                entry_skill=entry_skill,
-                payload=payload,
-                state_before_version=version,
-                state_after_version=version,
-                validation="PENDING",
-                duration_ms=0,
-            )
             self._audit_rejected(
                 selected_command_id,
                 selected_key,
@@ -1054,11 +1117,6 @@ class EventStore:
         digest = _payload_digest(envelope)
         audit_id = f"aud_legacy_{digest[:24]}"
         with management_lock(self.paths.state_lock):
-            if any(
-                row.get("audit_id") == audit_id
-                for row in read_jsonl(self.paths.audit_actions)
-            ):
-                return False
             row = {
                 "audit_id": audit_id,
                 "occurred_at": record.get("ts") or _now(),
@@ -1067,62 +1125,22 @@ class EventStore:
                 "source": source,
                 "source_line": source_line,
             }
-            append_jsonl_fsync(self.paths.audit_actions, row)
-        return True
+            imported = self.database.import_audit(row)
+            if imported:
+                append_jsonl_fsync(self.paths.audit_actions, row)
+        return imported
 
     def recover(self, *, lease_seconds: float = 30.0) -> dict[str, int]:
+        """Verify SQLite authority and rebuild compatibility exports.
+
+        Atomic local commands no longer emit a pending audit row, so there are
+        no received-only attempts to reconcile. External work uses Run state.
+        """
         self.initialize()
-        recovered = interrupted = 0
         with management_lock(self.paths.state_lock):
-            events = self.events()
-            state = fold(events)
-            write_json_atomic(self.paths.current, state)
-            by_command = {event["command_id"]: event for event in events}
-            audit = read_jsonl(self.paths.audit_actions)
-            received: dict[str, dict[str, Any]] = {}
-            terminal: set[str] = set()
-            for row in audit:
-                command_id = row.get("command_id")
-                if row.get("outcome") == "COMMAND_RECEIVED":
-                    received[str(command_id)] = row
-                elif row.get("outcome") in {
-                    "COMMAND_COMMITTED",
-                    "COMMAND_REJECTED",
-                    "COMMAND_RECOVERED",
-                    "COMMAND_INTERRUPTED",
-                }:
-                    terminal.add(str(command_id))
-            now = time.time()
-            for command_id, row in received.items():
-                if command_id in terminal:
-                    continue
-                if now - _parse_time(row["occurred_at"]) < lease_seconds:
-                    continue
-                event = by_command.get(command_id)
-                outcome = "COMMAND_RECOVERED" if event else "COMMAND_INTERRUPTED"
-                self._audit(
-                    outcome=outcome,
-                    command_id=command_id,
-                    idempotency_key=str(row.get("idempotency_key", "")),
-                    event_type=str(row.get("event_type", "")),
-                    aggregate_type=str(row.get("aggregate_type", "")),
-                    aggregate_id=str(row.get("aggregate_id", "")),
-                    actor=row.get("actor") or {"type": "system", "id": "recovery"},
-                    entry_skill=row.get("entry_skill"),
-                    payload={},
-                    state_before_version=int(row.get("state_before_version", 0)),
-                    state_after_version=(
-                        int(event["aggregate_version"])
-                        if event
-                        else int(row.get("state_before_version", 0))
-                    ),
-                    domain_event_id=event.get("event_id") if event else None,
-                    validation="RECOVERED" if event else "INTERRUPTED",
-                    duration_ms=0,
-                )
-                recovered += int(event is not None)
-                interrupted += int(event is None)
-        return {"recovered": recovered, "interrupted": interrupted}
+            self.database.verify()
+            self._sync_compatibility_exports()
+        return {"recovered": 0, "interrupted": 0}
 
     def _audit_rejected(
         self,
@@ -1176,7 +1194,48 @@ class EventStore:
         rejection_reason: dict[str, Any] | None = None,
         files_touched: list[str] | None = None,
     ) -> None:
-        row = {
+        row = self._audit_row(
+            outcome=outcome,
+            command_id=command_id,
+            idempotency_key=idempotency_key,
+            event_type=event_type,
+            aggregate_type=aggregate_type,
+            aggregate_id=aggregate_id,
+            actor=actor,
+            entry_skill=entry_skill,
+            payload=payload,
+            state_before_version=state_before_version,
+            state_after_version=state_after_version,
+            duration_ms=duration_ms,
+            domain_event_id=domain_event_id,
+            validation=validation,
+            rejection_reason=rejection_reason,
+            files_touched=files_touched,
+        )
+        self.database.append_audit(row)
+        append_jsonl_fsync(self.paths.audit_actions, row)
+
+    def _audit_row(
+        self,
+        *,
+        outcome: str,
+        command_id: str,
+        idempotency_key: str,
+        event_type: str,
+        aggregate_type: str,
+        aggregate_id: str,
+        actor: dict[str, str],
+        entry_skill: str | None,
+        payload: dict[str, Any],
+        state_before_version: int,
+        state_after_version: int,
+        duration_ms: int,
+        domain_event_id: str | None = None,
+        validation: str | None = None,
+        rejection_reason: dict[str, Any] | None = None,
+        files_touched: list[str] | None = None,
+    ) -> dict[str, Any]:
+        return {
             "audit_id": f"aud_{uuid.uuid4().hex}",
             "occurred_at": _now(),
             "outcome": outcome,
@@ -1201,4 +1260,35 @@ class EventStore:
             "files_touched": files_touched or [],
             "duration_ms": duration_ms,
         }
-        append_jsonl_fsync(self.paths.audit_actions, row)
+
+    @staticmethod
+    def _jsonl_bytes(rows: list[dict[str, Any]]) -> bytes:
+        if not rows:
+            return b""
+        return ("\n".join(canonical_json(row) for row in rows) + "\n").encode(
+            "utf-8"
+        )
+
+    def _sync_audit_export(self) -> None:
+        rows = self.database.audit()
+        if rows:
+            write_bytes_atomic(self.paths.audit_actions, self._jsonl_bytes(rows))
+
+    def _sync_commit_exports(
+        self,
+        event: dict[str, Any],
+        state: dict[str, Any],
+        audit_row: dict[str, Any],
+    ) -> None:
+        """Append compatibility rows after the authoritative transaction."""
+        append_jsonl_fsync(self.paths.events, event)
+        write_json_atomic(self.paths.current, state)
+        append_jsonl_fsync(self.paths.audit_actions, audit_row)
+
+    def _sync_compatibility_exports(self) -> None:
+        state, events, audit = self.database.snapshot(include_audit=True)
+        if events:
+            write_bytes_atomic(self.paths.events, self._jsonl_bytes(events))
+        write_json_atomic(self.paths.current, state)
+        if audit:
+            write_bytes_atomic(self.paths.audit_actions, self._jsonl_bytes(audit))

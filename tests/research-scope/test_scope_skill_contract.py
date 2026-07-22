@@ -4,6 +4,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 SKILL = ROOT / "skills" / "research-scope" / "SKILL.md"
 RESEARCH_OP_SKILL = ROOT / "skills" / "research-op" / "SKILL.md"
+RESEARCH_OP_COMPAT = (
+    ROOT / "skills" / "research-op" / "references" / "compatibility-scope.md"
+)
 
 
 def _assert_explicit_payload_governance(scope_text: str, research_op_text: str) -> None:
@@ -20,7 +23,7 @@ def _assert_explicit_payload_governance(scope_text: str, research_op_text: str) 
 def test_skill_requires_clear_scope_review_and_next_step():
     text = SKILL.read_text(encoding="utf-8")
     contract = " ".join(text.split())
-    assert "The agent may submit a proposal" in contract
+    assert "The agent prepares the semantic review" in contract
     assert "**Scope review**" in text
     assert "CONFIRM/确认" in text
     assert "Do not require the user to copy an item id or hash." in text
@@ -39,8 +42,9 @@ def test_skill_requires_clear_scope_review_and_next_step():
 def test_skill_allows_delegated_execution_after_explicit_pm_decision():
     text = SKILL.read_text(encoding="utf-8")
     contract = " ".join(text.split())
-    assert "For a Draft Package finalization proposal, an explicit user confirmation" in text
-    assert "--op package-finalize" in text
+    assert "An explicit user confirmation authorizes the exact Draft" in text
+    assert "commit-scope" in text
+    assert "one `TransactionCommitted` event or nothing" in contract
     assert "Record `REJECTED` through `triage.py dispose`" in text
     assert "submit a replacement under the same proposal id" in text
     assert "do not ask the user to approve again" in contract
@@ -49,7 +53,7 @@ def test_skill_allows_delegated_execution_after_explicit_pm_decision():
 def test_skill_defines_safe_decision_branches_and_bound_reply_checks():
     text = SKILL.read_text(encoding="utf-8")
     contract = " ".join(text.split())
-    assert "The item id and hash remain internal bindings to the exact proposal visible to the user." in contract
+    assert "Review digests and, on the compatibility path, item ids and proposal hashes remain internal bindings" in contract
     assert "Treat a generic, stale, conflicting, or multiply bound reply as ambiguous." in contract
     assert "### Accept" in text
     assert "### Reject" in text
@@ -65,7 +69,12 @@ def test_skill_defines_same_id_revise_replacement_without_scope_write():
 
 def test_delegated_triage_execution_requires_hash_bound_snapshot_path():
     scope_text = SKILL.read_text(encoding="utf-8")
-    research_op_text = RESEARCH_OP_SKILL.read_text(encoding="utf-8")
+    research_op_text = "\n".join(
+        (
+            RESEARCH_OP_SKILL.read_text(encoding="utf-8"),
+            RESEARCH_OP_COMPAT.read_text(encoding="utf-8"),
+        )
+    )
     scope_contract = " ".join(scope_text.split())
 
     assert "package_finalization` proposal cannot use this path" in scope_contract
@@ -115,4 +124,4 @@ def test_scope_freezes_a_reviewed_draft_instead_of_creating_the_authoring_shell(
     assert '"draft_revision": 3' in text
     assert '"document_sha256": "<reviewed-document-hash>"' in text
     assert "If the draft changes after the visible review" in contract
-    assert "PackageActivated" in text
+    assert "TransactionCommitted" in text

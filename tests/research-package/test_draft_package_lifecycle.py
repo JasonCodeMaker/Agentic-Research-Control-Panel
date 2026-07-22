@@ -1,4 +1,4 @@
-"""Two-approval Brainstorm -> Draft Package -> active Package lifecycle."""
+"""Brainstorm to Draft, Scope Bundle, and terminal Package lifecycle."""
 
 from __future__ import annotations
 
@@ -75,7 +75,10 @@ def _draft(paths: ResearchPaths, package_id: str = "package-one") -> dict:
     assert [
         row["event_type"]
         for row in StateQuery(paths).history("brainstorm", package_id)["data"]
-    ] == ["BrainstormCreated", "PackageDraftCreated"]
+    ] == ["BrainstormCreated", "TransactionCommitted"]
+    materialized = EventStore(paths).state()["aggregates"]["brainstorm"][package_id]
+    assert materialized["status"] == "MATERIALIZED"
+    assert materialized["materialized_as"] == package_id
     return package
 
 
@@ -93,6 +96,254 @@ def _pending_finalization(
     )
     record, _ = management.submit_proposal(paths, proposal, actor=ACTOR)
     return proposal, record
+
+
+def test_scope_bundle_is_one_approval_and_one_atomic_event(tmp_path):
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    draft = _draft(paths)
+    direction = direction_node(source="draft-package:package-one")
+    experiment = experiment_node(source="draft-package:package-one")
+    review = management.prepare_scope_bundle(
+        paths,
+        "package-one",
+        direction,
+        [experiment],
+    )
+    before_count = len(EventStore(paths).events())
+
+    event = management.finalize_scope_bundle(
+        paths,
+        "package-one",
+        direction,
+        [experiment],
+        review["receipt"]["content_sha256"],
+        actor=USER,
+        review_id="conversation-review-one",
+    )
+
+    assert event["event_type"] == "TransactionCommitted"
+    assert event["payload"]["command_kind"] == "SCOPE_BUNDLE_COMMIT"
+    assert len(EventStore(paths).events()) == before_count + 1
+    state = EventStore(paths).state()
+    assert all(
+        proposal.get("proposal_kind") != "package_finalization"
+        for proposal in state["aggregates"]["proposal"].values()
+    )
+    package = state["aggregates"]["package"]["package-one"]
+    assert package["lifecycle"] == "ACTIVE"
+    assert package["executionLease"] == {
+        "status": "OPEN",
+        "scope_sha256": package["executionLease"]["scope_sha256"],
+        "package_revision": draft["draftRevision"],
+        "experiment_ids": [experiment["id"]],
+        "grants": ["IMPLEMENT", "LAUNCH", "RECORD_RESULTS"],
+    }
+    assert state["aggregates"]["direction"][direction["id"]]["status"] == "ACTIVE"
+    assert state["aggregates"]["experiment"][experiment["id"]]["package_id"] == (
+        "package-one"
+    )
+    for aggregate_type, aggregate_id in (
+        ("package", "package-one"),
+        ("direction", direction["id"]),
+        ("experiment", experiment["id"]),
+    ):
+        assert StateQuery(paths).history(aggregate_type, aggregate_id)["data"][-1][
+            "event_id"
+        ] == event["event_id"]
+
+    replay = management.finalize_scope_bundle(
+        paths,
+        "package-one",
+        direction,
+        [experiment],
+        review["receipt"]["content_sha256"],
+        actor=USER,
+        review_id="conversation-review-one",
+    )
+    assert replay["event_id"] == event["event_id"]
+    assert len(EventStore(paths).events()) == before_count + 1
+
+
+def test_scope_bundle_review_is_invalidated_by_draft_revision(tmp_path):
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    _draft(paths)
+    direction = direction_node(source="draft-package:package-one")
+    experiment = experiment_node(source="draft-package:package-one")
+    review = management.prepare_scope_bundle(
+        paths,
+        "package-one",
+        direction,
+        [experiment],
+    )
+    draft_package.revise(
+        paths,
+        package_id="package-one",
+        patch={"abstract": "Changed after review."},
+        actor_id="test",
+    )
+
+    with pytest.raises(CommandConflict, match="changed after the user review"):
+        management.finalize_scope_bundle(
+            paths,
+            "package-one",
+            direction,
+            [experiment],
+            review["receipt"]["content_sha256"],
+            actor=USER,
+            review_id="stale-review",
+        )
+
+
+def test_scope_bundle_rejects_agent_actor(tmp_path):
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    _draft(paths)
+    direction = direction_node(source="draft-package:package-one")
+    experiment = experiment_node(source="draft-package:package-one")
+    review = management.prepare_scope_bundle(
+        paths,
+        "package-one",
+        direction,
+        [experiment],
+    )
+
+    with pytest.raises(CommandRejected, match="explicit user approval"):
+        management.finalize_scope_bundle(
+            paths,
+            "package-one",
+            direction,
+            [experiment],
+            review["receipt"]["content_sha256"],
+            actor=ACTOR,
+            review_id="agent-cannot-approve",
+        )
+
+
+@pytest.mark.parametrize(
+    ("outcome", "lifecycle"),
+    [("SUCCESS", "ADOPTED"), ("FAIL", "ARCHIVED")],
+)
+def test_package_end_is_one_evidence_bound_decision(
+    tmp_path,
+    outcome,
+    lifecycle,
+):
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    _draft(paths)
+    direction = direction_node(source="draft-package:package-one")
+    experiment = experiment_node(source="draft-package:package-one")
+    scope_review = management.prepare_scope_bundle(
+        paths,
+        "package-one",
+        direction,
+        [experiment],
+    )
+    management.finalize_scope_bundle(
+        paths,
+        "package-one",
+        direction,
+        [experiment],
+        scope_review["receipt"]["content_sha256"],
+        actor=USER,
+        review_id="scope-review",
+    )
+    evidence = [{"kind": "RESULT_SUMMARY", "uri": "result://package-one"}]
+    decision_review = management.prepare_package_decision(
+        paths,
+        "package-one",
+        outcome,
+        "The reviewed result supports this outcome.",
+        evidence,
+        actor_id=USER["id"],
+    )
+
+    event = management.finalize_package_decision(
+        paths,
+        "package-one",
+        outcome,
+        "The reviewed result supports this outcome.",
+        evidence,
+        decision_review["receipt"]["content_sha256"],
+        actor=USER,
+        review_id="outcome-review",
+    )
+
+    assert event["payload"]["command_kind"] == "PACKAGE_DECIDE"
+    state = EventStore(paths).state()
+    package = state["aggregates"]["package"]["package-one"]
+    assert package["lifecycle"] == lifecycle
+    assert package["executionLease"]["status"] == "CLOSED"
+    decision_id = decision_review["receipt"]["decision_id"]
+    assert state["aggregates"]["decision"][decision_id]["outcome"] == outcome
+    replay = management.finalize_package_decision(
+        paths,
+        "package-one",
+        outcome,
+        "The reviewed result supports this outcome.",
+        evidence,
+        decision_review["receipt"]["content_sha256"],
+        actor=USER,
+        review_id="outcome-review",
+    )
+    assert replay["event_id"] == event["event_id"]
+
+
+def test_package_outcome_cli_uses_the_reviewed_receipt(tmp_path, capsys):
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    _draft(paths)
+    direction = direction_node(source="draft-package:package-one")
+    experiment = experiment_node(source="draft-package:package-one")
+    scope_review = management.prepare_scope_bundle(
+        paths,
+        "package-one",
+        direction,
+        [experiment],
+    )
+    management.finalize_scope_bundle(
+        paths,
+        "package-one",
+        direction,
+        [experiment],
+        scope_review["receipt"]["content_sha256"],
+        actor=USER,
+        review_id="scope-review",
+    )
+    evidence = json.dumps(
+        [{"kind": "RESULT_SUMMARY", "uri": "result://package-one"}]
+    )
+    common = [
+        "--workspace",
+        str(tmp_path),
+        "--package-id",
+        "package-one",
+        "--outcome",
+        "SUCCESS",
+        "--reason",
+        "The declared gate passed.",
+        "--evidence",
+        evidence,
+        "--actor-id",
+        USER["id"],
+    ]
+
+    assert draft_package.main([*common[:2], "review-outcome", *common[2:]]) == 0
+    review = json.loads(capsys.readouterr().out)
+    assert draft_package.main(
+        [
+            *common[:2],
+            "commit-outcome",
+            *common[2:],
+            "--review-sha256",
+            review["receipt"]["content_sha256"],
+            "--review-id",
+            "outcome-review",
+        ]
+    ) == 0
+    committed = json.loads(capsys.readouterr().out)
+
+    assert committed["status"] == "package_closed"
+    assert EventStore(paths).state()["aggregates"]["package"]["package-one"][
+        "lifecycle"
+    ] == "ADOPTED"
 
 
 def test_full_proposal_requires_atomic_package_finalize(tmp_path):

@@ -45,6 +45,7 @@ ALL_FAIL = set(FAIL_STATUS.values())
 
 TARGETS = {
     "status",
+    "abstract",
     "activeGate",
     "primaryMetricVsGate",
     "lastAction",
@@ -121,6 +122,7 @@ UPDATE_LEGAL = {
         | _cells("fail", ALL_FAIL)
     )
     - {("success", "ADOPTED"), ("fail", "ARCHIVED")},
+    "abstract": _cells("in-progress", ALL_IN_PROGRESS),
     "activeGate": _cells("in-progress", ALL_IN_PROGRESS),
     "primaryMetricVsGate": _cells("in-progress", ALL_IN_PROGRESS),
     "lastAction": _cells("in-progress", ALL_IN_PROGRESS),
@@ -163,6 +165,7 @@ UPDATE_LEGAL = {
     "rule": _cells("in-progress", ALL_IN_PROGRESS),
 }
 for _target in (
+    "abstract",
     "activeGate",
     "primaryMetricVsGate",
     "lastAction",

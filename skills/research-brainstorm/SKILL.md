@@ -10,7 +10,7 @@ allowed-tools: Bash(python3 *), Read, Edit, Write, Grep, Glob, Agent
 
 Turn one vague idea, including one broad research direction, into one
 continuously revised, state-governed Brainstorm document. It remains outside
-Package and Scope authority until the user explicitly approves conversion.
+Package and Scope authority until the user asks to materialize it as a Draft.
 
 ## Definition
 
@@ -21,8 +21,8 @@ Package and Scope authority until the user explicitly approves conversion.
   remain Sections or Stages when they share one core research question.
 - Refine the same Brainstorm in place. Do not create a sibling record for each
   iteration, concern, or stage.
-- Convert only after the document is stable, the user has audited it, and the
-  user explicitly approves the exact Brainstorm revision.
+- Materialize only after discussion has made the document coherent and the
+  user has asked to continue into Package design.
 - Keep the body free-form. Do not turn optional research content into mandatory
   fields.
 - Present the Brainstorm to the user as a complete document-style HTML page,
@@ -32,8 +32,8 @@ The authority flow is:
 
 ```text
 standalone Brainstorm + iterative refinement
-  -> explicit user approval
-  -> PackageDraftCreated consumes the exact Brainstorm revision
+  -> agent materializes the exact revision on user request
+  -> DRAFT_MATERIALIZE records Brainstorm provenance and the Draft Package
   -> research-package owns Draft refinement and finalization
 ```
 
@@ -147,15 +147,15 @@ python3 skills/research-brainstorm/scripts/brainstorm.py remove \
 
 Archived Brainstorms remain readable audit records. An explicit user may
 discard an archived duplicate from the current catalogue, while its event
-history remains intact. Conversion is not archival: the approved document is
+history remains intact. Conversion is not archival: the materialized document is
 transferred into the new Draft Package in the same event that consumes the
 standalone Brainstorm.
 
 ## Rebuild and verify the human surface
 
-Every create, revise, or archive command attempts an atomic interface rebuild.
-State remains authoritative if projection fails, but a user-facing Brainstorm
-task is not visually complete until the card and detail document render.
+Create, revise, archive, and materialize commands leave the interface stale.
+The Dashboard coalesces those changes into one rebuild when it starts or serves
+the next static page. Use an explicit build for visual validation:
 
 ```bash
 python3 skills/research-dashboard/scripts/ensure_dashboard.py \
@@ -174,29 +174,32 @@ Verify that:
 Report the interface-relative `detailPath` separately from the actual server
 listen URL or any SSH/IDE forwarded URL. Do not hardcode a port.
 
-## Convert only on explicit request
+## Hand off to research-package
 
 Do not create a Draft Package merely because the Brainstorm looks complete.
-After the user explicitly approves the audited revision, route to
-`research-package` and convert it:
+When the user asks to turn the idea into a Package, route to `research-package`
+and materialize it:
 
 ```bash
 python3 skills/research-package/scripts/draft_package.py \
   --workspace <workspace> convert \
   --brainstorm-id <brainstorm-id> \
-  --actor-id <stable-user-id>
+  --title <agent-designed-title> \
+  --title-rationale "<why this title captures the Package purpose>" \
+  --actor-id <agent-id>
 ```
 
-`PackageDraftCreated` verifies the exact Brainstorm version and NoteRef,
-transfers that document to `docs/proposal.html`, removes the standalone
-Brainstorm from current state, and creates a non-executable `DRAFT / REFINING`
-Package. This is the first approval boundary. Direction and Experiment design
-belongs to the later Draft Package review, not to this conversion decision.
+`DRAFT_MATERIALIZE` verifies the exact Brainstorm version and NoteRef,
+transfers that document to `docs/proposal.html`, marks the Brainstorm as
+materialized provenance, and creates a non-executable `DRAFT / REFINING`
+Package. This handoff follows the user's request but is not a separate formal
+approval boundary. Direction and Experiment design belongs to the later Draft
+Package review.
 
 ## Boundaries
 
 - Do not create multiple Brainstorms just because one idea has several stages.
-- Do not create a Draft Package before explicit conversion approval.
+- Do not create a Draft Package while the user is still brainstorming.
 - Do not derive or commit Direction and Experiment Scope during Brainstorm conversion.
 - Do not make typed Direction fields mandatory in the free-form draft.
 - Do not store candidate files, rankings, or verdicts in ad hoc workspace
@@ -209,7 +212,7 @@ belongs to the later Draft Package review, not to this conversion decision.
 
 Before conversion, the requested idea exists as one standalone Brainstorm, its
 body is a valid NoteRef, and its generated page contains the stable shell plus
-the authored free-form content. After explicit conversion, that Brainstorm is
-absent from current state and one `DRAFT / REFINING` Package owns the same
-document at `docs/proposal.html`. No Scope or execution authority is created by
-this skill.
+the authored free-form content. After materialization, the Brainstorm remains
+in state as provenance but leaves the standalone view, and one
+`DRAFT / REFINING` Package owns the same document at `docs/proposal.html`. No
+Scope or execution authority is created by this skill.

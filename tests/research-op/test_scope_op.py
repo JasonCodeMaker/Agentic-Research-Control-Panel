@@ -19,6 +19,7 @@ from lib.research_state import (  # noqa: E402
     ResearchPaths,
     StateQuery,
 )
+from lib.research_state.reducer import EventIntegrityError  # noqa: E402
 import management  # noqa: E402
 from tests.scope_fixtures import (  # noqa: E402
     direction_node,
@@ -522,7 +523,7 @@ def test_scope_accept_resumes_after_acceptance_precedes_failed_commit(tmp_path):
     ]["status"] == "ACTIVE"
 
 
-def test_scope_transition_rejects_tampered_proposal_event(tmp_path):
+def test_scope_transition_ignores_tampered_compatibility_export(tmp_path):
     paths = _paths(tmp_path)
     item_id = _accept_proposal(tmp_path)
     rows = [
@@ -551,8 +552,18 @@ def test_scope_transition_rejects_tampered_proposal_event(tmp_path):
         cwd=tmp_path,
     )
 
-    assert result.returncode == 2
-    assert "hash mismatch" in result.stdout
+    assert result.returncode == 0
+    state = EventStore(paths).state()
+    assert state["aggregates"]["project"][
+        "project/composed-video-retrieval"
+    ]["spec"]["goal"] != "Tampered Project Objective"
+
+    # Ordinary commands use SQLite authority. Explicit audit reads still
+    # detect a corrupted compatibility export, and recovery rebuilds it.
+    with pytest.raises(EventIntegrityError, match="hash mismatch"):
+        EventStore(paths).snapshot()
+    EventStore(paths).recover()
+    assert EventStore(paths).snapshot()[0] == EventStore(paths).state()
 
 
 def test_direct_scope_commit_without_accepted_proposal_is_rejected_and_audited(
@@ -568,10 +579,7 @@ def test_direct_scope_commit_without_accepted_proposal_is_rejected_and_audited(
         json.loads(line)
         for line in paths.audit_actions.read_text(encoding="utf-8").splitlines()
     ]
-    assert [row["outcome"] for row in audit[-2:]] == [
-        "COMMAND_RECEIVED",
-        "COMMAND_REJECTED",
-    ]
+    assert [row["outcome"] for row in audit[-1:]] == ["COMMAND_REJECTED"]
     assert audit[-1]["rejection_reason"]["rule"] == "proposal-causation-required"
 
 

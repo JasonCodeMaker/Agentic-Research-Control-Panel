@@ -30,7 +30,7 @@ With the default root, the three managed areas are `.research/state/`,
 
 | Data | Location | Authority |
 | --- | --- | --- |
-| Package, Experiment, Run, and allocation lifecycle | `$RESEARCH_ROOT/state/events.jsonl` | Management authority |
+| Package, Experiment, Run, and allocation lifecycle | `$RESEARCH_ROOT/state/research.sqlite3` through bounded queries | Management authority |
 | Current folded state | `$RESEARCH_ROOT/state/current.json` | Rebuildable state projection |
 | Run command and frozen context | `$RESEARCH_ROOT/experiments/<package>/<experiment>/<run>/run.json` and `context.json` | Immutable Run envelope |
 | Live status and raw evidence | The same Run directory | Producer-owned runtime evidence |
@@ -50,7 +50,9 @@ Before launch, confirm through state queries that:
 - the Package lifecycle is `ACTIVE` and its phase is `READY_TO_LAUNCH`;
 - the selected Experiment belongs to that Package and has status `READY`;
 - `Experiment.spec` contains `purpose`, `config_ref`, `gate`, and `control_mode`;
-- a user `LAUNCH_ACK` or `READY_TO_LAUNCH_ACK` Decision exists;
+- the Package has an open Scope Execution Lease that includes the Experiment;
+  imported Packages without a lease require a user `LAUNCH_ACK` or
+  `READY_TO_LAUNCH_ACK` Decision;
 - a requested GPU allocation is open and bound to the same Package and Experiment.
 
 The launcher checks these conditions again under the management-state lock. Do not bypass a rejected

@@ -13,10 +13,11 @@ selected with `--research-root` or `RESEARCH_ROOT`.
 | Path | Responsibility | Mutability |
 | --- | --- | --- |
 | `VERSION` | Managed-root schema version | Written only by initialization or explicit migration |
-| `state/events.jsonl` | Authoritative event history | Append-only through management commands |
-| `state/current.json` | Authoritative reduced state | Written through the event store |
+| `state/research.sqlite3` | Transactional event, current-state, receipt, and audit authority | Written only through management commands |
+| `state/events.jsonl` | Compatibility event export | Appended after a database commit and rebuildable from SQLite |
+| `state/current.json` | Compatibility current-state export | Rebuildable from SQLite |
 | `state/notes/` | Content-addressed source notes | Written through the note store |
-| `audit/actions.jsonl` | Command and projection audit | Append-only through the event store |
+| `audit/actions.jsonl` | Compatibility command-audit export | Appended after a database commit and rebuildable from SQLite |
 | `experiments/` | Durable run records, logs, checkpoints, metrics, and outputs | Written by experiment controllers |
 | `interface/` | Rebuildable human projection | Replaced only by the interface builder |
 
@@ -81,6 +82,11 @@ Each projected package keeps:
 - `packages/<package>/tracker.html`
 - `packages/<package>/docs/index.html`
 
+The masthead Hero lead on `packages/<package>/index.html` renders the
+state-backed `Package.abstract` as the Package Abstract / TLDR. The renderer
+falls back to `problem` only for legacy records without an abstract. It does
+not derive this copy from Direction Scope.
+
 `module.html` is part of the frozen surface. Preserve the existing
 `module.html?package=<id>&module=<name>` route. Package pages and module routing
 must not be collapsed into a single-page application.
@@ -120,10 +126,11 @@ read authority to answer these endpoints:
 No write endpoint is allowed. Path validation must prevent a run reference from
 escaping the managed `experiments/` root.
 
-`ensure` rebuilds the projection, reuses a healthy matching server when
-possible, or starts one. `serve` runs in the foreground and builds only if the
-projection is absent. `status` reads the recorded runtime state and checks
-health.
+`ensure` checks the projection marker, rebuilds only when absent or stale,
+reuses a healthy matching server when possible, or starts one. `serve` performs
+the same currentness check before running in the foreground. Each static-page
+request rechecks the marker and coalesces intervening management commits into
+one rebuild. `status` reads the recorded runtime state and checks health.
 
 Volatile server metadata and logs live under:
 

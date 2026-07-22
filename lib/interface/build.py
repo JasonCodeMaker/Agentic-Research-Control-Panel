@@ -189,6 +189,14 @@ def _write_project_data(
     rules = rule_views(state, bundled=universal_rule_rows(rule_sources))
     live_runs = live_run_views(state)
     files = [
+        _write_json(
+            stage,
+            "data/projection.json",
+            {
+                "source_seq": int(state.get("source_seq") or 0),
+                "source_hash": str(state.get("source_hash") or ""),
+            },
+        ),
         _write_text(stage, "data/schema.js", render_schema_js()),
         _write_text(stage, "data/scope-schema.js", render_scope_schema_js()),
         _write_text(stage, "data/research-packages.js", render_project_js(state, packages)),

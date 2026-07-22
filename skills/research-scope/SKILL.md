@@ -5,8 +5,9 @@ description: "Use when defining, revising, accepting, or rejecting governed Proj
 
 # Research scope
 
-Turn natural-language intent into one hash-bound Scope decision. The agent may
-submit a proposal; only an explicit user decision may accept or reject it.
+Turn natural-language intent into one hash-bound Scope decision. The agent
+prepares the semantic review; only an explicit user decision may commit or
+reject it.
 
 Keep governance strict behind the interface. Users review semantic content,
 not proposal ids, hashes, NoteRefs, event ids, or CLI syntax.
@@ -32,15 +33,15 @@ for the user and agents to share one clear proposal.
 ```text
 Project Scope
   -> standalone Brainstorm + refinement
-  -> user-approved conversion to Package lifecycle=DRAFT
+  -> agent materializes the requested idea as Package lifecycle=DRAFT
   -> Draft refinement and one Direction-and-Experiments review
   -> one user approval atomically commits Scope and lifecycle=ACTIVE
 ```
 
 Scope is therefore a commit boundary, not an early authoring form. Do not force
 a vague Brainstorm into fixed fields merely to create a Package shell. The
-first approval creates that non-executable Draft shell; the later full proposal
-freezes Direction and Experiments while activating it.
+non-executable Draft is an authoring container, while the single Scope Bundle
+approval freezes Direction and Experiments and activates it.
 
 ## Decompose a Direction into Experiments
 
@@ -93,7 +94,7 @@ Text limits remain part of validation:
 
 ## Human contract
 
-- Show one complete semantic review after proposal submission.
+- Show one complete semantic review after preparing the bound content.
 - Accept natural-language decisions such as `CONFIRM`, `ACCEPT`, `确认`, or
   `接受` when they clearly refer to that review.
 - Treat requested changes as revision, not acceptance.
@@ -101,17 +102,17 @@ Text limits remain part of validation:
 - Do not require the user to copy an item id or hash.
 - Reveal technical receipts only when requested.
 
-The item id and hash remain internal bindings to the exact proposal visible to
-the user. They must still match at the gateway.
+Review digests and, on the compatibility path, item ids and proposal hashes
+remain internal bindings to the exact content visible to the user. They must
+still match at the gateway.
 
-## Propose and review
+## Prepare and review
 
-Build and validate a complete proposal with `id`, `level`, `node_id`, `op`,
-`gate`, `change`, `rationale`, `proposed_spec`, `proposed_node`, and
-`post_accept_actions`. A normal Draft Package finalization proposal also uses
-`proposal_kind=package_finalization` and includes every selected complete
-Experiment node in `proposed_experiments`. Then submit it before asking the
-user to decide.
+For a normal Draft Package, validate the complete Direction and every selected
+Experiment, then prepare one Scope Bundle through `research-package
+review-scope`. Do not create a Proposal aggregate or accept the components
+separately. Independent later Scope revisions may still use the compatibility
+Proposal fields and Triage commands.
 
 A Direction created from a Draft Package must also include an exact
 `source_package` object:
@@ -124,17 +125,19 @@ A Direction created from a Draft Package must also include an exact
 }
 ```
 
-Submission and finalization both revalidate this binding. If the draft changes
-after the visible review, reject the stale approval and prepare a new review;
-never silently bind the newer document.
+Review and commit both revalidate this binding. If the draft changes after the
+visible review, reject the stale approval and prepare a new review; never
+silently bind the newer document.
 
 ```bash
-python3 skills/research-scope/scripts/triage.py --workspace . propose \
-  --item '<proposal-json>' --receipt
+python3 skills/research-package/scripts/draft_package.py \
+  --workspace . review-scope \
+  --package-id <package-id> \
+  --direction '<complete-direction-node>' \
+  --experiments '<complete-experiment-node-array>'
 ```
 
-Submission creates only a pending proposal. It does not change Project,
-Direction, or Experiment intent, so it needs no prior confirmation.
+Review creates no state. Keep its receipt internal and show:
 
 Keep the compact receipt internal. Show:
 
@@ -155,26 +158,31 @@ Do not show the same full review again after confirmation.
 
 ### Accept
 
-For a Draft Package finalization proposal, an explicit user confirmation
-authorizes the exact Draft to become `SCOPE_READY`, accepts the full Scope
-bundle, commits Direction and Experiments, and activates the same Package.
-Invoke one combined gateway call with the hidden receipt:
+For a normal Draft Package, `research-package` owns the Scope Bundle review and
+commit. An explicit user confirmation authorizes the exact Draft to become
+`SCOPE_READY`, commits Direction and Experiments, activates the same Package,
+and opens its Execution Lease. Invoke its combined transaction command with the
+hidden receipt:
 
 ```bash
-python3 skills/research-op/scripts/research_op.py \
-  --workspace . --pkg <package-id> --op package-finalize \
-  --from-triage <proposal-id> --proposal-hash <proposal-hash> \
-  --actor-type user --actor-id <stable-user-id>
+python3 skills/research-package/scripts/draft_package.py \
+  --workspace . commit-scope \
+  --package-id <package-id> \
+  --direction '<reviewed-direction-node>' \
+  --experiments '<reviewed-experiment-array>' \
+  --review-sha256 <internal-receipt-digest> \
+  --actor-id <stable-user-id> \
+  --review-id <conversation-review-id>
 ```
 
-The gateway checks the user actor, pending status, content hash, Draft revision
-and NoteRef, Direction and Experiment gates, participant versions, and
-idempotency. It appends one `PackageActivated` event or nothing. If projection
-failed after commit, retry the same command; do not ask the user to approve
-again.
+The kernel checks the user actor, review binding, Draft revision and NoteRef,
+Direction and Experiment gates, participant versions, and idempotency. It
+writes one `TransactionCommitted` event or nothing. Retry the same command after
+an infrastructure interruption; do not ask the user to approve again.
 
-For Project onboarding or an independently governed later Scope change not
-coupled to Draft activation, use ordinary `scope-accept` with `--pkg _scope`.
+Project onboarding uses `research-onboard`. For an independently governed later
+Scope change not coupled to Draft activation, use the Proposal/Triage
+compatibility path with ordinary `scope-accept` and `--pkg _scope`.
 
 ```bash
 python3 skills/research-op/scripts/research_op.py \
@@ -208,8 +216,8 @@ callers. It cannot substitute for or bypass the accepted snapshot.
 
 ## Direction follow-up
 
-For a new Draft Package, finish Experiment decomposition before submitting the
-full finalization proposal. Do not accept a Direction first and generate
+For a new Draft Package, finish Experiment decomposition before preparing the
+full Scope Bundle. Do not accept a Direction first and generate
 Experiment proposals afterward. Later independent Scope revisions may still
 use their level-specific gates and ordinary Scope commands.
 

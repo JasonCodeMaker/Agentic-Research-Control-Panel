@@ -7,6 +7,7 @@ import pytest
 from lib.experiments.contracts import verify_result_evidence
 from lib.experiments.extract import extract_result
 from lib.experiments.launch import launch_run, prepare_run
+from lib.interface.build import build_interface
 from lib.research_state import CommandRejected, EventStore, ResearchPaths
 
 
@@ -221,6 +222,7 @@ def test_extractor_adds_scientific_result_without_rewriting_run_intent(tmp_path)
     assert current["latest_scientific_result"]["evidence_count"] == len(
         result["evidence"]
     )
+    build_interface(paths)
     interface_rows = [
         json.loads(line)
         for line in paths.interface_data.joinpath("live-runs.jsonl")

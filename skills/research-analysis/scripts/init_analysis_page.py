@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enable the state-backed Analysis page and refresh the interface."""
+"""Enable the state-backed Analysis page and leave interface rebuild lazy."""
 
 from __future__ import annotations
 
@@ -56,6 +56,9 @@ def enable_analysis(paths: ResearchPaths, package_id: str) -> dict:
         "event_id": event["event_id"],
         "interface_written": bool(
             event.get("_interface_projection", {}).get("written")
+        ),
+        "interface_stale": bool(
+            event.get("_interface_projection", {}).get("stale")
         ),
         "interface_root": event.get("_interface_projection", {}).get("root"),
         "interface_error": event.get("_interface_projection", {}).get("error"),

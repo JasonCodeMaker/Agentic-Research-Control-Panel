@@ -233,6 +233,41 @@ def _launch_ack(
     return matches[-1]
 
 
+def _launch_authority(
+    state: dict[str, Any],
+    *,
+    package_id: str,
+    experiment_id: str,
+) -> str:
+    """Use the Scope execution lease, with Decision ack as legacy fallback."""
+    package = state["aggregates"]["package"].get(package_id)
+    lease = package.get("executionLease") if isinstance(package, dict) else None
+    if isinstance(lease, dict):
+        digest = str(lease.get("scope_sha256") or "")
+        grants = lease.get("grants")
+        experiment_ids = lease.get("experiment_ids")
+        if (
+            lease.get("status") == "OPEN"
+            and len(digest) == 64
+            and all(character in "0123456789abcdef" for character in digest)
+            and isinstance(grants, list)
+            and "LAUNCH" in grants
+            and isinstance(experiment_ids, list)
+            and experiment_id in experiment_ids
+        ):
+            return f"lease:{digest}"
+        raise CommandRejected(
+            "execution-lease-invalid",
+            f"Package execution lease does not authorize {experiment_id}",
+        )
+    decision_id, _ = _launch_ack(
+        state,
+        package_id=package_id,
+        experiment_id=experiment_id,
+    )
+    return decision_id
+
+
 def _validate_launch_policy(
     state: dict[str, Any],
     *,
@@ -302,7 +337,7 @@ def _validate_launch_policy(
             "experiment-spec-incomplete",
             f"Experiment.spec requires {sorted(required_spec)}",
         )
-    _launch_ack(
+    _launch_authority(
         state,
         package_id=package_id,
         experiment_id=experiment_id,
@@ -624,7 +659,7 @@ def prepare_run(
     allocation_id = resource_record.get("alloc_id")
     launch_ack_decision_id: str | None = None
     try:
-        launch_ack_decision_id, _ = _launch_ack(
+        launch_ack_decision_id = _launch_authority(
             store.state(),
             package_id=package_id,
             experiment_id=experiment_key,
@@ -718,7 +753,7 @@ def prepare_run(
             allocation_id=str(allocation_id) if allocation_id else None,
             gpu_ids=selected_gpu_ids,
         )
-        live_ack_id, _ = _launch_ack(
+        live_ack_id = _launch_authority(
             state,
             package_id=package_id,
             experiment_id=experiment_key,

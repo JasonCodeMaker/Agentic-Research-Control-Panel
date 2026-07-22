@@ -176,9 +176,9 @@
       </div>
       <div class="bi-rail-step" data-stage="draft-conversion">
         <div class="bi-rail-k">Stage 2</div>
-        <h2 class="bi-rail-name">Approve Draft conversion</h2>
-        <p class="bi-rail-note">A user approves the exact Brainstorm revision and transfers it into a Draft Package.</p>
-        <span class="bi-rail-driver">PackageDraftCreated</span>
+        <h2 class="bi-rail-name">Materialize Draft</h2>
+        <p class="bi-rail-note">The exact Brainstorm revision becomes a non-executable Draft Package.</p>
+        <span class="bi-rail-driver">DRAFT_MATERIALIZE</span>
       </div>
       <div class="bi-rail-step" data-stage="draft-refine">
         <div class="bi-rail-k">Stage 3</div>
@@ -190,7 +190,7 @@
         <div class="bi-rail-k">Stage 4</div>
         <h2 class="bi-rail-name">Approve + activate</h2>
         <p class="bi-rail-note">One approval records SCOPE_READY, commits Scope, and activates the same Package atomically.</p>
-        <span class="bi-rail-driver">package-finalize</span>
+        <span class="bi-rail-driver">SCOPE_BUNDLE_COMMIT</span>
       </div>
     </section>
 

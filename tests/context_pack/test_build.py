@@ -15,6 +15,7 @@ import context_pack  # noqa: E402
 import context_pack.build as build  # noqa: E402
 from research_state import EventStore, ResearchPaths, UpgradeRequired  # noqa: E402
 from lib.research_state import (  # noqa: E402
+    CommandRejected as LibCommandRejected,
     ResearchPaths as LibResearchPaths,
     StateQuery as LibStateQuery,
 )
@@ -334,6 +335,34 @@ def test_state_query_context_is_bounded_and_accepts_lib_research_paths(tmp_path)
     ]
     assert selection["pending_decision_ids"] == ["decision-pending"]
     assert selection["evidence_refs"] == [_ref()]
+
+
+def test_compact_context_is_hard_bounded_and_reports_omissions(tmp_path):
+    _seed(tmp_path)
+    paths = LibResearchPaths.resolve(workspace=tmp_path)
+
+    result = LibStateQuery(paths).compact_context(
+        "pkg",
+        phase="CONTEXT_LOADED",
+        experiment_id=EXPERIMENT_ID,
+    )
+    serialized = json.dumps(
+        result,
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+    assert len(serialized) <= 4_000
+    assert result["data"]["view"] == "compact"
+    assert result["data"]["action"]["experiment_id"] == EXPERIMENT_ID
+    assert result["data"]["omitted"]["history"] is True
+    assert result["data"]["budget"]["limit_chars"] == 4_000
+    assert result["data"]["budget"]["serialized_chars"] == len(serialized)
+    assert "secret-full-run-log" not in serialized
+
+    with pytest.raises(LibCommandRejected, match="mandatory intent"):
+        LibStateQuery(paths).compact_context("pkg", budget_chars=512)
 
 
 def test_state_query_context_uses_one_authoritative_snapshot(tmp_path, monkeypatch):

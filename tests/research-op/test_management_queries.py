@@ -103,24 +103,28 @@ def test_show_context_history_and_audit_queries(tmp_path):
 
     shown = _run(tmp_path, "show", "package", "pkg-1")
     context = _run(tmp_path, "context", "pkg-1")
+    full_context = _run(tmp_path, "context", "pkg-1", "--full")
     history = _run(tmp_path, "history", "package/pkg-1")
     audit = _run(tmp_path, "audit", package_event["command_id"])
 
-    for result in (shown, context, history, audit):
+    for result in (shown, context, full_context, history, audit):
         assert result.returncode == 0, result.stdout + result.stderr
         payload = json.loads(result.stdout)
         assert payload["source_seq"] == 3
         assert payload["source_hash"]
     assert json.loads(shown.stdout)["data"]["id"] == "pkg-1"
     context_data = json.loads(context.stdout)["data"]
+    assert context_data["view"] == "compact"
+    assert len(context.stdout) <= 4001
     assert {
         experiment["id"]
         for experiment in context_data["selection"]["experiments"]
     } == {"exp-1"}
+    assert "stamp" in json.loads(full_context.stdout)["data"]
     assert len(json.loads(history.stdout)["data"]) == 1
     assert {
         row["outcome"] for row in json.loads(audit.stdout)["data"]
-    } == {"COMMAND_RECEIVED", "COMMAND_COMMITTED"}
+    } == {"COMMAND_COMMITTED"}
 
 
 def test_queries_do_not_require_or_create_interface(tmp_path):

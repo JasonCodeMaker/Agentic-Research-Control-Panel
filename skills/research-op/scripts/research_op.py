@@ -101,6 +101,9 @@ def _management_query(argv: list[str]) -> int:
     parser.add_argument("subject")
     parser.add_argument("aggregate_id", nargs="?")
     parser.add_argument("--phase")
+    parser.add_argument("--experiment")
+    parser.add_argument("--budget-chars", type=int, default=4000)
+    parser.add_argument("--full", action="store_true")
     parser.add_argument("--workspace", default=".")
     parser.add_argument("--research-root")
     args = parser.parse_args(argv)
@@ -117,7 +120,16 @@ def _management_query(argv: list[str]) -> int:
         elif args.command == "context":
             if args.aggregate_id is not None:
                 parser.error("context accepts one package id")
-            result = query.context(args.subject, phase=args.phase)
+            result = (
+                query.context(args.subject, phase=args.phase)
+                if args.full
+                else query.compact_context(
+                    args.subject,
+                    phase=args.phase,
+                    experiment_id=args.experiment,
+                    budget_chars=args.budget_chars,
+                )
+            )
         elif args.command == "history":
             if args.aggregate_id is not None or "/" not in args.subject:
                 parser.error("history requires <type>/<id>")
@@ -129,7 +141,17 @@ def _management_query(argv: list[str]) -> int:
             result = query.audit(args.subject)
     except Exception as exc:
         return _error(exc, phase="query")
-    print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
+    if args.command == "context" and not args.full:
+        print(
+            json.dumps(
+                result,
+                sort_keys=True,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        )
+    else:
+        print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
     return 0
 
 

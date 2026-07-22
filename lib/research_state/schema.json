@@ -57,7 +57,8 @@
     "ResourceAllocationReleased",
     "LearningRecorded",
     "RulePromoted",
-    "RuleRetired"
+    "RuleRetired",
+    "TransactionCommitted"
   ],
   "event_aggregate_types": {
     "ProposalSubmitted": "proposal",
@@ -143,7 +144,15 @@
         "document_note": {"type": "object"},
         "documentPath": {"type": "string"},
         "scopeBinding": {"type": ["object", "null"]},
-        "executionAuthorized": {"type": "boolean"}
+        "executionAuthorized": {"type": "boolean"},
+        "executionLease": {"type": ["object", "null"]},
+        "identityContractVersion": {"type": "integer"},
+        "identityDate": {"type": "string"},
+        "identityRationale": {"type": "string"},
+        "identityHistory": {"type": "array"},
+        "slug": {"type": "string"},
+        "name": {"type": "string"},
+        "title": {"type": "string"}
       }
     },
     "experiment": {

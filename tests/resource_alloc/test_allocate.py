@@ -266,10 +266,7 @@ def test_allocate_rejects_explicit_physical_id_overlap_and_audits(tmp_path):
         json.loads(line)
         for line in store.paths.audit_actions.read_text(encoding="utf-8").splitlines()
     ]
-    assert [row["outcome"] for row in audit[-2:]] == [
-        "COMMAND_RECEIVED",
-        "COMMAND_REJECTED",
-    ]
+    assert [row["outcome"] for row in audit[-1:]] == ["COMMAND_REJECTED"]
     assert audit[-1]["rejection_reason"]["rule"] == "resource-gpu-placement"
     assert secret_reason not in store.paths.audit_actions.read_text(
         encoding="utf-8"

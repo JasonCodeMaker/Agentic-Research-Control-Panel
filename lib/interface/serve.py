@@ -56,6 +56,24 @@ def _read_json(path: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def interface_is_current(paths: ResearchPaths) -> bool:
+    """Compare the cheap projection marker with transactional state."""
+    marker = _read_json(paths.interface / "data" / "projection.json")
+    if not marker:
+        return False
+    state = EventStore(paths).state()
+    return (
+        marker.get("source_seq") == state.get("source_seq")
+        and marker.get("source_hash") == state.get("source_hash")
+    )
+
+
+def ensure_interface_current(paths: ResearchPaths) -> None:
+    """Coalesce any number of state commits into one on-demand rebuild."""
+    if not interface_is_current(paths):
+        build_interface(paths)
+
+
 def safe_run_dir(
     paths: ResearchPaths,
     run_id: str,
@@ -312,6 +330,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             if parsed.path.startswith(prefix):
                 handler(urllib.parse.unquote(parsed.path[len(prefix) :]))
                 return
+        ensure_interface_current(self.paths)
         super().do_GET()
 
 
@@ -378,8 +397,7 @@ def _emit(payload: Mapping[str, Any], *, as_json: bool) -> None:
 def _command_serve(args: argparse.Namespace) -> int:
     paths = _paths(args)
     paths.load_version()
-    if not paths.interface.is_dir():
-        build_interface(paths)
+    ensure_interface_current(paths)
     started_at = time.time()
     state = server_state(
         paths=paths,
@@ -432,7 +450,7 @@ def _start_background(paths: ResearchPaths, host: str, port: int) -> None:
 def _command_ensure(args: argparse.Namespace) -> int:
     paths = _paths(args)
     paths.load_version()
-    build_interface(paths)
+    ensure_interface_current(paths)
     existing = _read_json(paths.dashboard_server_state)
     if existing.get("api_base"):
         healthy = _check_health(

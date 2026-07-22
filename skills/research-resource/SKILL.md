@@ -26,8 +26,8 @@ With the default root, persistent management data is in `.research/state/`, Run 
 
 | Data | Location | Meaning |
 | --- | --- | --- |
-| Resource registry | Resource aggregates in `$RESEARCH_ROOT/state/events.jsonl` | Persistent authority |
-| Allocation lifecycle | ResourceAllocation aggregates in the same event log | Persistent occupancy authority |
+| Resource registry | Resource aggregates in `$RESEARCH_ROOT/state/research.sqlite3` through bounded queries | Persistent authority |
+| Allocation lifecycle | ResourceAllocation aggregates in the same database | Persistent occupancy authority |
 | Folded current state | `$RESEARCH_ROOT/state/current.json` | Rebuildable projection |
 | Availability snapshots | `$XDG_RUNTIME_DIR/trustworthy-research/<workspace-hash>/resource_snapshots/` | Short-lived local projection |
 | Human resource views | `$RESEARCH_ROOT/interface/` | Read-only generated projection |
@@ -35,8 +35,8 @@ With the default root, persistent management data is in `.research/state/`, Run 
 When `XDG_RUNTIME_DIR` is unset, `ResearchPaths` selects a per-user temporary fallback. Snapshots do
 not belong in `$RESEARCH_ROOT/state/`, and they do not survive as allocation facts.
 
-Never edit `events.jsonl`, `current.json`, or interface files. The CLI validates a command and commits
-it through the state writer.
+Never edit `research.sqlite3`, `events.jsonl`, `current.json`, or interface
+files. The CLI validates a command and commits it through the state writer.
 
 ## Authority boundary
 

@@ -8,6 +8,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from .package_identity import PackageIdentityViolation
+from .package_identity import validate_record as validate_package_identity
+
 
 SCHEMA_PATH = Path(__file__).with_name("schema.json")
 
@@ -460,6 +463,11 @@ def validate_aggregate_record(
             raise SchemaViolation(
                 "package.blocker requires non-empty code and summary"
             )
+    if aggregate_type == "package":
+        try:
+            validate_package_identity(record)
+        except PackageIdentityViolation as exc:
+            raise SchemaViolation(str(exc)) from exc
     if aggregate_type == "rule":
         level = record.get("level")
         kind = record.get("kind")

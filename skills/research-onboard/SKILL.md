@@ -6,11 +6,11 @@ description: "Use when turning a setup-ready workspace into one ratified Project
 # Research onboard
 
 Turn one setup-ready workspace into an active Project. Keep the human exchange
-semantic and brief. Repository inspection, NoteRefs, proposal hashes, events,
+semantic and brief. Repository inspection, NoteRefs, review receipts, events,
 and commands are internal machinery.
 
-The agent drafts; the user decides once. Delegate proposal and Scope writes to
-`research-scope` and `research-op` rather than editing managed state.
+The agent drafts; the user decides once. Commit Project authority through the
+shared transaction kernel rather than editing managed state.
 
 ## Boundaries
 
@@ -31,10 +31,9 @@ The agent drafts; the user decides once. Delegate proposal and Scope writes to
 - Ask for one explicit decision: confirm, revise, or reject.
 - Keep item ids, hashes, NoteRefs, actor flags, and CLI commands hidden unless
   the user requests audit details.
-- A stale, ambiguous, or conflicting decision leaves the proposal pending.
+- A stale, ambiguous, or conflicting decision changes no Project state.
 
-One semantic Scope change gets one review and one authorization. Proposal
-submission is non-authoritative and needs no separate user confirmation.
+One semantic Scope change gets one review and one authorization.
 
 ## Procedure
 
@@ -65,7 +64,7 @@ python3 skills/research-onboard/scripts/onboard.py --workspace . \
   write-prior-knowledge --content '<markdown>'
 ```
 
-Preserve the returned NoteRef for the proposal, but do not show it by default.
+Preserve the returned NoteRef for the Project review, but do not show it by default.
 For an empty workspace, use dialogue only and do not scaffold automatically.
 
 ### 3. Draft a minimal Project charter
@@ -86,28 +85,20 @@ inside the charter so the user's confirmation resolves the ambiguity and
 ratifies the same snapshot. Preserve verbatim wording only when the user asks
 for exact wording.
 
-### 4. Validate and submit before review
+### 4. Validate and prepare one review
 
-Build the complete Project proposal:
+Build the complete Project review:
 
 ```bash
 python3 skills/research-onboard/scripts/onboard.py --workspace . \
-  build-proposal \
+  review-project \
   --node-id project/<slug> \
   --spec '<json>' \
   --source '<user dialogue and files read>' \
   --prior-knowledge '<note-ref-json>'
 ```
 
-Submit the validated proposal immediately. It is pending and cannot change
-Scope:
-
-```bash
-python3 skills/research-scope/scripts/triage.py --workspace . propose \
-  --item '<proposal-json>' --receipt
-```
-
-Keep the returned id and hash internally. Show only:
+Keep the returned receipt internal. Show only:
 
 ```markdown
 **Project review**
@@ -122,23 +113,26 @@ Do not repeat the full review in the next turn.
 
 ### 5. Apply one user decision
 
-On an explicit confirmation, pass the hidden receipt through the combined
-hash-bound gateway:
+On an explicit confirmation, pass the hidden receipt to the Project transaction:
 
 ```bash
-python3 skills/research-op/scripts/research_op.py \
-  --workspace . --pkg _scope --op scope-accept \
-  --from-triage <item-id> --proposal-hash <proposal-hash> \
-  --actor-type user --actor-id <stable-user-id>
+python3 skills/research-onboard/scripts/onboard.py --workspace . \
+  commit-project \
+  --node-id project/<slug> \
+  --spec '<same-json>' \
+  --source '<same-user-dialogue-and-files-read>' \
+  --prior-knowledge '<same-note-ref-json>' \
+  --review-sha256 <internal-receipt-digest> \
+  --actor-id <stable-user-id> \
+  --review-id <conversation-review-id>
 ```
 
-The gateway rechecks the pending snapshot, records the user acceptance, and
-commits only that accepted snapshot. A retry is idempotent and does not require
+The kernel rechecks the reviewed snapshot and writes the Project plus its
+approval receipt in one transaction. A retry is idempotent and does not require
 another user decision.
 
-For revision, validate and submit a replacement under the same item id, then
-show the new charter once. For rejection, dispose the hidden item and hash as
-`REJECTED`; committed Scope remains unchanged.
+For revision, prepare and show the new charter once. Rejection ends onboarding
+without writing Project authority.
 
 ### 6. Verify and report
 
@@ -148,7 +142,6 @@ hashes only on request.
 
 ## Done condition
 
-Onboarding is complete when the user has confirmed one visible Project
-charter, the bound Project is active, and the pending proposal no longer needs
-another human decision. Rejection also ends onboarding without changing
-Project Scope.
+Onboarding is complete when the user has confirmed one visible Project charter
+and the bound Project is active. Rejection also ends onboarding without
+changing Project Scope.

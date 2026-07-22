@@ -27,6 +27,9 @@ def build_parser() -> argparse.ArgumentParser:
     context = sub.add_parser("context")
     context.add_argument("package_id")
     context.add_argument("--phase")
+    context.add_argument("--experiment")
+    context.add_argument("--budget-chars", type=int, default=4000)
+    context.add_argument("--full", action="store_true")
 
     history = sub.add_parser("history")
     history.add_argument("aggregate")
@@ -53,7 +56,16 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "show":
             result = query.show(args.aggregate_type, args.aggregate_id)
         elif args.command == "context":
-            result = query.context(args.package_id, phase=args.phase)
+            result = (
+                query.context(args.package_id, phase=args.phase)
+                if args.full
+                else query.compact_context(
+                    args.package_id,
+                    phase=args.phase,
+                    experiment_id=args.experiment,
+                    budget_chars=args.budget_chars,
+                )
+            )
         elif args.command == "history":
             if "/" not in args.aggregate:
                 parser.error("history aggregate must use <type>/<id>")
@@ -82,7 +94,17 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 2
-    print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
+    if args.command == "context" and not args.full:
+        print(
+            json.dumps(
+                result,
+                sort_keys=True,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        )
+    else:
+        print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
     return 0
 
 

@@ -742,15 +742,22 @@
     var status = packageStatus(pkg) || "unmeasured";
     var cat = normalizeCategory(pkg.category);
     var isTerminal = cat === "success" || cat === "fail";
+    var summary = pkg.cardSummary || null;
+    var title = summary && summary.title ? summary.title : pkg.name;
+    var problem = summary ? summary.question : pkg.problem;
+    var objective = summary ? summary.hypothesis : pkg.objective;
+    var motivation = summary ? summary.motivation : pkg.motivation;
+    var gate = summary ? summary.completionGate : pkg.activeGate;
+    var metric = summary ? summary.measurements : pkg.primaryMetricVsGate;
     var body = [
       tagSummaryHtml(pkg),
-      '<p class="card-text"><strong>Problem:</strong> ' + htmlEscape(pkg.problem) + "</p>",
-      '<p class="card-text"><strong>Objective:</strong> ' + htmlEscape(pkg.objective) + "</p>",
-      '<p class="card-text"><strong>Motivation:</strong> ' + htmlEscape(pkg.motivation) + "</p>",
+      '<p class="card-text"><strong>' + (summary ? "Question" : "Problem") + ':</strong> ' + fieldOrUnmeasured(problem) + "</p>",
+      '<p class="card-text"><strong>' + (summary ? "Hypothesis" : "Objective") + ':</strong> ' + fieldOrUnmeasured(objective) + "</p>",
+      '<p class="card-text"><strong>' + (summary ? "Why now" : "Motivation") + ':</strong> ' + fieldOrUnmeasured(motivation) + "</p>",
       isTerminal ? terminalTileHtml(pkg) : "",
       cat === "in-progress" ? [
-        '<p class="card-text card-strip"><span><strong>Gate:</strong> ' + fieldOrUnmeasured(pkg.activeGate) + "</span> ",
-        '<span><strong>Metric vs gate:</strong> ' + fieldOrUnmeasured(pkg.primaryMetricVsGate) + "</span></p>",
+        '<p class="card-text card-strip"><span><strong>' + (summary ? "Completion gate" : "Gate") + ':</strong> ' + fieldOrUnmeasured(gate) + "</span> ",
+        '<span><strong>' + (summary ? "Measurements" : "Metric vs gate") + ':</strong> ' + fieldOrUnmeasured(metric) + "</span></p>",
       ].join("") : "",
     ].join("");
     return researchItemCardHtml({
@@ -765,7 +772,7 @@
         ' data-workflow-state="' + htmlEscape(status) + '">',
       ].join(""),
       close: "</a>",
-      title: pkg.name,
+      title: title,
       headerHtml: tagBadgeHtml(pkg) + statusPillHtml(pkg) + missingFieldsChipHtml(pkg),
       bodyHtml: body,
       footerHtml: [
@@ -917,7 +924,7 @@
       '<header class="masthead">',
       '<div class="eyebrow">Research package overview</div>',
       "<h1>" + htmlEscape(pkg.name) + "</h1>",
-      '<p class="lead">' + htmlEscape(pkg.problem) + "</p>",
+      '<p class="lead">' + htmlEscape(pkg.abstract || pkg.problem || "unmeasured") + "</p>",
       '<div class="toolbar">',
       tagBadgeHtml(pkg),
       '<span class="tag">' + htmlEscape(pkg.category) + "</span>",

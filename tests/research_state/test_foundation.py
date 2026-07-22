@@ -296,10 +296,7 @@ def test_schema_rejection_is_audited_before_state_write(tmp_path):
         for row in read_jsonl(paths.audit_actions)
         if row["command_id"] == "cmd-bad-event"
     ]
-    assert [row["outcome"] for row in rows] == [
-        "COMMAND_RECEIVED",
-        "COMMAND_REJECTED",
-    ]
+    assert [row["outcome"] for row in rows] == ["COMMAND_REJECTED"]
     assert rows[-1]["rejection_reason"]["rule"] == "event-type-unknown"
 
 
@@ -633,7 +630,6 @@ def test_projection_failure_never_rolls_back_committed_state(tmp_path):
         if row["command_id"] == "cmd-projection-failure"
     ]
     assert [row["outcome"] for row in rows] == [
-        "COMMAND_RECEIVED",
         "COMMAND_COMMITTED",
         "PROJECTION_FAILED",
     ]
@@ -652,8 +648,12 @@ def test_hash_chain_tamper_is_detected(tmp_path):
     row = json.loads(paths.events.read_text(encoding="utf-8"))
     row["payload"]["record"]["goal"] = "tampered"
     paths.events.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    # JSONL is a compatibility export, so ordinary state reads stay on the
+    # SQLite fast path. An audit-strength snapshot still verifies the complete
+    # exported hash chain and fails closed on tampering.
+    assert "goal" not in store.state()["aggregates"]["package"]["package"]
     with pytest.raises(EventIntegrityError, match="hash mismatch"):
-        store.state()
+        store.snapshot()
 
 
 def test_unknown_event_schema_version_fails_closed():

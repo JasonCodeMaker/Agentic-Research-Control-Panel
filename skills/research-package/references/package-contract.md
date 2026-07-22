@@ -4,10 +4,11 @@
 
 A research package is one Package aggregate across draft and executable
 states. Before it exists, a standalone Brainstorm owns the idea document.
-Explicit user approval converts that exact revision into a `DRAFT` Package. In
-`DRAFT`, it owns the proposal document but no Direction, Experiment, or
-execution authority. A later `PackageActivated` event commits the full Scope
-bundle and binds its Experiments to that same aggregate.
+On user request, the agent materializes that exact revision into a `DRAFT`
+Package without creating another approval boundary. In `DRAFT`, it owns the
+proposal document but no Direction, Experiment, or execution authority. A
+later `SCOPE_BUNDLE_COMMIT` transaction commits the full Scope Bundle and binds
+its Experiments to that same aggregate.
 
 ```json
 {
@@ -26,6 +27,7 @@ and cited evidence.
 ```text
 .research/
   state/
+    research.sqlite3
     events.jsonl
     current.json
     notes/
@@ -51,9 +53,10 @@ and cited evidence.
       _agent/context.html
 ```
 
-The state event log is authoritative. `current.json` is a verified,
-rebuildable fold. Experiment directories hold execution evidence. The
-interface is generated for human inspection and may be deleted and rebuilt.
+SQLite is management authority. `events.jsonl`, `current.json`, and
+`actions.jsonl` are compatibility exports. Experiment directories hold
+execution evidence. The interface is generated for human inspection and may
+be deleted and rebuilt.
 
 No research operation may infer management state from HTML. The package
 lifecycle skills never read or write the generated interface.
@@ -73,16 +76,18 @@ documentPath == docs/proposal.html
 ```
 
 Every refinement advances `draftRevision` and remains `REFINING`. One full
-proposal binds the exact `{id, draft_revision, document_sha256}` shown to the
-user and contains the complete Direction plus all selected Experiments.
-Submission and finalization fail closed if this source changes.
+Scope review binds the exact `{id, draft_revision, document_sha256}` shown to
+the user and contains the complete Direction plus all selected Experiments.
+Review commit fails closed if this source changes.
 
 Activation preserves the same Package id, `documentPath`, and `document_note`.
-One `PackageActivated` payload records the exact Draft as `SCOPE_READY`, accepts
-the proposal, commits Direction and Experiment Scope, sets the Package to
-`ACTIVE / CONTEXT_LOADED`, records `scopeBinding`, and applies Experiment
-bindings. It never creates a second Package and never exposes a partially
-committed Scope bundle.
+One `TransactionCommitted` event records the exact Draft as `SCOPE_READY`,
+commits Direction and Experiment Scope, sets the Package to
+`ACTIVE / CONTEXT_LOADED`, records `scopeBinding`, applies Experiment bindings,
+and opens an Execution Lease over the reviewed Experiment ids. It creates no
+Proposal aggregate, never creates a second Package, and never exposes a
+partially committed Scope Bundle. `PackageActivated` remains a compatibility
+event for imported and historical paths.
 
 A user may reopen an `ACTIVE` Package as the same Draft only before execution:
 there must be no Run history, result evidence, terminal Experiment state, or
@@ -130,7 +135,7 @@ embeds a Scope node or a copied spec.
 
 The Package owns package-level decision context:
 
-- identity: `id`, `name`, `tag`, and `tagMeaning`;
+- identity: `id`, `slug`, `name`, `title`, `tag`, and `tagMeaning`;
 - lifecycle: `lifecycle`, `phase`, and `blocker`;
 - research question: `problem`, `objective`, `motivation`, and `hypothesis`;
 - evaluation summary: `primaryMetric`, `baseline`, `budget`, and
@@ -149,6 +154,51 @@ turning them into premature Scope fields.
 Package metadata may summarize a result for navigation, but it must cite the
 owning Experiment result. It must not become an independent measurement
 store.
+
+### Canonical identity
+
+New Packages use `identityContractVersion=1`. Before conversion, the agent
+reads the Project, proposed Direction, selected Experiments, and proposal. It
+then writes one short `identityRationale` that identifies the Package's main
+purpose and designs a title around that purpose.
+
+The mechanical contract is:
+
+```text
+name == title
+slug == id
+id == <identityDate>-<title>
+```
+
+`identityDate` is the Package's original creation or materialization date in
+real `YYYY-MM-DD` form. It stays fixed when an identity is corrected. `title`
+is a case-preserving, hyphen-separated sequence of ASCII alphanumeric tokens,
+such as `Reproducing-VideoSearch-R1`. The date is not part of `name` or
+`title`.
+
+The title names the bounded core purpose. It does not need to list every
+dataset, control, budget, or later Experiment. Those details remain in Scope
+and the Package plan. It must not claim an outcome that has not been measured.
+
+### Package abstract and Hero lead
+
+`abstract` is the Package-level Abstract / TLDR and the source for the Overview
+Hero lead. It is one natural-English paragraph of no more than 150 words. It
+describes the whole Package in execution order: the initial work, the follow-up
+work, and the question the combined work will answer.
+
+The abstract is not a copy of `problem`, `objective`, or the Direction
+hypothesis. It does not carry the complete protocol, baseline roster, metric
+definition, or gate, and it does not claim an outcome before measurement.
+Those facts remain in their typed Scope, Plan, and Experiment homes. A legacy
+Package without `abstract` may render `problem` as a compatibility fallback.
+
+A pre-run identity correction uses one user-approved transaction. The event
+removes the old Package key, creates the new canonical key, and updates every
+bound Experiment and evidence target together. It is rejected after a Run,
+result summary, blocker, started Experiment, or evidence directory exists.
+The Direction and Experiment specs do not change. The old identity remains in
+`identityHistory` and event history.
 
 ## Experiment aggregate
 
@@ -260,20 +310,22 @@ desired `pages` list but does not invoke the renderer.
   revise its `spec` through a Package row operation.
 - Write run evidence below `.research/experiments/`.
 - Rebuild human pages through the interface owner.
-- Never edit `events.jsonl`, `current.json`, or generated HTML by hand.
+- Never edit `research.sqlite3`, `events.jsonl`, `current.json`, or generated
+  HTML by hand.
 - Never add a second persisted context pack.
 
 ## Acceptance checks
 
 A package activation change is valid when:
 
-1. the same Draft Package id becomes ACTIVE in a verified state fold;
+1. the same Draft Package id becomes ACTIVE in transactional current state;
 2. the reviewed document NoteRef and path are unchanged;
 3. every Experiment has a complete four-field spec;
 4. every bound Experiment keeps its accepted Scope id and has exactly one
    Package/local-id binding;
 5. no dependency was invented;
 6. evidence paths resolve below `.research/experiments/`;
-7. activation did not read generated HTML; and
-8. a later renderer rebuild can reproduce the same human page hierarchy and
+7. the open Execution Lease contains exactly the reviewed Experiment ids;
+8. activation did not read generated HTML; and
+9. a later renderer rebuild can reproduce the same human page hierarchy and
    proposal document.

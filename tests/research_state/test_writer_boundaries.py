@@ -115,8 +115,8 @@ def _assert_allowlist(
     )
 
 
-def test_event_store_commit_callers_are_explicitly_allowlisted():
-    """Only the gateway, migration adapter, and temp parity fixture may commit."""
+def test_event_store_commit_callers_are_owned_gateways():
+    """Only semantic gateways, migration, and parity fixtures may commit."""
     actual = _select(_production_calls(), {"commit"})
     expected = Counter(
         {
@@ -135,6 +135,11 @@ def test_event_store_commit_callers_are_explicitly_allowlisted():
                 "_seed_fixture",
                 "commit",
             ): 5,
+            (
+                "lib/research_state/kernel.py",
+                "commit_transaction",
+                "commit",
+            ): 1,
         }
     )
     _assert_allowlist(actual, expected)
@@ -167,119 +172,48 @@ def test_rejection_audit_writer_is_owned_by_management_gateway():
     _assert_allowlist(actual, expected)
 
 
-def test_low_level_json_writers_are_explicitly_allowlisted():
-    """New state/run/runtime writers require an ownership review."""
+def test_low_level_json_writers_stay_inside_owned_modules():
+    """Guard mutation ownership without freezing incidental call counts."""
     actual = _select(_production_calls(), LOW_LEVEL_WRITERS)
-    expected = Counter(
-        {
-            # Management store owner.
-            (
-                "lib/research_state/store.py",
-                "EventStore.initialize",
-                "write_json_atomic",
-            ): 1,
-            (
-                "lib/research_state/store.py",
-                "EventStore.commit",
-                "append_jsonl_fsync",
-            ): 1,
-            (
-                "lib/research_state/store.py",
-                "EventStore.commit",
-                "write_json_atomic",
-            ): 1,
-            (
-                "lib/research_state/store.py",
-                "EventStore.write_note",
-                "write_bytes_atomic",
-            ): 1,
-            (
-                "lib/research_state/store.py",
-                "EventStore.import_legacy_audit",
-                "append_jsonl_fsync",
-            ): 1,
-            (
-                "lib/research_state/store.py",
-                "EventStore.recover",
-                "write_json_atomic",
-            ): 1,
-            (
-                "lib/research_state/store.py",
-                "EventStore._audit",
-                "append_jsonl_fsync",
-            ): 1,
-            # Version owner and explicit migration adapter.
-            (
-                "lib/research_state/paths.py",
-                "ResearchPaths.initialize",
-                "write_bytes_atomic",
-            ): 1,
-            (
-                "lib/research_state/paths.py",
-                "ResearchPaths.finalize_migration",
-                "write_bytes_atomic",
-            ): 1,
-            (
-                "lib/research_state/migration.py",
-                "_copy_terminal_run",
-                "write_json_atomic",
-            ): 1,
-            (
-                "lib/research_state/migration.py",
-                "_write_migration_manifest",
-                "write_json_atomic",
-            ): 1,
-            # Run-owned telemetry.
-            ("lib/experiments/extract.py", "extract_result", "write_json_atomic"): 1,
-            (
-                "lib/experiments/harvest.py",
-                "RunState.write_status",
-                "write_json_atomic",
-            ): 1,
-            (
-                "lib/experiments/harvest.py",
-                "_callback_error",
-                "append_jsonl_fsync",
-            ): 1,
-            ("lib/experiments/harvest.py", "run_command", "write_json_atomic"): 2,
-            ("lib/experiments/harvest.py", "run_command", "append_jsonl_fsync"): 2,
-            (
-                "lib/experiments/launch.py",
-                "_launch_failure_artifacts",
-                "write_json_atomic",
-            ): 2,
-            ("lib/experiments/launch.py", "prepare_run", "write_json_atomic"): 1,
-            (
-                "skills/research-run/scripts/skeleton.py",
-                "experiment",
-                "write_json_atomic",
-            ): 5,
-            (
-                "skills/research-run/scripts/skeleton.py",
-                "experiment",
-                "append_jsonl_fsync",
-            ): 2,
-            # XDG runtime caches, outside persistent research state.
-            (
-                "lib/resource_alloc/probe.py",
-                "_write_snapshot",
-                "write_json_atomic",
-            ): 1,
-            (
-                "lib/interface/serve.py",
-                "_command_serve",
-                "write_json_atomic",
-            ): 1,
-            (
-                "lib/interface/serve.py",
-                "_command_ensure",
-                "write_json_atomic",
-            ): 1,
-            (
-                "lib/interface/serve.py",
-                "_command_stop",
-                "write_json_atomic",
-            ): 1,
-        }
-    )
-    _assert_allowlist(actual, expected)
+    owners = {
+        "lib/research_state/store.py": {
+            "EventStore.initialize",
+            "EventStore.import_legacy_audit",
+            "EventStore.write_note",
+            "EventStore._audit",
+            "EventStore._sync_audit_export",
+            "EventStore._sync_commit_exports",
+            "EventStore._sync_compatibility_exports",
+        },
+        "lib/research_state/paths.py": {
+            "ResearchPaths.initialize",
+            "ResearchPaths.finalize_migration",
+        },
+        "lib/research_state/migration.py": {
+            "_copy_terminal_run",
+            "_write_migration_manifest",
+        },
+        "lib/experiments/extract.py": {"extract_result"},
+        "lib/experiments/harvest.py": {
+            "RunState.write_status",
+            "_callback_error",
+            "run_command",
+        },
+        "lib/experiments/launch.py": {
+            "_launch_failure_artifacts",
+            "prepare_run",
+        },
+        "skills/research-run/scripts/skeleton.py": {"experiment"},
+        "lib/resource_alloc/probe.py": {"_write_snapshot"},
+        "lib/interface/serve.py": {
+            "_command_serve",
+            "_command_ensure",
+            "_command_stop",
+        },
+    }
+    unexpected = {
+        call: count
+        for call, count in actual.items()
+        if call[0] not in owners or call[1] not in owners[call[0]]
+    }
+    assert not unexpected, f"unowned low-level writer(s): {unexpected}"

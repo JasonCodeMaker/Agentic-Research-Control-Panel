@@ -22,11 +22,13 @@ from lib.research_state import (  # noqa: E402
     StateQuery,
 )
 from lib.interface import build_interface  # noqa: E402
+from lib.interface.package import package_view_models  # noqa: E402
 import brainstorm  # noqa: E402
 import brainstorm_transfer  # noqa: E402
 import create_from_scope  # noqa: E402
 import draft_package  # noqa: E402
 import management  # noqa: E402
+import reactivate_reopened  # noqa: E402
 import reopen_as_draft  # noqa: E402
 from tests.scope_fixtures import (  # noqa: E402
     commit_accepted_scope,
@@ -278,14 +280,15 @@ def test_activates_the_same_reviewed_draft_package(tmp_path):
         and row["aggregate_id"] == package_id
     ]
     assert package_events == [
-        "PackageDraftCreated",
-        "PackageDraftRevised",
+        "TransactionCommitted",
+        "TransactionCommitted",
         "PackageActivated",
     ]
 
 
-def test_reopens_never_run_activated_package_as_same_draft(tmp_path):
-    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+def _activated_retrieval_package(
+    paths: ResearchPaths,
+) -> tuple[str, dict, dict, dict]:
     commit_accepted_scope(management, paths, project_node(), actor=ACTOR)
     package_id = brainstorm.add_brainstorm(
         paths,
@@ -331,16 +334,28 @@ def test_reopens_never_run_activated_package_as_same_draft(tmp_path):
     assert create_from_scope.main(
         [
             "--workspace",
-            str(tmp_path),
+            str(paths.workspace),
             "--direction-id",
             "dir/retrieval-v2",
             "--id",
             package_id,
         ]
     ) == 0
-    active_experiment_status = EventStore(paths).state()["aggregates"][
-        "experiment"
-    ][EXPERIMENT_ID]["status"]
+    state = EventStore(paths).state()
+    return (
+        package_id,
+        reviewed,
+        copy.deepcopy(state["aggregates"]["package"][package_id]),
+        copy.deepcopy(state["aggregates"]["experiment"][EXPERIMENT_ID]),
+    )
+
+
+def test_reopens_never_run_activated_package_as_same_draft(tmp_path):
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    package_id, reviewed, active_package, active_experiment = (
+        _activated_retrieval_package(paths)
+    )
+    active_experiment_status = active_experiment["status"]
 
     result = reopen_as_draft.reopen(
         paths,
@@ -374,6 +389,7 @@ def test_reopens_never_run_activated_package_as_same_draft(tmp_path):
     assert context["proposal_document"]["note"] == reviewed["document_note"]
     history = StateQuery(paths).history("experiment", EXPERIMENT_ID)["data"]
     assert history[-1]["event_type"] == "PackageReopenedAsDraft"
+    build_interface(paths)
     assert (
         paths.interface
         / "packages"
@@ -381,6 +397,76 @@ def test_reopens_never_run_activated_package_as_same_draft(tmp_path):
         / "docs"
         / "proposal.html"
     ).is_file()
+
+    event_count = len(EventStore(paths).events())
+    restored = reactivate_reopened.reactivate(
+        paths,
+        package_id=package_id,
+        actor_id="test-pm",
+    )
+    state = EventStore(paths).state()
+    package = state["aggregates"]["package"][package_id]
+    experiment = state["aggregates"]["experiment"][EXPERIMENT_ID]
+    assert restored["status"] == "reactivated"
+    assert restored["category"] == "in-progress"
+    assert len(EventStore(paths).events()) == event_count + 1
+    assert package["lifecycle"] == "ACTIVE"
+    assert package["phase"] == "CONTEXT_LOADED"
+    assert package["draftStatus"] == "SCOPE_READY"
+    assert package["executionAuthorized"] is True
+    assert package["document_note"] == reviewed["document_note"]
+    assert package["direction_id"] == active_package["direction_id"]
+    assert package["sourceExperiments"] == active_package["sourceExperiments"]
+    assert package["nextRoute"] == "FIX_IMPLEMENTATION"
+    assert experiment == active_experiment
+    card = next(
+        row for row in package_view_models(state) if row["id"] == package_id
+    )
+    assert card["category"] == "in-progress"
+    assert card["status"] == "CONTEXT_LOADED"
+    assert card["detailPath"] == f"packages/{package_id}/"
+    assert StateQuery(paths).history("experiment", EXPERIMENT_ID)["data"][-1][
+        "event_type"
+    ] == "PackageActivated"
+
+    replay = reactivate_reopened.reactivate(
+        paths,
+        package_id=package_id,
+        actor_id="test-pm",
+    )
+    assert replay["event_id"] == restored["event_id"]
+    assert len(EventStore(paths).events()) == event_count + 1
+
+
+def test_reactivation_rejects_a_reopened_draft_that_was_revised(tmp_path):
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    package_id, _, _, _ = _activated_retrieval_package(paths)
+    reopen_as_draft.reopen(
+        paths,
+        package_id=package_id,
+        reason="The Package design needs another alignment pass.",
+        actor_id="test-pm",
+    )
+    draft_package.revise(
+        paths,
+        package_id=package_id,
+        patch={"abstract": "This proposal changed after the reopen."},
+        actor_id="test",
+    )
+    with pytest.raises(
+        CommandConflict,
+        match="changed after PackageReopenedAsDraft",
+    ):
+        reactivate_reopened.reactivate(
+            paths,
+            package_id=package_id,
+            actor_id="test-pm",
+        )
+    state = EventStore(paths).state()
+    assert state["aggregates"]["package"][package_id]["lifecycle"] == "DRAFT"
+    assert state["aggregates"]["experiment"][EXPERIMENT_ID][
+        "scope_confirmation"
+    ] == "STALE"
 
 
 def test_scope_acceptance_rejects_a_refined_draft_after_review(tmp_path):
@@ -484,7 +570,9 @@ def test_materialization_transfers_source_brainstorm_into_package_docs(tmp_path)
 
     state = EventStore(paths).state()
     package = state["aggregates"]["package"]["retrieval-package"]
-    assert state["aggregates"]["brainstorm"] == {}
+    materialized = state["aggregates"]["brainstorm"]["retrieval-proposal"]
+    assert materialized["status"] == "MATERIALIZED"
+    assert materialized["materialized_as"] == "retrieval-package"
     assert package["sourceBrainstorms"][0]["id"] == "retrieval-proposal"
     assert package["sourceBrainstorms"][0]["ownership"] == "package"
     assert package["docsGroups"][0]["id"] == "source-proposal"
@@ -621,7 +709,9 @@ def test_existing_package_repair_transfers_and_removes_brainstorm_atomically(
     state = EventStore(paths).state()
     package = state["aggregates"]["package"]["retrieval-package"]
     assert result["removed_brainstorms"] == ["repair-proposal"]
-    assert state["aggregates"]["brainstorm"] == {}
+    materialized = state["aggregates"]["brainstorm"]["repair-proposal"]
+    assert materialized["status"] == "MATERIALIZED"
+    assert materialized["materialized_as"] == "retrieval-package"
     assert package["sourceBrainstorms"][0]["id"] == "repair-proposal"
     event = EventStore(paths).events()[-1]
     assert event["event_type"] == "PackageMutationApplied"

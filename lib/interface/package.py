@@ -139,6 +139,58 @@ def _project_experiment(
     return projected
 
 
+def _snapshot_value(record: Mapping[str, Any], *labels: str) -> str:
+    raw = record.get("idea_snapshot")
+    wanted = {label.casefold() for label in labels}
+    if isinstance(raw, Mapping):
+        for label, value in raw.items():
+            if str(label).strip().casefold() in wanted and str(value or "").strip():
+                return str(value).strip()
+    elif isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, Mapping):
+                continue
+            label = str(item.get("label") or "").strip().casefold()
+            value = str(item.get("value") or "").strip()
+            if label in wanted and value:
+                return value
+    return ""
+
+
+def _package_card_summary(record: Mapping[str, Any]) -> dict[str, str] | None:
+    """Select concise, governed copy for a package-grid card.
+
+    Full Direction and gate text remains available on the package detail pages.
+    A compact summary is emitted only when the Package carries the richer Draft
+    snapshot or objective contract, so legacy cards retain their frozen output.
+    """
+    contract = (
+        record.get("objectiveContract")
+        if isinstance(record.get("objectiveContract"), Mapping)
+        else {}
+    )
+    question = _snapshot_value(record, "Core question", "Research question", "核心问题")
+    title = str(record.get("title") or "").strip()
+    if not contract and not question and not title:
+        return None
+    return {
+        "title": title or _first(record, "name", default=str(record.get("id") or "")),
+        "question": question or _first(record, "problem", default="unmeasured"),
+        "hypothesis": str(contract.get("hypothesisOneLine") or "").strip()
+        or _first(record, "hypothesis", "objective", default="unmeasured"),
+        "motivation": _first(record, "motivation", default="unmeasured"),
+        "completionGate": str(contract.get("successPredicate") or "").strip()
+        or _first(record, "activeGate", default="unmeasured"),
+        "measurements": str(contract.get("metric") or "").strip()
+        or _first(
+            record,
+            "primaryMetricVsGate",
+            "primaryMetric",
+            default="unmeasured",
+        ),
+    }
+
+
 def _merge_rows(
     existing: Any,
     derived: list[dict[str, Any]],
@@ -358,6 +410,10 @@ def package_view_models(state: Mapping[str, Any]) -> list[dict[str, Any]]:
             if projected.get("lifecycle") == "DRAFT"
             else f"packages/{slug}/"
         )
+        projected.pop("cardSummary", None)
+        card_summary = _package_card_summary(projected)
+        if card_summary is not None:
+            projected["cardSummary"] = card_summary
         if projected.get("lifecycle") == "DRAFT":
             projected.setdefault("problem", projected.get("idea") or "unmeasured")
             projected.setdefault(
@@ -715,6 +771,7 @@ def _template_mapping(record: Mapping[str, Any]) -> dict[str, str]:
     values = {
         "package_id": package_id,
         "name": _first(record, "name", "title", default=package_id),
+        "abstract": _first(record, "abstract", "problem", default="unmeasured"),
         "category": _first(record, "category", default="in-progress"),
         "tag": _first(record, "tag", default="untagged"),
         "tag_meaning": _first(

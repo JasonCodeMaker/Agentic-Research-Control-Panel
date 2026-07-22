@@ -729,6 +729,77 @@ def test_package_projection_uses_formal_scope_experiment_provenance(
     assert "aliases" not in package["experiments"][0]
 
 
+def test_package_projection_derives_a_concise_card_summary(tmp_path: Path) -> None:
+    paths, store = _workspace(tmp_path)
+    store.commit(
+        event_type="AggregatePatched",
+        aggregate_type="package",
+        aggregate_id="package-one",
+        payload={
+            "patch": {
+                "title": "A clear research package title",
+                "problem": "A deliberately long Direction statement.",
+                "motivation": "The Scope is ratified.",
+                "idea_snapshot": [
+                    {"label": "Core question", "value": "Can feedback help?"}
+                ],
+                "objectiveContract": {
+                    "hypothesisOneLine": "Feedback improves retrieval.",
+                    "successPredicate": "Complete an auditable evaluation.",
+                    "metric": "Record R@1, repair, harm, cost, and latency.",
+                },
+            }
+        },
+        actor=ACTOR,
+        idempotency_key="interface-test:card-summary",
+    )
+
+    result = build_interface(paths)
+    package = _browser_globals(
+        result.root / "data" / "research-packages.js"
+    )["RESEARCH_PACKAGES"][0]
+
+    assert package["cardSummary"] == {
+        "title": "A clear research package title",
+        "question": "Can feedback help?",
+        "hypothesis": "Feedback improves retrieval.",
+        "motivation": "The Scope is ratified.",
+        "completionGate": "Complete an auditable evaluation.",
+        "measurements": "Record R@1, repair, harm, cost, and latency.",
+    }
+
+
+def test_package_hero_lead_uses_the_package_abstract(tmp_path: Path) -> None:
+    paths, store = _workspace(tmp_path)
+    store.commit(
+        event_type="AggregatePatched",
+        aggregate_type="package",
+        aggregate_id="package-one",
+        payload={
+            "patch": {
+                "abstract": "First reproduce the method, then test its transfer.",
+                "problem": "Can the method transfer to another task?",
+            }
+        },
+        actor=ACTOR,
+        idempotency_key="interface-test:package-abstract",
+    )
+
+    result = build_interface(paths)
+    overview = (
+        result.root / "packages" / "package-one" / "index.html"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        '<p class="lead">First reproduce the method, then test its transfer.</p>'
+        in overview
+    )
+    assert (
+        '<span class="identity-tldr-v">Can the method transfer to another task?</span>'
+        in overview
+    )
+
+
 def test_browser_schema_is_generated_from_central_schema(tmp_path: Path) -> None:
     paths, _ = _workspace(tmp_path)
     result = build_interface(paths)

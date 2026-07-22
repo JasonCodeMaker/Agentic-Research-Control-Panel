@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from lib.experiments.launch import launch_run
+from lib.interface import build_interface
 from lib.interface.package import package_view_models
 from lib.research_state import EventStore, ResearchPaths
 from tests.scope_fixtures import (
@@ -217,6 +218,50 @@ def test_package_creation_cannot_start_at_a_privileged_phase(tmp_path):
         )
 
     assert getattr(rejected.value, "rule", "") == "package-initial-state-invalid"
+
+
+def test_package_abstract_is_a_bounded_package_tldr(tmp_path):
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    store = _create(paths, phase="CONTEXT_LOADED")
+    abstract = (
+        "This package first reproduces the released retrieval pipeline. "
+        "It then tests the method on a downstream retrieval task."
+    )
+
+    management.apply_package_operation(
+        paths,
+        "pkg",
+        operation="update",
+        target="abstract",
+        payload={"to": abstract},
+        actor=ACTOR,
+    )
+    assert store.state()["aggregates"]["package"]["pkg"]["abstract"] == abstract
+
+    direction_hypothesis = store.state()["aggregates"]["direction"][DIRECTION_ID][
+        "spec"
+    ]["hypothesis"]
+    with pytest.raises(Exception) as duplicate:
+        management.apply_package_operation(
+            paths,
+            "pkg",
+            operation="update",
+            target="abstract",
+            payload={"to": direction_hypothesis},
+            actor=ACTOR,
+        )
+    assert getattr(duplicate.value, "rule", "") == "package-abstract-not-distinct"
+
+    with pytest.raises(Exception) as too_long:
+        management.apply_package_operation(
+            paths,
+            "pkg",
+            operation="update",
+            target="abstract",
+            payload={"to": "word " * 151},
+            actor=ACTOR,
+        )
+    assert getattr(too_long.value, "rule", "") == "package-abstract-too-long"
 
 
 def test_ready_to_launch_requires_an_independent_change_review(tmp_path):
@@ -446,10 +491,7 @@ def test_facade_rejection_before_domain_commit_is_audited(tmp_path):
         for row in read_jsonl(paths.audit_actions)
         if row.get("aggregate_id") == "commit_package_create"
     ]
-    assert [row["outcome"] for row in rows] == [
-        "COMMAND_RECEIVED",
-        "COMMAND_REJECTED",
-    ]
+    assert [row["outcome"] for row in rows] == ["COMMAND_REJECTED"]
     assert rows[-1]["rejection_reason"]["rule"] == "package-id-required"
 
 
@@ -474,10 +516,7 @@ def test_facade_rejection_audit_binds_names_and_summarizes_sensitive_text(
         for row in read_jsonl(paths.audit_actions)
         if row.get("aggregate_id") == "commit_package_create"
     ]
-    assert [row["outcome"] for row in rows] == [
-        "COMMAND_RECEIVED",
-        "COMMAND_REJECTED",
-    ]
+    assert [row["outcome"] for row in rows] == ["COMMAND_REJECTED"]
     serialized = json.dumps(rows, sort_keys=True)
     for secret in (
         "content-secret",
@@ -527,10 +566,7 @@ def test_cli_level_rejection_is_audited(tmp_path):
         for row in read_jsonl(paths.audit_actions)
         if row.get("aggregate_id") == "research-op-cli"
     ]
-    assert [row["outcome"] for row in rows[-2:]] == [
-        "COMMAND_RECEIVED",
-        "COMMAND_REJECTED",
-    ]
+    assert [row["outcome"] for row in rows[-1:]] == ["COMMAND_REJECTED"]
     assert rows[-1]["rejection_reason"]["detail"] == (
         "tracker-chosen-route is insert-only"
     )
@@ -624,7 +660,7 @@ def test_management_facades_emit_semantic_events_and_package_projection(tmp_path
         )
         output = json.loads(result.stdout)
         assert [event["event_type"] for event in output["events"]] == expected
-        assert output["interface_written"] is True
+        assert output["interface_written"] is False
         assert output["interface_source_seq"] == len(store.events())
 
     state = store.state()
@@ -648,14 +684,14 @@ def test_management_facades_emit_semantic_events_and_package_projection(tmp_path
     assert projected["implementation"]["changes"][0]["validatingExp"] == (
         EXPERIMENT_ID
     )
+    build_interface(paths)
     assert (paths.interface / "packages/pkg/analysis.html").is_file()
     rendered = [
         json.loads(line)
         for line in paths.audit_actions.read_text(encoding="utf-8").splitlines()
         if json.loads(line)["outcome"] == "PROJECTION_RENDERED"
     ]
-    assert rendered
-    assert rendered[-1]["domain_event_id"] == store.events()[-1]["event_id"]
+    assert rendered == []
 
 
 def test_self_evolve_events_use_typed_management_gateways(tmp_path):
@@ -1063,14 +1099,15 @@ def test_rule_facade_commits_rule_aggregate_and_rebuilds_projection(tmp_path):
 
     output = json.loads(result.stdout)
     assert output["events"][0]["event_type"] == "AggregateUpserted"
-    assert output["interface_written"] is True
+    assert output["interface_written"] is False
     rule = store.state()["aggregates"]["rule"]["pkg#same-eval-split"]
     assert rule["kind"] == "binding"
     assert rule["package_id"] == "pkg"
+    build_interface(paths)
     assert (paths.interface / "packages/pkg/analysis.html").is_file()
 
 
-def test_projection_failure_is_audited_without_blocking_management_commit(
+def test_management_commit_does_not_eagerly_invoke_projection(
     tmp_path,
     monkeypatch,
 ):
@@ -1097,7 +1134,8 @@ def test_projection_failure_is_audited_without_blocking_management_commit(
     )
 
     assert event["_interface_projection"]["written"] is False
-    assert "synthetic interface failure" in event["_interface_projection"]["error"]
+    assert event["_interface_projection"]["stale"] is True
+    assert "error" not in event["_interface_projection"]
     change = store.state()["aggregates"]["change"][
         "pkg::change::change-projection-failure"
     ]
@@ -1107,7 +1145,4 @@ def test_projection_failure_is_audited_without_blocking_management_commit(
         for line in paths.audit_actions.read_text(encoding="utf-8").splitlines()
         if json.loads(line).get("domain_event_id") == event["event_id"]
     ]
-    assert [row["outcome"] for row in audit] == [
-        "COMMAND_COMMITTED",
-        "PROJECTION_FAILED",
-    ]
+    assert [row["outcome"] for row in audit] == ["COMMAND_COMMITTED"]

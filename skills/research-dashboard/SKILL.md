@@ -110,10 +110,11 @@ python3 -m lib.interface.serve \
   --json
 ```
 
-`ensure` requires a versioned root and performs a full rebuild before checking
-or starting the server.
-`serve` builds only when the interface directory is absent. Use `build` or
-`ensure` when state has changed and a fresh projection is required.
+`ensure` and `serve` require a versioned root. They compare the cheap projection
+marker with transactional state and rebuild only when the interface is absent
+or stale. While the server is running, the next static-page request performs
+the same check, so multiple management commits produce at most one rebuild
+before the page is served.
 
 Server PID metadata and logs are volatile runtime state. They live below
 `$XDG_RUNTIME_DIR/trustworthy-research/<workspace-hash>/` when
@@ -142,6 +143,9 @@ Keep the current human layout and navigation:
   `assets/brainstorm.css`, and the state-backed `document_note` fragment.
 - Activation keeps the same route and NoteRef. The renderer changes only the
   presentation from non-executable draft to Package-owned source context.
+- A Package Overview Hero lead renders the state-backed `Package.abstract` as
+  its Abstract / TLDR. Only legacy Packages without `abstract` fall back to
+  `problem`; the renderer never derives this copy from Direction Scope.
 - Legacy standalone Brainstorms remain readable through their historical
   routes during migration, but new work must not create a second card type.
 - Each package keeps its own plan, implementation, results, analysis, tracker,

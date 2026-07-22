@@ -23,6 +23,7 @@ for candidate in (
 
 from lib.research_state import ResearchPaths  # noqa: E402
 from lib.research_state import policy as state_policy  # noqa: E402
+from lib.research_state.package_identity import canonical_fields  # noqa: E402
 import management  # noqa: E402
 
 
@@ -187,6 +188,14 @@ def _package_record(
         "analysisInsights": [],
         "docsGroups": [],
     }
+    if args.title:
+        record.update(
+            canonical_fields(
+                title=args.title,
+                identity_date=package_id[:10],
+                rationale=args.title_rationale,
+            )
+        )
     if args.source_direction:
         record.update(
             {
@@ -224,7 +233,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workspace", default=".")
     parser.add_argument("--research-root")
     parser.add_argument("--id", default="")
-    parser.add_argument("--name", required=True)
+    parser.add_argument("--name", default="")
+    parser.add_argument("--title", default="")
+    parser.add_argument("--title-rationale", default="", dest="title_rationale")
     parser.add_argument("--category", required=True, choices=sorted(CATEGORIES))
     parser.add_argument("--tag", required=True)
     parser.add_argument("--tag-meaning", required=True, dest="tag_meaning")
@@ -290,12 +301,31 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    package_id = args.id or default_id(args.name)
-    if not re.fullmatch(
-        r"[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]*",
-        package_id,
-    ):
-        raise SystemExit("Package id must look like YYYY-MM-DD-slug.")
+    identity = None
+    if args.title:
+        if args.name and args.name != args.title:
+            raise SystemExit("--name must equal --title under the identity contract.")
+        args.name = args.title
+        identity_date = args.id[:10] if args.id else args.last_updated
+        identity = canonical_fields(
+            title=args.title,
+            identity_date=identity_date,
+            rationale=args.title_rationale,
+        )
+        package_id = args.id or str(identity["id"])
+        if package_id != identity["id"]:
+            raise SystemExit(
+                f"Package id must equal the canonical identity: {identity['id']}"
+            )
+    else:
+        if not args.name:
+            raise SystemExit("Canonical creation requires --title; legacy mode requires --name.")
+        package_id = args.id or default_id(args.name)
+        if not re.fullmatch(
+            r"[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]*",
+            package_id,
+        ):
+            raise SystemExit("Legacy Package id must look like YYYY-MM-DD-slug.")
     pages = parse_scope(args.scope, args.category)
     initial_experiments = prepare_experiments(
         package_id,

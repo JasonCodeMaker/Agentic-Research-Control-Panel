@@ -82,6 +82,11 @@ class ResearchPaths:
         return self.state / "current.json"
 
     @property
+    def database(self) -> Path:
+        """Transactional authority for management state and command receipts."""
+        return self.state / "research.sqlite3"
+
+    @property
     def state_lock(self) -> Path:
         return self.state / ".lock"
 

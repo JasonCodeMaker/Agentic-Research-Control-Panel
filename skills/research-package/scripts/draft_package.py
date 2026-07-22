@@ -27,6 +27,7 @@ for candidate in (
 from lib.interface.project import validate_brainstorm_document_fragment  # noqa: E402
 from lib.research_state import ResearchPaths, StateQuery  # noqa: E402
 from lib.research_state.io import canonical_json  # noqa: E402
+from lib.research_state.package_identity import canonical_fields  # noqa: E402
 import create_research_package  # noqa: E402
 import management  # noqa: E402
 import scope_ssot  # noqa: E402
@@ -93,6 +94,8 @@ def convert(
     brainstorm_id: str,
     package_id: str | None,
     actor_id: str,
+    title: str | None = None,
+    title_rationale: str | None = None,
 ) -> dict[str, Any]:
     """Consume one exact Brainstorm revision into a same-document Draft Package."""
     view = StateQuery(paths).brainstorms(
@@ -102,13 +105,6 @@ def convert(
     brainstorm = view["items"][0] if view["items"] else None
     if not isinstance(brainstorm, dict) or brainstorm.get("status") != "ACTIVE":
         raise ValueError(f"ACTIVE Brainstorm required: {brainstorm_id}")
-    resolved_id = package_id or brainstorm_id
-    try:
-        StateQuery(paths).show("package", resolved_id)
-    except KeyError:
-        pass
-    else:
-        raise ValueError(f"Package already exists: {resolved_id}")
     brainstorm_version = int(view["versions"].get(brainstorm_id, 0))
     if brainstorm_version < 1:
         raise ValueError(f"Brainstorm has no committed revision: {brainstorm_id}")
@@ -120,19 +116,39 @@ def convert(
         or brainstorm.get("created_at")
         or datetime.now(timezone.utc).isoformat()
     )
+    identity = None
+    if title is not None:
+        identity = canonical_fields(
+            title=title,
+            identity_date=converted_at[:10],
+            rationale=str(title_rationale or ""),
+        )
+        resolved_id = str(identity["id"])
+        if package_id is not None and package_id != resolved_id:
+            raise ValueError(
+                f"Package id must equal the canonical title identity: {resolved_id}"
+            )
+    else:
+        resolved_id = package_id or brainstorm_id
+    try:
+        StateQuery(paths).show("package", resolved_id)
+    except KeyError:
+        pass
+    else:
+        raise ValueError(f"Package already exists: {resolved_id}")
     descriptor = _source_descriptor(
         resolved_id,
         brainstorm_id,
         brainstorm,
         brainstorm_version,
     )
-    title = str(brainstorm.get("title") or resolved_id)
+    display_title = str(title or brainstorm.get("title") or resolved_id)
     record: dict[str, Any] = copy.deepcopy(brainstorm)
     record.update(
         {
             "id": resolved_id,
             "slug": resolved_id,
-            "name": title,
+            "name": display_title,
             "lifecycle": "DRAFT",
             "phase": None,
             "blocker": None,
@@ -159,6 +175,8 @@ def convert(
             "nextAction": "Refine the Draft Package, then review its full Scope bundle",
         }
     )
+    if identity is not None:
+        record.update(identity)
     record.pop("status", None)
     record.pop("detailPath", None)
     record.pop("_aggregate_type", None)
@@ -173,7 +191,7 @@ def convert(
         resolved_id,
         record,
         [consumption],
-        actor={"type": "user", "id": actor_id},
+        actor={"type": "agent", "id": actor_id},
         idempotency_key=(
             f"brainstorm-convert:{brainstorm_id}:v{brainstorm_version}:"
             f"{resolved_id}:{_digest(note)}"
@@ -302,6 +320,99 @@ def build_finalization_proposal(
     }
 
 
+def review_scope_bundle(
+    paths: ResearchPaths,
+    *,
+    package_id: str,
+    direction: dict[str, Any],
+    experiments: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Prepare the single semantic review used by the normal vNext flow."""
+    return management.prepare_scope_bundle(
+        paths,
+        package_id,
+        direction,
+        experiments,
+    )
+
+
+def commit_scope_bundle(
+    paths: ResearchPaths,
+    *,
+    package_id: str,
+    direction: dict[str, Any],
+    experiments: list[dict[str, Any]],
+    review_sha256: str,
+    actor_id: str,
+    review_id: str,
+) -> dict[str, Any]:
+    """Consume one user authorization and atomically solidify the Package."""
+    event = management.finalize_scope_bundle(
+        paths,
+        package_id,
+        direction,
+        experiments,
+        review_sha256,
+        actor={"type": "user", "id": actor_id},
+        review_id=review_id,
+    )
+    return {
+        "status": "scope_committed",
+        "package_id": package_id,
+        "event_id": event["event_id"],
+    }
+
+
+def review_outcome(
+    paths: ResearchPaths,
+    *,
+    package_id: str,
+    outcome: str,
+    reason: str,
+    evidence: list[dict[str, Any]],
+    actor_id: str,
+) -> dict[str, Any]:
+    """Prepare the single evidence-bound review that closes a Package."""
+    return management.prepare_package_decision(
+        paths,
+        package_id,
+        outcome,
+        reason,
+        evidence,
+        actor_id=actor_id,
+    )
+
+
+def commit_outcome(
+    paths: ResearchPaths,
+    *,
+    package_id: str,
+    outcome: str,
+    reason: str,
+    evidence: list[dict[str, Any]],
+    review_sha256: str,
+    actor_id: str,
+    review_id: str,
+) -> dict[str, Any]:
+    """Consume one user authorization and atomically close a Package."""
+    event = management.finalize_package_decision(
+        paths,
+        package_id,
+        outcome,
+        reason,
+        evidence,
+        review_sha256,
+        actor={"type": "user", "id": actor_id},
+        review_id=review_id,
+    )
+    return {
+        "status": "package_closed",
+        "package_id": package_id,
+        "outcome": outcome,
+        "event_id": event["event_id"],
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", default=".")
@@ -311,6 +422,8 @@ def build_parser() -> argparse.ArgumentParser:
     convert_parser = sub.add_parser("convert")
     convert_parser.add_argument("--brainstorm-id", required=True)
     convert_parser.add_argument("--package-id")
+    convert_parser.add_argument("--title", required=True)
+    convert_parser.add_argument("--title-rationale", required=True)
     convert_parser.add_argument("--actor-id", required=True)
 
     revise_parser = sub.add_parser("revise")
@@ -324,6 +437,39 @@ def build_parser() -> argparse.ArgumentParser:
     proposal_parser.add_argument("--direction", required=True)
     proposal_parser.add_argument("--experiments", required=True)
     proposal_parser.add_argument("--proposal-id")
+
+    review_parser = sub.add_parser("review-scope")
+    review_parser.add_argument("--package-id", required=True)
+    review_parser.add_argument("--direction", required=True)
+    review_parser.add_argument("--experiments", required=True)
+
+    commit_parser = sub.add_parser("commit-scope")
+    commit_parser.add_argument("--package-id", required=True)
+    commit_parser.add_argument("--direction", required=True)
+    commit_parser.add_argument("--experiments", required=True)
+    commit_parser.add_argument("--review-sha256", required=True)
+    commit_parser.add_argument("--actor-id", required=True)
+    commit_parser.add_argument("--review-id", required=True)
+
+    outcome_review_parser = sub.add_parser("review-outcome")
+    outcome_review_parser.add_argument("--package-id", required=True)
+    outcome_review_parser.add_argument(
+        "--outcome", required=True, choices=("SUCCESS", "FAIL")
+    )
+    outcome_review_parser.add_argument("--reason", required=True)
+    outcome_review_parser.add_argument("--evidence", required=True)
+    outcome_review_parser.add_argument("--actor-id", required=True)
+
+    outcome_commit_parser = sub.add_parser("commit-outcome")
+    outcome_commit_parser.add_argument("--package-id", required=True)
+    outcome_commit_parser.add_argument(
+        "--outcome", required=True, choices=("SUCCESS", "FAIL")
+    )
+    outcome_commit_parser.add_argument("--reason", required=True)
+    outcome_commit_parser.add_argument("--evidence", required=True)
+    outcome_commit_parser.add_argument("--review-sha256", required=True)
+    outcome_commit_parser.add_argument("--actor-id", required=True)
+    outcome_commit_parser.add_argument("--review-id", required=True)
     return parser
 
 
@@ -336,6 +482,8 @@ def main(argv: list[str] | None = None) -> int:
             brainstorm_id=args.brainstorm_id,
             package_id=args.package_id,
             actor_id=args.actor_id,
+            title=args.title,
+            title_rationale=args.title_rationale,
         )
     elif args.command == "revise":
         patch = json.loads(args.patch)
@@ -353,7 +501,7 @@ def main(argv: list[str] | None = None) -> int:
             actor_id=args.actor_id,
             document_html=document_html,
         )
-    else:
+    elif args.command == "build-proposal":
         experiments = json.loads(args.experiments)
         if not isinstance(experiments, list):
             raise ValueError("--experiments must be a JSON list")
@@ -363,6 +511,55 @@ def main(argv: list[str] | None = None) -> int:
             direction=json.loads(args.direction),
             experiments=experiments,
             proposal_id=args.proposal_id,
+        )
+    elif args.command == "review-scope":
+        experiments = json.loads(args.experiments)
+        if not isinstance(experiments, list):
+            raise ValueError("--experiments must be a JSON list")
+        result = review_scope_bundle(
+            paths,
+            package_id=args.package_id,
+            direction=json.loads(args.direction),
+            experiments=experiments,
+        )
+    elif args.command == "commit-scope":
+        experiments = json.loads(args.experiments)
+        if not isinstance(experiments, list):
+            raise ValueError("--experiments must be a JSON list")
+        result = commit_scope_bundle(
+            paths,
+            package_id=args.package_id,
+            direction=json.loads(args.direction),
+            experiments=experiments,
+            review_sha256=args.review_sha256,
+            actor_id=args.actor_id,
+            review_id=args.review_id,
+        )
+    elif args.command == "review-outcome":
+        evidence = json.loads(args.evidence)
+        if not isinstance(evidence, list):
+            raise ValueError("--evidence must be a JSON list")
+        result = review_outcome(
+            paths,
+            package_id=args.package_id,
+            outcome=args.outcome,
+            reason=args.reason,
+            evidence=evidence,
+            actor_id=args.actor_id,
+        )
+    else:
+        evidence = json.loads(args.evidence)
+        if not isinstance(evidence, list):
+            raise ValueError("--evidence must be a JSON list")
+        result = commit_outcome(
+            paths,
+            package_id=args.package_id,
+            outcome=args.outcome,
+            reason=args.reason,
+            evidence=evidence,
+            review_sha256=args.review_sha256,
+            actor_id=args.actor_id,
+            review_id=args.review_id,
         )
     print(json.dumps(result, indent=2, ensure_ascii=False, sort_keys=True))
     return 0

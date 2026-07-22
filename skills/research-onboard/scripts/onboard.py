@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""research-onboard: the deterministic on-ramp behind the steps 1->3 bridge.
+"""research-onboard: create one Project through one semantic authorization.
 
 Detects whether the workspace is empty or existing, scaffolds a deep-learning
 project skeleton in place, stores prior knowledge as a content-addressed
-Project NoteRef, and builds a validated Project proposal.  It never commits
-Project intent; the proposal flows through the research-op Triage gateway.
+Project NoteRef, and builds or commits one reviewed Project transaction.
 """
 
 from __future__ import annotations
@@ -188,6 +187,51 @@ def build_project_proposal(
     }
 
 
+def project_node(
+    node_id: str,
+    spec: dict[str, Any],
+    *,
+    source: str,
+    prior_knowledge: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the Project node shared by review and commit."""
+    return build_project_proposal(
+        node_id,
+        spec,
+        source=source,
+        prior_knowledge=prior_knowledge,
+    )["proposed_node"]
+
+
+def review_project(
+    paths: ResearchPaths,
+    node: dict[str, Any],
+) -> dict[str, Any]:
+    return management.prepare_project_commit(paths, node)
+
+
+def commit_project(
+    paths: ResearchPaths,
+    node: dict[str, Any],
+    review_sha256: str,
+    *,
+    actor_id: str,
+    review_id: str,
+) -> dict[str, Any]:
+    event = management.finalize_project_commit(
+        paths,
+        node,
+        review_sha256,
+        actor={"type": "user", "id": actor_id},
+        review_id=review_id,
+    )
+    return {
+        "status": "project_committed",
+        "project_id": node["id"],
+        "event_id": event["event_id"],
+    }
+
+
 def has_project_scope(paths: ResearchPaths) -> bool:
     """Return whether state contains an active Project."""
     _require_safe_workspace(paths)
@@ -230,6 +274,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--prior-knowledge",
         help="JSON NoteRef returned by write-prior-knowledge",
     )
+
+    for name, help_text in (
+        ("review-project", "prepare the single Project review"),
+        ("commit-project", "commit the reviewed Project"),
+    ):
+        command = sub.add_parser(name, help=help_text)
+        command.add_argument("--node-id", required=True)
+        command.add_argument("--spec", required=True)
+        command.add_argument("--source", required=True)
+        command.add_argument("--prior-knowledge")
+        if name == "commit-project":
+            command.add_argument("--review-sha256", required=True)
+            command.add_argument("--actor-id", required=True)
+            command.add_argument("--review-id", required=True)
 
     sub.add_parser(
         "has-project-scope",
@@ -284,6 +342,30 @@ def main(argv: list[str] | None = None) -> int:
                 item_id=args.item_id,
             )
             print(json.dumps(item, ensure_ascii=False))
+        elif args.cmd in {"review-project", "commit-project"}:
+            prior_knowledge = (
+                json.loads(args.prior_knowledge)
+                if args.prior_knowledge
+                else None
+            )
+            node = project_node(
+                args.node_id,
+                json.loads(args.spec),
+                source=args.source,
+                prior_knowledge=prior_knowledge,
+            )
+            result = (
+                review_project(paths, node)
+                if args.cmd == "review-project"
+                else commit_project(
+                    paths,
+                    node,
+                    args.review_sha256,
+                    actor_id=args.actor_id,
+                    review_id=args.review_id,
+                )
+            )
+            print(json.dumps(result, ensure_ascii=False))
         elif args.cmd == "has-project-scope":
             print(
                 json.dumps(

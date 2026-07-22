@@ -95,10 +95,7 @@ def test_register_pre_store_rejection_is_audited_without_sensitive_input(
         encoding="utf-8"
     )
     rows = [json.loads(line) for line in audit_text.splitlines()]
-    assert [row["outcome"] for row in rows] == [
-        "COMMAND_RECEIVED",
-        "COMMAND_REJECTED",
-    ]
+    assert [row["outcome"] for row in rows] == ["COMMAND_REJECTED"]
     assert rows[-1]["rejection_reason"]["rule"] == "resource-input-invalid"
     assert secret not in audit_text
     assert full_command not in audit_text
@@ -219,10 +216,7 @@ def test_direct_ledger_cannot_bypass_physical_gpu_binding_or_audit(tmp_path):
         .read_text(encoding="utf-8")
         .splitlines()
     ]
-    assert [row["outcome"] for row in rows] == [
-        "COMMAND_RECEIVED",
-        "COMMAND_REJECTED",
-    ]
+    assert [row["outcome"] for row in rows] == ["COMMAND_REJECTED"]
     assert rows[-1]["rejection_reason"]["rule"] == (
         "resource-gpu-type-required"
     )

@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "skills" / "research-op" / "scripts"))
 import context_pack  # noqa: E402
 import context_pack.build as context_build  # noqa: E402
 import management  # noqa: E402
+from lib.interface.build import build_interface  # noqa: E402
 from lib.research_state import CommandRejected, EventStore, ResearchPaths  # noqa: E402
 from self_evolve import state  # noqa: E402
 from tests.scope_fixtures import (  # noqa: E402
@@ -167,6 +168,7 @@ def test_promoted_rule_is_queried_directly_from_state(tmp_path):
     paths = _seed_workspace(tmp_path)
     _promote(paths)
     projection = paths.interface_data / "rules.js"
+    build_interface(paths)
     assert projection.exists()
     projection.write_text("intentionally invalid projection", encoding="utf-8")
     md = context_pack.render_md(context_build.build(paths, "pkg")[0])

@@ -196,8 +196,10 @@ def test_skill_requires_clear_scope_review_and_next_step():
     assert "**Project review**" in text
     assert "CONFIRM/确认" in text
     assert "3 to 100 words" in text
-    assert "--receipt" in text
-    assert "--op scope-accept" in text
+    assert "review-project" in text
+    assert "commit-project" in text
+    assert "--review-sha256" in text
+    assert "shared transaction kernel" in text
     assert "Keep item ids, hashes, NoteRefs" in text
     assert "do not scaffold automatically" in text
     assert "Candidate, not yet submitted" not in text

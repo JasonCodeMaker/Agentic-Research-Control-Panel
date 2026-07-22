@@ -118,16 +118,32 @@ def transfer_existing(
         for row in package.get("sourceBrainstorms", [])
         if isinstance(row, dict) and row.get("ownership") == "package"
     }
-    missing = [idea_id for idea_id in brainstorm_ids if idea_id not in records_by_id]
+    active_ids = [
+        idea_id
+        for idea_id in brainstorm_ids
+        if isinstance(records_by_id.get(idea_id), dict)
+        and records_by_id[idea_id].get("status", "ACTIVE") == "ACTIVE"
+    ]
+    already_converted = [
+        idea_id
+        for idea_id in brainstorm_ids
+        if isinstance(records_by_id.get(idea_id), dict)
+        and records_by_id[idea_id].get("status") == "MATERIALIZED"
+        and records_by_id[idea_id].get("materialized_as") == package_id
+    ]
+    missing = [
+        idea_id
+        for idea_id in brainstorm_ids
+        if idea_id not in active_ids and idea_id not in already_converted
+    ]
     unknown = [idea_id for idea_id in missing if idea_id not in package_owned]
     if unknown:
         raise ValueError("unknown Brainstorm(s): " + ", ".join(unknown))
-    active_ids = [idea_id for idea_id in brainstorm_ids if idea_id in records_by_id]
     if not active_ids:
         return {
             "package_event_id": None,
             "removed_brainstorms": [],
-            "already_converted": brainstorm_ids,
+            "already_converted": already_converted,
         }
     experiments = [
         str(row.get("id"))
@@ -176,7 +192,7 @@ def transfer_existing(
     return {
         "package_event_id": package_event["event_id"],
         "removed_brainstorms": active_ids,
-        "already_converted": missing,
+        "already_converted": already_converted,
     }
 
 

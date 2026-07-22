@@ -187,7 +187,8 @@ Before launch, verify:
 - Package phase is `READY_TO_LAUNCH`;
 - Experiment status is `READY`;
 - the Experiment spec is complete;
-- the required user launch acknowledgement exists;
+- the Package has an open Scope Execution Lease that includes the Experiment;
+  imported Packages without a lease require the legacy user launch acknowledgement;
 - any requested GPU allocation is open and bound to this Package and Experiment.
 
 The launcher enforces these conditions again:

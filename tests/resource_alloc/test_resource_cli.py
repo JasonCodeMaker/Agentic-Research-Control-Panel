@@ -158,10 +158,7 @@ def test_cli_argument_rejection_is_audited_without_full_command(tmp_path):
         encoding="utf-8"
     )
     rows = [json.loads(line) for line in audit_text.splitlines()]
-    assert [row["outcome"] for row in rows] == [
-        "COMMAND_RECEIVED",
-        "COMMAND_REJECTED",
-    ]
+    assert [row["outcome"] for row in rows] == ["COMMAND_REJECTED"]
     assert rows[-1]["rejection_reason"]["rule"] == (
         "resource-cli-arguments-invalid"
     )
@@ -179,16 +176,16 @@ def test_cli_writes_only_under_research_root(tmp_path):
     assert {
         "VERSION",
         "state/.lock",
+        "state/research.sqlite3",
         "state/current.json",
         "state/events.jsonl",
         "audit/actions.jsonl",
     } <= written
-    assert any(path.startswith("interface/") for path in written)
+    assert not any(path.startswith("interface/") for path in written)
     assert {path.split("/", 1)[0] for path in written} <= {
         "VERSION",
         "state",
         "audit",
-        "interface",
     }
 
 

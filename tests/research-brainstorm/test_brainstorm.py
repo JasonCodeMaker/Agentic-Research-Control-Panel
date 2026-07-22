@@ -62,8 +62,7 @@ def test_interface_builder_generates_english_detail_page(tmp_path):
 
     paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
     page = paths.interface / item["detailPath"]
-    # Every successful management commit refreshes the read-only interface.
-    assert page.exists()
+    assert not page.exists()
     build_interface(paths)
     assert page.exists()
     html = page.read_text(encoding="utf-8")
@@ -132,6 +131,7 @@ def test_add_stores_free_form_document_note_and_renders_shared_shell(tmp_path):
     note_path = tmp_path / ".research" / note["uri"]
     assert note_path.read_text(encoding="utf-8") == body
 
+    build_interface(ResearchPaths.resolve(workspace=tmp_path, environ={}))
     page = tmp_path / ".research" / "interface" / item["detailPath"]
     rendered = page.read_text(encoding="utf-8")
     assert "One revisable proposal for the shared core question." in rendered
@@ -171,6 +171,7 @@ def test_revise_updates_same_brainstorm_document_in_place(tmp_path):
     assert items[0]["revision"] == 2
     paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
     assert StateQuery(paths).brainstorms()["data"]["versions"][bid] == 2
+    build_interface(paths)
     rendered = (paths.interface / items[0]["detailPath"]).read_text(encoding="utf-8")
     assert "Revised section" in rendered
     assert "Initial section" not in rendered
@@ -218,6 +219,7 @@ def test_archive_can_link_a_merged_fragment_to_canonical_brainstorm(tmp_path):
     )
     assert archived["status"] == "ARCHIVED"
     assert archived["merged_into"] == canonical
+    build_interface(ResearchPaths.resolve(workspace=tmp_path, environ={}))
     rendered = (
         tmp_path / ".research" / "interface" / archived["detailPath"]
     ).read_text(encoding="utf-8")
@@ -227,7 +229,7 @@ def test_archive_can_link_a_merged_fragment_to_canonical_brainstorm(tmp_path):
     assert 'href="./' in rendered and "canonical.html" in rendered
 
 
-def test_skill_contract_keeps_one_free_form_document_until_explicit_conversion():
+def test_skill_contract_keeps_one_free_form_document_until_materialization():
     skill = (ROOT / "skills" / "research-brainstorm" / "SKILL.md").read_text(
         encoding="utf-8"
     )
@@ -236,11 +238,11 @@ def test_skill_contract_keeps_one_free_form_document_until_explicit_conversion()
     ).read_text(encoding="utf-8")
     assert "One broad research direction maps to one Brainstorm by default" in skill
     assert "Refine the same Brainstorm in place" in skill
-    assert "user explicitly approves the exact Brainstorm revision" in skill
+    assert "user has asked to continue into Package design" in skill
     assert "Keep the body free-form" in skill
     assert "standalone Brainstorm + iterative refinement" in skill
-    assert "PackageDraftCreated consumes the exact Brainstorm revision" in skill
-    assert "No Scope or execution authority is created" in skill
+    assert "DRAFT_MATERIALIZE records Brainstorm provenance" in skill
+    assert "Scope or execution authority is created by this skill" in skill
     assert "not a research schema" in contract
 
 
@@ -278,6 +280,7 @@ def test_archived_brainstorm_can_be_discarded_only_by_user(tmp_path):
         )
 
     item = brainstorm.read_brainstorms(tmp_path, include_archived=True)[0]
+    build_interface(ResearchPaths.resolve(workspace=tmp_path, environ={}))
     page = tmp_path / ".research" / "interface" / item["detailPath"]
     assert page.is_file()
     assert brainstorm.discard_brainstorm(
@@ -287,6 +290,8 @@ def test_archived_brainstorm_can_be_discarded_only_by_user(tmp_path):
         actor={"type": "user", "id": "reviewer"},
     )
     assert brainstorm.read_brainstorms(tmp_path, include_archived=True) == []
+    assert page.exists()
+    build_interface(ResearchPaths.resolve(workspace=tmp_path, environ={}))
     assert not page.exists()
     paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
     events = EventStore(paths).events()
@@ -338,6 +343,11 @@ def test_draft_package_context_uses_the_same_governed_document(tmp_path):
     assert context["proposal_document"]["note"] == context["package"]["document_note"]
     assert context["execution_authorized"] is False
     assert context["pending_scope"] == []
+
+    compact = StateQuery(paths).compact_context(bid)["data"]
+    assert compact["view"] == "compact"
+    assert compact["omitted"]["proposal_document_html"] == 1
+    assert body not in str(compact)
 
 
 # --- precondition + readiness ---------------------------------------------

@@ -7,8 +7,12 @@ import hashlib
 from collections.abc import Mapping
 from typing import Any
 
+from .io import canonical_json
 from .paths import ResearchPaths
 from .store import CommandRejected, EventStore
+
+
+DEFAULT_COMPACT_CONTEXT_BUDGET = 4_000
 
 
 def _verified_note_text(paths: ResearchPaths, ref: Any) -> str:
@@ -53,6 +57,55 @@ def _experiment_identifier_tokens(value: Any) -> set[str]:
             tokens.update(_experiment_identifier_tokens(item))
         return tokens
     return {str(value)} if value not in (None, "") else set()
+
+
+def _context_action(package: Mapping[str, Any]) -> str:
+    if package.get("lifecycle") == "DRAFT":
+        return "REFINE_DRAFT"
+    return {
+        "CONTEXT_LOADED": "IMPLEMENT_PACKAGE",
+        "IMPLEMENTING": "IMPLEMENT_PACKAGE",
+        "READY_TO_LAUNCH": "LAUNCH_EXPERIMENT",
+        "RUNNING": "MONITOR_RUN",
+        "RESULT_REVIEW": "REVIEW_RESULT",
+    }.get(str(package.get("phase") or ""), "QUERY_PACKAGE")
+
+
+def _rule_applies(rule: Mapping[str, Any], package_id: str) -> bool:
+    if rule.get("status") not in {"ACTIVE", "PROMOTED", "RULE_ACTIVE"}:
+        return False
+    level = rule.get("level")
+    if level in {"universal", "project"}:
+        return True
+    if level != "package":
+        return False
+    if (rule.get("package_id") or rule.get("pkg")) == package_id:
+        return True
+    scope = rule.get("scope") if isinstance(rule.get("scope"), Mapping) else {}
+    return package_id in set(scope.get("packages") or [])
+
+
+def _evidence_refs(records: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    selected: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for record in records:
+        refs = (
+            record.get("evidence_refs")
+            or record.get("evidenceRefs")
+            or record.get("evidence")
+            or []
+        )
+        if not isinstance(refs, list):
+            continue
+        for ref in refs:
+            if not isinstance(ref, dict):
+                continue
+            identity = canonical_json(ref)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            selected.append(copy.deepcopy(ref))
+    return selected
 
 
 def resolve_bound_experiment(
@@ -142,6 +195,17 @@ class StateQuery:
                 and event["aggregate_id"] == aggregate_id
             )
             or (
+                event["event_type"] == "TransactionCommitted"
+                and any(
+                    isinstance(participant, dict)
+                    and participant.get("aggregate_type") == aggregate_type
+                    and participant.get("aggregate_id") == aggregate_id
+                    for participant in event.get("payload", {}).get(
+                        "participants", []
+                    )
+                )
+            )
+            or (
                 aggregate_type == "experiment"
                 and event["event_type"]
                 in {
@@ -154,11 +218,15 @@ class StateQuery:
                     isinstance(binding, dict)
                     and binding.get("aggregate_id") == aggregate_id
                     for binding in event.get("payload", {}).get(
-                        (
-                            "experiment_unbindings"
-                            if event["event_type"] == "PackageReopenedAsDraft"
-                            else "experiment_bindings"
-                        ),
+                        "experiment_unbindings"
+                        if event["event_type"] == "PackageReopenedAsDraft"
+                        else "experiment_restorations"
+                        if event["event_type"] == "PackageActivated"
+                        and isinstance(
+                            event.get("payload", {}).get("reopen_reactivation"),
+                            dict,
+                        )
+                        else "experiment_bindings",
                         [],
                     )
                 )
@@ -318,6 +386,276 @@ class StateQuery:
             ),
         )
 
+    def compact_context(
+        self,
+        package_id: str,
+        *,
+        phase: str | None = None,
+        experiment_id: str | None = None,
+        budget_chars: int = DEFAULT_COMPACT_CONTEXT_BUDGET,
+    ) -> dict[str, Any]:
+        """Return one hard-bounded agent action packet.
+
+        Full proposal text, history, resolved Decisions, and cross-project
+        overlays stay behind ``context``. Every omitted category is reported;
+        if the mandatory intent and constraints do not fit, the query fails
+        instead of silently dropping authority.
+        """
+        if budget_chars < 512:
+            raise ValueError("compact context budget must be at least 512 characters")
+        state = self._state()
+        package = state["aggregates"]["package"].get(package_id)
+        if not isinstance(package, dict):
+            raise KeyError(f"unknown package: {package_id}")
+        if phase is not None and package.get("phase") != phase:
+            raise ValueError(
+                f"package phase is {package.get('phase')!r}, requested {phase!r}"
+            )
+
+        if package.get("lifecycle") == "DRAFT":
+            note = package.get("document_note")
+            _verified_note_text(self.paths, note)
+            projects = []
+            for project_id, raw in state["aggregates"]["project"].items():
+                if not isinstance(raw, dict) or raw.get("status") != "ACTIVE":
+                    continue
+                spec = raw.get("spec") if isinstance(raw.get("spec"), dict) else {}
+                projects.append(
+                    {
+                        "id": str(project_id),
+                        "goal": spec.get("goal"),
+                        "out_of_scope": copy.deepcopy(spec.get("out_of_scope", [])),
+                    }
+                )
+            data: dict[str, Any] = {
+                "view": "compact",
+                "action": {"kind": "REFINE_DRAFT"},
+                "selection": {
+                    "package": {
+                        "id": package_id,
+                        "lifecycle": "DRAFT",
+                        "phase": package.get("phase"),
+                        "blocker": package.get("blocker"),
+                    },
+                    "experiments": [],
+                    "pending_decision_ids": [],
+                    "evidence_refs": [],
+                },
+                "draft": {
+                    "id": package_id,
+                    "title": package.get("title") or package.get("name"),
+                    "abstract": package.get("abstract"),
+                    "draft_revision": package.get("draftRevision"),
+                    "document_path": package.get("documentPath"),
+                    "document_note": copy.deepcopy(note),
+                    "execution_authorized": False,
+                },
+                "project_boundary": sorted(projects, key=lambda row: row["id"]),
+                "constraints": ["Draft Package has no execution authority"],
+                "omitted": {
+                    "proposal_document_html": 1,
+                    "full_package_fields": max(len(package) - 8, 0),
+                    "history": True,
+                },
+            }
+            return self._bounded_context(state, data, budget_chars)
+
+        direction_id = package.get("direction_id") or package.get("sourceDirection")
+        direction = state["aggregates"]["direction"].get(direction_id)
+        direction_version = (
+            direction.get("version") if isinstance(direction, dict) else None
+        )
+        if (
+            not isinstance(direction, dict)
+            or direction.get("status") != "ACTIVE"
+            or not isinstance(direction_version, int)
+        ):
+            raise CommandRejected(
+                "scope-context-direction-invalid",
+                "package context requires a current ACTIVE Direction",
+            )
+
+        bound = [
+            (str(aggregate_id), raw)
+            for aggregate_id, raw in state["aggregates"]["experiment"].items()
+            if isinstance(raw, dict) and raw.get("package_id") == package_id
+        ]
+        stale = [
+            aggregate_id
+            for aggregate_id, experiment in bound
+            if experiment.get("scope_confirmation") != "CONFIRMED"
+            or experiment.get("scope_status") != "ACTIVE"
+            or experiment.get("confirmed_direction_version") != direction_version
+        ]
+        if stale:
+            raise CommandRejected(
+                "scope-context-stale",
+                "package context is blocked until these Experiment specs are "
+                "reconfirmed against the current Direction: "
+                + ", ".join(sorted(stale)),
+            )
+        if experiment_id is not None:
+            selected_id, selected_record = resolve_bound_experiment(
+                state["aggregates"]["experiment"],
+                package_id,
+                experiment_id,
+            )
+            selected = [(selected_id, selected_record)]
+        else:
+            selected = sorted(bound, key=lambda row: row[0])
+
+        project = None
+        for parent_id in direction.get("parents") or []:
+            candidate = state["aggregates"]["project"].get(parent_id)
+            if isinstance(candidate, dict):
+                project = candidate
+                break
+        if project is None:
+            project = next(
+                (
+                    raw
+                    for raw in state["aggregates"]["project"].values()
+                    if isinstance(raw, dict) and raw.get("status") == "ACTIVE"
+                ),
+                None,
+            )
+
+        rules = [
+            raw
+            for raw in state["aggregates"]["rule"].values()
+            if isinstance(raw, dict) and _rule_applies(raw, package_id)
+        ]
+        constraints = [
+            str(
+                rule.get("text")
+                or rule.get("content")
+                or rule.get("description")
+                or ""
+            )
+            for rule in rules
+        ]
+        constraints = [value for value in constraints if value]
+        pending_values = {
+            "PENDING",
+            "AWAITING_ACK",
+            "AWAITING_APPROVAL",
+            "AWAITING_RATIFICATION",
+            "ASK_USER",
+        }
+        pending = [
+            raw
+            for raw in state["aggregates"]["decision"].values()
+            if isinstance(raw, dict)
+            and (
+                raw.get("package_id") == package_id
+                or raw.get("subject_id") == package_id
+                or raw.get("experiment_id") in {identity for identity, _ in bound}
+            )
+            and (
+                raw.get("pending") is True
+                or raw.get("requires_action") is True
+                or raw.get("status") in pending_values
+                or raw.get("outcome") in pending_values
+                or raw.get("route") in pending_values
+            )
+        ]
+        evidence = _evidence_refs(
+            [package, *(record for _, record in selected), *rules, *pending]
+        )
+        shown_evidence = evidence[:4]
+        project_spec = (
+            copy.deepcopy(project.get("spec"))
+            if isinstance(project, dict) and isinstance(project.get("spec"), dict)
+            else None
+        )
+        data = {
+            "view": "compact",
+            "action": {
+                "kind": _context_action(package),
+                "experiment_id": selected[0][0] if len(selected) == 1 else None,
+            },
+            "selection": {
+                "package": {
+                    key: copy.deepcopy(package.get(key))
+                    for key in ("id", "lifecycle", "phase", "blocker")
+                },
+                "experiments": [
+                    {
+                        "id": identity,
+                        "status": record.get("status"),
+                        "control_mode": (
+                            record.get("spec", {}).get("control_mode")
+                            if isinstance(record.get("spec"), dict)
+                            else None
+                        ),
+                    }
+                    for identity, record in selected
+                ],
+                "pending_decision_ids": sorted(
+                    str(row.get("id")) for row in pending if row.get("id")
+                ),
+                "evidence_refs": shown_evidence,
+            },
+            "intent": {
+                "project": (
+                    {"id": project.get("id"), "spec": project_spec}
+                    if isinstance(project, dict)
+                    else None
+                ),
+                "direction": {
+                    "id": direction.get("id") or direction_id,
+                    "version": direction_version,
+                    "spec": copy.deepcopy(direction.get("spec")),
+                },
+                "experiments": [
+                    {
+                        "id": identity,
+                        "status": record.get("status"),
+                        "spec": copy.deepcopy(record.get("spec")),
+                    }
+                    for identity, record in selected
+                ],
+            },
+            "execution_lease": copy.deepcopy(package.get("executionLease")),
+            "constraints": constraints,
+            "omitted": {
+                "unselected_experiments": len(bound) - len(selected),
+                "evidence_refs": len(evidence) - len(shown_evidence),
+                "learnings": len(state["aggregates"]["learning"]),
+                "resolved_decisions": len(state["aggregates"]["decision"]) - len(pending),
+                "history": True,
+            },
+        }
+        return self._bounded_context(state, data, budget_chars)
+
+    @classmethod
+    def _bounded_context(
+        cls,
+        state: dict[str, Any],
+        data: dict[str, Any],
+        budget_chars: int,
+    ) -> dict[str, Any]:
+        packet = cls._stamp(state, data)
+        serialized_chars = len(canonical_json(packet))
+        packet["data"]["budget"] = {
+            "limit_chars": budget_chars,
+            "serialized_chars": serialized_chars,
+            "truncated": any(
+                bool(value)
+                for value in packet["data"].get("omitted", {}).values()
+            ),
+        }
+        serialized_chars = len(canonical_json(packet))
+        packet["data"]["budget"]["serialized_chars"] = serialized_chars
+        if len(canonical_json(packet)) > budget_chars:
+            raise CommandRejected(
+                "compact-context-budget-exceeded",
+                "mandatory intent and constraints exceed the compact context "
+                f"budget of {budget_chars} characters; select one Experiment "
+                "or request --full for explicit audit context",
+            )
+        return packet
+
     def analysis(self, package_id: str | None = None) -> dict[str, Any]:
         """Return only fields required by the state-backed Analysis editor."""
         state = self._state()
@@ -384,7 +722,7 @@ class StateQuery:
             row = copy.deepcopy(raw)
             row.setdefault("id", candidate_id)
             row["_aggregate_type"] = "brainstorm"
-            if not include_archived and row.get("status", "ACTIVE") == "ARCHIVED":
+            if not include_archived and row.get("status", "ACTIVE") != "ACTIVE":
                 continue
             items.append(row)
             versions[candidate_id] = int(

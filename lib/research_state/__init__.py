@@ -7,6 +7,7 @@ from .paths import (
     UpgradeRequired,
 )
 from .query import StateQuery, resolve_bound_experiment
+from .kernel import build_transaction_payload, commit_transaction, review_digest
 from .store import (
     CommandConflict,
     CommandRejected,
@@ -14,6 +15,7 @@ from .store import (
     LockBusy,
     ProjectionFailed,
 )
+from .transaction import approval_receipt
 
 __all__ = [
     "CURRENT_VERSION",
@@ -27,4 +29,8 @@ __all__ = [
     "resolve_bound_experiment",
     "UnsupportedResearchVersion",
     "UpgradeRequired",
+    "approval_receipt",
+    "build_transaction_payload",
+    "commit_transaction",
+    "review_digest",
 ]

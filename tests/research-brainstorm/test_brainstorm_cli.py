@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "skills" / "research-package" / "scripts"))
 
 import brainstorm  # noqa: E402
 import draft_package  # noqa: E402
+from lib.interface import build_interface  # noqa: E402
 from lib.research_state import ResearchPaths  # noqa: E402
 from tests.scope_fixtures import direction_spec  # noqa: E402
 
@@ -27,6 +28,7 @@ def test_cli_add_then_list(tmp_path, capsys):
     assert len(items) == 1
     assert items[0]["title"] == "Idea A"
     assert items[0]["detailPath"] == added["detailPath"]
+    build_interface(ResearchPaths.resolve(workspace=tmp_path, environ={}))
     assert (tmp_path / ".research" / "interface" / added["detailPath"]).is_file()
 
 
@@ -53,6 +55,7 @@ def test_cli_add_and_revise_document_body(tmp_path, capsys):
     assert rc == 0
     assert json.loads(capsys.readouterr().out)["revised"] is True
 
+    build_interface(ResearchPaths.resolve(workspace=tmp_path, environ={}))
     rendered = (
         tmp_path / ".research" / "interface" / added["detailPath"]
     ).read_text(encoding="utf-8")

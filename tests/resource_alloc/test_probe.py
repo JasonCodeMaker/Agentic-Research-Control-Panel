@@ -100,10 +100,7 @@ def test_probe_rejection_is_audited_without_raw_probe_fields(
         research_root / "audit" / "actions.jsonl"
     ).read_text(encoding="utf-8")
     rows = [json.loads(line) for line in audit_text.splitlines()]
-    assert [row["outcome"] for row in rows[-2:]] == [
-        "COMMAND_RECEIVED",
-        "COMMAND_REJECTED",
-    ]
+    assert [row["outcome"] for row in rows[-1:]] == ["COMMAND_REJECTED"]
     assert rows[-1]["rejection_reason"]["rule"] == "resource-probe-id-invalid"
     assert secret not in audit_text
     assert not (ra.resources_root(research_root) / "local.json").exists()

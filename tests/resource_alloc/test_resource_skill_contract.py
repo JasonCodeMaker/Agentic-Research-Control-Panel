@@ -9,7 +9,7 @@ def test_research_resource_skill_carries_allocation_protocol():
     text = SKILL.read_text(encoding="utf-8")
 
     for phrase in (
-        "$RESEARCH_ROOT/state/events.jsonl",
+        "$RESEARCH_ROOT/state/research.sqlite3",
         "$RESEARCH_ROOT/interface/",
         ".research/state/",
         ".research/experiments/",

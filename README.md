@@ -59,6 +59,7 @@ ARC manages one versioned root per research workspace:
 .research/
 |-- VERSION
 |-- state/
+|   |-- research.sqlite3              # transactional management authority
 |   |-- events.jsonl
 |   |-- current.json
 |   |-- migration.json                 # present after an explicit migration
@@ -95,14 +96,17 @@ The four directories exist because they answer different questions:
 
 | Layer | Owns | Mutability |
 | --- | --- | --- |
-| `state/` | Ratified intent, package and experiment records, decisions, rules, learnings, and management history | Guarded event writes |
+| `state/` | Ratified intent, package and experiment records, decisions, rules, learnings, and management history | One SQLite transaction per command |
 | `audit/` | The outcome of attempted management commands, including rejections | Append-only |
 | `experiments/` | What actually ran and the evidence it produced | Run-local, then immutable evidence |
 | `interface/` | What a person needs to inspect | Rebuildable projection |
 
-`state/events.jsonl` is the management authority. Run directories are the
-execution and evidence authority. `state/current.json` is a rebuildable state
-projection. Everything under `interface/` is a human read model.
+`state/research.sqlite3` is the management authority. One command writes its
+event, aggregate versions, current state, idempotency receipt, and terminal
+audit outcome in one transaction. `state/events.jsonl`, `state/current.json`,
+and `audit/actions.jsonl` are compatibility exports. Run directories remain
+the execution and evidence authority. Everything under `interface/` is a human
+read model.
 
 This storage change does not redesign the browser experience. The existing
 dashboard navigation, package pages, modules, tables, and visual layout remain
@@ -247,18 +251,20 @@ Run, evidence-backed results, a human decision, and reusable project knowledge.
 | Execute and verify an Experiment | `/research-run` | `$research-run` |
 | Continue within one approved Direction | `/research-auto` | `$research-auto` |
 
-### 1. Establish Project Scope, then use two approval boundaries
+### 1. Establish Project Scope, then refine without approval churn
 
-Project Scope establishes the durable workspace boundary. Brainstorming creates
-one standalone idea document. Refine it in place; it is not yet a Package and
-does not authorize experiments. The first explicit user approval converts its
-exact revision and NoteRef into a non-executable `DRAFT / REFINING` Package.
+Project Scope establishes the durable workspace boundary through one onboarding
+review and one user authorization. Brainstorming then creates a standalone idea
+document. The agent may refine it and materialize its exact revision as a
+non-executable `DRAFT / REFINING` Package without asking for a formal approval.
+The Brainstorm stays in governed state as provenance, but it leaves the active
+Brainstorm list.
 
-After the Draft Package is refined, one proposal presents the complete
-Direction and all selected Experiments and binds the exact Draft revision and
-document hash. The second explicit user approval records `SCOPE_READY`, commits
-that Scope bundle, and activates the same Package at `ACTIVE / CONTEXT_LOADED`
-in one `PackageActivated` event.
+After the Draft Package is refined, the agent presents the complete Direction
+and selected Experiments as one Scope Bundle. One user authorization commits
+the Package, Direction, and Experiments in a single `TransactionCommitted`
+event. That event also opens an Execution Lease limited to the Experiments in
+the reviewed bundle.
 
 Use onboarding when a workspace has no ratified Project objective:
 
@@ -266,20 +272,20 @@ Use onboarding when a workspace has no ratified Project objective:
 /research-onboard
 ```
 
-Onboarding proposes the objective and stops for acceptance, rejection, or
-revision. It does not start a campaign.
+Onboarding shows the Project charter once and stops for confirmation, revision,
+or rejection. It does not start a campaign.
 
 ### 2. Finalize and activate the Draft Package
 
 Ask `research-package` to finalize the reviewed Draft. The agent presents the
-complete Direction and Experiment set as one proposal. Your approval invokes
-`package-finalize`, which commits the proposal, Scope, Experiment bindings, and
-Package activation in one event. It preserves the Package id and proposal
-document; it does not create another Package.
+complete Direction and Experiment set once. Your approval commits the Scope
+Bundle and activates the same Package. The transaction preserves the Package id
+and proposal document. It does not create a Proposal aggregate or a second
+Package.
 
 `from-scope` is a compatibility command for imported or older state where the
 Direction and Experiments were already ratified separately. It is not part of
-the normal two-approval workflow.
+the normal Scope Bundle workflow.
 
 If a design problem is discovered before the first Run, the user may reopen
 that same Package as Draft. ARC preserves the proposal and audit history,
@@ -300,8 +306,10 @@ python3 skills/research-op/scripts/research_op.py \
 ```
 
 Add `--phase <phase-id>` to narrow the selection further. The response is an
-ephemeral query result. It is not written back as a package file and must not
-become a second source of truth.
+ephemeral compact packet with a hard 4,000-character budget and explicit
+omission counts. Add `--experiment <id>` for one execution target. Use
+`--full` only for Draft editing, Run context freezing, or audit. Neither view
+is written back as a package file or becomes a second source of truth.
 
 Useful management queries are:
 
@@ -316,8 +324,11 @@ python3 -m lib.research_state.cli --workspace "$WORKSPACE" \
 
 ### 4. Launch and inspect a Run
 
-`research-run` owns readiness checks, the launch acknowledgement, monitoring,
-result verification, and terminal routing. The underlying launcher is:
+`research-run` owns readiness checks, monitoring, result verification, and
+terminal routing. A valid Scope Execution Lease authorizes launches for the
+ratified Experiment set, so the normal path does not ask for a separate launch
+acknowledgement. Imported Packages without a lease retain the older
+`LAUNCH_ACK` compatibility check. The underlying launcher is:
 
 ```bash
 cd "$PIPELINE"
@@ -348,9 +359,11 @@ If `RESEARCH_ROOT` is unset, replace it in the second command with
 ### 5. Verify, decide, and learn
 
 A metric becomes a research fact only when its protocol and evidence pass the
-declared gate. Terminal adoption, archival, scope changes, and direction changes
-remain human decisions. Accepted results and failed methods are written into
-typed state so the next context query can retrieve them.
+declared gate. The user then reviews one evidence-backed Package outcome:
+`SUCCESS` or `FAIL`. That decision closes the Execution Lease and writes the
+Package plus Decision in one transaction. Optional `research-analysis` work may
+happen before the outcome or after it. Accepted results and failed methods stay
+available to later context queries.
 
 ## Human Interface Contract
 
@@ -358,11 +371,32 @@ The interface is intentionally for people:
 
 - It preserves the current dashboard, package-page, module, table, and visual
   layout.
-- It is rebuilt from state and run evidence, never edited as authority.
+- It is rebuilt from state and run evidence on demand, never edited as authority.
 - It may be deleted and regenerated without losing research truth.
 - Agents may report its URL, but they do not read it to form context, infer
   status, verify a claim, or choose the next action.
 - A stale page is a projection problem, not a reason to mutate HTML.
+
+Management commands do not rebuild the browser tree. The Dashboard checks a
+small source marker on the next request and folds any number of intervening
+commands into one rebuild.
+
+## Test layers
+
+Use the smallest layer that matches the change:
+
+```bash
+python3 -m pytest -q -m core
+python3 -m pytest -q -m integration
+python3 -m pytest -q -m projection
+python3 -m pytest -q -m migration
+python3 -m pytest -q -m release
+```
+
+`core` covers the main Project, Brainstorm, Package, Scope Bundle, Execution
+Lease, and transactional safety paths. Projection, migration, and broad static
+parity checks stay outside the normal inner loop. A full release run still uses
+`python3 -m pytest -q`.
 
 This boundary keeps the browser optimized for human comprehension while the
 agent consumes compact, typed data.
@@ -387,7 +421,7 @@ knowledge.
 | --- | --- | --- |
 | Set up, attach, migrate, or repair ARC | `research-init` | Verified setup plus a running Dashboard Server |
 | Rebuild or inspect the human view | `research-dashboard` | `.research/interface/` |
-| Establish the first Project objective | `research-onboard` | Proposal, then ratified Project state |
+| Establish the first Project objective | `research-onboard` | Project review, then one `PROJECT_COMMIT` transaction |
 | Explore an uncommitted idea | `research-brainstorm` | Standalone Brainstorm and governed document |
 | Change approved intent | `research-scope` | Ratified Project, Direction, or Experiment event |
 | Convert or finalize a bounded work unit | `research-package` | Draft Package or one atomic Scope-plus-activation event |
@@ -400,7 +434,7 @@ knowledge.
 
 ## Status
 
-The versioned EventStore, Triage and ratification gates, package workflow,
+The versioned transaction kernel, semantic review gates, package workflow,
 immutable Run envelope, result verification, governed learning store, migration
 path, and generated multi-page interface are implemented in this toolbox.
 

@@ -60,6 +60,50 @@ def test_cli_build_proposal(tmp_path, capsys):
     assert item["gate"] == "USER_ONLY"
 
 
+def test_cli_review_and_commit_project_without_triage_proposal(tmp_path, capsys):
+    _initialize(tmp_path)
+    spec = project_spec()
+    common = [
+        "--workspace",
+        str(tmp_path),
+        "--node-id",
+        "project/cifar10",
+        "--spec",
+        json.dumps(spec),
+        "--source",
+        "user review",
+    ]
+    rc = onboard.main([*common[:2], "review-project", *common[2:]])
+    assert rc == 0
+    review = json.loads(capsys.readouterr().out)
+    assert review["review"]["goal"] == spec["goal"]
+
+    rc = onboard.main(
+        [
+            *common[:2],
+            "commit-project",
+            *common[2:],
+            "--review-sha256",
+            review["receipt"]["content_sha256"],
+            "--actor-id",
+            "pm",
+            "--review-id",
+            "conversation-one",
+        ]
+    )
+    assert rc == 0
+    committed = json.loads(capsys.readouterr().out)
+    assert committed["status"] == "project_committed"
+    state = EventStore(
+        ResearchPaths.resolve(workspace=tmp_path)
+    ).state()
+    assert state["aggregates"]["project"]["project/cifar10"]["status"] == "ACTIVE"
+    assert state["aggregates"]["proposal"] == {}
+    assert EventStore(ResearchPaths.resolve(workspace=tmp_path)).events()[-1][
+        "event_type"
+    ] == "TransactionCommitted"
+
+
 def test_cli_has_project_scope_false(tmp_path, capsys):
     _initialize(tmp_path)
     rc = onboard.main([

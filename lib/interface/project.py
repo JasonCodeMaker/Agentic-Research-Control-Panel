@@ -334,6 +334,10 @@ def brainstorm_views(state: Mapping[str, Any]) -> list[dict[str, Any]]:
     for brainstorm_id, row in _bucket(state, "brainstorm").items():
         if not isinstance(row, Mapping):
             continue
+        if row.get("status") == "MATERIALIZED":
+            # Retain provenance in authority without projecting a duplicate
+            # standalone Brainstorm beside its owning Package.
+            continue
         projected = copy.deepcopy(dict(row))
         projected.setdefault("id", str(brainstorm_id))
         if not projected.get("detailPath") and projected.get("legacy_detail_path"):
