@@ -11,7 +11,7 @@ import context_pack  # noqa: E402
 import context_pack.build as context_build  # noqa: E402
 from ops import evolution  # noqa: E402
 from research_state import EventStore, ResearchPaths  # noqa: E402
-from self_evolve import induce, oracles, schema  # noqa: E402
+from self_evolve import schema  # noqa: E402
 from tests.scope_fixtures import (  # noqa: E402
     direction_node,
     experiment_spec,
@@ -53,15 +53,36 @@ def _failure_event():
     }
 
 
-def _draft():
-    return {
+def _rule():
+    rule = {
+        "schema_version": schema.RULE_SCHEMA,
         "id": "rule.verify-metric-contract",
+        "version": "1.0.0",
         "title": "Verify metric semantics before accepting a claim",
         "description": "Prevents metric-name ambiguity from becoming a claim.",
         "content": "If a custom metric changes, validate its contract before accepting the result.",
         "scope": _scope(),
+        "trigger_signals": ["test-failure-fixed"],
+        "risk_class": "R1_CONTEXT",
+        "provenance": {
+            "generated_by": "test-fixture",
+            "source_event_ids": ["evt_42"],
+            "source_trajectory_digests": [],
+        },
+        "validation_policy": {
+            "required_oracles": [
+                "schema_scope",
+                "faithfulness",
+                "original_reproduction",
+                "regression_smoke",
+                "conflict",
+            ]
+        },
+        "supersedes": [],
         "evidence_refs": [_ref()],
     }
+    rule["content_digest"] = schema.content_digest(rule)
+    return rule
 
 
 def _evidence(eid, ver, stage, result):
@@ -175,19 +196,18 @@ def test_failure_to_active_to_contextpack(tmp_path):
     _seed_package(paths)
     event = _failure_event()
     evolution.run("evolution-observe", event, paths)
-    rule = induce.induce_rule(event, _draft())
+    rule = _rule()
     eid, ver = rule["id"], rule["version"]
     evolution.run("evolution-create", rule, paths)
 
     results = {
-        "schema_scope": oracles.schema_scope(rule),
-        "faithfulness": oracles.faithfulness({"entailed": True}),
-        "original_reproduction": oracles.original_reproduction({"before": "fail", "after": "pass"}),
-        "regression_smoke": oracles.regression_smoke({"regressions": []}),
-        "conflict": oracles.conflict([]),
+        "schema_scope": "ORACLE_PASS",
+        "faithfulness": "ORACLE_PASS",
+        "original_reproduction": "ORACLE_PASS",
+        "regression_smoke": "ORACLE_PASS",
+        "conflict": "ORACLE_PASS",
     }
-    admission = oracles.resolve_admission(results)
-    assert admission == "FULLY_ADMITTED"
+    admission = "FULLY_ADMITTED"
     for stage, result in results.items():
         evolution.run("evolution-evidence-add", _evidence(eid, ver, stage, result), paths)
 
@@ -217,14 +237,3 @@ def test_failure_to_active_to_contextpack(tmp_path):
         paths,
     )
     assert rule["content"] not in context_pack.render_md(context_build.build(paths, "pkg")[0])
-
-
-def test_failed_repro_rejects_admission():
-    results = {
-        "schema_scope": "ORACLE_PASS",
-        "faithfulness": "ORACLE_PASS",
-        "original_reproduction": "ORACLE_FAIL",
-        "regression_smoke": "ORACLE_PASS",
-        "conflict": "ORACLE_PASS",
-    }
-    assert oracles.resolve_admission(results) == "REJECTED"

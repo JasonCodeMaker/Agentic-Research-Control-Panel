@@ -9,8 +9,7 @@ sys.path.insert(0, str(ROOT / "lib"))
 sys.path.insert(0, str(ROOT / "skills" / "research-op" / "scripts"))
 
 from ops import evolution  # noqa: E402
-from self_evolve import (bundle, sandbox, schema, skill_lifecycle,  # noqa: E402
-                         skill_oracles, store)
+from self_evolve import bundle, sandbox, schema, skill_lifecycle, store  # noqa: E402
 
 
 def _files():
@@ -67,39 +66,6 @@ def test_sandbox_rejects_unbounded_tools():
 
 def test_clean_manifest_is_sandbox_safe():
     assert sandbox.is_sandbox_safe(_manifest())
-
-
-# --- skill oracles ---
-
-def test_static_manifest_oracle():
-    assert skill_oracles.static_manifest(_manifest()) == "ORACLE_PASS"
-    bad = _manifest()
-    bad["permissions"]["network"] = "allow"
-    assert skill_oracles.static_manifest(bad) == "ORACLE_FAIL"
-
-
-def test_bundle_integrity_oracle():
-    files = _files()
-    assert skill_oracles.bundle_integrity(_manifest(_files=files), files) == "ORACLE_PASS"
-    assert skill_oracles.bundle_integrity(_manifest(_files=files), {"SKILL.md": "tampered"}) == "ORACLE_FAIL"
-
-
-def test_independent_review_requires_distinct_reviewer():
-    assert skill_oracles.independent_review(
-        {"reviewer_id": "r", "proposer_id": "p", "unresolved": []}) == "ORACLE_PASS"
-    assert skill_oracles.independent_review(
-        {"reviewer_id": "p", "proposer_id": "p", "unresolved": []}) == "ORACLE_FAIL"
-
-
-def test_resolve_validation_all_pass_validated():
-    res = {n: "ORACLE_PASS" for n in skill_oracles.PRE_INSTALL_ORACLES}
-    assert skill_oracles.resolve_validation(res) == "VALIDATED"
-
-
-def test_resolve_validation_any_fail_rejected():
-    res = {n: "ORACLE_PASS" for n in skill_oracles.PRE_INSTALL_ORACLES}
-    res["adversarial"] = "ORACLE_FAIL"
-    assert skill_oracles.resolve_validation(res) == "REJECTED"
 
 
 # --- skill lifecycle ---

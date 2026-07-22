@@ -7,7 +7,7 @@
 // fail) — a coarse grouping facet coupled to HTML data-category attributes, CSS
 // selectors, and URL slugs; STATE = SCREAMING_SNAKE (CONTEXT_LOADED, ADOPTED, …)
 // — the fine-grained state-machine values. Keep this consistent with
-// transitions.py STATES (which owns the legality matrix for the same set).
+// lib/research_state/policy.py (which owns the legality matrix for the same set).
 
 // Brainstorm is no longer a package category. Pre-package ideas live on the
 // dashboard brainstorm lane (data/brainstorms.js, window.BRAINSTORMS) and are not
@@ -31,16 +31,11 @@ window.RESEARCH_STATUS_SCHEMA = {
       "BLOCKED",
       "STOPPED",
     ],
-    description: "Active packages. Must declare the active gate, primary metric vs gate, and next route at all times (STOPPED is terminal-within-lane and is exempt from that trio).",
+    description: "Active packages. The first-view status projection shows current state, the work owned by that state, and every legal next-state condition. No branch is selected before its transition condition is verified. Gates and measurements remain in Scope, Plan, and Results.",
     required: {
-      // The _all trio applies to every in-progress state EXCEPT STOPPED, which
-      // is terminal-within-lane and requires only a terminationMessage.
-      _all: ["activeGate", "primaryMetricVsGate", "nextRoute"],
-      _all_exempt: ["STOPPED"],
+      _all: ["currentState", "currentProcess", "nextStateConditions"],
       EXPERIMENT_RUNNING: ["openRuns"],
-      LIVE_ANALYSIS: ["openRuns", "lastAction"],
-      BLOCKED: ["currentBlocker"],
-      NEXT_ACTION_READY: ["lastDecision", "lastDecisionEvidencePath"],
+      LIVE_ANALYSIS: ["openRuns"],
       STOPPED: ["terminationMessage"],
     },
     forbidden: [],

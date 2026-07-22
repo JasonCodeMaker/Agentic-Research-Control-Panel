@@ -150,6 +150,15 @@ Keep the current human layout and navigation:
   routes during migration, but new work must not create a second card type.
 - Each package keeps its own plan, implementation, results, analysis, tracker,
   and docs pages.
+- Each Package page uses the shared first-view status strip: Current State,
+  Current Process, Last Transition, and ordered
+  `IF transition condition → next state` pairs. Current Process describes only
+  the work owned by the current phase; it must never be derived from the
+  future-facing `nextAction`. Blockers are shown inside Current State without
+  replacing the canonical phase. Next-state rows come from the central phase
+  graph and remain neutral until a verified transition occurs. Gates and
+  measurements remain in Scope, Plan, and Results rather than the universal
+  status strip.
 - `module.html` remains available. Preserve the existing
   `module.html?package=<id>&module=<name>` route.
 - `live.html` keeps its own API poller. Other pages may use

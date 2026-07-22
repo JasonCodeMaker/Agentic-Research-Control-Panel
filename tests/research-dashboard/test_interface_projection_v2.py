@@ -19,9 +19,10 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 from lib.interface import build_interface
+from lib.interface.package import PHASE_TRANSITION_CONDITIONS
 from lib.interface.serve import make_handler, static_document_root
 from lib.research_state import EventStore, ResearchPaths
-from lib.research_state.schema import load_schema
+from lib.research_state.schema import load_schema, transition_map
 
 
 ACTOR = {"type": "agent", "id": "interface-test"}
@@ -134,10 +135,18 @@ def _workspace(tmp_path: Path) -> tuple[ResearchPaths, EventStore]:
                 "hypothesis": "The projection is deterministic.",
                 "primaryMetric": "tree hash",
                 "lastUpdated": "2026-07-20",
+                "lastAction": "Package identity renamed without changing state",
+                "nextAction": "Review implementation and run preflight",
+                "nextRoute": "FIX_IMPLEMENTATION",
                 "direction_id": "direction/test",
                 "sourceDirection": "direction/test",
                 "sourceVersion": 2,
                 "sourceChange": "interface-test:direction",
+                "scopeBinding": {
+                    "direction_id": "direction/test",
+                    "direction_version": 2,
+                    "experiment_ids": ["scope-exp-one"],
+                },
                 "sourceExperiments": [
                     {
                         "id": "scope-exp-one",
@@ -227,6 +236,156 @@ def test_rebuild_is_deterministic_and_does_not_trust_destination(tmp_path: Path)
     assert not (second.root / "manual-only.txt").exists()
 
 
+def test_package_overview_toolbar_only_links_dashboard(tmp_path: Path) -> None:
+    paths, _ = _workspace(tmp_path)
+    build_interface(paths)
+    page = (paths.interface / "packages" / "package-one" / "index.html").read_text()
+    start = page.index('<div class="toolbar" data-card="package-toolbar">')
+    toolbar = page[start : page.index("</div>", start)]
+
+    assert toolbar.count('<a class="pill"') == 1
+    assert 'href="../../index.html">Dashboard</a>' in toolbar
+    assert 'class="tag"' not in toolbar
+
+
+def test_package_status_projection_separates_state_process_and_next_states(
+    tmp_path: Path,
+) -> None:
+    paths, _ = _workspace(tmp_path)
+    build_interface(paths)
+    projected = _browser_globals(
+        paths.interface / "data" / "research-packages.js"
+    )["RESEARCH_PACKAGES"][0]
+
+    assert projected["currentState"] == {
+        "lifecycle": "ACTIVE",
+        "phase": "IMPLEMENTING",
+        "blocked": False,
+        "label": "IMPLEMENTING",
+        "blockerCode": None,
+        "blockerReason": None,
+    }
+    assert projected["currentProcess"] == {
+        "step": "Implement the scoped changes and produce reviewable artifacts.",
+        "evidence": "Current phase: IMPLEMENTING",
+    }
+    assert "Review implementation and run preflight" not in json.dumps(
+        projected["currentProcess"]
+    )
+    assert projected["lastTransition"]["summary"] == "No state transition is recorded"
+    assert projected["lastTransition"]["certainty"] == "UNMEASURED"
+    assert projected["nextStateConditions"] == [
+        {
+            "condition": "the scoped implementation and required checks are complete",
+            "nextState": "IMPLEMENTATION_REVIEW",
+        }
+    ]
+
+
+def test_every_legal_phase_edge_has_one_dashboard_condition() -> None:
+    graph = transition_map("package_phase")
+    legal_edges = {
+        (current_state, next_state)
+        for current_state, next_states in graph.items()
+        for next_state in next_states
+    }
+    assert set(PHASE_TRANSITION_CONDITIONS) == legal_edges
+
+
+def test_context_loaded_shows_current_work_and_all_neutral_next_states(
+    tmp_path: Path,
+) -> None:
+    paths, store = _workspace(tmp_path)
+    store.commit(
+        event_type="AggregatePatched",
+        aggregate_type="package",
+        aggregate_id="package-one",
+        payload={
+            "patch": {
+                "phase": "CONTEXT_LOADED",
+                "nextAction": "Do not launch until readiness passes.",
+                "nextRoute": "FIX_IMPLEMENTATION",
+            }
+        },
+        actor=ACTOR,
+        idempotency_key="interface-test:context-loaded",
+    )
+
+    build_interface(paths)
+    projected = _browser_globals(
+        paths.interface / "data" / "research-packages.js"
+    )["RESEARCH_PACKAGES"][0]
+
+    assert projected["currentProcess"] == {
+        "step": (
+            "Inspect the loaded Scope, Package plan, implementation, and evidence "
+            "needed to choose the first executable phase."
+        ),
+        "evidence": "Current phase: CONTEXT_LOADED",
+    }
+    assert "Do not launch" not in json.dumps(projected["currentProcess"])
+    assert projected["nextStateConditions"] == [
+        {
+            "condition": "implementation or preflight work is still required",
+            "nextState": "IMPLEMENTING",
+        },
+        {
+            "condition": (
+                "the existing implementation passes review and launch readiness"
+            ),
+            "nextState": "READY_TO_LAUNCH",
+        },
+    ]
+    assert all(
+        set(row) == {"condition", "nextState"}
+        for row in projected["nextStateConditions"]
+    )
+
+
+def test_blocker_is_an_overlay_on_the_resumable_phase(tmp_path: Path) -> None:
+    paths, store = _workspace(tmp_path)
+    store.commit(
+        event_type="AggregatePatched",
+        aggregate_type="package",
+        aggregate_id="package-one",
+        payload={
+            "patch": {
+                "blocker": {
+                    "code": "USER_DECISION_REQUIRED",
+                    "summary": "Choose the evaluation corpus",
+                },
+                "nextRoute": "ASK_USER",
+            }
+        },
+        actor=ACTOR,
+        idempotency_key="interface-test:blocker-overlay",
+    )
+
+    build_interface(paths)
+    projected = _browser_globals(
+        paths.interface / "data" / "research-packages.js"
+    )["RESEARCH_PACKAGES"][0]
+
+    assert projected["status"] == "BLOCKED"
+    assert projected["currentState"]["phase"] == "IMPLEMENTING"
+    assert projected["currentState"]["label"] == "IMPLEMENTING · BLOCKED"
+    assert projected["currentState"]["blockerReason"] == "Choose the evaluation corpus"
+    assert projected["currentProcess"] == {
+        "step": (
+            "Resolve the blocker before continuing IMPLEMENTING: "
+            "Choose the evaluation corpus"
+        ),
+        "evidence": "Blocker USER_DECISION_REQUIRED",
+    }
+    assert projected["currentBlocker"] == "Choose the evaluation corpus"
+    assert projected["nextStateConditions"] == [
+        {
+            "condition": "the scoped implementation and required checks are complete",
+            "nextState": "IMPLEMENTATION_REVIEW",
+        }
+    ]
+
+
 def test_package_tracker_rows_are_derived_from_run_and_resource_state(
     tmp_path: Path,
 ) -> None:
@@ -281,6 +440,10 @@ def test_package_tracker_rows_are_derived_from_run_and_resource_state(
     assert projected["resourceAllocations"][0]["assigned"] == "0"
     assert projected["resourceAllocations"][0]["capacity"] == "1 x RTX-4090"
     assert projected["openRuns"] == "run-one"
+    assert projected["currentProcess"] == {
+        "step": "Implement the scoped changes and produce reviewable artifacts.",
+        "evidence": "Current phase: IMPLEMENTING",
+    }
 
 
 def test_concurrent_rebuilds_cannot_publish_a_stale_snapshot(

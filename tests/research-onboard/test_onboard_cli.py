@@ -26,27 +26,6 @@ def test_cli_detect(tmp_path, capsys):
     assert out["state"] == "existing"
 
 
-def test_cli_scaffold(tmp_path, capsys):
-    _initialize(tmp_path)
-    rc = onboard.main(["--workspace", str(tmp_path), "scaffold"])
-    assert rc == 0
-    assert (tmp_path / "src").is_dir()
-    out = json.loads(capsys.readouterr().out)
-    assert "src" in out["created_dirs"]
-    assert "claude_md_written" not in out
-    assert "agents_md_written" not in out
-    assert not (tmp_path / "CLAUDE.md").exists()
-    assert not (tmp_path / "AGENTS.md").exists()
-
-
-def test_cli_scaffold_requires_research_init(tmp_path, capsys):
-    rc = onboard.main(["--workspace", str(tmp_path), "scaffold"])
-    assert rc == 2
-    out = json.loads(capsys.readouterr().out)
-    assert "research-init" in out["detail"]
-    assert not (tmp_path / ".research").exists()
-
-
 def test_cli_build_proposal(tmp_path, capsys):
     spec = project_spec()
     rc = onboard.main([

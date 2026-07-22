@@ -15,9 +15,6 @@ from typing import Any
 
 IDENTITY_CONTRACT_VERSION = 1
 _TITLE_RE = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
-_DATED_ID_RE = re.compile(
-    r"(?P<created>[0-9]{4}-[0-9]{2}-[0-9]{2})-(?P<title>[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)"
-)
 
 
 class PackageIdentityViolation(ValueError):
@@ -53,18 +50,6 @@ def validate_identity_date(value: str) -> str:
 def package_id(title: str, identity_date: str) -> str:
     """Return the only valid id for a canonical title and date."""
     return f"{validate_identity_date(identity_date)}-{validate_title(title)}"
-
-
-def split_package_id(value: str) -> tuple[str, str]:
-    """Split a canonical Package id into its date and semantic title."""
-    match = _DATED_ID_RE.fullmatch(str(value))
-    if match is None:
-        raise PackageIdentityViolation(
-            "Package id must equal YYYY-MM-DD followed by its canonical title"
-        )
-    identity_date = validate_identity_date(match.group("created"))
-    title = validate_title(match.group("title"))
-    return identity_date, title
 
 
 def canonical_fields(

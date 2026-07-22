@@ -64,23 +64,6 @@ def test_workspace_state_requires_explicit_legacy_upgrade(tmp_path):
         onboard.workspace_state(paths)
 
 
-# --- scaffold_skeleton -----------------------------------------------------
-
-def test_scaffold_skeleton_creates_layout(tmp_path):
-    onboard.scaffold_skeleton(tmp_path)
-    for d in ("src", "scripts", "configs", "data", "baselines", "figures"):
-        assert (tmp_path / d).is_dir()
-    assert (tmp_path / "src" / "__init__.py").exists()
-    assert not (tmp_path / "results").exists()
-    assert not (tmp_path / "logs").exists()
-
-
-def test_scaffold_skeleton_idempotent(tmp_path):
-    onboard.scaffold_skeleton(tmp_path)
-    onboard.scaffold_skeleton(tmp_path)  # second run must not raise
-    assert (tmp_path / "src").is_dir()
-
-
 # --- write_prior_knowledge -------------------------------------------------
 
 def test_write_prior_knowledge(tmp_path):

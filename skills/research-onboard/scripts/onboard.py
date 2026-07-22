@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """research-onboard: create one Project through one semantic authorization.
 
-Detects whether the workspace is empty or existing, scaffolds a deep-learning
-project skeleton in place, stores prior knowledge as a content-addressed
-Project NoteRef, and builds or commits one reviewed Project transaction.
+Detects whether the workspace is empty or existing, stores prior knowledge as
+a content-addressed Project NoteRef, and builds or commits one reviewed Project
+transaction.
 """
 
 from __future__ import annotations
@@ -40,14 +40,6 @@ IGNORE = frozenset({
     ".git", ".gitignore", ".gitkeep", ".pytest_cache", "__pycache__", ".DS_Store",
     "AGENTS.md", "CLAUDE.md",
 })
-
-# Source and configuration stay in the workspace.  Managed Run output belongs
-# under ResearchPaths.experiments and is not duplicated in source-side folders.
-SKELETON_DIRS = (
-    "src", "scripts", "configs", "data", "dataset", "baselines",
-    "figures",
-)
-GITKEEP_DIRS = ("data", "dataset", "baselines", "figures")
 
 def resolve_paths(*, workspace=".", research_root=None) -> ResearchPaths:
     return ResearchPaths.resolve(
@@ -96,17 +88,6 @@ def content_entries(paths: ResearchPaths) -> list[str]:
         for entry in paths.workspace.iterdir()
         if entry.name not in IGNORE and not _is_managed_entry(entry, paths)
     )
-
-
-def scaffold_skeleton(cwd) -> list[str]:
-    """Create the in-place DL skeleton (idempotent). Returns the directories ensured."""
-    cwd = Path(cwd)
-    for d in SKELETON_DIRS:
-        (cwd / d).mkdir(parents=True, exist_ok=True)
-    (cwd / "src" / "__init__.py").touch()
-    for d in GITKEEP_DIRS:
-        (cwd / d / ".gitkeep").touch()
-    return list(SKELETON_DIRS)
 
 
 def write_prior_knowledge(
@@ -254,8 +235,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("detect", help="classify the workspace as empty|existing")
 
-    sub.add_parser("scaffold", help="create the in-place DL source skeleton")
-
     pw = sub.add_parser(
         "write-prior-knowledge",
         help="store Markdown and return a Project NoteRef",
@@ -310,17 +289,6 @@ def main(argv: list[str] | None = None) -> int:
                         "state": workspace_state(paths),
                         "content": content_entries(paths),
                         "research_root": str(paths.root),
-                    },
-                    ensure_ascii=False,
-                )
-            )
-        elif args.cmd == "scaffold":
-            _require_safe_workspace(paths)
-            created = scaffold_skeleton(paths.workspace)
-            print(
-                json.dumps(
-                    {
-                        "created_dirs": created,
                     },
                     ensure_ascii=False,
                 )

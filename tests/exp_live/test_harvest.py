@@ -1,8 +1,6 @@
-import inspect
 import json
 
-from lib.exp_live import harvest
-from lib.experiments import harvest as canonical_harvest
+from lib.experiments import harvest
 
 
 def _run():
@@ -92,14 +90,6 @@ def test_stale_and_terminal_states_are_mechanical(tmp_path):
     terminal = state.snapshot(at=105.0)
     assert terminal["status"] == "FAILED"
     assert terminal["health"]["state"] == "ERROR"
-
-
-def test_deprecated_harvest_module_is_only_a_canonical_alias():
-    assert harvest.RunState is canonical_harvest.RunState
-    assert harvest.run_command is canonical_harvest.run_command
-    source = inspect.getsource(harvest)
-    assert "runs.jsonl" not in source
-    assert "meta.json" not in source
 
 
 def test_anomaly_word_boundaries_ignore_routine_logging():

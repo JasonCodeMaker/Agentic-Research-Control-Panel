@@ -92,12 +92,9 @@ TAG_ROLES = {
 STATUS_REQUIRED = {
     "brainstorm": {},
     "in-progress": {
-        "_all": ["activeGate", "primaryMetricVsGate", "nextRoute"],
-        "_all_exempt": ["STOPPED"],
+        "_all": ["currentState", "currentProcess", "nextStateConditions"],
         "EXPERIMENT_RUNNING": ["openRuns"],
-        "LIVE_ANALYSIS": ["openRuns", "lastAction"],
-        "BLOCKED": ["currentBlocker"],
-        "NEXT_ACTION_READY": ["lastDecision", "lastDecisionEvidencePath"],
+        "LIVE_ANALYSIS": ["openRuns"],
         "STOPPED": ["terminationMessage"],
     },
     "success": {
@@ -116,9 +113,10 @@ STATUS_DESCRIPTIONS = {
         "user approval separates conversion from final Scope activation."
     ),
     "in-progress": (
-        "Active packages. Must declare the active gate, primary metric vs gate, "
-        "and next route at all times (STOPPED is terminal-within-lane and is "
-        "exempt from that trio)."
+        "Active packages. The first-view status projection shows current state, "
+        "the work owned by that state, and every legal next-state condition. "
+        "No branch is selected before its transition condition is verified. Gates "
+        "and measurements remain in Scope, Plan, and Results."
     ),
     "success": (
         "Packages adopted into the active project. Must carry the structured "

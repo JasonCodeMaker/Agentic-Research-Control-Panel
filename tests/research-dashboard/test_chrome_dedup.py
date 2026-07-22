@@ -52,6 +52,36 @@ def test_research_js_renders_from_owners(tmp_path):
     assert r.returncode == 0, r.stderr
 
 
+def test_package_status_strip_uses_state_process_transition_and_next_states(
+    tmp_path,
+):
+    root = _scaffold(tmp_path)
+    js = (root / "assets" / "research.js").read_text(encoding="utf-8")
+    css = (root / "assets" / "research.css").read_text(encoding="utf-8")
+    renderer = js[js.index("function renderStatusStrip") : js.index("function packagePrefix")]
+
+    for label in (
+        "currentStateCellHtml",
+        "currentProcessCellHtml",
+        "lastTransitionCellHtml",
+        "nextStateConditionsCellHtml",
+    ):
+        assert label in renderer
+    for retired in (
+        '"Active gate"',
+        '"Metric vs gate"',
+        '"Last decision"',
+        '"Next route"',
+        '"Blocker"',
+    ):
+        assert retired not in renderer
+    assert ".status-strip[data-status-strip] .route-conditions" in css
+    assert '.current-state[data-blocked="true"]' in css
+    assert "data-selected" not in renderer
+    assert "pkg.nextRoute" not in renderer
+    assert "pkg.nextAction" not in renderer
+
+
 def test_index_keeps_required_anchors(tmp_path):
     root = _scaffold(tmp_path)
     html = (root / "index.html").read_text()

@@ -78,8 +78,8 @@ def test_live_page_reads_runtime_api_and_is_read_only(tmp_path):
         assert verb not in html
 
 
-def test_exp_live_sources_do_not_write_interface_surfaces(tmp_path):
-    lib_paths = list((ROOT / "lib" / "exp_live").glob("*.py"))
+def test_experiment_sources_do_not_write_interface_surfaces(tmp_path):
+    lib_paths = list((ROOT / "lib" / "experiments").glob("*.py"))
     for path in lib_paths:
         text = path.read_text(encoding="utf-8")
         for needle in (

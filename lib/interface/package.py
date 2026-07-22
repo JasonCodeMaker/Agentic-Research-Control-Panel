@@ -13,7 +13,7 @@ from typing import Any, Mapping
 from lib.research_state.migration_facts import legacy_package_fact_projection
 from lib.research_state.paths import ResearchPaths
 from lib.research_state.policy import to_legacy
-from lib.research_state.schema import compatibility_map
+from lib.research_state.schema import compatibility_map, transition_map
 from lib.interface.project import render_brainstorm_page
 
 
@@ -45,6 +45,82 @@ EXPERIMENT_STATUS_COMPAT.update(
         "SKIPPED": "SKIPPED",
     }
 )
+
+PHASE_PROCESS = {
+    "CONTEXT_LOADED": (
+        "Inspect the loaded Scope, Package plan, implementation, and evidence "
+        "needed to choose the first executable phase."
+    ),
+    "IMPLEMENTING": "Implement the scoped changes and produce reviewable artifacts.",
+    "IMPLEMENTATION_REVIEW": (
+        "Review the implementation, checks, artifacts, and launch readiness."
+    ),
+    "DECISION_ADJUDICATION": (
+        "Resolve the consequential decision raised by implementation review."
+    ),
+    "READY_TO_LAUNCH": "Complete final preflight and obtain launch authorization.",
+    "EXPERIMENT_RUNNING": "Execute the authorized experiment.",
+    "LIVE_ANALYSIS": "Monitor active runs and inspect live evidence.",
+    "RESULT_ANALYSIS": (
+        "Validate result artifacts and compare measurements with the Experiment gates."
+    ),
+    "NEXT_ACTION_READY": "Choose the next legal state from validated result evidence.",
+}
+
+
+PHASE_TRANSITION_CONDITIONS = {
+    ("CONTEXT_LOADED", "IMPLEMENTING"): (
+        "implementation or preflight work is still required"
+    ),
+    ("CONTEXT_LOADED", "READY_TO_LAUNCH"): (
+        "the existing implementation passes review and launch readiness"
+    ),
+    ("IMPLEMENTING", "IMPLEMENTATION_REVIEW"): (
+        "the scoped implementation and required checks are complete"
+    ),
+    ("IMPLEMENTATION_REVIEW", "IMPLEMENTING"): (
+        "review finds a repairable implementation or artifact defect"
+    ),
+    ("IMPLEMENTATION_REVIEW", "DECISION_ADJUDICATION"): (
+        "review surfaces a consequential decision that requires adjudication"
+    ),
+    ("IMPLEMENTATION_REVIEW", "READY_TO_LAUNCH"): (
+        "independent review acquits the implementation and launch readiness passes"
+    ),
+    ("DECISION_ADJUDICATION", "IMPLEMENTING"): (
+        "the decision requires implementation changes"
+    ),
+    ("DECISION_ADJUDICATION", "IMPLEMENTATION_REVIEW"): (
+        "the decision requires renewed independent review"
+    ),
+    ("DECISION_ADJUDICATION", "READY_TO_LAUNCH"): (
+        "the decision is resolved and launch readiness passes"
+    ),
+    ("READY_TO_LAUNCH", "EXPERIMENT_RUNNING"): (
+        "launch is authorized and the run starts"
+    ),
+    ("EXPERIMENT_RUNNING", "LIVE_ANALYSIS"): (
+        "a launched run produces live status or evidence"
+    ),
+    ("LIVE_ANALYSIS", "EXPERIMENT_RUNNING"): (
+        "another authorized run starts while execution continues"
+    ),
+    ("LIVE_ANALYSIS", "RESULT_ANALYSIS"): (
+        "all relevant runs are terminal and result artifacts are available"
+    ),
+    ("LIVE_ANALYSIS", "IMPLEMENTING"): (
+        "live evidence reveals a repairable implementation defect"
+    ),
+    ("RESULT_ANALYSIS", "NEXT_ACTION_READY"): (
+        "result evidence and gate verdicts are validated"
+    ),
+    ("NEXT_ACTION_READY", "READY_TO_LAUNCH"): (
+        "the next planned experiment is selected and launch readiness passes"
+    ),
+    ("NEXT_ACTION_READY", "IMPLEMENTING"): (
+        "the evidence requires implementation changes before another run"
+    ),
+}
 
 
 def _run_sort_key(
@@ -319,6 +395,168 @@ def _result_projection(
         "ablations": [],
     }
     return method_row, gate_row, block
+
+
+def _blocker(record: Mapping[str, Any]) -> dict[str, str] | None:
+    raw = record.get("blocker")
+    if isinstance(raw, Mapping) and str(raw.get("summary") or "").strip():
+        return {
+            "code": str(raw.get("code") or "PACKAGE_BLOCKED"),
+            "summary": str(raw["summary"]).strip(),
+        }
+    if "blocker" in record:
+        return None
+    legacy = str(record.get("currentBlocker") or "").strip()
+    if legacy and legacy.casefold() != "none":
+        return {"code": "LEGACY_BLOCKER", "summary": legacy}
+    return None
+
+
+def _current_state_projection(record: Mapping[str, Any]) -> dict[str, Any]:
+    lifecycle = str(record.get("lifecycle") or "").strip()
+    phase = str(record.get("phase") or "").strip()
+    blocker = _blocker(record)
+    if lifecycle == "ACTIVE":
+        base = phase or str(record.get("status") or "ACTIVE")
+    elif lifecycle == "DRAFT":
+        base = str(record.get("draftStatus") or "DRAFT")
+    else:
+        base = lifecycle or str(record.get("status") or "unmeasured")
+    label = f"{base} · BLOCKED" if blocker else base
+    return {
+        "lifecycle": lifecycle or None,
+        "phase": phase or None,
+        "blocked": blocker is not None,
+        "label": label,
+        "blockerCode": blocker["code"] if blocker else None,
+        "blockerReason": blocker["summary"] if blocker else None,
+    }
+
+
+def _current_process_projection(
+    record: Mapping[str, Any],
+    live_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    lifecycle = str(record.get("lifecycle") or "")
+    phase = str(record.get("phase") or "")
+    blocker = _blocker(record)
+    if blocker:
+        return {
+            "step": f"Resolve the blocker before continuing {phase}: {blocker['summary']}",
+            "evidence": f"Blocker {blocker['code']}",
+        }
+    if lifecycle == "DRAFT":
+        return {
+            "step": "Refine the Package document and prepare its Scope bundle for ratification.",
+            "evidence": "Package lifecycle: DRAFT",
+        }
+    if lifecycle != "ACTIVE":
+        return {
+            "step": f"No active process; the Package lifecycle is {lifecycle or 'unmeasured'}.",
+            "evidence": "Package lifecycle",
+        }
+
+    active_runs = [
+        " / ".join(
+            value
+            for value in (
+                str(row.get("exp_id") or "").strip(),
+                str(row.get("run_id") or "").strip(),
+            )
+            if value
+        )
+        for row in live_rows
+        if row.get("run_state") in {"QUEUED", "RUNNING", "STALE"}
+    ]
+    evidence = f"Current phase: {phase or 'unmeasured'}"
+    if phase in {"EXPERIMENT_RUNNING", "LIVE_ANALYSIS"} and active_runs:
+        evidence += f" · Active runs: {'; '.join(active_runs)}"
+    return {
+        "step": PHASE_PROCESS.get(
+            phase,
+            f"Complete the work owned by the current phase {phase or 'unmeasured'}.",
+        ),
+        "evidence": evidence,
+    }
+
+
+def _last_transition_projection(record: Mapping[str, Any]) -> dict[str, Any]:
+    explicit = record.get("lastTransition")
+    if isinstance(explicit, Mapping):
+        return {
+            "summary": str(
+                explicit.get("summary")
+                or explicit.get("label")
+                or "Transition recorded"
+            ),
+            "at": str(explicit.get("at") or explicit.get("recorded_at") or ""),
+            "evidence": str(explicit.get("evidence") or "Package.lastTransition"),
+            "certainty": "RECORDED",
+        }
+    if str(explicit or "").strip():
+        return {
+            "summary": str(explicit).strip(),
+            "at": str(record.get("lastUpdated") or ""),
+            "evidence": "Package.lastTransition",
+            "certainty": "RECORDED",
+        }
+
+    last_action = str(record.get("lastAction") or "").strip()
+    routed = re.search(r"routed (?:state=|to )([A-Z_]+)", last_action)
+    if routed:
+        return {
+            "summary": f"Entered {routed.group(1)}",
+            "at": str(record.get("lastUpdated") or ""),
+            "evidence": last_action,
+            "certainty": "RECORDED",
+        }
+    closed = re.search(r"Package closed as ([A-Z_]+)", last_action)
+    if closed:
+        return {
+            "summary": f"ACTIVE → {closed.group(1)}",
+            "at": str(record.get("lastUpdated") or ""),
+            "evidence": last_action,
+            "certainty": "RECORDED",
+        }
+
+    phase = str(record.get("phase") or "").strip()
+    if record.get("scopeBinding") and phase == "CONTEXT_LOADED":
+        return {
+            "summary": f"Activated → {phase}",
+            "at": "",
+            "evidence": "Package.scopeBinding",
+            "certainty": "INFERRED",
+        }
+    return {
+        "summary": "No state transition is recorded",
+        "at": "",
+        "evidence": "",
+        "certainty": "UNMEASURED",
+    }
+
+
+def _next_state_conditions_projection(
+    record: Mapping[str, Any],
+) -> list[dict[str, str]]:
+    lifecycle = str(record.get("lifecycle") or "")
+    if lifecycle == "DRAFT":
+        return [
+            {
+                "condition": "the Scope bundle is ratified and the Package is activated",
+                "nextState": "CONTEXT_LOADED",
+            }
+        ]
+    if lifecycle != "ACTIVE":
+        return []
+
+    phase = str(record.get("phase") or "")
+    return [
+        {
+            "condition": PHASE_TRANSITION_CONDITIONS[(phase, next_state)],
+            "nextState": next_state,
+        }
+        for next_state in transition_map("package_phase").get(phase, ())
+    ]
 
 
 def package_view_models(state: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -679,6 +917,16 @@ def package_view_models(state: Mapping[str, Any]) -> list[dict[str, Any]]:
         projected["openRuns"] = (
             ", ".join(active_runs) if active_runs else "none"
         )
+        current_state = _current_state_projection(projected)
+        projected["currentState"] = current_state
+        if current_state["blockerReason"]:
+            projected["currentBlocker"] = current_state["blockerReason"]
+        projected["currentProcess"] = _current_process_projection(
+            projected,
+            live_rows,
+        )
+        projected["lastTransition"] = _last_transition_projection(projected)
+        projected["nextStateConditions"] = _next_state_conditions_projection(projected)
 
         allocation_rows: list[dict[str, Any]] = []
         for allocation_id, allocation in sorted(

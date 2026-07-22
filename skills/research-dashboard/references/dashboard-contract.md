@@ -55,7 +55,6 @@ The generated root keeps these human-facing pages:
 - `scope.html`
 - `learnings.html`
 - `module.html`
-- `package-template.html`
 - `categories/brainstorm/index.html`
 - `categories/in-progress/index.html`
 - `categories/success/index.html`
@@ -90,6 +89,28 @@ not derive this copy from Direction Scope.
 `module.html` is part of the frozen surface. Preserve the existing
 `module.html?package=<id>&module=<name>` route. Package pages and module routing
 must not be collapsed into a single-page application.
+
+### Package status strip
+
+The first viewport of every Package page uses one shared status projection:
+
+- **Current state** renders the lifecycle or active phase. The UI folds a
+  blocker into this cell, but authoritative state keeps it separate from the
+  resumable canonical `phase`.
+- **Current process** describes the work owned by the current lifecycle or
+  phase. It never renders the future-facing Package `nextAction`. Live Run ids
+  may appear only as supporting evidence in execution phases.
+- **Last transition** uses an explicit transition record when one exists. A
+  fallback derived from the Scope binding is labelled `INFERRED`.
+- **Next state conditions** render every legal outgoing phase as an ordered
+  `IF transition condition → next state` pair. They come from the central
+  package-phase graph and remain visually neutral: the interface must not
+  predict or highlight a branch before its condition is verified and the
+  transition is recorded.
+
+Active gates and metric-versus-gate values do not belong in this universal
+strip. Their authoritative detail remains in Scope and Plan, while observed
+measurements and gate verdicts remain in Results.
 
 ## Required generated data
 

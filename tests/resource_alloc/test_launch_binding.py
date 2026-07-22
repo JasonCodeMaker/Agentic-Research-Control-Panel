@@ -1,7 +1,7 @@
 import json
 import sys
 
-from lib.exp_live import launch
+from lib.experiments import launch
 from lib.research_state import EventStore, ResearchPaths
 
 

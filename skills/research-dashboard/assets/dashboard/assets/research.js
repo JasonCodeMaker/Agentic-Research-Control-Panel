@@ -611,8 +611,7 @@
     if (!schema) return [];
     var status = packageStatus(pkg);
     var rules = schema.required || {};
-    // The _all trio applies to every state except those listed in _all_exempt
-    // (STOPPED is terminal-within-lane and only needs its own per-status fields).
+    // Category-wide fields apply unless a status is explicitly exempted.
     var exempt = (rules._all_exempt || []).indexOf(status) >= 0;
     var required = [].concat(!exempt && rules._all ? rules._all : []);
     if (status && rules[status]) {
@@ -1175,15 +1174,64 @@
     return id ? packageById(id) : null;
   }
 
-  function statusStripCellHtml(label, fieldName, value, opts) {
-    opts = opts || {};
-    var dataset = opts.dataset ? ' data-' + opts.dataset + '="' + htmlEscape(value || "unmeasured") + '"' : "";
-    var hint = opts.hint ? '<div class="hint" data-field="' + opts.hintField + '">' + fieldOrUnmeasured(opts.hint) + "</div>" : "";
+  function currentStateCellHtml(pkg) {
+    var state = pkg.currentState && typeof pkg.currentState === "object" ? pkg.currentState : {};
+    var label = state.label || pkg.phase || packageStatus(pkg);
+    var reason = state.blockerReason || (pkg.blocker && pkg.blocker.summary) || pkg.currentBlocker;
+    var detail = reason
+      ? '<div class="status-detail" data-field="blocker-reason"><span>Blocked:</span> ' + fieldOrUnmeasured(reason) + "</div>"
+      : "";
     return [
-      '<div class="status-cell">',
-      '<div class="k">' + htmlEscape(label) + "</div>",
-      '<div class="v" data-field="' + fieldName + '"' + dataset + ">" + fieldOrUnmeasured(value) + "</div>",
-      hint,
+      '<div class="status-cell current-state" data-blocked="' + (reason ? "true" : "false") + '">',
+      '<div class="k">Current state</div>',
+      '<div class="v state-label" data-field="current-state" data-workflow-state="' + htmlEscape(label || "unmeasured") + '">' + fieldOrUnmeasured(label) + "</div>",
+      detail,
+      "</div>",
+    ].join("");
+  }
+
+  function currentProcessCellHtml(pkg) {
+    var process = pkg.currentProcess && typeof pkg.currentProcess === "object" ? pkg.currentProcess : {};
+    return [
+      '<div class="status-cell current-process">',
+      '<div class="k">Current process</div>',
+      '<div class="v" data-field="current-process">' + fieldOrUnmeasured(process.step) + "</div>",
+      process.evidence ? '<div class="hint" data-field="current-process-evidence">' + fieldOrUnmeasured(process.evidence) + "</div>" : "",
+      "</div>",
+    ].join("");
+  }
+
+  function lastTransitionCellHtml(pkg) {
+    var transition = pkg.lastTransition && typeof pkg.lastTransition === "object" ? pkg.lastTransition : {};
+    var meta = [];
+    if (transition.certainty) meta.push(transition.certainty);
+    if (transition.at) meta.push(transition.at);
+    return [
+      '<div class="status-cell last-transition" data-transition-certainty="' + htmlEscape(transition.certainty || "UNMEASURED") + '">',
+      '<div class="k">Last transition</div>',
+      '<div class="v" data-field="last-transition">' + fieldOrUnmeasured(transition.summary) + "</div>",
+      meta.length ? '<div class="status-meta">' + htmlEscape(meta.join(" · ")) + "</div>" : "",
+      transition.evidence ? '<div class="hint" data-field="last-transition-evidence">' + fieldOrUnmeasured(transition.evidence) + "</div>" : "",
+      "</div>",
+    ].join("");
+  }
+
+  function nextStateConditionsCellHtml(pkg) {
+    var rows = Array.isArray(pkg.nextStateConditions) ? pkg.nextStateConditions : [];
+    var body = rows.length ? rows.map(function (row) {
+      return [
+        '<div class="route-condition">',
+        '<span class="route-if">IF</span>',
+        '<span class="route-condition-text">' + fieldOrUnmeasured(row.condition) + "</span>",
+        '<span class="route-arrow">→</span>',
+        '<code data-next-state="' + htmlEscape(row.nextState || "unmeasured") + '">' + htmlEscape(row.nextState || "unmeasured") + "</code>",
+        "</div>",
+      ].join("");
+    }).join("") : unmeasuredHtml();
+    return [
+      '<div class="status-cell route-conditions" data-field="next-state-conditions">',
+      '<div class="k">Next state conditions</div>',
+      '<div class="route-condition-list">' + body + "</div>",
       "</div>",
     ].join("");
   }
@@ -1194,12 +1242,10 @@
     var pkg = currentPackage();
     if (!pkg) return;
     var html = [
-      statusStripCellHtml("State", "workflow-state", packageStatus(pkg), { dataset: "workflow-state" }),
-      statusStripCellHtml("Active gate", "active-gate", pkg.activeGate),
-      statusStripCellHtml("Metric vs gate", "primary-metric-vs-gate", pkg.primaryMetricVsGate),
-      statusStripCellHtml("Last decision", "last-decision", pkg.lastDecision, { hint: pkg.lastDecisionEvidencePath, hintField: "last-decision-evidence" }),
-      statusStripCellHtml("Next route", "next-route", pkg.nextRoute, { dataset: "route" }),
-      statusStripCellHtml("Blocker", "current-blocker", pkg.currentBlocker),
+      currentStateCellHtml(pkg),
+      currentProcessCellHtml(pkg),
+      lastTransitionCellHtml(pkg),
+      nextStateConditionsCellHtml(pkg),
     ].join("");
     hosts.forEach(function (host) { host.innerHTML = html; });
     var pageTime = document.querySelector('time[data-field="last-updated"]');

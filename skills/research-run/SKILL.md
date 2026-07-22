@@ -49,7 +49,6 @@ It may not:
 | --- | --- |
 | Admission | `skills/research-run/scripts/admission.py` |
 | Dispatch and command envelopes | `skills/research-run/scripts/driver.py` |
-| L1 run-store fixture | `skills/research-run/scripts/skeleton.py` |
 | State queries | `skills/research-op/scripts/research_op.py` |
 | Launch | `lib/experiments/launch.py` |
 | Monitor | `lib/experiments/report.py` |
@@ -293,9 +292,3 @@ Waiting by itself is not a terminal outcome.
 | Live status and measurements | the same Run directory |
 
 The interface can be deleted and rebuilt without changing this procedure.
-
-## Fixture
-
-`scripts/skeleton.py` is an L1 test fixture. It requires pre-existing Package and Experiment state,
-writes a toy measurement into a canonical Run directory, reads it back through `lib.experiments`, and
-returns research-op envelopes. It is not the production launch path.

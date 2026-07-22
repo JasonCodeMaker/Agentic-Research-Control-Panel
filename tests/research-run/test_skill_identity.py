@@ -12,7 +12,6 @@ PRODUCTION = [
     SKILL,
     ROOT / "skills" / "research-run" / "scripts" / "admission.py",
     ROOT / "skills" / "research-run" / "scripts" / "driver.py",
-    ROOT / "skills" / "research-run" / "scripts" / "skeleton.py",
 ]
 
 

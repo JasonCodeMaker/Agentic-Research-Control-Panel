@@ -74,16 +74,19 @@
 
         <article class="rule-card" data-rule="T2" data-kind="contract">
           <div class="id">T2</div>
-          <h3 class="title">First viewport answers six items</h3>
+          <h3 class="title">First viewport exposes state and transition boundaries</h3>
           <p>
-            Every package page and module page must display, inside the
-            first viewport: workflow state, active gate, primary metric
-            versus that gate, last decision and its evidence path, next
-            route, and the current blocker if one exists. On a page
-            where any of these items is not yet defined (such as a
-            brainstorm page without a metric or gate) the field renders
-            as <code>unmeasured</code>. Detail beyond these six items
-            must be linked, not embedded inline.
+            Every package and module page must show four things in the first
+            viewport: current state, current process, last state transition,
+            and ordered <code>IF transition condition → next state</code>
+            pairs. The UI folds a blocker into current state, while
+            authoritative state keeps it separate from the resumable execution
+            phase. Current process describes only the work owned by the current
+            phase and never renders the future-facing <code>nextAction</code>.
+            Next-state branches come from the central phase graph and remain
+            neutral until a verified transition is recorded. Metric
+            definitions, gates, and measurements stay in Scope, Plan, and
+            Results.
           </p>
         </article>
 

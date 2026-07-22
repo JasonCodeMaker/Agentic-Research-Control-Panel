@@ -16,9 +16,7 @@ shared transaction kernel rather than editing managed state.
 
 - Require a current ARC root. Route absent, legacy, or invalid state to
   `research-init`.
-- Do not create source, configuration, data, baseline, or figure scaffolds
-  during ordinary onboarding. Run the legacy `scaffold` utility only when the
-  user explicitly requests source scaffolding.
+- Do not create source, configuration, data, baseline, or figure scaffolds.
 - Do not create a Direction, Experiment, Package, or Run.
 - Never read `.research/interface` as authority or edit managed JSON, events,
   audit rows, HTML, JavaScript, or CSV.

@@ -203,7 +203,6 @@ def test_low_level_json_writers_stay_inside_owned_modules():
             "_launch_failure_artifacts",
             "prepare_run",
         },
-        "skills/research-run/scripts/skeleton.py": {"experiment"},
         "lib/resource_alloc/probe.py": {"_write_snapshot"},
         "lib/interface/serve.py": {
             "_command_serve",
