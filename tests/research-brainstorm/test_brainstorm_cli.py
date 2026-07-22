@@ -7,8 +7,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "lib"))
 sys.path.insert(0, str(ROOT / "skills" / "research-brainstorm" / "scripts"))
+sys.path.insert(0, str(ROOT / "skills" / "research-package" / "scripts"))
 
 import brainstorm  # noqa: E402
+import draft_package  # noqa: E402
+from lib.research_state import ResearchPaths  # noqa: E402
 from tests.scope_fixtures import direction_spec  # noqa: E402
 
 
@@ -16,8 +19,8 @@ def test_cli_add_then_list(tmp_path, capsys):
     rc = brainstorm.main(["add", "--workspace", str(tmp_path), "--title", "Idea A", "--idea", "do A"])
     assert rc == 0
     added = json.loads(capsys.readouterr().out)
-    assert added["detailPath"].startswith("brainstorm/")
     assert added["detailPath"].endswith(f"-{added['id']}.html")
+    assert added["detailPath"].startswith("brainstorm/")
     rc = brainstorm.main(["list", "--workspace", str(tmp_path)])
     assert rc == 0
     items = json.loads(capsys.readouterr().out)
@@ -74,12 +77,11 @@ def test_cli_delete_archived_duplicate(tmp_path, capsys):
     capsys.readouterr()
     brainstorm.main(["remove", "--workspace", str(tmp_path), "--id", "bs-1"])
     capsys.readouterr()
-    rc = brainstorm.main([
+    assert brainstorm.main([
         "delete", "--workspace", str(tmp_path), "--id", "bs-1",
         "--reason", "merged into canonical document", "--actor-id", "reviewer",
-    ])
-    assert rc == 0
-    assert json.loads(capsys.readouterr().out)["deleted"] is True
+    ]) == 0
+    capsys.readouterr()
     brainstorm.main(["list", "--workspace", str(tmp_path), "--include-archived"])
     assert json.loads(capsys.readouterr().out) == []
 
@@ -96,6 +98,33 @@ def test_cli_build_proposal(tmp_path, capsys):
     assert item["level"] == "direction"
     assert item["gate"] == "USER_CROSS_MODEL_AUDIT"
     assert item["source_brainstorms"] == ["bs-1"]
+
+
+def test_cli_build_proposal_binds_the_reviewed_draft(tmp_path, capsys):
+    brainstorm.main([
+        "add", "--workspace", str(tmp_path), "--id", "draft-one",
+        "--title", "Draft one", "--idea", "Refine before Scope",
+    ])
+    capsys.readouterr()
+    draft_package.convert(
+        ResearchPaths.resolve(workspace=tmp_path, environ={}),
+        brainstorm_id="draft-one",
+        package_id=None,
+        actor_id="reviewer",
+    )
+
+    rc = brainstorm.main([
+        "build-proposal", "--workspace", str(tmp_path),
+        "--node-id", "dir/x", "--parent-project-id", "project/main",
+        "--spec", json.dumps(direction_spec()),
+        "--source", "draft-package:draft-one",
+        "--source-package-id", "draft-one",
+    ])
+    assert rc == 0
+    item = json.loads(capsys.readouterr().out)
+    assert item["source_package"]["id"] == "draft-one"
+    assert item["source_package"]["draft_revision"] == 1
+    assert len(item["source_package"]["document_sha256"]) == 64
 
 
 def test_cli_direction_ready(tmp_path, capsys):

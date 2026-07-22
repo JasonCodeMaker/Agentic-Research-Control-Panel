@@ -11,6 +11,26 @@ context: fork
 command, appends one domain event, folds current state, and records the attempt
 in `.research/audit/actions.jsonl`.
 
+`BrainstormCreated` and `BrainstormRevised` govern the standalone idea stage.
+After explicit user approval, `PackageDraftCreated` atomically consumes the
+exact Brainstorm and creates the non-executable proposal Package.
+`PackageActivated` can then finalize that exact Draft, accept one full Scope
+proposal, create its Direction and Experiments, and bind them to the same
+ACTIVE Package in one composite event. It must preserve the reviewed proposal
+NoteRef and path.
+
+`PackageMaterialized` remains the compatibility event for older flows that had
+no Draft Package; it may also consume legacy standalone Brainstorms after their
+exact NoteRefs transfer into Package docs. Repairing an older Package uses one
+`PackageMutationApplied` event with the same ownership checks. Do not emulate
+these transitions with direct state edits or separate archive/delete
+operations.
+
+`PackageReopenedAsDraft` is the guarded pre-launch inverse of activation. It is
+one composite Package event that preserves the proposal document, revokes
+execution authority, and detaches every bound Experiment as stale. It requires
+an explicit user actor and is forbidden after any Run or result exists.
+
 It does not write run telemetry. The experiment harness may write only inside
 its assigned `.research/experiments/<package>/<experiment>/<run>/` directory.
 After a successful management commit, the gateway rebuilds
@@ -43,7 +63,7 @@ python3 skills/research-op/scripts/research_op.py \
   show package <package-id> --workspace <workspace>
 
 python3 skills/research-op/scripts/research_op.py \
-  context <package-id> --phase <phase> --workspace <workspace>
+  context <package-id> --workspace <workspace>
 
 python3 skills/research-op/scripts/research_op.py \
   history package/<package-id> --workspace <workspace>
@@ -54,6 +74,11 @@ python3 skills/research-op/scripts/research_op.py \
 
 Prefer `context` for agent work. Do not load the complete `current.json` or
 read `.research/interface/` to infer package state.
+
+For a Draft Package, `context` returns the exact hash-verified proposal
+fragment, project boundary, and pending Scope binding with
+`execution_authorized=false`. For an ACTIVE Package, pass `--phase` when the
+caller must assert a specific workflow phase.
 
 ## Package mutations
 
@@ -139,9 +164,30 @@ The formal hierarchy is:
 Project -> Direction -> Experiment.spec
 ```
 
-Project, Direction, and Experiment changes retain their distinct gates. For an
-ordinary conversational approval, use one call that records the user decision
-and commits the exact bound snapshot:
+Project, Direction, and Experiment changes retain their distinct gates. A
+normal new Package presents Direction and all selected Experiments in one
+`package_finalization` proposal. Its approval must use this atomic command:
+
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  --workspace <workspace> \
+  --pkg <package-id> \
+  --op package-finalize \
+  --from-triage <proposal-id> \
+  --proposal-hash <proposal-hash> \
+  --actor-type user \
+  --actor-id <stable-user-id>
+```
+
+One `PackageActivated` event records the exact Draft as `SCOPE_READY` in its
+payload, accepts the proposal, commits the Direction and Experiments, and
+leaves the same Package `ACTIVE / CONTEXT_LOADED`. The reducer tracks that one
+event in every participant's history. A stale Draft, hash mismatch, partial
+Scope collision, or non-user actor rejects the entire command before append.
+
+For Project onboarding or an independent Scope revision that is not coupled
+to Package activation, use one call that records the user decision and commits
+the exact bound snapshot:
 
 ```bash
 python3 skills/research-op/scripts/research_op.py \
@@ -157,7 +203,8 @@ python3 skills/research-op/scripts/research_op.py \
 `scope-accept` preserves separate `ProposalAccepted` and semantic Scope events.
 It rechecks the pending hash, user actor, accepted snapshot, causation, Scope
 version, and idempotency. Retrying the same accepted proposal is safe and does
-not require another user decision.
+not require another user decision. It rejects `package_finalization` proposals
+so the normal Package lifecycle cannot partially commit.
 
 The lower-level compatibility path commits a proposal whose disposition was
 already recorded:

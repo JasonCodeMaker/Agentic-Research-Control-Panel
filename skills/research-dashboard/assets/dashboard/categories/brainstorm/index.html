@@ -153,7 +153,7 @@
   </style>
 </head>
 <body>
-  <a class="skip-link" href="#brainstorm-ideas-root">Skip to main content</a>
+  <a class="skip-link" href="#category-package-root">Skip to main content</a>
   <div class="shell">
     <header class="masthead" data-section="masthead">
       <div class="eyebrow">Research lane</div>
@@ -167,40 +167,44 @@
       </div>
     </header>
 
-    <section class="bi-rail" data-section="lifecycle" aria-label="How a Brainstorm document becomes governed research">
+    <section class="bi-rail" data-section="lifecycle" aria-label="How a Brainstorm becomes executable research">
       <div class="bi-rail-step" data-current data-stage="brainstorm">
         <div class="bi-rail-k">Stage 1 · you are here</div>
-        <h2 class="bi-rail-name">Brainstorm</h2>
-        <p class="bi-rail-note">One broad direction, revised in place as a full pre-package draft.</p>
+        <h2 class="bi-rail-name">Brainstorm + refine</h2>
+        <p class="bi-rail-note">Develop one standalone idea document without Package or Scope authority.</p>
         <span class="bi-rail-driver">/research-brainstorm</span>
       </div>
-      <div class="bi-rail-step" data-stage="direction">
+      <div class="bi-rail-step" data-stage="draft-conversion">
         <div class="bi-rail-k">Stage 2</div>
-        <h2 class="bi-rail-name">Direction</h2>
-        <p class="bi-rail-note">Promoted only by explicit user decision, then accepted through Triage.</p>
-        <span class="bi-rail-driver">/research-scope</span>
+        <h2 class="bi-rail-name">Approve Draft conversion</h2>
+        <p class="bi-rail-note">A user approves the exact Brainstorm revision and transfers it into a Draft Package.</p>
+        <span class="bi-rail-driver">PackageDraftCreated</span>
       </div>
-      <div class="bi-rail-step" data-stage="package">
+      <div class="bi-rail-step" data-stage="draft-refine">
         <div class="bi-rail-k">Stage 3</div>
-        <h2 class="bi-rail-name">Package</h2>
-        <p class="bi-rail-note">Plan, tracker, and results surfaces under one gated home.</p>
-        <span class="bi-rail-driver">/research-package</span>
+        <h2 class="bi-rail-name">Draft Package + refine</h2>
+        <p class="bi-rail-note">Complete the proposal and one full Direction-and-Experiments review bundle.</p>
+        <span class="bi-rail-driver">draftRevision</span>
       </div>
-      <div class="bi-rail-step" data-stage="outcome">
+      <div class="bi-rail-step" data-stage="active-package">
         <div class="bi-rail-k">Stage 4</div>
-        <h2 class="bi-rail-name">Outcome</h2>
-        <p class="bi-rail-note">An adopted win or an archived failure, with a methodsTried trace.</p>
-        <span class="bi-rail-driver">learnings.html</span>
+        <h2 class="bi-rail-name">Approve + activate</h2>
+        <p class="bi-rail-note">One approval records SCOPE_READY, commits Scope, and activates the same Package atomically.</p>
+        <span class="bi-rail-driver">package-finalize</span>
       </div>
     </section>
 
     <section class="ideas-section" data-section="ideas">
       <div class="category-link-bar">
-        <h2>Pre-package documents</h2>
-        <span class="tag" id="brainstorm-ideas-count">0 documents</span>
+        <h2>Brainstorms</h2>
+        <span class="tag" id="brainstorm-ideas-count">0 Brainstorms</span>
       </div>
       <div class="package-grid" id="brainstorm-ideas-root"></div>
     </section>
+
+    <div class="category-link-bar">
+      <h2>Draft Packages</h2>
+    </div>
     <main class="package-grid" id="category-package-root" data-section="lane"></main>
   </div>
   <script>window.RESEARCH_CATEGORY_ID = "brainstorm"; window.RESEARCH_BASE_PREFIX = "../../";</script>

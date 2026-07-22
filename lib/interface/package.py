@@ -14,6 +14,7 @@ from lib.research_state.migration_facts import legacy_package_fact_projection
 from lib.research_state.paths import ResearchPaths
 from lib.research_state.policy import to_legacy
 from lib.research_state.schema import compatibility_map
+from lib.interface.project import render_brainstorm_page
 
 
 PAGE_TEMPLATES: dict[str, tuple[str, str]] = {
@@ -352,7 +353,30 @@ def package_view_models(state: Mapping[str, Any]) -> list[dict[str, Any]]:
         projected["category"] = state_cell["category"]
         projected["status"] = state_cell["status"]
         projected["workflowState"] = state_cell["status"]
-        projected["detailPath"] = f"packages/{slug}/"
+        projected["detailPath"] = (
+            f"packages/{slug}/docs/proposal.html"
+            if projected.get("lifecycle") == "DRAFT"
+            else f"packages/{slug}/"
+        )
+        if projected.get("lifecycle") == "DRAFT":
+            projected.setdefault("problem", projected.get("idea") or "unmeasured")
+            projected.setdefault(
+                "objective",
+                projected.get("idea") or projected.get("title") or "unmeasured",
+            )
+            projected.setdefault(
+                "motivation",
+                projected.get("abstract") or "Align the proposal before Scope.",
+            )
+            projected.setdefault("nextRoute", "ASK_USER")
+            projected.setdefault(
+                "nextAction",
+                "Refine or ratify this Draft Package",
+            )
+            projected.setdefault(
+                "lastUpdated",
+                str(projected.get("updated_at") or projected.get("created_at") or "")[:10],
+            )
         projected["experiments"] = experiments_by_package.get(package_id, [])
         legacy_facts = legacy_package_fact_projection(projected)
         projected["analysisInsights"] = _merge_rows(
@@ -837,11 +861,45 @@ def render_package_pages(
         destination.write_text(rendered, encoding="utf-8")
         written.append(destination)
 
+    rendered_note_paths: set[str] = set()
+    document_ref = package.get("document_note")
+    document_path = package.get("documentPath")
+    if isinstance(document_ref, Mapping) and isinstance(document_path, str):
+        relative = _safe_relative_output(document_path)
+        content = read_note_text(paths, document_ref)
+        mime = str(document_ref.get("mime") or "")
+        if mime == "text/html;profile=brainstorm-fragment":
+            content = render_brainstorm_page(
+                package,
+                document_html=content,
+                presentation=(
+                    "draft-package"
+                    if package.get("lifecycle") == "DRAFT"
+                    else "package-reference"
+                ),
+                asset_prefix="../" * (len(relative.parts) + 1),
+                back_href="../index.html",
+            )
+        if relative.suffix.lower() == ".html":
+            content = rewrite_projected_text(content)
+        destination = package_root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding="utf-8")
+        written.append(destination)
+        rendered_note_paths.add(relative.as_posix())
+
     notes = package.get("interface_notes")
+    source_by_path = {
+        str(row.get("documentPath")): row
+        for row in package.get("sourceBrainstorms", [])
+        if isinstance(row, Mapping) and row.get("documentPath")
+    } if isinstance(package.get("sourceBrainstorms"), list) else {}
     if isinstance(notes, Mapping):
         for relative_name, raw_ref in sorted(
             notes.items(), key=lambda item: str(item[0])
         ):
+            if str(relative_name) in rendered_note_paths:
+                continue
             if not isinstance(raw_ref, Mapping):
                 raise ValueError(
                     f"package {package_id!r} has malformed interface NoteRef "
@@ -849,6 +907,20 @@ def render_package_pages(
                 )
             relative = _safe_relative_output(str(relative_name))
             content = read_note_text(paths, raw_ref)
+            if raw_ref.get("mime") == "text/html;profile=brainstorm-fragment":
+                source_record = source_by_path.get(str(relative_name))
+                if not isinstance(source_record, Mapping):
+                    raise ValueError(
+                        f"package {package_id!r} has a Brainstorm fragment without "
+                        f"a Package-owned source descriptor for {relative_name!r}"
+                    )
+                content = render_brainstorm_page(
+                    source_record,
+                    document_html=content,
+                    presentation="package-reference",
+                    asset_prefix="../" * (len(relative.parts) + 1),
+                    back_href="index.html",
+                )
             if relative.suffix.lower() == ".html":
                 content = rewrite_projected_text(content)
             destination = package_root / relative

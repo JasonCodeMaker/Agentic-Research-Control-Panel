@@ -64,6 +64,7 @@ def _validate_schema(data: dict[str, Any]) -> None:
 
     required_enums = {
         "package_lifecycle",
+        "package_draft_status",
         "package_phase",
         "package_category_compat",
         "package_status_compat",

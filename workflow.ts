@@ -248,7 +248,14 @@ export function evaluateWorkflow(snapshot: WorkflowSnapshot): RunTicket {
   let nextAction: NextAction;
   let packageBlocker = packageState.blocker;
 
-  if (packageState.lifecycle !== "ACTIVE") {
+  if (packageState.lifecycle === "DRAFT") {
+    packagePhase = null;
+    route = "ASK_USER";
+    nextAction = {
+      kind: "ASK_USER",
+      reason: "Draft Package must be refined, reviewed as one Scope bundle, and atomically finalized before execution",
+    };
+  } else if (packageState.lifecycle !== "ACTIVE") {
     packagePhase = packageState.phase;
     route = "TERMINATE";
     nextAction = {

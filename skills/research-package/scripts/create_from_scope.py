@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Materialize one active Direction and its accepted Scope Experiments."""
+"""Activate one reviewed Draft Package from ratified Scope.
+
+The no-draft materialization path remains for older workspaces.
+"""
 
 from __future__ import annotations
 
@@ -15,14 +18,12 @@ for candidate in (
     PIPELINE_ROOT,
     PIPELINE_ROOT / "lib",
     Path(__file__).resolve().parent,
-    PIPELINE_ROOT / "skills" / "research-brainstorm" / "scripts",
     PIPELINE_ROOT / "skills" / "research-op" / "scripts",
 ):
     if str(candidate) not in sys.path:
         sys.path.insert(0, str(candidate))
 
 from lib.research_state import ResearchPaths, StateQuery  # noqa: E402
-import brainstorm  # noqa: E402
 import create_research_package  # noqa: E402
 import management  # noqa: E402
 
@@ -127,6 +128,147 @@ def _experiment_rows(
     return rows
 
 
+SOURCE_BRAINSTORM_FIELDS = (
+    "title",
+    "abstract",
+    "idea",
+    "idea_snapshot",
+    "page_language",
+    "created_at",
+    "updated_at",
+    "revision",
+)
+
+
+def _resolve_source_brainstorms(
+    paths: ResearchPaths,
+    materialization: dict[str, Any],
+    explicit_json: str | None,
+) -> list[dict[str, Any]]:
+    declared = materialization.get("source_brainstorm_ids") or []
+    if not isinstance(declared, list) or not all(
+        isinstance(item, str) and item for item in declared
+    ):
+        raise SystemExit("Direction source Brainstorm provenance is malformed")
+    explicit: list[str] | None = None
+    if explicit_json is not None:
+        explicit = json.loads(explicit_json)
+        if not isinstance(explicit, list) or not all(
+            isinstance(item, str) and item for item in explicit
+        ):
+            raise SystemExit("--source-brainstorms must be a JSON list of ids")
+        explicit = list(dict.fromkeys(explicit))
+    if declared and explicit is not None and explicit != declared:
+        raise SystemExit(
+            "--source-brainstorms must exactly match the accepted Direction "
+            "proposal provenance"
+        )
+    source_ids = declared or explicit or []
+    view = StateQuery(paths).brainstorms(include_archived=False)["data"]
+    records = {
+        str(row["id"]): row
+        for row in view["items"]
+        if isinstance(row, dict) and row.get("id")
+    }
+    missing = [idea_id for idea_id in source_ids if idea_id not in records]
+    if missing:
+        raise SystemExit(
+            "Unknown, archived, or already converted source Brainstorms: "
+            + ", ".join(missing)
+        )
+    return [
+        {
+            "aggregate_id": idea_id,
+            "aggregate_version": int(view["versions"].get(idea_id, 0)),
+            "record": copy.deepcopy(records[idea_id]),
+        }
+        for idea_id in source_ids
+    ]
+
+
+def _build_brainstorm_transfer(
+    package_id: str,
+    source_rows: list[dict[str, Any]],
+    experiment_ids: list[str],
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    dict[str, dict[str, Any]],
+    list[dict[str, Any]],
+]:
+    source_records: list[dict[str, Any]] = []
+    docs: list[dict[str, Any]] = []
+    interface_notes: dict[str, dict[str, Any]] = {}
+    consumptions: list[dict[str, Any]] = []
+    for row in source_rows:
+        idea_id = str(row["aggregate_id"])
+        record = row["record"]
+        note = record.get("document_note")
+        if not isinstance(note, dict):
+            raise SystemExit(
+                f"Source Brainstorm {idea_id} has no governed document_note"
+            )
+        slug = create_research_package.slugify(idea_id)
+        document_path = f"docs/{slug}.html"
+        descriptor = {
+            "id": idea_id,
+            "sourceKind": "brainstorm-proposal",
+            "ownership": "package",
+            "sourceVersion": int(row["aggregate_version"]),
+            "documentPath": document_path,
+            "document_note": copy.deepcopy(note),
+            "convertedInto": package_id,
+        }
+        for field in SOURCE_BRAINSTORM_FIELDS:
+            if record.get(field) is not None:
+                descriptor[field] = copy.deepcopy(record[field])
+        source_records.append(descriptor)
+        interface_notes[document_path] = copy.deepcopy(note)
+        updated = str(
+            record.get("updated_at") or record.get("created_at") or ""
+        )[:10]
+        docs.append(
+            {
+                "id": slug,
+                "title": record.get("title") or idea_id,
+                "tldr": record.get("abstract") or record.get("idea") or "unmeasured",
+                "topics": ["source-proposal", "brainstorm"],
+                "relatedPages": ["plan.html"],
+                "citedByExperiments": list(experiment_ids),
+                "preview": record.get("idea") or "",
+                "href": f"{slug}.html",
+                "lastUpdated": updated,
+            }
+        )
+        consumptions.append(
+            {
+                "aggregate_id": idea_id,
+                "expected_version": int(row["aggregate_version"]),
+                "document_path": document_path,
+                "document_note": copy.deepcopy(note),
+            }
+        )
+    groups = []
+    if docs:
+        groups.append(
+            {
+                "id": "source-proposal",
+                "kind": "reference",
+                "title": "Source proposal" if len(docs) == 1 else "Source proposals",
+                "rationale": (
+                    "Historical proposal context transferred into this Package. "
+                    "Ratified Direction and Experiment Scope remain authoritative."
+                ),
+                "lead": (
+                    "The original draft is retained here as Package-owned context, "
+                    "not as an active Brainstorm."
+                ),
+                "docs": docs,
+            }
+        )
+    return source_records, groups, interface_notes, consumptions
+
+
 def _coerce_paths(
     paths: ResearchPaths | None = None,
     *,
@@ -161,8 +303,15 @@ def materialization_status(
     )["data"]
     direction = view["direction"]
     package_exists = bool(view["package_exists"])
+    package_lifecycle = view.get("package_lifecycle")
     package = {
-        "state": "exists" if package_exists else "absent",
+        "state": (
+            "draft"
+            if package_lifecycle == "DRAFT"
+            else "active"
+            if package_exists
+            else "absent"
+        ),
         "id": package_id,
     }
     pending = [
@@ -229,6 +378,57 @@ def materialization_status(
             "nextSkill": "/research-scope",
             "nextAction": "Reopen or revise the Direction before materialization.",
         }
+    source_package = view.get("source_package")
+    if isinstance(source_package, dict) and source_package.get("id") != package_id:
+        return {
+            "materializable": False,
+            "direction": {
+                "state": "committed",
+                "id": direction_id,
+                "version": direction.get("version"),
+            },
+            "experiments": {"state": "blocked", "count": 0},
+            "package": package,
+            "nextSkill": "/research-package",
+            "nextAction": (
+                "Activate the reviewed Draft Package with --id "
+                f"{source_package.get('id')}"
+            ),
+        }
+    if package_lifecycle == "DRAFT" and not view.get("draft_binding_valid"):
+        return {
+            "materializable": False,
+            "direction": {
+                "state": "committed",
+                "id": direction_id,
+                "version": direction.get("version"),
+            },
+            "experiments": {"state": "blocked", "count": 0},
+            "package": package,
+            "nextSkill": "/research-scope",
+            "nextAction": (
+                "The accepted Scope does not match the current Draft Package "
+                "revision. Re-review and ratify the refined draft."
+            ),
+        }
+    missing_sources = view.get("missing_source_brainstorms") or []
+    if missing_sources and not package_exists:
+        return {
+            "materializable": False,
+            "direction": {
+                "state": "committed",
+                "id": direction_id,
+                "version": direction.get("version"),
+            },
+            "experiments": {"state": "blocked", "count": 0},
+            "package": package,
+            "nextSkill": "/research-brainstorm",
+            "nextAction": (
+                "Restore or explicitly resolve the accepted Direction's source "
+                "Brainstorm before Package materialization: "
+                + ", ".join(str(item) for item in missing_sources)
+            ),
+        }
     experiments = _scope_experiments(view, direction_id)
     if not experiments:
         pending_experiments = [
@@ -260,7 +460,7 @@ def materialization_status(
                 item["id"] for item in pending_experiments
             ]
         return result
-    if package_exists:
+    if package_exists and package_lifecycle != "DRAFT":
         return {
             "materializable": False,
             "direction": {
@@ -291,7 +491,11 @@ def materialization_status(
         },
         "package": package,
         "nextSkill": "/research-package",
-        "nextAction": f"/research-package from-scope {direction_id}",
+        "nextAction": (
+            f"Activate Draft Package {package_id} from ratified Scope"
+            if package_lifecycle == "DRAFT"
+            else f"/research-package from-scope {direction_id}"
+        ),
     }
 
 
@@ -370,7 +574,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--source-brainstorms",
-        default="[]",
+        default=None,
         dest="source_brainstorms",
     )
     return parser
@@ -412,21 +616,38 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(
             "Active Direction is missing hypothesis, metric, or success_gate"
         )
-    source_ids = json.loads(args.source_brainstorms)
-    if not isinstance(source_ids, list) or not all(
-        isinstance(item, str) for item in source_ids
-    ):
-        raise SystemExit("--source-brainstorms must be a JSON list of ids")
-    active_ideas = {row["id"]: row for row in brainstorm.read_brainstorms(paths)}
-    missing_ideas = [idea_id for idea_id in source_ids if idea_id not in active_ideas]
-    if missing_ideas:
-        raise SystemExit(
-            "Unknown or archived source brainstorms: " + ", ".join(missing_ideas)
+    activating_draft = materialization.get("package_lifecycle") == "DRAFT"
+    source_rows = (
+        []
+        if activating_draft
+        else _resolve_source_brainstorms(
+            paths,
+            materialization,
+            args.source_brainstorms,
         )
-    source_records = [copy.deepcopy(active_ideas[idea_id]) for idea_id in source_ids]
-    name = args.name or direction_slug.replace("-", " ").title()
-    pages = create_research_package.parse_scope(args.scope, args.category)
-    record: dict[str, Any] = {
+    )
+    experiment_ids = [str(item["aggregate_id"]) for item in scope_experiments]
+    (
+        source_records,
+        docs_groups,
+        interface_notes,
+        brainstorm_consumptions,
+    ) = _build_brainstorm_transfer(package_id, source_rows, experiment_ids)
+    draft = materialization.get("draft_package")
+    if activating_draft and not isinstance(draft, dict):
+        raise SystemExit("Draft Package disappeared before activation")
+    name = args.name or (
+        str(draft.get("name") or draft.get("title"))
+        if isinstance(draft, dict)
+        else direction_slug.replace("-", " ").title()
+    )
+    pages = (
+        copy.deepcopy(draft.get("pages"))
+        if isinstance(draft, dict) and isinstance(draft.get("pages"), list)
+        else create_research_package.parse_scope(args.scope, args.category)
+    )
+    record: dict[str, Any] = copy.deepcopy(draft) if isinstance(draft, dict) else {}
+    record.update({
         "id": package_id,
         "slug": package_id,
         "name": name,
@@ -463,7 +684,7 @@ def main(argv: list[str] | None = None) -> int:
         "sourceChange": materialization["latest_direction_event_id"],
         "sourceExperiments": [
             {
-                "id": item["record"]["id"],
+                "id": str(item["aggregate_id"]),
                 "version": item["record"].get("scope_version"),
                 "source": item["record"].get("scope_source"),
             }
@@ -474,19 +695,34 @@ def main(argv: list[str] | None = None) -> int:
         "resultGateRows": [],
         "resultBlocks": [],
         "analysisInsights": [],
-        "docsGroups": [],
-    }
-    package_event, experiment_events = management.commit_package_create(
-        paths,
-        record,
-        _experiment_rows(package_id, scope_experiments),
-        entry_skill="research-package",
-    )
-    consumed = brainstorm.consume_brainstorms(
-        paths,
-        source_ids,
-        package_id=package_id,
-    )
+        "docsGroups": docs_groups,
+        "executionAuthorized": True,
+    })
+    if activating_draft:
+        record["scopeBinding"] = {
+            "source_package": copy.deepcopy(materialization["source_package"]),
+            "direction_id": args.direction_id,
+            "direction_version": direction.get("version"),
+            "experiment_ids": list(experiment_ids),
+        }
+        record["lastAction"] = f"activated from ratified Scope {args.direction_id}"
+    if interface_notes:
+        record["interface_notes"] = interface_notes
+    if activating_draft:
+        package_event, experiment_events = management.commit_package_activate(
+            paths,
+            record,
+            _experiment_rows(package_id, scope_experiments),
+            entry_skill="research-package",
+        )
+    else:
+        package_event, experiment_events = management.commit_package_create(
+            paths,
+            record,
+            _experiment_rows(package_id, scope_experiments),
+            brainstorm_consumptions,
+            entry_skill="research-package",
+        )
     print(
         json.dumps(
             {
@@ -496,9 +732,10 @@ def main(argv: list[str] | None = None) -> int:
                 "experiments": [
                     event["aggregate_id"] for event in experiment_events
                 ],
-                "source_brainstorms_archived": [
-                    row["id"] for row in consumed
+                "source_brainstorms_converted": [
+                    row["aggregate_id"] for row in source_rows
                 ],
+                "activated_from_draft": activating_draft,
             },
             indent=2,
             ensure_ascii=False,

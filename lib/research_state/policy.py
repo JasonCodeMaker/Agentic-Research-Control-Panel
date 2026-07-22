@@ -8,6 +8,7 @@ from .schema import compatibility_map, enum, require_enum
 
 
 STATES = {
+    "brainstorm": [*enum("package_draft_status")],
     "in-progress": [
         *enum("package_phase"),
         "BLOCKED",
@@ -38,6 +39,7 @@ FAIL_STATUS = {
 }
 
 ALL_IN_PROGRESS = set(STATES["in-progress"])
+ALL_DRAFT = set(STATES["brainstorm"])
 ALL_SUCCESS = set(SUCCESS_STATUS.values())
 ALL_FAIL = set(FAIL_STATUS.values())
 
@@ -106,6 +108,12 @@ INSERT_LEGAL = {
     "tracker-chosen-route": _cells("in-progress", {"NEXT_ACTION_READY"}),
 }
 
+# Draft Packages are design surfaces.  They may refine documents and the
+# proposed objective, but they cannot bind Experiments, record results, or
+# enter execution phases before Scope activation.
+for _target in ("doc-file", "doc-card"):
+    INSERT_LEGAL[_target] |= _cells("brainstorm", ALL_DRAFT - {"ARCHIVED_DRAFT"})
+
 UPDATE_LEGAL = {
     "status": (
         _cells("in-progress", ALL_IN_PROGRESS)
@@ -154,6 +162,17 @@ UPDATE_LEGAL = {
     ),
     "rule": _cells("in-progress", ALL_IN_PROGRESS),
 }
+for _target in (
+    "activeGate",
+    "primaryMetricVsGate",
+    "lastAction",
+    "lastUpdated",
+    "objectiveContract",
+    "last-updated-time",
+):
+    UPDATE_LEGAL[_target] |= _cells(
+        "brainstorm", ALL_DRAFT - {"ARCHIVED_DRAFT"}
+    )
 
 DELETE_LEGAL = {
     "experiments-row": _cells("in-progress", {"CONTEXT_LOADED", "IMPLEMENTING"}),
@@ -166,6 +185,10 @@ DELETE_LEGAL = {
         "in-progress", {"CONTEXT_LOADED", "IMPLEMENTING", "READY_TO_LAUNCH"}
     ),
 }
+for _target in ("doc-file", "doc-card"):
+    DELETE_LEGAL[_target] |= _cells(
+        "brainstorm", ALL_DRAFT - {"ARCHIVED_DRAFT"}
+    )
 
 
 def legacy_cell(
@@ -174,6 +197,10 @@ def legacy_cell(
     blocker: dict[str, Any] | None,
 ) -> tuple[str, str]:
     require_enum("package_lifecycle", lifecycle)
+    if lifecycle == "DRAFT":
+        if phase is not None or blocker is not None:
+            raise ValueError("DRAFT package cannot carry an execution phase or blocker")
+        return ("brainstorm", "REFINING")
     if lifecycle == "ACTIVE":
         if blocker is not None:
             return ("in-progress", "BLOCKED")
@@ -212,6 +239,13 @@ def is_legal(
 def from_legacy(category: str, status: str, record: dict[str, Any] | None = None) -> dict[str, Any]:
     """Translate one legacy card state without inventing a blocked phase."""
     record = record or {}
+    if category == "brainstorm" and status in ALL_DRAFT:
+        return {
+            "lifecycle": "DRAFT",
+            "phase": None,
+            "blocker": None,
+            "draftStatus": status,
+        }
     if category == "in-progress":
         if status == "BLOCKED":
             blocker = record.get("blocker") or {
@@ -235,6 +269,10 @@ def from_legacy(category: str, status: str, record: dict[str, Any] | None = None
 
 
 def to_legacy(record: dict[str, Any]) -> dict[str, str]:
+    if record.get("lifecycle") == "DRAFT":
+        draft_status = str(record.get("draftStatus") or "REFINING")
+        require_enum("package_draft_status", draft_status)
+        return {"category": "brainstorm", "status": draft_status}
     category, status = legacy_cell(
         str(record.get("lifecycle")),
         record.get("phase"),

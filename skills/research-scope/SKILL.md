@@ -22,6 +22,57 @@ The hierarchy is:
 Project -> Direction -> Experiment
 ```
 
+## Where Scope belongs in the lifecycle
+
+Project Scope is established during onboarding because it defines the durable
+workspace boundary. Direction and Experiment Scope are different: they freeze
+research intent only after the Draft Package document has been refined enough
+for the user and agents to share one clear proposal.
+
+```text
+Project Scope
+  -> standalone Brainstorm + refinement
+  -> user-approved conversion to Package lifecycle=DRAFT
+  -> Draft refinement and one Direction-and-Experiments review
+  -> one user approval atomically commits Scope and lifecycle=ACTIVE
+```
+
+Scope is therefore a commit boundary, not an early authoring form. Do not force
+a vague Brainstorm into fixed fields merely to create a Package shell. The
+first approval creates that non-executable Draft shell; the later full proposal
+freezes Direction and Experiments while activating it.
+
+## Decompose a Direction into Experiments
+
+Treat an Experiment as the smallest independently governable evidence
+contract. It is not a phase name, task list, metric, method arm, seed, retry,
+or convenient scheduling unit. A Direction may need one Experiment or many;
+never assume a fixed count or generate a standard milestone roster.
+
+Before creating or revising Experiment proposals, read
+[`references/experiment-decomposition.md`](references/experiment-decomposition.md)
+completely and apply its decision ledger, split test, merge test, and coverage
+check. Preserve these core rules:
+
+- Split when the decision, protocol or configuration family, evidence-admission
+  rule, lifecycle, or independently interpretable evidence differs.
+- Merge only when partial completion would not create an ambiguous or
+  misleading result and all governance semantics are shared.
+- Represent baselines and treatments as arms, metrics as observables, seeds and
+  retries as Runs, and setup work as implementation tasks inside the owning
+  Experiment.
+- Put a performance threshold in `gate` only when the ratified Direction calls
+  for that scientific decision rule. Record-only characterization uses an
+  evidence-completeness gate.
+- Do not invent dependency edges for execution order. Record a dependency only
+  when upstream evidence changes whether the downstream Experiment is
+  admissible or interpretable.
+
+Show the resulting Experiment map and Direction coverage before asking the
+user to ratify any proposal. `scripts/plan_milestones.py` accepts only explicit
+evidence-contract input; it must never invent semantic decomposition from a
+Direction alone.
+
 | Level | Required spec | Gate |
 |---|---|---|
 | `project` | `goal`, `contributions`, `out_of_scope` | `USER_ONLY` |
@@ -57,7 +108,25 @@ the user. They must still match at the gateway.
 
 Build and validate a complete proposal with `id`, `level`, `node_id`, `op`,
 `gate`, `change`, `rationale`, `proposed_spec`, `proposed_node`, and
-`post_accept_actions`. Then submit it before asking the user to decide:
+`post_accept_actions`. A normal Draft Package finalization proposal also uses
+`proposal_kind=package_finalization` and includes every selected complete
+Experiment node in `proposed_experiments`. Then submit it before asking the
+user to decide.
+
+A Direction created from a Draft Package must also include an exact
+`source_package` object:
+
+```json
+{
+  "id": "<package-id>",
+  "draft_revision": 3,
+  "document_sha256": "<reviewed-document-hash>"
+}
+```
+
+Submission and finalization both revalidate this binding. If the draft changes
+after the visible review, reject the stale approval and prepare a new review;
+never silently bind the newer document.
 
 ```bash
 python3 skills/research-scope/scripts/triage.py --workspace . propose \
@@ -71,9 +140,10 @@ Keep the compact receipt internal. Show:
 
 ```markdown
 **Scope review**
-- Level and operation: <plain language>
+- Package and operation: <plain language>
+- Direction: <every semantic Direction field exactly as proposed>
+- Experiments: <every selected Experiment and its four-field spec>
 - Parent: <plain language, when applicable>
-- Proposed intent: <every semantic field exactly as proposed>
 - Effect on existing Scope: <invalidations, reopenings, or none>
 - Assumptions: <material assumptions, or none>
 - Decision: reply CONFIRM/确认, describe revisions, or REJECT/拒绝
@@ -85,9 +155,26 @@ Do not show the same full review again after confirmation.
 
 ### Accept
 
-An explicit user confirmation authorizes both the `ACCEPTED` disposition and
-the commit of that exact snapshot. Invoke one combined gateway call with the
-hidden receipt:
+For a Draft Package finalization proposal, an explicit user confirmation
+authorizes the exact Draft to become `SCOPE_READY`, accepts the full Scope
+bundle, commits Direction and Experiments, and activates the same Package.
+Invoke one combined gateway call with the hidden receipt:
+
+```bash
+python3 skills/research-op/scripts/research_op.py \
+  --workspace . --pkg <package-id> --op package-finalize \
+  --from-triage <proposal-id> --proposal-hash <proposal-hash> \
+  --actor-type user --actor-id <stable-user-id>
+```
+
+The gateway checks the user actor, pending status, content hash, Draft revision
+and NoteRef, Direction and Experiment gates, participant versions, and
+idempotency. It appends one `PackageActivated` event or nothing. If projection
+failed after commit, retry the same command; do not ask the user to approve
+again.
+
+For Project onboarding or an independently governed later Scope change not
+coupled to Draft activation, use ordinary `scope-accept` with `--pkg _scope`.
 
 ```bash
 python3 skills/research-op/scripts/research_op.py \
@@ -95,11 +182,6 @@ python3 skills/research-op/scripts/research_op.py \
   --from-triage <proposal-id> --proposal-hash <proposal-hash> \
   --actor-type user --actor-id <stable-user-id>
 ```
-
-The gateway checks the user actor, pending status, content hash, level gate,
-node version, accepted snapshot, causation, and idempotency. If acceptance was
-recorded but projection or commit completion failed, retry the same command;
-do not ask the user to approve again.
 
 ### Revise
 
@@ -117,21 +199,24 @@ an explicit user actor. Rejection changes no committed Scope.
 `triage.py dispose` followed by `research-op --op scope-transition
 --from-triage <proposal-id>` remains supported for repair, diagnostics, and
 separately governed callers. Ordinary conversational approval uses
-`scope-accept` to avoid duplicate commands and receipts.
+`scope-accept`. A `package_finalization` proposal cannot use this path because
+separate proposal, Scope, and Package events would violate its atomic approval
+boundary.
 
 The explicit payload form is reserved for separately governed structured
 callers. It cannot substitute for or bypass the accepted snapshot.
 
 ## Direction follow-up
 
-If an accepted Direction requested
-`post_accept_actions: ["plan_validation_experiments"]`, ask one short question
-before creating validation Experiment proposals. Each resulting Experiment
-still needs its own gate-appropriate decision.
+For a new Draft Package, finish Experiment decomposition before submitting the
+full finalization proposal. Do not accept a Direction first and generate
+Experiment proposals afterward. Later independent Scope revisions may still
+use their level-specific gates and ordinary Scope commands.
 
 ## Done condition
 
-For acceptance, the user made one explicit semantic decision and the bound
-Scope transition succeeded. For revision, one replacement is pending and
+For Draft finalization, the user made one explicit semantic decision and one
+event left the same Package `ACTIVE / CONTEXT_LOADED` with the exact Direction
+and Experiments committed. For revision, one replacement is pending and
 visible. For rejection, the proposal is disposed and committed Scope is
 unchanged. Every path remains event-backed and auditable.

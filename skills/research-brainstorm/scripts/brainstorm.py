@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Event-backed pre-package brainstorms and Direction proposal shaping.
+"""Event-backed pre-package Brainstorms and Direction proposal shaping.
 
-Brainstorms are management records.  This module never reads or writes the
-generated interface; ``lib.interface`` owns the HTML/JS projection.
+Brainstorms remain standalone, non-executable idea records until an explicit
+user approval converts one into a Draft Package. This module never reads or
+writes the generated interface; ``lib.interface`` owns the HTML/JS projection.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import html
 import json
 import re
 import sys
@@ -109,17 +111,41 @@ def _materialize_document_note(
     )
 
 
+def _default_document_html(record: dict[str, Any]) -> str:
+    """Create a minimal readable body while leaving the draft free-form."""
+    title = html.escape(str(record.get("title") or record.get("id") or "Research idea"))
+    idea = html.escape(str(record.get("idea") or "Not specified yet."))
+    sections = [
+        '<section class="doc-section" id="research-question">'
+        '<h2><span class="section-number">01 </span>'
+        f'<span>{title}</span></h2><p>{idea}</p></section>'
+    ]
+    refs = record.get("lit_refs")
+    if isinstance(refs, list) and refs:
+        items = "".join(
+            f"<li><code>{html.escape(str(ref))}</code></li>" for ref in refs
+        )
+        sections.append(
+            '<section class="doc-section" id="grounding">'
+            '<h2><span class="section-number">02 </span>'
+            f'<span>Grounding</span></h2><ul class="source-list">{items}</ul>'
+            "</section>"
+        )
+    return "\n".join(sections)
+
+
 def add_brainstorm(
     root: ResearchPaths | str | Path | None,
     record: dict[str, Any],
     *,
     actor: dict[str, str] | None = None,
 ) -> str:
-    """Commit ``BrainstormCreated`` and return its stable id."""
+    """Create one standalone, non-executable Brainstorm and return its id."""
     paths = _coerce_paths(root)
     management.initialize(paths)
     view = StateQuery(paths).brainstorms(include_archived=True)["data"]
-    existing = {str(row["id"]) for row in view["items"]}
+    package_ids = set(StateQuery(paths).show("package")["data"])
+    existing = {str(row["id"]) for row in view["items"]} | package_ids
     idea_id = str(record.get("id") or _slug(str(record.get("title") or "idea")))
     if idea_id in existing:
         base = idea_id
@@ -133,7 +159,9 @@ def add_brainstorm(
     entry.setdefault("updated_at", entry["created_at"])
     entry.setdefault("page_language", "en")
     entry.setdefault("status", "ACTIVE")
+    entry.setdefault("revision", 1)
     entry.setdefault("detailPath", brainstorm_detail_path(entry))
+    entry.setdefault("document_html", _default_document_html(entry))
     _materialize_document_note(paths, entry, idea_id=idea_id)
     management.create_brainstorm(
         paths,
@@ -171,6 +199,7 @@ def revise_brainstorm(
         raise ValueError(f"cannot revise archived brainstorm: {idea_id}")
     revision = copy.deepcopy(patch)
     revision.setdefault("updated_at", datetime.now(timezone.utc).isoformat())
+    revision["revision"] = int(current.get("revision") or 1) + 1
     _materialize_document_note(paths, revision, idea_id=idea_id)
     version = int(view["versions"].get(idea_id, 0))
     event = management.revise_brainstorm(
@@ -261,30 +290,6 @@ def discard_brainstorm(
     return True
 
 
-def consume_brainstorms(
-    root: ResearchPaths | str | Path | None,
-    idea_ids: list[str],
-    *,
-    package_id: str | None = None,
-) -> list[dict[str, Any]]:
-    """Return active source records and archive them as package provenance."""
-    paths = _coerce_paths(root)
-    active = {row["id"]: row for row in read_brainstorms(paths)}
-    taken = [
-        copy.deepcopy(active[idea_id])
-        for idea_id in idea_ids
-        if idea_id in active
-    ]
-    reason = (
-        f"materialized into package {package_id}"
-        if package_id
-        else "materialized from brainstorm"
-    )
-    for row in taken:
-        remove_brainstorm(paths, str(row["id"]), reason=reason)
-    return taken
-
-
 def active_project_context(
     root: ResearchPaths | str | Path | None = None,
 ) -> list[dict[str, Any]]:
@@ -304,6 +309,39 @@ def direction_ready(spec: dict[str, Any]) -> bool:
     return all(spec.get(field) not in (None, "", [], {}) for field in DIRECTION_FIELDS)
 
 
+def draft_source_binding(
+    root: ResearchPaths | str | Path | None,
+    package_id: str,
+    *,
+    require_scope_ready: bool = False,
+) -> dict[str, Any]:
+    """Return the exact reviewed draft identity used by a Scope proposal."""
+    paths = _coerce_paths(root)
+    try:
+        current = StateQuery(paths).show("package", package_id)["data"]
+    except KeyError:
+        current = None
+    if (
+        not isinstance(current, dict)
+        or current.get("lifecycle") != "DRAFT"
+        or current.get("draftStatus") == "ARCHIVED_DRAFT"
+    ):
+        raise ValueError(f"active Draft Package required: {package_id}")
+    if require_scope_ready and current.get("draftStatus") not in {
+        "SCOPE_READY",
+        "SCOPE_REVIEW",
+    }:
+        raise ValueError(f"Draft Package must be SCOPE_READY: {package_id}")
+    note = current.get("document_note")
+    if not isinstance(note, dict) or not note.get("sha256"):
+        raise ValueError(f"Draft Package has no governed document: {package_id}")
+    return {
+        "id": package_id,
+        "draft_revision": int(current["draftRevision"]),
+        "document_sha256": str(note["sha256"]),
+    }
+
+
 def build_direction_proposal(
     node_id: str,
     spec: dict[str, Any],
@@ -311,6 +349,8 @@ def build_direction_proposal(
     parent_project_id: str,
     source: str,
     source_brainstorms: list[str] | None = None,
+    source_package: dict[str, Any] | None = None,
+    proposed_experiments: list[dict[str, Any]] | None = None,
     item_id: str | None = None,
     change: str | None = None,
     rationale: str | None = None,
@@ -326,7 +366,7 @@ def build_direction_proposal(
         "source": source,
     }
     scope_ssot.validate_node(node)
-    return {
+    proposal = {
         "id": item_id or f"direction-{_slug(node_id.rsplit('/', 1)[-1])}",
         "level": "direction",
         "node_id": node_id,
@@ -340,6 +380,27 @@ def build_direction_proposal(
         "source_brainstorms": list(source_brainstorms or []),
         "post_accept_actions": [],
     }
+    if source_package is not None:
+        proposal["source_package"] = copy.deepcopy(source_package)
+    if proposed_experiments is not None:
+        if source_package is None:
+            raise ValueError("package finalization requires source_package")
+        if not isinstance(proposed_experiments, list) or not proposed_experiments:
+            raise ValueError("package finalization requires proposed Experiments")
+        seen: set[str] = set()
+        for experiment in proposed_experiments:
+            scope_ssot.validate_node(experiment)
+            if experiment.get("level") != "experiment":
+                raise ValueError("proposed_experiments must contain Experiment nodes")
+            if experiment.get("parents") != [node_id]:
+                raise ValueError("every proposed Experiment must belong to the Direction")
+            experiment_id = str(experiment.get("id") or "")
+            if not experiment_id or experiment_id in seen:
+                raise ValueError("proposed Experiment ids must be unique")
+            seen.add(experiment_id)
+        proposal["proposal_kind"] = "package_finalization"
+        proposal["proposed_experiments"] = copy.deepcopy(proposed_experiments)
+    return proposal
 
 
 def _add_location_arguments(parser: argparse.ArgumentParser) -> None:
@@ -401,11 +462,15 @@ def build_parser() -> argparse.ArgumentParser:
     ready.add_argument("--spec", required=True)
 
     proposal = sub.add_parser("build-proposal")
+    _add_location_arguments(proposal)
     proposal.add_argument("--node-id", required=True)
     proposal.add_argument("--parent-project-id", required=True)
     proposal.add_argument("--spec", required=True)
     proposal.add_argument("--source", required=True)
     proposal.add_argument("--source-brainstorms", default="[]")
+    proposal.add_argument("--source-package", help="JSON Draft Package binding")
+    proposal.add_argument("--source-package-id")
+    proposal.add_argument("--proposed-experiments", help="JSON list of Experiment nodes")
     proposal.add_argument("--item-id")
     return parser
 
@@ -505,12 +570,29 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "direction-ready":
         print(json.dumps({"ready": direction_ready(json.loads(args.spec))}))
     else:
+        if args.source_package and args.source_package_id:
+            raise ValueError(
+                "use either --source-package or --source-package-id, not both"
+            )
+        source_package = (
+            json.loads(args.source_package)
+            if args.source_package
+            else draft_source_binding(_paths_from_args(args), args.source_package_id)
+            if args.source_package_id
+            else None
+        )
         item = build_direction_proposal(
             args.node_id,
             json.loads(args.spec),
             parent_project_id=args.parent_project_id,
             source=args.source,
             source_brainstorms=json.loads(args.source_brainstorms),
+            source_package=source_package,
+            proposed_experiments=(
+                json.loads(args.proposed_experiments)
+                if args.proposed_experiments
+                else None
+            ),
             item_id=args.item_id,
         )
         print(json.dumps(item, ensure_ascii=False))

@@ -146,6 +146,7 @@ def _parser() -> argparse.ArgumentParser:
             "scan-events",
             "scope-accept",
             "scope-transition",
+            "package-finalize",
             "registry-add",
             "evolution-observe",
             "evolution-create",
@@ -350,6 +351,65 @@ def _scope_accept(args: argparse.Namespace, paths, payload) -> int:
                 "event_id": event["event_id"],
                 "aggregate_version": event["aggregate_version"],
                 "idempotent": idempotent,
+                **_interface_fields([event]),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def _package_finalize(args: argparse.Namespace, paths, payload) -> int:
+    """Approve one full proposal and commit Scope plus Package activation."""
+    actor = {"type": args.actor_type, "id": args.actor_id}
+    try:
+        if not args.from_triage:
+            raise ValueError(
+                "package-finalize requires --from-triage <pending-proposal-id>"
+            )
+        if not args.proposal_hash:
+            raise ValueError(
+                "package-finalize requires --proposal-hash <visible-proposal-hash>"
+            )
+        event = management.finalize_draft_package(
+            paths,
+            str(args.pkg),
+            args.from_triage,
+            args.proposal_hash,
+            actor=actor,
+            idempotency_key=args.idempotency_key,
+        )
+    except Exception as exc:
+        return _error(
+            exc,
+            phase="package-finalize",
+            package_id=args.pkg,
+            operation=args.op,
+            paths=paths,
+            payload={
+                "proposal_id": args.from_triage,
+                "proposal_hash": args.proposal_hash,
+            },
+            actor=actor,
+            idempotency_key=args.idempotency_key,
+        )
+    finalization = event["payload"]["scope_finalization"]
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "op": "package-finalize",
+                "package_id": args.pkg,
+                "proposal_id": args.from_triage,
+                "direction_id": finalization["direction"]["aggregate_id"],
+                "experiment_ids": [
+                    row["aggregate_id"]
+                    for row in finalization["experiments"]
+                ],
+                "event_id": event["event_id"],
+                "lifecycle": event["payload"]["record"]["lifecycle"],
+                "phase": event["payload"]["record"]["phase"],
                 **_interface_fields([event]),
             },
             indent=2,
@@ -647,6 +707,8 @@ def main(argv: list[str] | None = None) -> int:
         return _scope_accept(args, paths, payload)
     if args.op == "scope-transition":
         return _scope_transition(args, paths, payload)
+    if args.op == "package-finalize":
+        return _package_finalize(args, paths, payload)
     if args.op == "registry-add":
         return _registry_add(args, paths, payload)
     if args.op == "check":

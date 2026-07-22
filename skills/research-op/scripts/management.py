@@ -39,6 +39,7 @@ from lib.research_state import policy as state_policy
 from lib.research_state.schema import (
     compatibility_map,
     enum,
+    require_enum,
     rule_kind_for_level,
     status_group,
     transition_map,
@@ -69,6 +70,25 @@ TERMINAL_PACKAGE_STATUSES = {
     "STOPPED",
     *state_policy.SUCCESS_STATUS.values(),
     *state_policy.FAIL_STATUS.values(),
+}
+PACKAGE_LOCAL_EXPERIMENT_FIELDS = {
+    "after",
+    "complex",
+    "docsAnchor",
+    "label",
+    "local_id",
+    "measures",
+    "output",
+    "requiresCode",
+    "resultSchema",
+    "resultSchemaRef",
+    "runLink",
+}
+PACKAGE_RESULT_FIELDS = {
+    "analysisInsights",
+    "methodsTried",
+    "resultBlocks",
+    "resultGateRows",
 }
 
 
@@ -627,6 +647,586 @@ def archive_brainstorm(
     )
 
 
+_DRAFT_SOURCE_FIELDS = {"id", "draft_revision", "document_sha256"}
+
+
+def _draft_source_binding(record: dict[str, Any]) -> dict[str, Any]:
+    note = record.get("document_note")
+    if not isinstance(note, dict):
+        raise CommandRejected(
+            "draft-package-document-required",
+            "Draft Package requires a content-addressed proposal document",
+        )
+    return {
+        "id": str(record.get("id") or ""),
+        "draft_revision": int(record.get("draftRevision") or 0),
+        "document_sha256": str(note.get("sha256") or ""),
+    }
+
+
+def _validate_draft_package_record(paths: ResearchPaths, record: dict[str, Any]) -> None:
+    package_id = record.get("id")
+    if not isinstance(package_id, str) or not package_id.strip():
+        raise CommandRejected("draft-package-id-required", "Draft Package requires id")
+    if (
+        record.get("lifecycle") != "DRAFT"
+        or record.get("phase") is not None
+        or record.get("blocker") is not None
+    ):
+        raise CommandRejected(
+            "draft-package-state-invalid",
+            "Draft Package must use lifecycle=DRAFT with no execution phase or blocker",
+        )
+    require_enum("package_draft_status", record.get("draftStatus"))
+    revision = record.get("draftRevision")
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+        raise CommandRejected(
+            "draft-package-revision-invalid",
+            "Draft Package draftRevision must be a positive integer",
+        )
+    if record.get("executionAuthorized") is not False:
+        raise CommandRejected(
+            "draft-package-execution-forbidden",
+            "Draft Package must set executionAuthorized=false",
+        )
+    if record.get("direction_id") is not None:
+        raise CommandRejected(
+            "draft-package-direction-forbidden",
+            "Draft Package cannot bind a Direction before Scope ratification",
+        )
+    if record.get("sourceVersion") is not None or record.get("sourceChange") is not None:
+        raise CommandRejected(
+            "draft-package-scope-source-forbidden",
+            "Draft Package cannot carry committed Scope provenance",
+        )
+    if record.get("sourceExperiments") != [] or record.get("scopeBinding") is not None:
+        raise CommandRejected(
+            "draft-package-scope-binding-forbidden",
+            "Draft Package cannot bind Experiments or Scope before activation",
+        )
+    document_path = record.get("documentPath")
+    if document_path != "docs/proposal.html":
+        raise CommandRejected(
+            "draft-package-document-path-invalid",
+            "Draft Package proposal document must use docs/proposal.html",
+        )
+    _validate_note_ref(paths, record.get("document_note"))
+
+
+def _validate_source_package_binding(
+    state: dict[str, Any],
+    binding: Any,
+    *,
+    require_scope_ready: bool = True,
+) -> dict[str, Any]:
+    if not isinstance(binding, dict) or set(binding) != _DRAFT_SOURCE_FIELDS:
+        raise CommandRejected(
+            "scope-source-package-invalid",
+            "source_package must contain exactly id, draft_revision, and document_sha256",
+        )
+    package_id = binding.get("id")
+    package = state["aggregates"]["package"].get(package_id)
+    if not isinstance(package, dict) or package.get("lifecycle") != "DRAFT":
+        raise CommandRejected(
+            "scope-draft-package-required",
+            f"Scope proposal requires an existing Draft Package: {package_id}",
+        )
+    current = _draft_source_binding(package)
+    if current != binding:
+        raise CommandConflict(
+            "scope-draft-package-stale",
+            f"Draft Package {package_id} changed after the visible Scope review",
+        )
+    if require_scope_ready and package.get("draftStatus") not in {
+        "SCOPE_READY",
+        "SCOPE_REVIEW",
+    }:
+        raise CommandRejected(
+            "scope-draft-package-not-ready",
+            f"Draft Package {package_id} must be SCOPE_READY before Scope proposal",
+        )
+    return package
+
+
+def create_draft_package(
+    paths: ResearchPaths,
+    package_id: str,
+    record: dict[str, Any],
+    brainstorm_consumptions: list[dict[str, Any]] | None = None,
+    *,
+    actor: dict[str, str],
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Create a Draft Package, optionally consuming its approved Brainstorm."""
+    candidate = copy.deepcopy(record)
+    consumptions = copy.deepcopy(list(brainstorm_consumptions or []))
+    if candidate.get("id") != package_id:
+        raise CommandRejected(
+            "draft-package-id-mismatch",
+            "Draft Package record id must equal aggregate id",
+        )
+    _validate_draft_package_record(paths, candidate)
+    payload: dict[str, Any] = {"record": candidate}
+    if consumptions:
+        payload["brainstorm_consumptions"] = consumptions
+
+    def policy(state: dict[str, Any], _command: dict[str, Any]) -> None:
+        if consumptions and actor.get("type") != "user":
+            raise CommandRejected(
+                "brainstorm-conversion-user-required",
+                "converting a Brainstorm to a Draft Package requires explicit user approval",
+            )
+        if consumptions:
+            if len(consumptions) != 1:
+                raise CommandRejected(
+                    "brainstorm-conversion-source-count",
+                    "normal Draft Package conversion consumes exactly one Brainstorm",
+                )
+            _validate_brainstorm_consumptions(state, candidate, consumptions)
+
+    return _commit(
+        EventStore(paths),
+        event_type="PackageDraftCreated",
+        aggregate_type="package",
+        aggregate_id=package_id,
+        payload=payload,
+        actor=actor,
+        idempotency_key=idempotency_key,
+        expected_version=0,
+        entry_skill="research-package",
+        policy=policy,
+    )
+
+
+def revise_draft_package(
+    paths: ResearchPaths,
+    package_id: str,
+    patch: dict[str, Any],
+    *,
+    expected_version: int,
+    actor: dict[str, str],
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Revise Draft Package content without creating executable authority."""
+    candidate_patch = copy.deepcopy(patch)
+    forbidden = {
+        "id",
+        "lifecycle",
+        "phase",
+        "blocker",
+        "direction_id",
+        "sourceVersion",
+        "sourceChange",
+        "sourceExperiments",
+        "scopeBinding",
+        "executionAuthorized",
+    }
+    illegal = sorted(forbidden.intersection(candidate_patch))
+    if illegal:
+        raise CommandRejected(
+            "draft-package-revision-forbidden",
+            f"Draft Package revision cannot change {illegal}",
+        )
+    store = EventStore(paths)
+
+    def policy(state: dict[str, Any], _command: dict[str, Any]) -> None:
+        current = state["aggregates"]["package"].get(package_id)
+        if not isinstance(current, dict) or current.get("lifecycle") != "DRAFT":
+            raise CommandRejected(
+                "draft-package-required",
+                f"unknown Draft Package: {package_id}",
+            )
+        if current.get("draftStatus") == "ARCHIVED_DRAFT":
+            raise CommandRejected(
+                "draft-package-archived",
+                f"cannot revise archived Draft Package: {package_id}",
+            )
+        if candidate_patch.get("draftRevision") != current.get("draftRevision", 0) + 1:
+            raise CommandConflict(
+                "draft-package-revision-conflict",
+                "every Draft Package refinement must advance draftRevision by one",
+            )
+        projected = copy.deepcopy(current)
+        projected.update(copy.deepcopy(candidate_patch))
+        _validate_draft_package_record(paths, projected)
+
+    return _commit(
+        store,
+        event_type="PackageDraftRevised",
+        aggregate_type="package",
+        aggregate_id=package_id,
+        payload={"patch": candidate_patch},
+        actor=actor,
+        idempotency_key=idempotency_key,
+        expected_version=expected_version,
+        entry_skill="research-package",
+        policy=policy,
+    )
+
+
+def archive_draft_package(
+    paths: ResearchPaths,
+    package_id: str,
+    patch: dict[str, Any],
+    *,
+    expected_version: int,
+    actor: dict[str, str],
+    idempotency_key: str,
+) -> dict[str, Any]:
+    """Archive one abandoned Draft Package while retaining its event history."""
+    candidate_patch = copy.deepcopy(patch)
+    forbidden = {
+        "id",
+        "lifecycle",
+        "phase",
+        "blocker",
+        "direction_id",
+        "sourceVersion",
+        "sourceChange",
+        "sourceExperiments",
+        "scopeBinding",
+        "executionAuthorized",
+        "documentPath",
+        "document_note",
+    }
+    illegal = sorted(forbidden.intersection(candidate_patch))
+    if illegal:
+        raise CommandRejected(
+            "draft-package-archive-forbidden",
+            f"Draft Package archive cannot change {illegal}",
+        )
+    store = EventStore(paths)
+
+    def policy(state: dict[str, Any], _command: dict[str, Any]) -> None:
+        current = state["aggregates"]["package"].get(package_id)
+        if not isinstance(current, dict) or current.get("lifecycle") != "DRAFT":
+            raise CommandRejected(
+                "draft-package-required",
+                f"unknown Draft Package: {package_id}",
+            )
+        if candidate_patch.get("draftRevision") != current.get("draftRevision", 0) + 1:
+            raise CommandConflict(
+                "draft-package-revision-conflict",
+                "archiving a Draft Package must advance draftRevision by one",
+            )
+        projected = copy.deepcopy(current)
+        projected.update(candidate_patch)
+        projected["draftStatus"] = "ARCHIVED_DRAFT"
+        _validate_draft_package_record(paths, projected)
+
+    return _commit(
+        store,
+        event_type="PackageDraftArchived",
+        aggregate_type="package",
+        aggregate_id=package_id,
+        payload={"patch": candidate_patch},
+        actor=actor,
+        idempotency_key=idempotency_key,
+        expected_version=expected_version,
+        entry_skill="research-package",
+        policy=policy,
+    )
+
+
+def _reopen_proposal_source(
+    package: dict[str, Any],
+    source_document: str | None,
+) -> dict[str, Any]:
+    direct_note = package.get("document_note")
+    direct_path = package.get("documentPath")
+    if isinstance(direct_note, dict) and isinstance(direct_path, str):
+        if source_document in {None, "", direct_path, "proposal"}:
+            return {
+                **copy.deepcopy(package),
+                "documentPath": direct_path,
+                "document_note": copy.deepcopy(direct_note),
+            }
+
+    sources = package.get("sourceBrainstorms")
+    notes = package.get("interface_notes")
+    candidates: list[dict[str, Any]] = []
+    if isinstance(sources, list) and isinstance(notes, dict):
+        for raw in sources:
+            if not isinstance(raw, dict):
+                continue
+            path = raw.get("documentPath")
+            note = raw.get("document_note")
+            if (
+                isinstance(path, str)
+                and isinstance(note, dict)
+                and notes.get(path) == note
+            ):
+                candidates.append(copy.deepcopy(raw))
+    if source_document:
+        candidates = [
+            row
+            for row in candidates
+            if source_document in {row.get("id"), row.get("documentPath")}
+        ]
+    if len(candidates) != 1:
+        raise CommandRejected(
+            "package-reopen-proposal-ambiguous",
+            "Package reopen requires exactly one owned proposal document; "
+            "select it explicitly when multiple source proposals exist",
+        )
+    return candidates[0]
+
+
+def _draft_record_from_active_package(
+    package: dict[str, Any],
+    source: dict[str, Any],
+    *,
+    reason: str,
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
+    title = str(source.get("title") or package.get("name") or package["id"])
+    idea = str(
+        source.get("idea")
+        or package.get("problem")
+        or package.get("objective")
+        or title
+    )
+    abstract = str(
+        source.get("abstract") or package.get("motivation") or idea
+    )
+    prior_revision = package.get("draftRevision")
+    revision = (
+        int(prior_revision) + 1
+        if isinstance(prior_revision, int) and not isinstance(prior_revision, bool)
+        else 1
+    )
+    draft = {
+        "id": package["id"],
+        "slug": package.get("slug") or package["id"],
+        "name": package.get("name") or title,
+        "title": title,
+        "idea": idea,
+        "abstract": abstract,
+        "created_at": source.get("created_at") or package.get("lastUpdated") or now,
+        "updated_at": now,
+        "page_language": source.get("page_language") or "en",
+        "tag": "brainstorm",
+        "lifecycle": "DRAFT",
+        "phase": None,
+        "blocker": None,
+        "draftStatus": "REFINING",
+        "draftRevision": revision,
+        "executionAuthorized": False,
+        "direction_id": None,
+        "sourceVersion": None,
+        "sourceChange": None,
+        "sourceExperiments": [],
+        "scopeBinding": None,
+        "documentPath": "docs/proposal.html",
+        "document_note": copy.deepcopy(source["document_note"]),
+        "pages": ["overview", "plan", "experiments", "results", "docs"],
+        "detailPath": f"packages/{package['id']}/docs/proposal.html",
+        "reopen_reason": reason,
+    }
+    for field in ("idea_snapshot", "lit_refs"):
+        if field in source:
+            draft[field] = copy.deepcopy(source[field])
+    return draft
+
+
+def _detached_experiment_record(experiment: dict[str, Any]) -> dict[str, Any]:
+    record = copy.deepcopy(experiment)
+    for field in PACKAGE_LOCAL_EXPERIMENT_FIELDS:
+        record.pop(field, None)
+    prior_status = record.get("status")
+    if prior_status == "BLOCKED":
+        prior_status = record.get("status_before_scope_stale") or "PLANNED"
+    record["package_id"] = None
+    record["status_before_scope_stale"] = prior_status
+    record["status"] = "BLOCKED"
+    record["scope_confirmation"] = "STALE"
+    if isinstance(record.get("confirmed_direction_version"), int):
+        record["stale_direction_version"] = record["confirmed_direction_version"]
+    return record
+
+
+def _validate_package_reopen_state(
+    state: dict[str, Any],
+    package_id: str,
+) -> tuple[dict[str, Any], list[tuple[str, dict[str, Any]]]]:
+    package = state["aggregates"]["package"].get(package_id)
+    if not isinstance(package, dict) or package.get("lifecycle") != "ACTIVE":
+        raise CommandRejected(
+            "package-active-required",
+            f"Package reopen requires an ACTIVE Package: {package_id}",
+        )
+    if package.get("phase") not in {
+        "CONTEXT_LOADED",
+        "IMPLEMENTING",
+        "IMPLEMENTATION_REVIEW",
+        "READY_TO_LAUNCH",
+    }:
+        raise CommandRejected(
+            "package-reopen-prelaunch-only",
+            "Only a pre-launch ACTIVE Package may reopen as Draft",
+        )
+    if package.get("blocker") is not None:
+        raise CommandRejected(
+            "package-reopen-blocker-present",
+            "Resolve the Package blocker before reopening it as Draft",
+        )
+    run_records = [
+        str(run_id)
+        for run_id, run in state["aggregates"]["run"].items()
+        if isinstance(run, dict) and run.get("package_id") == package_id
+    ]
+    open_runs = [
+        str(run_id)
+        for run_id, run in state["open_runs"].items()
+        if isinstance(run, dict) and run.get("package_id") == package_id
+    ]
+    if run_records or open_runs:
+        raise CommandRejected(
+            "package-reopen-run-history-forbidden",
+            "A Package with Run history cannot be rewritten as a pre-execution Draft",
+        )
+    populated_results = [field for field in PACKAGE_RESULT_FIELDS if package.get(field)]
+    if populated_results:
+        raise CommandRejected(
+            "package-reopen-results-forbidden",
+            "A Package with recorded results cannot reopen as a pre-execution Draft: "
+            + ", ".join(sorted(populated_results)),
+        )
+    bound = sorted(
+        (
+            (str(experiment_id), experiment)
+            for experiment_id, experiment in state["aggregates"]["experiment"].items()
+            if isinstance(experiment, dict)
+            and experiment.get("package_id") == package_id
+        ),
+        key=lambda row: row[0],
+    )
+    if not bound:
+        raise CommandRejected(
+            "package-reopen-experiments-required",
+            "ACTIVE Package has no bound Experiments to detach",
+        )
+    source_ids = {
+        str(row.get("id"))
+        for row in package.get("sourceExperiments", [])
+        if isinstance(row, dict) and row.get("id")
+    }
+    if source_ids != {experiment_id for experiment_id, _ in bound}:
+        raise CommandConflict(
+            "package-reopen-experiment-provenance-mismatch",
+            "Package sourceExperiments no longer matches its bound Experiments",
+        )
+    for experiment_id, experiment in bound:
+        if experiment.get("status") not in {"PLANNED", "READY", "BLOCKED"}:
+            raise CommandRejected(
+                "package-reopen-experiment-started",
+                f"Experiment is no longer pre-launch: {experiment_id}",
+            )
+        if experiment.get("latest_result_run_id") or experiment.get(
+            "latest_result_sha256"
+        ):
+            raise CommandRejected(
+                "package-reopen-experiment-results-forbidden",
+                f"Experiment has recorded result evidence: {experiment_id}",
+            )
+    return package, bound
+
+
+def commit_package_reopen_as_draft(
+    paths: ResearchPaths,
+    package_id: str,
+    *,
+    reason: str,
+    expected_version: int,
+    actor: dict[str, str],
+    source_document: str | None = None,
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Atomically return one never-run ACTIVE Package to a governed Draft."""
+    if actor.get("type") != "user":
+        raise CommandRejected(
+            "package-reopen-user-required",
+            "Reopening an ACTIVE Package as Draft requires an explicit user actor",
+        )
+    if not isinstance(reason, str) or not reason.strip():
+        raise CommandRejected(
+            "package-reopen-reason-required",
+            "Package reopen requires a non-empty reason",
+        )
+    store = EventStore(paths)
+    store.initialize()
+    before = store.state()
+    package, bound = _validate_package_reopen_state(before, package_id)
+    source = _reopen_proposal_source(package, source_document)
+    draft = _draft_record_from_active_package(
+        package,
+        source,
+        reason=reason.strip(),
+    )
+    _validate_draft_package_record(paths, draft)
+    payload = {
+        "record": draft,
+        "reason": reason.strip(),
+        "prior_scope": {
+            "direction_id": package.get("direction_id"),
+            "direction_version": package.get("sourceVersion"),
+            "experiment_ids": [experiment_id for experiment_id, _ in bound],
+        },
+        "experiment_unbindings": [
+            {
+                "aggregate_id": experiment_id,
+                "expected_version": _version(before, "experiment", experiment_id),
+                "aggregate_version": _version(before, "experiment", experiment_id) + 1,
+                "record": _detached_experiment_record(experiment),
+            }
+            for experiment_id, experiment in bound
+        ],
+    }
+
+    def policy(state: dict[str, Any], _command: dict[str, Any]) -> None:
+        current_package, current_bound = _validate_package_reopen_state(
+            state,
+            package_id,
+        )
+        current_source = _reopen_proposal_source(
+            current_package,
+            source_document,
+        )
+        if current_source.get("document_note") != draft.get("document_note"):
+            raise CommandConflict(
+                "package-reopen-document-changed",
+                "Package proposal document changed before the reopen commit",
+            )
+        current_by_id = dict(current_bound)
+        for unbinding in payload["experiment_unbindings"]:
+            experiment_id = unbinding["aggregate_id"]
+            current = current_by_id.get(experiment_id)
+            if not isinstance(current, dict):
+                raise CommandConflict(
+                    "package-reopen-experiment-changed",
+                    f"Experiment binding changed before reopen: {experiment_id}",
+                )
+            if _detached_experiment_record(current) != unbinding["record"]:
+                raise CommandConflict(
+                    "package-reopen-experiment-changed",
+                    f"Experiment changed before reopen: {experiment_id}",
+                )
+
+    return _commit(
+        store,
+        event_type="PackageReopenedAsDraft",
+        aggregate_type="package",
+        aggregate_id=package_id,
+        payload=payload,
+        actor=copy.deepcopy(actor),
+        idempotency_key=idempotency_key
+        or f"package:reopen-draft:{package_id}:v{expected_version}",
+        expected_version=expected_version,
+        entry_skill="research-package",
+        policy=policy,
+    )
+
+
 def discard_brainstorm(
     paths: ResearchPaths,
     idea_id: str,
@@ -861,6 +1461,22 @@ def dispose_proposal(
     # disposition policy below is the authority boundary.
     principal = _actor(actor)
     current = state["aggregates"]["proposal"].get(item_id)
+    if (
+        decision == "ACCEPTED"
+        and isinstance(current, dict)
+        and (
+            current.get("proposal_kind") == "package_finalization"
+            or (
+                isinstance(current.get("accepted_proposal"), dict)
+                and current["accepted_proposal"].get("proposal_kind")
+                == "package_finalization"
+            )
+        )
+    ):
+        raise CommandRejected(
+            "package-finalization-command-required",
+            "Package finalization proposals must be approved through package-finalize so Scope and activation commit atomically",
+        )
     disposition = current.get("disposition") if isinstance(current, dict) else None
     event_type = "ProposalAccepted" if decision == "ACCEPTED" else "ProposalRejected"
     disposition_key = (
@@ -947,6 +1563,11 @@ def dispose_proposal(
             raise CommandConflict(
                 "proposal-snapshot-mismatch",
                 f"stored proposal content no longer matches its hash: {item_id}",
+            )
+        if decision == "ACCEPTED" and "source_package" in live_snapshot:
+            _validate_source_package_binding(
+                before,
+                live_snapshot["source_package"],
             )
 
     event = _commit(store,
@@ -1194,6 +1815,91 @@ def _validate_proposal_item(
             )
     if node.get("level") == "project" and "prior_knowledge" in node:
         _validate_note_ref(paths, node["prior_knowledge"])
+    if "source_package" in item:
+        if node.get("level") != "direction" or item.get("op") != "create":
+            raise CommandRejected(
+                "scope-source-package-level-invalid",
+                "source_package is valid only on a new Direction proposal",
+            )
+        if item.get("proposal_kind") == "package_finalization":
+            package = _validate_source_package_binding(
+                state,
+                item["source_package"],
+                require_scope_ready=False,
+            )
+            if package.get("draftStatus") != "REFINING":
+                raise CommandRejected(
+                    "package-finalization-draft-status-invalid",
+                    "Package finalization proposals require a REFINING Draft Package",
+                )
+            declared_brainstorms = item.get("source_brainstorms", [])
+            package_brainstorms = [
+                str(row.get("id"))
+                for row in package.get("sourceBrainstorms", [])
+                if isinstance(row, dict) and row.get("id")
+            ]
+            if declared_brainstorms != package_brainstorms:
+                raise CommandConflict(
+                    "package-finalization-brainstorm-provenance-mismatch",
+                    "finalization proposal must preserve the Draft Package Brainstorm provenance",
+                )
+            if node.get("version") != 1 or state["aggregates"]["direction"].get(
+                node.get("id")
+            ) is not None:
+                raise CommandConflict(
+                    "package-finalization-direction-exists",
+                    "Package finalization must create a new Direction at version 1",
+                )
+            project = state["aggregates"]["project"].get(node["parents"][0])
+            if not isinstance(project, dict) or project.get("status") != "ACTIVE":
+                raise CommandRejected(
+                    "scope-parent-active-required",
+                    "Package finalization Direction requires an ACTIVE Project parent",
+                )
+            experiments = item.get("proposed_experiments")
+            if not isinstance(experiments, list) or not experiments:
+                raise CommandRejected(
+                    "package-finalization-experiments-required",
+                    "Package finalization requires at least one proposed Experiment",
+                )
+            seen: set[str] = set()
+            for experiment in experiments:
+                if not isinstance(experiment, dict):
+                    raise CommandRejected(
+                        "package-finalization-experiment-invalid",
+                        "proposed_experiments must contain complete Scope nodes",
+                    )
+                _validate_scope_node(
+                    experiment,
+                    "create",
+                    scope_ssot.REQUIRED_GATE["experiment"],
+                )
+                experiment_id = experiment.get("id")
+                if (
+                    experiment.get("level") != "experiment"
+                    or experiment.get("parents") != [node["id"]]
+                    or experiment.get("version") != 1
+                    or not isinstance(experiment_id, str)
+                    or not experiment_id
+                    or experiment_id in seen
+                ):
+                    raise CommandRejected(
+                        "package-finalization-experiment-invalid",
+                        "every proposed Experiment must be unique, version 1, and parented by the new Direction",
+                    )
+                if state["aggregates"]["experiment"].get(experiment_id) is not None:
+                    raise CommandConflict(
+                        "package-finalization-experiment-exists",
+                        f"Package finalization cannot recreate Experiment: {experiment_id}",
+                    )
+                seen.add(experiment_id)
+        elif item.get("proposal_kind") is not None:
+            raise CommandRejected(
+                "proposal-kind-invalid",
+                f"unknown proposal_kind: {item.get('proposal_kind')!r}",
+            )
+        else:
+            _validate_source_package_binding(state, item["source_package"])
 
 
 def _validate_note_ref(paths: ResearchPaths, note_ref: Any) -> None:
@@ -2143,22 +2849,138 @@ def _validate_package_record(record: dict[str, Any]) -> None:
         )
 
 
+def _validate_package_activation_record(record: dict[str, Any]) -> None:
+    """Require an exact bridge from one reviewed draft to executable Scope."""
+    if record.get("executionAuthorized") is not True:
+        raise CommandRejected(
+            "package-activation-authorization-required",
+            "activated Package must set executionAuthorized=true",
+        )
+    binding = record.get("scopeBinding")
+    if not isinstance(binding, dict) or set(binding) != {
+        "source_package",
+        "direction_id",
+        "direction_version",
+        "experiment_ids",
+    }:
+        raise CommandRejected(
+            "package-scope-binding-invalid",
+            "activated Package requires exact source_package, direction_id, "
+            "direction_version, and experiment_ids binding",
+        )
+    if binding.get("direction_id") != record.get("direction_id"):
+        raise CommandRejected(
+            "package-scope-direction-mismatch",
+            "scopeBinding direction_id must match Package direction_id",
+        )
+    if binding.get("direction_version") != record.get("sourceVersion"):
+        raise CommandRejected(
+            "package-scope-direction-version-mismatch",
+            "scopeBinding direction_version must match Package sourceVersion",
+        )
+    source_ids = [
+        item.get("id")
+        for item in record.get("sourceExperiments", [])
+        if isinstance(item, dict)
+    ]
+    if binding.get("experiment_ids") != source_ids:
+        raise CommandRejected(
+            "package-scope-experiments-mismatch",
+            "scopeBinding experiment_ids must match sourceExperiments in order",
+        )
+
+
+def _validate_brainstorm_consumptions(
+    state: dict[str, Any],
+    package: dict[str, Any],
+    consumptions: list[dict[str, Any]],
+) -> None:
+    if not consumptions:
+        return
+    sources = package.get("sourceBrainstorms")
+    notes = package.get("interface_notes")
+    if not isinstance(sources, list) or not isinstance(notes, dict):
+        raise CommandRejected(
+            "package-brainstorm-documents-required",
+            "Brainstorm conversion requires Package sourceBrainstorms and "
+            "interface_notes",
+        )
+    source_by_id = {
+        str(row.get("id")): row
+        for row in sources
+        if isinstance(row, dict) and row.get("id")
+    }
+    seen: set[str] = set()
+    for consumption in consumptions:
+        if not isinstance(consumption, dict):
+            raise CommandRejected(
+                "package-brainstorm-consumption-invalid",
+                "Brainstorm consumption rows must be objects",
+            )
+        idea_id = consumption.get("aggregate_id")
+        expected_version = consumption.get("expected_version")
+        document_path = consumption.get("document_path")
+        document_note = consumption.get("document_note")
+        if not isinstance(idea_id, str) or not idea_id or idea_id in seen:
+            raise CommandRejected(
+                "package-brainstorm-consumption-invalid",
+                "Brainstorm consumption ids must be unique non-empty strings",
+            )
+        seen.add(idea_id)
+        current = state["aggregates"]["brainstorm"].get(idea_id)
+        current_version = _version(state, "brainstorm", idea_id)
+        if not isinstance(current, dict) or current.get("status") != "ACTIVE":
+            raise CommandRejected(
+                "package-active-brainstorm-required",
+                f"Package conversion requires an ACTIVE Brainstorm: {idea_id}",
+            )
+        if expected_version != current_version:
+            raise CommandConflict(
+                "package-brainstorm-version-mismatch",
+                f"Brainstorm {idea_id} changed before Package conversion",
+            )
+        if not isinstance(document_note, dict) or current.get(
+            "document_note"
+        ) != document_note:
+            raise CommandConflict(
+                "package-brainstorm-document-mismatch",
+                f"Brainstorm {idea_id} document changed before Package conversion",
+            )
+        source = source_by_id.get(idea_id)
+        if (
+            not isinstance(document_path, str)
+            or not isinstance(source, dict)
+            or source.get("documentPath") != document_path
+            or source.get("document_note") != document_note
+            or notes.get(document_path) != document_note
+        ):
+            raise CommandRejected(
+                "package-brainstorm-ownership-required",
+                f"Package must own the source document before consuming {idea_id}",
+            )
+
+
 def _commit_package_create_locked(
     paths: ResearchPaths,
     record: dict[str, Any],
     experiments: list[dict[str, Any]] | None = None,
+    brainstorm_consumptions: list[dict[str, Any]] | None = None,
     *,
+    activate_draft: bool = False,
     actor: dict[str, str] | None = None,
     idempotency_key: str | None = None,
     entry_skill: str = "research-package",
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Create package management state and bind accepted Scope Experiments.
+    """Create or activate Package state and bind accepted Scope Experiments.
 
     All rows are normalized and collision-checked before one composite event
     atomically materializes the Package and every Experiment binding.
     """
     package = copy.deepcopy(record)
+    consumptions = copy.deepcopy(list(brainstorm_consumptions or []))
     _validate_package_record(package)
+    if activate_draft:
+        _validate_package_activation_record(package)
     package_id = str(package["id"])
     normalized = [
         normalize_experiment_binding(package_id, row)
@@ -2185,8 +3007,11 @@ def _commit_package_create_locked(
     store.initialize()
     before = store.state()
     existing_package = before["aggregates"]["package"].get(package_id)
+    event_type = "PackageActivated" if activate_draft else "PackageMaterialized"
+    action = "activate" if activate_draft else "create"
     package_key = idempotency_key or (
-        f"package:create:{package_id}:{_digest({'package': package, 'experiments': normalized})}"
+        f"package:{action}:{package_id}:"
+        f"{_digest({'package': package, 'experiments': normalized})}"
     )
     prior_package = next(
         (
@@ -2196,11 +3021,20 @@ def _commit_package_create_locked(
         ),
         None,
     )
-    if existing_package is not None and prior_package is None:
-        raise CommandConflict(
-            "package-create-exists",
-            f"package already exists: {package_id}",
-        )
+    if prior_package is None:
+        if activate_draft and (
+            not isinstance(existing_package, dict)
+            or existing_package.get("lifecycle") != "DRAFT"
+        ):
+            raise CommandConflict(
+                "package-draft-required",
+                f"Package activation requires an existing Draft Package: {package_id}",
+            )
+        if not activate_draft and existing_package is not None:
+            raise CommandConflict(
+                "package-create-exists",
+                f"package already exists: {package_id}",
+            )
     provenance = {
         item["id"]: item
         for item in package["sourceExperiments"]
@@ -2227,6 +3061,8 @@ def _commit_package_create_locked(
             for aggregate_id, patch in normalized
         ],
     }
+    if consumptions:
+        candidate_payload["brainstorm_consumptions"] = consumptions
     if prior_package is not None:
         prior_payload = prior_package.get("payload")
         prior_semantics = {
@@ -2247,6 +3083,11 @@ def _commit_package_create_locked(
                 )
                 if isinstance(binding, dict)
             ],
+            "brainstorm_consumptions": (
+                prior_payload.get("brainstorm_consumptions", [])
+                if isinstance(prior_payload, dict)
+                else []
+            ),
         }
         candidate_semantics = {
             "record": candidate_payload["record"],
@@ -2257,9 +3098,12 @@ def _commit_package_create_locked(
                 }
                 for binding in candidate_payload["experiment_bindings"]
             ],
+            "brainstorm_consumptions": candidate_payload.get(
+                "brainstorm_consumptions", []
+            ),
         }
         if (
-            prior_package.get("event_type") != "PackageMaterialized"
+            prior_package.get("event_type") != event_type
             or prior_package.get("aggregate_type") != "package"
             or prior_package.get("aggregate_id") != package_id
             or prior_semantics != candidate_semantics
@@ -2267,7 +3111,7 @@ def _commit_package_create_locked(
             raise CommandConflict(
                 "idempotency-conflict",
                 "idempotency_key was already committed with different "
-                "Package materialization content",
+                f"Package {action} content",
             )
         materialization_payload = copy.deepcopy(prior_payload)
     else:
@@ -2280,6 +3124,22 @@ def _commit_package_create_locked(
     }
 
     def validate_bindings(state: dict[str, Any]) -> None:
+        if activate_draft:
+            scope_binding = package["scopeBinding"]
+            draft = _validate_source_package_binding(
+                state,
+                scope_binding["source_package"],
+            )
+            if package.get("document_note") != draft.get("document_note"):
+                raise CommandConflict(
+                    "package-draft-document-mismatch",
+                    "activated Package must preserve the reviewed proposal document",
+                )
+            if package.get("documentPath") != draft.get("documentPath"):
+                raise CommandConflict(
+                    "package-draft-path-mismatch",
+                    "activated Package must preserve the proposal document path",
+                )
         direction_id = str(package["direction_id"])
         direction = state["aggregates"]["direction"].get(direction_id)
         if (
@@ -2383,12 +3243,13 @@ def _commit_package_create_locked(
                     f"local Experiment id is already used: {patch['local_id']}",
                 )
             used_local_ids.add(patch["local_id"])
+        _validate_brainstorm_consumptions(state, package, consumptions)
 
     if prior_package is None:
         validate_bindings(before)
 
     package_event = _commit(store,
-        event_type="PackageMaterialized",
+        event_type=event_type,
         aggregate_type="package",
         aggregate_id=package_id,
         payload=materialization_payload,
@@ -2409,7 +3270,7 @@ def _commit_package_create_locked(
             "aggregate_type": "experiment",
             "aggregate_id": binding["aggregate_id"],
             "aggregate_version": binding["aggregate_version"],
-            "_composite_event_type": "PackageMaterialized",
+            "_composite_event_type": event_type,
         }
         for binding in materialization_payload["experiment_bindings"]
     ]
@@ -2420,6 +3281,7 @@ def commit_package_create(
     paths: ResearchPaths,
     record: dict[str, Any],
     experiments: list[dict[str, Any]] | None = None,
+    brainstorm_consumptions: list[dict[str, Any]] | None = None,
     *,
     actor: dict[str, str] | None = None,
     idempotency_key: str | None = None,
@@ -2430,9 +3292,384 @@ def commit_package_create(
         paths,
         record,
         experiments,
+        brainstorm_consumptions,
         actor=actor,
         idempotency_key=idempotency_key,
         entry_skill=entry_skill,
+    )
+
+
+def commit_package_activate(
+    paths: ResearchPaths,
+    record: dict[str, Any],
+    experiments: list[dict[str, Any]] | None = None,
+    *,
+    actor: dict[str, str] | None = None,
+    idempotency_key: str | None = None,
+    entry_skill: str = "research-package",
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Atomically activate the same reviewed Draft Package and bind Scope."""
+    return _commit_package_create_locked(
+        paths,
+        record,
+        experiments,
+        activate_draft=True,
+        actor=actor,
+        idempotency_key=idempotency_key,
+        entry_skill=entry_skill,
+    )
+
+
+def _scope_display(value: Any) -> str:
+    if isinstance(value, dict):
+        return str(value.get("name") or json.dumps(value, sort_keys=True))
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    return str(value or "unmeasured")
+
+
+def finalize_draft_package(
+    paths: ResearchPaths,
+    package_id: str,
+    proposal_id: str,
+    expected_proposal_hash: str,
+    *,
+    actor: dict[str, str],
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Atomically finalize Draft, accept Scope, and activate the same Package."""
+    if actor.get("type") != "user":
+        raise CommandRejected(
+            "package-finalization-user-required",
+            "Package finalization requires explicit user approval",
+        )
+    if not expected_proposal_hash:
+        raise CommandRejected(
+            "proposal-hash-required",
+            "Package finalization requires the visible proposal hash",
+        )
+    store = EventStore(paths)
+    store.initialize()
+    stable_key = idempotency_key or (
+        f"package-finalize:{package_id}:{proposal_id}:{expected_proposal_hash}"
+    )
+    prior = next(
+        (
+            event
+            for event in reversed(store.events())
+            if event.get("idempotency_key") == stable_key
+        ),
+        None,
+    )
+    if prior is not None:
+        if (
+            prior.get("event_type") != "PackageActivated"
+            or prior.get("aggregate_type") != "package"
+            or prior.get("aggregate_id") != package_id
+            or not isinstance(prior.get("payload", {}).get("scope_finalization"), dict)
+        ):
+            raise CommandConflict(
+                "idempotency-conflict",
+                "idempotency_key was already used by another command",
+            )
+        return _commit(
+            store,
+            event_type="PackageActivated",
+            aggregate_type="package",
+            aggregate_id=package_id,
+            payload=copy.deepcopy(prior["payload"]),
+            actor=actor,
+            idempotency_key=stable_key,
+            expected_version=prior["aggregate_version"],
+            event_id=prior["event_id"],
+            entry_skill="research-package",
+        )
+
+    state = store.state()
+    draft = state["aggregates"]["package"].get(package_id)
+    if (
+        not isinstance(draft, dict)
+        or draft.get("lifecycle") != "DRAFT"
+        or draft.get("draftStatus") != "REFINING"
+    ):
+        raise CommandRejected(
+            "package-refining-draft-required",
+            f"Package finalization requires a REFINING Draft Package: {package_id}",
+        )
+    proposal = state["aggregates"]["proposal"].get(proposal_id)
+    if not isinstance(proposal, dict) or proposal.get("disposition") != "PENDING":
+        raise CommandRejected(
+            "proposal-not-pending",
+            f"Package finalization proposal is not pending: {proposal_id}",
+        )
+    if (
+        proposal.get("proposal_kind") != "package_finalization"
+        or proposal.get("proposal_hash") != expected_proposal_hash
+        or proposal_content_hash(proposal) != expected_proposal_hash
+    ):
+        raise CommandConflict(
+            "package-finalization-proposal-mismatch",
+            "Package finalization does not match the visible proposal snapshot",
+        )
+    _validate_proposal_item(paths, proposal, state)
+    source_package = _draft_source_binding(draft)
+    if proposal.get("source_package") != source_package:
+        raise CommandConflict(
+            "scope-draft-package-stale",
+            "Draft Package changed after the finalization proposal was reviewed",
+        )
+    direction_node = copy.deepcopy(proposal["proposed_node"])
+    experiment_nodes = copy.deepcopy(proposal["proposed_experiments"])
+    event_id = f"evt_pkgfinal_{_digest({'key': stable_key})[:32]}"
+    direction_record = _scope_record(direction_node, proposal)
+    experiment_records = [
+        _scope_record(
+            node,
+            {
+                "op": "create",
+                "gate": scope_ssot.REQUIRED_GATE["experiment"],
+                "trigger": f"package-finalization:{package_id}",
+                "cause": proposal_id,
+            },
+            direction_version=int(direction_node["version"]),
+        )
+        for node in experiment_nodes
+    ]
+    bindings = []
+    for index, node in enumerate(experiment_nodes):
+        experiment_id = str(node["id"])
+        _, patch = normalize_experiment_binding(
+            package_id,
+            {
+                "scope_experiment_id": experiment_id,
+                "local_id": f"P{index}",
+                "output": (
+                    f".research/experiments/{package_id}/P{index}/"
+                    "<run-id>/result.json"
+                ),
+                "status": "READY",
+                "measures": True,
+                "requiresCode": False,
+                "complex": False,
+            },
+        )
+        bindings.append(
+            {
+                "aggregate_id": experiment_id,
+                "expected_version": 0,
+                "aggregate_version": 1,
+                "patch": patch,
+            }
+        )
+
+    finalized_draft = copy.deepcopy(draft)
+    finalized_draft["draftStatus"] = "SCOPE_READY"
+    spec = direction_node["spec"]
+    hypothesis = str(spec.get("hypothesis") or "")
+    metric = _scope_display(spec.get("metric"))
+    baseline = _scope_display(spec.get("baselines"))
+    gate = str(spec.get("success_gate") or "")
+    active = copy.deepcopy(finalized_draft)
+    active.update(
+        {
+            "lifecycle": "ACTIVE",
+            "phase": "CONTEXT_LOADED",
+            "blocker": None,
+            "executionAuthorized": True,
+            "direction_id": direction_node["id"],
+            "sourceDirection": direction_node["id"],
+            "sourceVersion": direction_node["version"],
+            "sourceChange": event_id,
+            "sourceExperiments": [
+                {
+                    "id": node["id"],
+                    "version": node["version"],
+                    "source": node["source"],
+                }
+                for node in experiment_nodes
+            ],
+            "scopeBinding": {
+                "source_package": source_package,
+                "direction_id": direction_node["id"],
+                "direction_version": direction_node["version"],
+                "experiment_ids": [node["id"] for node in experiment_nodes],
+            },
+            "problem": active.get("problem") or hypothesis,
+            "objective": active.get("objective") or hypothesis,
+            "hypothesis": hypothesis,
+            "direction": hypothesis,
+            "primaryMetric": metric,
+            "baseline": baseline,
+            "activeGate": gate,
+            "primaryMetricVsGate": f"{metric} vs {gate}",
+            "artifactRoot": active.get("artifactRoot")
+            or f".research/experiments/{package_id}/",
+            "runtime": active.get("runtime")
+            or f".research/experiments/{package_id}/",
+            "openRuns": "none",
+            "lastAction": f"atomically finalized and activated from {proposal_id}",
+            "lastUpdated": str(
+                draft.get("lastUpdated") or draft.get("updated_at") or ""
+            )[:10],
+            "nextAction": f"Load Package context and run {experiment_nodes[0]['id']}",
+        }
+    )
+    _validate_package_record(active)
+    _validate_package_activation_record(active)
+    accepted_snapshot = {
+        key: copy.deepcopy(value)
+        for key, value in proposal.items()
+        if key != "disposition"
+    }
+    accepted_record = {
+        "id": proposal_id,
+        "status": "accepted",
+        "decision": "ACCEPTED",
+        "proposal_hash": expected_proposal_hash,
+        "accepted_proposal": accepted_snapshot,
+    }
+    payload = {
+        "record": active,
+        "experiment_bindings": bindings,
+        "scope_finalization": {
+            "proposal": {
+                "aggregate_id": proposal_id,
+                "expected_version": _version(state, "proposal", proposal_id),
+                "aggregate_version": _version(state, "proposal", proposal_id) + 1,
+                "record": accepted_record,
+            },
+            "direction": {
+                "aggregate_id": direction_node["id"],
+                "expected_version": 0,
+                "aggregate_version": 1,
+                "record": direction_record,
+            },
+            "experiments": [
+                {
+                    "aggregate_id": node["id"],
+                    "expected_version": 0,
+                    "aggregate_version": 1,
+                    "record": record,
+                }
+                for node, record in zip(
+                    experiment_nodes,
+                    experiment_records,
+                    strict=True,
+                )
+            ],
+            "source_package": source_package,
+            "finalized_draft": finalized_draft,
+        },
+    }
+
+    def policy(before: dict[str, Any], _command: dict[str, Any]) -> None:
+        if actor.get("type") != "user":
+            raise CommandRejected(
+                "package-finalization-user-required",
+                "Package finalization requires explicit user approval",
+            )
+        if before["aggregates"]["package"].get(package_id) != draft:
+            raise CommandConflict(
+                "scope-draft-package-stale",
+                "Draft Package changed before finalization committed",
+            )
+        if before["aggregates"]["proposal"].get(proposal_id) != proposal:
+            raise CommandConflict(
+                "proposal-snapshot-mismatch",
+                "Proposal changed before finalization committed",
+            )
+        _validate_proposal_item(paths, proposal, before)
+
+    return _commit(
+        store,
+        event_type="PackageActivated",
+        aggregate_type="package",
+        aggregate_id=package_id,
+        payload=payload,
+        actor=actor,
+        idempotency_key=stable_key,
+        expected_version=_version(state, "package", package_id),
+        event_id=event_id,
+        entry_skill="research-package",
+        policy=policy,
+    )
+
+
+def commit_package_brainstorm_transfer(
+    paths: ResearchPaths,
+    package_id: str,
+    *,
+    source_brainstorms: list[dict[str, Any]],
+    docs_groups: list[dict[str, Any]],
+    interface_notes: dict[str, dict[str, Any]],
+    brainstorm_consumptions: list[dict[str, Any]],
+    expected_version: int,
+    actor: dict[str, str],
+    idempotency_key: str | None = None,
+) -> dict[str, Any]:
+    """Atomically transfer Brainstorm documents into an existing Package."""
+    if actor.get("type") != "user":
+        raise CommandRejected(
+            "package-brainstorm-transfer-user-required",
+            "repairing an existing Package conversion requires an explicit user actor",
+        )
+    operations = [
+        {
+            "operation": "set",
+            "target": "sourceBrainstorms",
+            "value": copy.deepcopy(source_brainstorms),
+        },
+        {
+            "operation": "set",
+            "target": "docsGroups",
+            "value": copy.deepcopy(docs_groups),
+        },
+        {
+            "operation": "set",
+            "target": "interface_notes",
+            "value": copy.deepcopy(interface_notes),
+        },
+        {
+            "operation": "set",
+            "target": "lastUpdated",
+            "value": datetime.now(timezone.utc).date().isoformat(),
+        },
+    ]
+    payload = {
+        "operations": operations,
+        "brainstorm_consumptions": copy.deepcopy(brainstorm_consumptions),
+    }
+    store = EventStore(paths)
+
+    def policy(state: dict[str, Any], _command: dict[str, Any]) -> None:
+        current = state["aggregates"]["package"].get(package_id)
+        if not isinstance(current, dict):
+            raise CommandRejected(
+                "package-not-found",
+                f"unknown Package: {package_id}",
+            )
+        final_package = copy.deepcopy(current)
+        final_package["sourceBrainstorms"] = copy.deepcopy(source_brainstorms)
+        final_package["docsGroups"] = copy.deepcopy(docs_groups)
+        final_package["interface_notes"] = copy.deepcopy(interface_notes)
+        _validate_brainstorm_consumptions(
+            state,
+            final_package,
+            brainstorm_consumptions,
+        )
+
+    return _commit(
+        store,
+        event_type="PackageMutationApplied",
+        aggregate_type="package",
+        aggregate_id=package_id,
+        payload=payload,
+        actor=copy.deepcopy(actor),
+        idempotency_key=idempotency_key
+        or f"package:brainstorm-transfer:{package_id}:{_digest(payload)}",
+        expected_version=expected_version,
+        entry_skill="research-package",
+        policy=policy,
     )
 
 

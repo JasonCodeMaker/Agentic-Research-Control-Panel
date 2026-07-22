@@ -21,6 +21,24 @@ const baseSnapshot = {
   ],
 };
 
+test("keeps a Draft Package in governed refinement instead of execution", () => {
+  const ticket = evaluateWorkflow({
+    pkgId: "draft-package",
+    packageLifecycle: "DRAFT",
+    packagePhase: null,
+    packageBlocker: null,
+    experiments: [],
+    openRuns: [],
+  });
+
+  assert.equal(ticket.packageLifecycle, "DRAFT");
+  assert.equal(ticket.packagePhase, null);
+  assert.equal(ticket.workflowState, "DRAFT");
+  assert.equal(ticket.route, "ASK_USER");
+  assert.equal(ticket.nextAction.kind, "ASK_USER");
+  assert.match(ticket.nextAction.reason || "", /atomically finalized/);
+});
+
 test("tracks a long wrapper run with adaptive next check and stop-gate reentry proof", () => {
   const ticket = evaluateWorkflow({
     ...baseSnapshot,

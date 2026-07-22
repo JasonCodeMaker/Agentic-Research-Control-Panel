@@ -38,10 +38,12 @@ def test_skill_requires_clear_scope_review_and_next_step():
 
 def test_skill_allows_delegated_execution_after_explicit_pm_decision():
     text = SKILL.read_text(encoding="utf-8")
-    assert "An explicit user confirmation authorizes both the `ACCEPTED` disposition" in text
+    contract = " ".join(text.split())
+    assert "For a Draft Package finalization proposal, an explicit user confirmation" in text
+    assert "--op package-finalize" in text
     assert "Record `REJECTED` through `triage.py dispose`" in text
     assert "submit a replacement under the same proposal id" in text
-    assert "do not ask the user to approve again" in text
+    assert "do not ask the user to approve again" in contract
 
 
 def test_skill_defines_safe_decision_branches_and_bound_reply_checks():
@@ -66,7 +68,8 @@ def test_delegated_triage_execution_requires_hash_bound_snapshot_path():
     research_op_text = RESEARCH_OP_SKILL.read_text(encoding="utf-8")
     scope_contract = " ".join(scope_text.split())
 
-    assert "ordinary conversational approval uses `scope-accept`" in scope_contract.lower()
+    assert "package_finalization` proposal cannot use this path" in scope_contract
+    assert "ordinary `scope-accept`" in scope_contract
     assert "--from-triage <proposal-id>" in research_op_text
     assert "Prefer the accepted Triage item" not in scope_text
     assert "preferably `--from-triage" not in research_op_text
@@ -79,3 +82,37 @@ def test_formal_scope_concepts_use_experiment_not_task():
     assert "level=experiment" not in text
     assert "Task Scope" not in text
     assert "Task/Milestone" not in text
+
+
+def test_skill_defines_evidence_contract_decomposition():
+    text = SKILL.read_text(encoding="utf-8")
+    contract = " ".join(text.split())
+    reference = (
+        ROOT
+        / "skills"
+        / "research-scope"
+        / "references"
+        / "experiment-decomposition.md"
+    ).read_text(encoding="utf-8")
+
+    assert "smallest independently governable evidence contract" in contract
+    assert "never assume a fixed count" in contract
+    assert (
+        "record-only characterization uses an evidence-completeness gate"
+        in contract.lower()
+    )
+    assert "decision ledger" in reference
+    assert "hard split test" in reference
+    assert "merge test" in reference
+    assert "Seeds, retries, and repeated executions become Runs." in reference
+    assert "No performance threshold was introduced into record-only work." in reference
+
+
+def test_scope_freezes_a_reviewed_draft_instead_of_creating_the_authoring_shell():
+    text = SKILL.read_text(encoding="utf-8")
+    contract = " ".join(text.split())
+    assert "Scope is therefore a commit boundary, not an early authoring form." in contract
+    assert '"draft_revision": 3' in text
+    assert '"document_sha256": "<reviewed-document-hash>"' in text
+    assert "If the draft changes after the visible review" in contract
+    assert "PackageActivated" in text

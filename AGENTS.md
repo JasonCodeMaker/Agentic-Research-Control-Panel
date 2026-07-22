@@ -51,7 +51,7 @@ the full `SKILL.md` body is loaded only when the task matches that skill or the 
 For ambiguous target-project research workflow requests, use this lifecycle only to avoid skipping
 prerequisites:
 
-`onboard/scope -> brainstorm -> package -> run`
+`onboard(Project Scope) -> brainstorm -> package(convert/refine/finalize Scope) -> run`
 
 If the user names a specific skill, file, surface, script, or operation, go directly to that owner instead
 of forcing the lifecycle route.
@@ -81,7 +81,8 @@ path and run the relevant maintainer checks available in this checkout.
 Scope is the versioned intent model for Project -> Direction -> Experiment. A former Task is represented
 as `Experiment.spec`; it is not a second executable entity. Codex must preserve this boundary:
 
-- Pending ideas, Project objectives, Directions, Experiments, and scope revisions go through Triage first.
+- Project objectives, Directions, Experiments, and Scope revisions go through Triage first. A pending idea
+  begins as a standalone Brainstorm; only explicit user approval converts it to a non-executable Draft Package.
 - Codex may draft proposals and show them to the user, but it must not silently commit
   a Scope event.
 - A committed Scope transition requires explicit human ratification and the gated writer documented by
@@ -91,11 +92,21 @@ as `Experiment.spec`; it is not a second executable entity. Codex must preserve 
 If state and the interface disagree, treat state as the management authority and run artifacts as the
 evidence authority. Rebuild the interface after repairing the typed source through its gated operation.
 
+The normal ordering is Project Scope -> standalone Brainstorm and refinement -> explicit conversion approval
+-> Draft Package and refinement -> one full Direction-and-Experiments proposal -> one final approval that
+atomically commits Scope and activates the same Package. Scope is the commit boundary for mature intent, not
+the authoring shell for a vague proposal. The final proposal must bind the exact package id, draft revision,
+and document hash.
+
 ## Research Package Operation Contract
 
 For package work, Codex is the decision owner governed by `workflow.ts`:
 
 - Load the bounded package context, selected Experiment spec, and relevant run results before acting.
+- A Draft Package context contains the canonical proposal document but no selected Experiment and no
+  execution authority. Do not send it through workflow launch paths until one user-approved
+  `PackageActivated` atomically records `SCOPE_READY`, commits Direction and Experiments, and leaves the
+  same aggregate `ACTIVE / CONTEXT_LOADED`.
 - Use `/research-op` for every management mutation. Direct edits to state JSON, generated HTML, JavaScript,
   CSV, or package docs are violations.
 - Treat user instructions that change constraints, plan, metric, baseline, or scope as locked facts. Record

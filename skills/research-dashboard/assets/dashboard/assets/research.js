@@ -39,9 +39,7 @@
   }
 
   function normalizeCategory(category) {
-    // Package category is one of the lane facets (in-progress / success / fail).
-    // Brainstorm is no longer a package category (it is the pre-package document lane), so
-    // there is no brainstorm fallback here; a category-less package matches no lane.
+    // Draft and active Packages share one card system across all four lanes.
     return String(category || "").toLowerCase();
   }
 
@@ -131,8 +129,11 @@
   }
 
   function countByCategory(categoryId) {
-    // Brainstorm is a lane (window.BRAINSTORMS), not a package category; count the ideas.
-    if (categoryId === "brainstorm") return (window.BRAINSTORMS || []).length;
+    if (categoryId === "brainstorm") {
+      return (window.BRAINSTORMS || []).length + packages().filter(function (pkg) {
+        return normalizeCategory(pkg.category) === "brainstorm";
+      }).length;
+    }
     return packages().filter(function (pkg) {
       return normalizeCategory(pkg.category) === categoryId;
     }).length;
@@ -777,9 +778,6 @@
   function renderCategoryPage() {
     var root = byId("category-package-root");
     if (!root || !window.RESEARCH_CATEGORY_ID) return;
-    // Brainstorm lane is document-only (renderBrainstorms); it holds no packages.
-    if (window.RESEARCH_CATEGORY_ID === "brainstorm") return;
-
     var category = categoryById(window.RESEARCH_CATEGORY_ID);
     var items = packages().filter(function (pkg) {
       return normalizeCategory(pkg.category) === window.RESEARCH_CATEGORY_ID;
@@ -798,7 +796,7 @@
   }
 
   function brainstormCardHtml(idea) {
-    // Link the card to its document when it has a detailPath; legacy rows may remain static.
+    // A standalone Brainstorm links to its governed pre-package document.
     var hasDoc = !!idea.detailPath;
     var open = hasDoc
       ? '<a class="package-card package-link-card" href="' + htmlEscape(relativeDetailPath(idea)) + '" data-card-kind="brainstorm" data-category="brainstorm" data-brainstorm-id="' + htmlEscape(idea.id) + '">'
@@ -825,7 +823,7 @@
       close: hasDoc ? "</a>" : "</article>",
       title: idea.title || idea.id,
       headerHtml: [
-        '<span class="status card-kind">Brainstorm draft</span>',
+        '<span class="status card-kind">Brainstorm</span>',
         updated ? '<time class="card-date" datetime="' + htmlEscape(updatedAt) + '">' + htmlEscape(updated) + "</time>" : "",
       ].join(""),
       bodyHtml: [
@@ -854,25 +852,24 @@
     ].join("");
   }
 
-  // Brainstorm lane = pre-package documents (not Directions or Packages), read
-  // from window.BRAINSTORMS (data/brainstorms.js). Managed by /research-brainstorm.
   function renderBrainstorms() {
     var root = byId("brainstorm-ideas-root");
     if (!root || window.RESEARCH_CATEGORY_ID !== "brainstorm") return;
     var ideas = window.BRAINSTORMS || [];
-    // Document-only lane: renderCategoryPage() bails for brainstorm, so the masthead
-    // lead + count would otherwise stay blank / "0 packages". Fill them here.
+    var drafts = packages().filter(function (pkg) {
+      return normalizeCategory(pkg.category) === "brainstorm";
+    });
     var summary = byId("category-summary");
-    if (summary && !summary.textContent.trim()) {
-      summary.textContent = "Each broad research direction lives as one continuously revised pre-package document. It remains outside Direction and Package authority until the user explicitly promotes it through Triage and Scope.";
+    if (summary) {
+      summary.textContent = "Refine a standalone Brainstorm first. One user approval converts its exact revision into a Draft Package; a later approval commits Direction, Experiments, and Package activation together.";
     }
     var laneCount = byId("category-count");
-    if (laneCount) laneCount.textContent = ideas.length + " document" + (ideas.length === 1 ? "" : "s");
+    if (laneCount) laneCount.textContent = (ideas.length + drafts.length) + " item" + ((ideas.length + drafts.length) === 1 ? "" : "s");
     var count = byId("brainstorm-ideas-count");
-    if (count) count.textContent = String(ideas.length) + " document" + (ideas.length === 1 ? "" : "s");
+    if (count) count.textContent = String(ideas.length) + " Brainstorm" + (ideas.length === 1 ? "" : "s");
     root.innerHTML = ideas.length
       ? ideas.map(brainstormCardHtml).join("")
-      : brainstormEmptyHtml();
+      : (drafts.length ? '<div class="empty-state">No standalone Brainstorms are waiting for conversion.</div>' : brainstormEmptyHtml());
   }
 
   function packageModuleHref(pkg, moduleId) {

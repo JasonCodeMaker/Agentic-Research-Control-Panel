@@ -595,6 +595,32 @@ class EventStore:
                     "proposal-disposition-user-required",
                     "only an explicit user actor may dispose a Scope proposal",
                 )
+            elif (
+                event_type == "PackageActivated"
+                and isinstance(payload, dict)
+                and "scope_finalization" in payload
+                and (
+                    not isinstance(actor, dict)
+                    or actor.get("type") != "user"
+                )
+            ):
+                command_error = CommandRejected(
+                    "package-finalization-user-required",
+                    "atomic Scope finalization requires an explicit user actor",
+                )
+            elif (
+                event_type == "PackageDraftCreated"
+                and isinstance(payload, dict)
+                and bool(payload.get("brainstorm_consumptions"))
+                and (
+                    not isinstance(actor, dict)
+                    or actor.get("type") != "user"
+                )
+            ):
+                command_error = CommandRejected(
+                    "brainstorm-conversion-user-required",
+                    "converting a Brainstorm to a Draft Package requires an explicit user actor",
+                )
             elif aggregate_type not in load_schema()["aggregate_types"]:
                 command_error = CommandRejected(
                     "aggregate-type-unknown", f"unknown aggregate_type: {aggregate_type}"

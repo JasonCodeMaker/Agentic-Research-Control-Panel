@@ -8,8 +8,10 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "lib"))
 sys.path.insert(0, str(ROOT / "skills" / "research-brainstorm" / "scripts"))
+sys.path.insert(0, str(ROOT / "skills" / "research-package" / "scripts"))
 
 import brainstorm  # noqa: E402
+import draft_package  # noqa: E402
 import scope_ssot  # noqa: E402
 from lib.interface import build_interface  # noqa: E402
 from lib.research_state import (  # noqa: E402
@@ -36,6 +38,11 @@ def test_add_assigns_id_and_roundtrips(tmp_path):
     assert [i["id"] for i in items] == [bid]
     assert items[0]["title"] == "Mixup helps"
     assert "created_at" in items[0]
+    assert items[0]["status"] == "ACTIVE"
+    assert items[0]["revision"] == 1
+    assert "lifecycle" not in items[0]
+    events = EventStore(ResearchPaths.resolve(workspace=tmp_path, environ={})).events()
+    assert events[-1]["event_type"] == "BrainstormCreated"
 
 
 def test_interface_builder_generates_english_detail_page(tmp_path):
@@ -71,6 +78,14 @@ def test_interface_builder_generates_english_detail_page(tmp_path):
     assert "CanHit@100 and X-Pool R@10" in html
     assert "local candidate CSV" in html
     assert "<style>" not in html
+    package_data = (paths.interface / "data" / "research-packages.js").read_text(
+        encoding="utf-8"
+    )
+    legacy_data = (paths.interface / "data" / "brainstorms.js").read_text(
+        encoding="utf-8"
+    )
+    assert '"id": "candidate-pool-audit"' not in package_data
+    assert '"id": "candidate-pool-audit"' in legacy_data
 
 
 def _document_body(label: str) -> str:
@@ -153,6 +168,7 @@ def test_revise_updates_same_brainstorm_document_in_place(tmp_path):
     assert [item["id"] for item in items] == [bid]
     assert items[0]["document_note"]["sha256"] != first_sha
     assert items[0]["abstract"] == "Refined after user audit."
+    assert items[0]["revision"] == 2
     paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
     assert StateQuery(paths).brainstorms()["data"]["versions"][bid] == 2
     rendered = (paths.interface / items[0]["detailPath"]).read_text(encoding="utf-8")
@@ -208,10 +224,10 @@ def test_archive_can_link_a_merged_fragment_to_canonical_brainstorm(tmp_path):
     assert "Archived stage record" in rendered
     assert "merged as the migration stage" in rendered
     assert canonical in rendered
-    assert 'href="./' in rendered
+    assert 'href="./' in rendered and "canonical.html" in rendered
 
 
-def test_skill_contract_keeps_one_free_form_document_until_explicit_promotion():
+def test_skill_contract_keeps_one_free_form_document_until_explicit_conversion():
     skill = (ROOT / "skills" / "research-brainstorm" / "SKILL.md").read_text(
         encoding="utf-8"
     )
@@ -220,8 +236,11 @@ def test_skill_contract_keeps_one_free_form_document_until_explicit_promotion():
     ).read_text(encoding="utf-8")
     assert "One broad research direction maps to one Brainstorm by default" in skill
     assert "Refine the same Brainstorm in place" in skill
-    assert "user explicitly asks to proceed" in skill
+    assert "user explicitly approves the exact Brainstorm revision" in skill
     assert "Keep the body free-form" in skill
+    assert "standalone Brainstorm + iterative refinement" in skill
+    assert "PackageDraftCreated consumes the exact Brainstorm revision" in skill
+    assert "No Scope or execution authority is created" in skill
     assert "not a research schema" in contract
 
 
@@ -239,9 +258,9 @@ def test_remove_is_idempotent(tmp_path):
     assert brainstorm.remove_brainstorm(tmp_path, bid) is False  # already gone, no error
 
 
-def test_discard_requires_archived_record_and_explicit_user(tmp_path):
+def test_archived_brainstorm_can_be_discarded_only_by_user(tmp_path):
     bid = brainstorm.add_brainstorm(tmp_path, {"title": "Duplicate", "idea": "x"})
-    with pytest.raises(CommandRejected, match="only an archived Brainstorm"):
+    with pytest.raises(ValueError, match="only an archived Brainstorm"):
         brainstorm.discard_brainstorm(
             tmp_path,
             bid,
@@ -250,7 +269,7 @@ def test_discard_requires_archived_record_and_explicit_user(tmp_path):
         )
 
     assert brainstorm.remove_brainstorm(tmp_path, bid)
-    with pytest.raises(CommandRejected, match="explicit user actor"):
+    with pytest.raises(ValueError, match="requires an explicit user actor"):
         brainstorm.discard_brainstorm(
             tmp_path,
             bid,
@@ -275,20 +294,50 @@ def test_discard_requires_archived_record_and_explicit_user(tmp_path):
     assert any(event["event_type"] == "BrainstormCreated" for event in events)
 
 
-def test_consume_returns_records_and_removes(tmp_path):
-    brainstorm.add_brainstorm(tmp_path, {"title": "A", "idea": "a", "id": "bs-1"})
-    brainstorm.add_brainstorm(tmp_path, {"title": "B", "idea": "b", "id": "bs-2"})
-    brainstorm.add_brainstorm(tmp_path, {"title": "C", "idea": "c", "id": "bs-3"})
-    taken = brainstorm.consume_brainstorms(tmp_path, ["bs-1", "bs-3"])
-    assert [t["id"] for t in taken] == ["bs-1", "bs-3"]
-    assert [i["id"] for i in brainstorm.read_brainstorms(tmp_path)] == ["bs-2"]
+def test_conversion_binding_identifies_exact_draft_document(tmp_path):
+    bid = brainstorm.add_brainstorm(
+        tmp_path,
+        {"id": "ready-draft", "title": "Ready", "idea": "Bind this document"},
+    )
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    draft_package.convert(
+        paths,
+        brainstorm_id=bid,
+        package_id=None,
+        actor_id="reviewer",
+    )
+    current = StateQuery(paths).show("package", bid)["data"]
+    assert brainstorm.draft_source_binding(tmp_path, bid) == {
+        "id": bid,
+        "draft_revision": 1,
+        "document_sha256": current["document_note"]["sha256"],
+    }
 
 
-def test_consume_skips_missing_ids(tmp_path):
-    brainstorm.add_brainstorm(tmp_path, {"title": "A", "idea": "a", "id": "bs-1"})
-    taken = brainstorm.consume_brainstorms(tmp_path, ["bs-1", "nope"])
-    assert [t["id"] for t in taken] == ["bs-1"]
-    assert brainstorm.read_brainstorms(tmp_path) == []
+def test_draft_package_context_uses_the_same_governed_document(tmp_path):
+    body = _document_body("Agent-visible proposal")
+    bid = brainstorm.add_brainstorm(
+        tmp_path,
+        {
+            "id": "bounded-draft",
+            "title": "Bounded draft",
+            "idea": "Share one canonical proposal with humans and agents.",
+            "document_html": body,
+        },
+    )
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    draft_package.convert(
+        paths,
+        brainstorm_id=bid,
+        package_id=None,
+        actor_id="reviewer",
+    )
+    context = StateQuery(paths).context(bid)["data"]
+    assert context["package"]["lifecycle"] == "DRAFT"
+    assert context["proposal_document"]["html_fragment"] == body
+    assert context["proposal_document"]["note"] == context["package"]["document_note"]
+    assert context["execution_authorized"] is False
+    assert context["pending_scope"] == []
 
 
 # --- precondition + readiness ---------------------------------------------

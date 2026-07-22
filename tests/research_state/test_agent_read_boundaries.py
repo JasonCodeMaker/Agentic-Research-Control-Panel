@@ -17,6 +17,7 @@ AGENT_READERS = (
     ROOT / "skills/research-analysis/scripts/lint_analysis.py",
     ROOT / "skills/research-brainstorm/scripts/brainstorm.py",
     ROOT / "skills/research-auto/scripts/conductor.py",
+    ROOT / "skills/research-package/scripts/draft_package.py",
     ROOT / "skills/research-package/scripts/create_from_scope.py",
 )
 ACTOR = {"type": "system", "id": "agent-read-boundary-test"}
@@ -255,5 +256,14 @@ def test_typed_agent_slices_are_stamped_and_exclude_unrelated_state(
         "experiments",
         "pending",
         "package_exists",
+        "package_version",
         "latest_direction_event_id",
+        "source_brainstorms",
+        "source_brainstorm_ids",
+        "missing_source_brainstorms",
+        "source_proposal_id",
+        "source_package",
+        "draft_package",
+        "draft_binding_valid",
+        "package_lifecycle",
     }

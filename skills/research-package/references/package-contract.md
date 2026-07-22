@@ -2,9 +2,12 @@
 
 ## Definition
 
-A research package is one Package aggregate bound to accepted Scope
-Experiments. The Package groups a research decision. Each Experiment defines
-one executable validation with this intent spec:
+A research package is one Package aggregate across draft and executable
+states. Before it exists, a standalone Brainstorm owns the idea document.
+Explicit user approval converts that exact revision into a `DRAFT` Package. In
+`DRAFT`, it owns the proposal document but no Direction, Experiment, or
+execution authority. A later `PackageActivated` event commits the full Scope
+bundle and binds its Experiments to that same aggregate.
 
 ```json
 {
@@ -44,6 +47,7 @@ and cited evidence.
       analysis.html
       tracker.html
       docs/index.html
+      docs/proposal.html
       _agent/context.html
 ```
 
@@ -52,12 +56,49 @@ rebuildable fold. Experiment directories hold execution evidence. The
 interface is generated for human inspection and may be deleted and rebuilt.
 
 No research operation may infer management state from HTML. The package
-creation skill never reads or writes the interface.
+lifecycle skills never read or write the generated interface.
 
-## Scope materialization
+## Draft and activation contract
 
-An accepted Scope Experiment is eligible for materialization only when all
-three predicates hold:
+A Draft Package must satisfy:
+
+```text
+lifecycle == DRAFT
+phase == null
+blocker == null
+executionAuthorized == false
+direction_id == null
+sourceExperiments == []
+documentPath == docs/proposal.html
+```
+
+Every refinement advances `draftRevision` and remains `REFINING`. One full
+proposal binds the exact `{id, draft_revision, document_sha256}` shown to the
+user and contains the complete Direction plus all selected Experiments.
+Submission and finalization fail closed if this source changes.
+
+Activation preserves the same Package id, `documentPath`, and `document_note`.
+One `PackageActivated` payload records the exact Draft as `SCOPE_READY`, accepts
+the proposal, commits Direction and Experiment Scope, sets the Package to
+`ACTIVE / CONTEXT_LOADED`, records `scopeBinding`, and applies Experiment
+bindings. It never creates a second Package and never exposes a partially
+committed Scope bundle.
+
+A user may reopen an `ACTIVE` Package as the same Draft only before execution:
+there must be no Run history, result evidence, terminal Experiment state, or
+Package blocker. The atomic `PackageReopenedAsDraft` event preserves the
+proposal NoteRef, clears Package execution and Scope bindings, and detaches its
+Experiments. Their accepted Scope remains visible in history, while
+`scope_confirmation=STALE` and `status=BLOCKED` prevent accidental reuse. Any
+later activation therefore requires a fresh hash-bound Scope review of the
+revised Draft.
+
+## Scope activation
+
+On the normal path, each proposed Experiment is new, version 1, parented by the
+new Direction, and committed in the same composite event that binds it to the
+Package. The compatibility path for already committed Scope accepts an
+existing Experiment only when all three predicates hold:
 
 ```text
 direction_id == requested Direction
@@ -65,20 +106,20 @@ package_id is empty
 scope_status == ACTIVE
 ```
 
-Materialization binds the existing accepted Experiment to the Package. It
-does not create, move, or copy a second Scope aggregate.
+Neither path creates a package-local copy of Experiment intent. The normal path
+creates the one canonical Experiment aggregate; compatibility activation binds
+the existing canonical aggregate.
 
-| Accepted Experiment field | Materialization effect |
+| Accepted Experiment field | Activation effect |
 | --- | --- |
 | canonical Experiment id | unchanged |
 | four-field `spec` | unchanged |
 | empty `package_id` | new Package id |
 | no execution-local handle | deterministic `local_id` |
 
-The new local ids are deterministic (`P0`, `P1`, and so on). Scope order is
-the accepted Experiment id sort order. Materialization does not create an
-`after` edge. Dependencies must be declared through a governed package plan,
-not inferred from sort order.
+The new local ids are deterministic (`P0`, `P1`, and so on) in the reviewed
+proposal order. Materialization does not create an `after` edge. Dependencies
+must be declared through a governed package plan, not inferred from order.
 
 The Package records Direction provenance through `sourceDirection`,
 `sourceVersion`, and `sourceChange`. Its `sourceExperiments` field is a
@@ -97,8 +138,13 @@ The Package owns package-level decision context:
 - execution summary: `nextAction`, `lastAction`, `openRuns`, and
   `currentBlocker`;
 - evidence roots: `sourcePath`, `artifactRoot`, and `runtime`;
-- Direction provenance when materialized from Scope; and
+- Direction provenance when activated from Scope; and
 - `pages`, the desired human projection page set.
+
+Before activation, the Package instead carries `draftStatus`, `draftRevision`,
+`documentPath`, `document_note`, and `executionAuthorized=false`. Its free-form
+document may contain plans, tables, figures, risks, and open questions without
+turning them into premature Scope fields.
 
 Package metadata may summarize a result for navigation, but it must cite the
 owning Experiment result. It must not become an independent measurement
@@ -200,13 +246,15 @@ Rendering is one-way:
 state + experiment evidence -> human interface
 ```
 
-Edits to generated HTML never flow back into state. Package creation records
-the desired `pages` list but does not invoke the renderer.
+Edits to generated HTML never flow back into state. Package state records the
+desired `pages` list but does not invoke the renderer.
 
 ## Mutation rules
 
 - Create Packages and bind accepted Experiments through the management
   gateway.
+- Reopen only a never-run Package through `PackageReopenedAsDraft`; do not
+  simulate rollback with package patches or direct Experiment edits.
 - Change governed intent through Scope.
 - Update Experiment execution status through the management gateway; never
   revise its `spec` through a Package row operation.
@@ -217,13 +265,15 @@ the desired `pages` list but does not invoke the renderer.
 
 ## Acceptance checks
 
-A package creation change is valid when:
+A package activation change is valid when:
 
-1. the Package and all bound Experiments appear in a verified state fold;
-2. every Experiment has a complete four-field spec;
-3. every bound Experiment keeps its accepted Scope id and has exactly one
+1. the same Draft Package id becomes ACTIVE in a verified state fold;
+2. the reviewed document NoteRef and path are unchanged;
+3. every Experiment has a complete four-field spec;
+4. every bound Experiment keeps its accepted Scope id and has exactly one
    Package/local-id binding;
-4. no dependency was invented;
-5. evidence paths resolve below `.research/experiments/`;
-6. package creation did not render or inspect HTML; and
-7. a later renderer rebuild can reproduce the same human page hierarchy.
+5. no dependency was invented;
+6. evidence paths resolve below `.research/experiments/`;
+7. activation did not read generated HTML; and
+8. a later renderer rebuild can reproduce the same human page hierarchy and
+   proposal document.

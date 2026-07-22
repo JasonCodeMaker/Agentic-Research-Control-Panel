@@ -32,7 +32,12 @@
     "BrainstormCreated",
     "BrainstormRevised",
     "BrainstormArchived",
+    "PackageDraftCreated",
+    "PackageDraftRevised",
+    "PackageDraftArchived",
     "PackageMaterialized",
+    "PackageActivated",
+    "PackageReopenedAsDraft",
     "PackageExperimentBound",
     "PackageMutationApplied",
     "DecisionRecorded",
@@ -61,7 +66,12 @@
     "BrainstormCreated": "brainstorm",
     "BrainstormRevised": "brainstorm",
     "BrainstormArchived": "brainstorm",
+    "PackageDraftCreated": "package",
+    "PackageDraftRevised": "package",
+    "PackageDraftArchived": "package",
     "PackageMaterialized": "package",
+    "PackageActivated": "package",
+    "PackageReopenedAsDraft": "package",
     "PackageExperimentBound": "package",
     "PackageMutationApplied": "package",
     "DecisionRecorded": "decision",
@@ -121,13 +131,19 @@
       ],
       "properties": {
         "id": {"type": "string"},
-        "direction_id": {"type": "string"},
-        "sourceVersion": {"type": "integer"},
-        "sourceChange": {"type": "string"},
+        "direction_id": {"type": ["string", "null"]},
+        "sourceVersion": {"type": ["integer", "null"]},
+        "sourceChange": {"type": ["string", "null"]},
         "sourceExperiments": {"type": "array"},
         "lifecycle": {"type": "string", "enum": "package_lifecycle"},
         "phase": {"type": ["string", "null"], "enum": "package_phase"},
-        "blocker": {"type": ["object", "null"]}
+        "blocker": {"type": ["object", "null"]},
+        "draftStatus": {"type": "string", "enum": "package_draft_status"},
+        "draftRevision": {"type": "integer"},
+        "document_note": {"type": "object"},
+        "documentPath": {"type": "string"},
+        "scopeBinding": {"type": ["object", "null"]},
+        "executionAuthorized": {"type": "boolean"}
       }
     },
     "experiment": {
@@ -277,6 +293,7 @@
   },
   "enums": {
     "package_lifecycle": [
+      "DRAFT",
       "ACTIVE",
       "ADOPTED_UNCONFIRMED",
       "ADOPTED",
@@ -297,11 +314,16 @@
       "DECISION_ADJUDICATION"
     ],
     "package_category_compat": [
+      "brainstorm",
       "in-progress",
       "success",
       "fail"
     ],
     "package_status_compat": [
+      "REFINING",
+      "SCOPE_READY",
+      "SCOPE_REVIEW",
+      "ARCHIVED_DRAFT",
       "CONTEXT_LOADED",
       "IMPLEMENTING",
       "IMPLEMENTATION_REVIEW",
@@ -318,6 +340,12 @@
       "WIN_SUPERSEDED",
       "ARCHIVED",
       "ARCHIVED_CONDITIONAL"
+    ],
+    "package_draft_status": [
+      "REFINING",
+      "SCOPE_READY",
+      "SCOPE_REVIEW",
+      "ARCHIVED_DRAFT"
     ],
     "experiment_status": [
       "PLANNED",

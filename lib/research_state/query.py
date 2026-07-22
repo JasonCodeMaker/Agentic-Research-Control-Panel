@@ -3,11 +3,34 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 from collections.abc import Mapping
 from typing import Any
 
 from .paths import ResearchPaths
 from .store import CommandRejected, EventStore
+
+
+def _verified_note_text(paths: ResearchPaths, ref: Any) -> str:
+    if not isinstance(ref, Mapping):
+        raise CommandRejected(
+            "draft-package-document-required",
+            "Draft Package context requires a proposal document NoteRef",
+        )
+    digest = str(ref.get("sha256") or "")
+    uri = str(ref.get("uri") or "")
+    if uri != f"state/notes/{digest}.md":
+        raise CommandRejected(
+            "draft-package-document-ref-invalid",
+            "Draft Package proposal NoteRef is not canonical",
+        )
+    raw = paths.note(digest).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != digest:
+        raise CommandRejected(
+            "draft-package-document-hash-mismatch",
+            "Draft Package proposal document no longer matches governed state",
+        )
+    return raw.decode("utf-8")
 
 
 def _experiment_identifier_tokens(value: Any) -> set[str]:
@@ -121,14 +144,52 @@ class StateQuery:
             or (
                 aggregate_type == "experiment"
                 and event["event_type"]
-                in {"PackageMaterialized", "PackageExperimentBound"}
+                in {
+                    "PackageMaterialized",
+                    "PackageActivated",
+                    "PackageExperimentBound",
+                    "PackageReopenedAsDraft",
+                }
                 and any(
                     isinstance(binding, dict)
                     and binding.get("aggregate_id") == aggregate_id
                     for binding in event.get("payload", {}).get(
-                        "experiment_bindings", []
+                        (
+                            "experiment_unbindings"
+                            if event["event_type"] == "PackageReopenedAsDraft"
+                            else "experiment_bindings"
+                        ),
+                        [],
                     )
                 )
+            )
+            or (
+                aggregate_type == "brainstorm"
+                and event["event_type"]
+                in {
+                    "PackageDraftCreated",
+                    "PackageMaterialized",
+                    "PackageMutationApplied",
+                }
+                and any(
+                    isinstance(consumption, dict)
+                    and consumption.get("aggregate_id") == aggregate_id
+                    for consumption in event.get("payload", {}).get(
+                        "brainstorm_consumptions", []
+                    )
+                )
+            )
+            or (
+                aggregate_type in {"proposal", "direction"}
+                and event["event_type"] == "PackageActivated"
+                and isinstance(
+                    event.get("payload", {}).get("scope_finalization"),
+                    dict,
+                )
+                and event["payload"]["scope_finalization"]
+                .get(aggregate_type, {})
+                .get("aggregate_id")
+                == aggregate_id
             )
         ]
         return self._stamp(state, events)
@@ -159,6 +220,55 @@ class StateQuery:
         if phase is not None and package.get("phase") != phase:
             raise ValueError(
                 f"package phase is {package.get('phase')!r}, requested {phase!r}"
+            )
+        if package.get("lifecycle") == "DRAFT":
+            project_boundary = []
+            for project_id, raw in state["aggregates"]["project"].items():
+                if not isinstance(raw, dict) or raw.get("status") != "ACTIVE":
+                    continue
+                spec = raw.get("spec") if isinstance(raw.get("spec"), dict) else {}
+                project_boundary.append(
+                    {
+                        "id": str(project_id),
+                        "goal": spec.get("goal"),
+                        "out_of_scope": copy.deepcopy(spec.get("out_of_scope", [])),
+                    }
+                )
+            pending_scope = []
+            for proposal_id, raw in state["aggregates"]["proposal"].items():
+                if not isinstance(raw, dict) or raw.get("disposition") != "PENDING":
+                    continue
+                source = raw.get("source_package")
+                if isinstance(source, dict) and source.get("id") == package_id:
+                    pending_scope.append(
+                        {
+                            "id": str(proposal_id),
+                            "level": raw.get("level"),
+                            "node_id": raw.get("node_id"),
+                            "proposal_hash": raw.get("proposal_hash"),
+                            "source_package": copy.deepcopy(source),
+                        }
+                    )
+            note = package.get("document_note")
+            return self._stamp(
+                state,
+                {
+                    "package": copy.deepcopy(package),
+                    "proposal_document": {
+                        "path": package.get("documentPath"),
+                        "note": copy.deepcopy(note),
+                        "html_fragment": _verified_note_text(self.paths, note),
+                    },
+                    "project_boundary": sorted(
+                        project_boundary,
+                        key=lambda row: row["id"],
+                    ),
+                    "pending_scope": sorted(
+                        pending_scope,
+                        key=lambda row: row["id"],
+                    ),
+                    "execution_authorized": False,
+                },
             )
         direction_id = package.get("direction_id") or package.get("sourceDirection")
         direction = state["aggregates"]["direction"].get(direction_id)
@@ -261,7 +371,7 @@ class StateQuery:
         idea_id: str | None = None,
         include_archived: bool = False,
     ) -> dict[str, Any]:
-        """Return Brainstorm records and only their concurrency versions."""
+        """Return standalone Brainstorms; Draft Packages use the package view."""
         state = self._state()
         items = []
         versions: dict[str, int] = {}
@@ -273,6 +383,7 @@ class StateQuery:
                 continue
             row = copy.deepcopy(raw)
             row.setdefault("id", candidate_id)
+            row["_aggregate_type"] = "brainstorm"
             if not include_archived and row.get("status", "ACTIVE") == "ARCHIVED":
                 continue
             items.append(row)
@@ -499,6 +610,96 @@ class StateQuery:
         """Return only records needed to decide Direction materialization."""
         state, events, _ = self.store.snapshot()
         direction = state["aggregates"]["direction"].get(direction_id)
+        source_brainstorm_ids: list[str] = []
+        source_package: dict[str, Any] | None = None
+        source_proposal_id: str | None = None
+        has_typed_source_provenance = False
+        if isinstance(direction, dict):
+            transition = direction.get("_scope_transition")
+            trigger = (
+                transition.get("trigger")
+                if isinstance(transition, dict)
+                else None
+            )
+            if isinstance(trigger, str) and trigger.startswith("triage:"):
+                source_proposal_id = trigger.removeprefix("triage:")
+                proposal = state["aggregates"]["proposal"].get(source_proposal_id)
+                accepted = (
+                    proposal.get("accepted_proposal")
+                    if isinstance(proposal, dict)
+                    and proposal.get("disposition") == "ACCEPTED"
+                    else None
+                )
+                proposed_node = (
+                    accepted.get("proposed_node")
+                    if isinstance(accepted, dict)
+                    else None
+                )
+                raw_ids = (
+                    accepted.get("source_brainstorms")
+                    if isinstance(accepted, dict)
+                    and isinstance(proposed_node, dict)
+                    and proposed_node.get("id") == direction_id
+                    and proposed_node.get("version") == direction.get("version")
+                    else None
+                )
+                if isinstance(accepted, dict) and "source_brainstorms" in accepted:
+                    has_typed_source_provenance = True
+                    if not isinstance(raw_ids, list) or not all(
+                        isinstance(item, str) and item for item in raw_ids
+                    ):
+                        raise CommandRejected(
+                            "direction-source-brainstorms-invalid",
+                            "accepted Direction source_brainstorms must be a list "
+                            "of non-empty ids",
+                        )
+                    source_brainstorm_ids = list(dict.fromkeys(raw_ids))
+                raw_source_package = (
+                    accepted.get("source_package")
+                    if isinstance(accepted, dict)
+                    and isinstance(proposed_node, dict)
+                    and proposed_node.get("id") == direction_id
+                    and proposed_node.get("version") == direction.get("version")
+                    else None
+                )
+                if raw_source_package is not None:
+                    if (
+                        not isinstance(raw_source_package, dict)
+                        or set(raw_source_package)
+                        != {"id", "draft_revision", "document_sha256"}
+                    ):
+                        raise CommandRejected(
+                            "direction-source-package-invalid",
+                            "accepted Direction source_package is malformed",
+                        )
+                    source_package = copy.deepcopy(raw_source_package)
+            if not has_typed_source_provenance:
+                source = direction.get("source")
+                if isinstance(source, str) and source.startswith("brainstorms:"):
+                    source_brainstorm_ids = [
+                        item.strip()
+                        for item in source.removeprefix("brainstorms:").split(",")
+                        if item.strip()
+                    ]
+        source_brainstorms = []
+        missing_source_brainstorms = []
+        for idea_id in source_brainstorm_ids:
+            raw = state["aggregates"]["brainstorm"].get(idea_id)
+            if not isinstance(raw, dict) or raw.get("status") != "ACTIVE":
+                missing_source_brainstorms.append(idea_id)
+                continue
+            source_brainstorms.append(
+                {
+                    "aggregate_id": idea_id,
+                    "aggregate_version": int(
+                        state["aggregate_versions"].get(
+                            f"brainstorm/{idea_id}",
+                            0,
+                        )
+                    ),
+                    "record": copy.deepcopy(raw),
+                }
+            )
         experiments: dict[str, dict[str, Any]] = {}
         for aggregate_id, raw in state["aggregates"]["experiment"].items():
             if not isinstance(raw, dict) or raw.get("direction_id") != direction_id:
@@ -550,11 +751,47 @@ class StateQuery:
             (
                 str(event["event_id"])
                 for event in reversed(events)
-                if event.get("aggregate_type") == "direction"
-                and event.get("aggregate_id") == direction_id
+                if (
+                    event.get("aggregate_type") == "direction"
+                    and event.get("aggregate_id") == direction_id
+                )
+                or (
+                    event.get("event_type") == "PackageActivated"
+                    and isinstance(
+                        event.get("payload", {}).get("scope_finalization"),
+                        dict,
+                    )
+                    and event["payload"]["scope_finalization"]
+                    .get("direction", {})
+                    .get("aggregate_id")
+                    == direction_id
+                )
             ),
             "",
         )
+        existing_package = state["aggregates"]["package"].get(package_id)
+        draft_package = (
+            copy.deepcopy(existing_package)
+            if isinstance(existing_package, dict)
+            and existing_package.get("lifecycle") == "DRAFT"
+            else None
+        )
+        draft_binding_valid = False
+        if source_package is not None and draft_package is not None:
+            note = draft_package.get("document_note")
+            current_binding = {
+                "id": package_id,
+                "draft_revision": draft_package.get("draftRevision"),
+                "document_sha256": (
+                    note.get("sha256") if isinstance(note, dict) else None
+                ),
+            }
+            draft_binding_valid = (
+                source_package == current_binding
+                and source_package.get("id") == package_id
+                and draft_package.get("draftStatus")
+                in {"SCOPE_READY", "SCOPE_REVIEW"}
+            )
         return self._stamp(
             state,
             {
@@ -567,6 +804,7 @@ class StateQuery:
                             "status",
                             "version",
                             "spec",
+                            "source",
                         )
                         if direction.get(key) is not None
                     }
@@ -574,9 +812,23 @@ class StateQuery:
                     else None
                 ),
                 "experiments": experiments,
+                "source_brainstorms": source_brainstorms,
+                "source_brainstorm_ids": source_brainstorm_ids,
+                "missing_source_brainstorms": missing_source_brainstorms,
+                "source_proposal_id": source_proposal_id,
+                "source_package": source_package,
+                "draft_package": draft_package,
+                "draft_binding_valid": draft_binding_valid,
                 "pending": pending,
-                "package_exists": package_id
-                in state["aggregates"]["package"],
+                "package_exists": existing_package is not None,
+                "package_lifecycle": (
+                    existing_package.get("lifecycle")
+                    if isinstance(existing_package, dict)
+                    else None
+                ),
+                "package_version": int(
+                    state["aggregate_versions"].get(f"package/{package_id}", 0)
+                ),
                 "latest_direction_event_id": latest_direction_event,
             },
         )

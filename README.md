@@ -141,8 +141,10 @@ Project -> Direction -> Experiment
 - **Direction** defines one approved research strategy under that objective.
 - **Experiment** is the only executable specification. Its `spec` owns the
   purpose, configuration reference, gate, and control mode.
-- **Package** groups the working records and experiments for a bounded piece of
-  research. It is not another Scope level.
+- **Package** is the governed home for one bounded research unit. It begins as
+  a non-executable Draft with a full proposal document. One final approval
+  ratifies Direction and Experiment Scope and makes that same aggregate Active.
+  It is not another Scope level.
 - **Run** is one execution attempt against one Experiment.
 
 There is no separate Task entity. Work previously represented as a Task is
@@ -239,17 +241,24 @@ Run, evidence-backed results, a human decision, and reusable project knowledge.
 
 | Stage | Claude Code | Codex |
 | --- | --- | --- |
-| Shape a rough idea | `/research-brainstorm` | `$research-brainstorm` |
-| Ratify Project, Direction, or Experiment intent | `/research-scope` | `$research-scope` |
-| Materialize a bounded package | `/research-package` | `$research-package` |
+| Create and refine a standalone Brainstorm | `/research-brainstorm` | `$research-brainstorm` |
+| Convert, refine, and atomically finalize a Package | `/research-package` | `$research-package` |
+| Ratify Project or later independent Scope changes | `/research-scope` | `$research-scope` |
 | Execute and verify an Experiment | `/research-run` | `$research-run` |
 | Continue within one approved Direction | `/research-auto` | `$research-auto` |
 
-### 1. Shape and ratify intent
+### 1. Establish Project Scope, then use two approval boundaries
 
-Brainstorming may draft alternatives, but it does not change Scope. Project,
-Direction, Experiment, and scope revisions enter Triage first. The agent may
-propose them; only explicit human ratification commits them.
+Project Scope establishes the durable workspace boundary. Brainstorming creates
+one standalone idea document. Refine it in place; it is not yet a Package and
+does not authorize experiments. The first explicit user approval converts its
+exact revision and NoteRef into a non-executable `DRAFT / REFINING` Package.
+
+After the Draft Package is refined, one proposal presents the complete
+Direction and all selected Experiments and binds the exact Draft revision and
+document hash. The second explicit user approval records `SCOPE_READY`, commits
+that Scope bundle, and activates the same Package at `ACTIVE / CONTEXT_LOADED`
+in one `PackageActivated` event.
 
 Use onboarding when a workspace has no ratified Project objective:
 
@@ -260,16 +269,25 @@ Use onboarding when a workspace has no ratified Project objective:
 Onboarding proposes the objective and stops for acceptance, rejection, or
 revision. It does not start a campaign.
 
-### 2. Materialize a package
+### 2. Finalize and activate the Draft Package
 
-After a Direction and its Experiment specs are ratified:
+Ask `research-package` to finalize the reviewed Draft. The agent presents the
+complete Direction and Experiment set as one proposal. Your approval invokes
+`package-finalize`, which commits the proposal, Scope, Experiment bindings, and
+Package activation in one event. It preserves the Package id and proposal
+document; it does not create another Package.
 
-```text
-/research-package from-scope <direction-id>
-```
+`from-scope` is a compatibility command for imported or older state where the
+Direction and Experiments were already ratified separately. It is not part of
+the normal two-approval workflow.
 
-The package groups the plan, experiment records, evidence slots, results, and
-decisions. Materialization reads committed state only.
+If a design problem is discovered before the first Run, the user may reopen
+that same Package as Draft. ARC preserves the proposal and audit history,
+detaches the Experiments, and requires a fresh Scope review before reactivation;
+it does not pretend the earlier ratification never happened.
+
+The Package groups the plan, experiment records, evidence slots, results, and
+decisions. A Draft cannot enter an execution workflow before finalization.
 
 ### 3. Query bounded context
 
@@ -370,9 +388,9 @@ knowledge.
 | Set up, attach, migrate, or repair ARC | `research-init` | Verified setup plus a running Dashboard Server |
 | Rebuild or inspect the human view | `research-dashboard` | `.research/interface/` |
 | Establish the first Project objective | `research-onboard` | Proposal, then ratified Project state |
-| Explore an uncommitted idea | `research-brainstorm` | Brainstorm record and optional Direction proposal |
+| Explore an uncommitted idea | `research-brainstorm` | Standalone Brainstorm and governed document |
 | Change approved intent | `research-scope` | Ratified Project, Direction, or Experiment event |
-| Create a bounded work unit | `research-package` | Package and Experiment records |
+| Convert or finalize a bounded work unit | `research-package` | Draft Package or one atomic Scope-plus-activation event |
 | Execute and verify | `research-run` | Run envelope, evidence, result, and routing decision |
 | Run a direction-level campaign | `research-auto` | Campaign state and package cycles |
 | Record analysis and rules | `research-analysis` | Typed learning and rule records |

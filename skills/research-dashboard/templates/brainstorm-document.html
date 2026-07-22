@@ -4,17 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="$meta_description">
-  <title>Brainstorm | $title</title>
-  <link rel="stylesheet" href="../assets/research.css">
-  <link rel="stylesheet" href="../assets/toc.css">
-  <link rel="stylesheet" href="../assets/brainstorm.css">
-  <script src="../assets/toc.js" defer></script>
+  <title>$page_title_prefix | $title</title>
+  <link rel="stylesheet" href="${asset_prefix}assets/research.css">
+  <link rel="stylesheet" href="${asset_prefix}assets/toc.css">
+  <link rel="stylesheet" href="${asset_prefix}assets/brainstorm.css">
+  <script src="${asset_prefix}assets/toc.js" defer></script>
 </head>
-<body data-page="brainstorm-document" data-brainstorm-status="$status_value">
+<body data-page="$body_page" data-brainstorm-status="$status_value">
   <a class="skip-link" href="#brainstorm-content">$skip_label</a>
   <div class="shell brainstorm-shell">
-    <nav class="doc-topbar" aria-label="Brainstorm navigation">
-      <a href="../categories/brainstorm/index.html">&larr; Research items / Brainstorm</a>
+    <nav class="doc-topbar" aria-label="$navigation_aria">
+      <a href="$back_href">&larr; $back_label</a>
       <div class="doc-status-line">
         <span class="doc-status $status_class">$status_label</span>
         <span>$revision_label</span>

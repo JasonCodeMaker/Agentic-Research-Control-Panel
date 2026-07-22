@@ -21,8 +21,8 @@ CATEGORIES = [
         "id": "brainstorm",
         "title": "Brainstorm",
         "summary": (
-            "Revisable pre-package documents (not Directions or Packages). "
-            "Promote one only after an explicit user decision."
+            "Standalone Brainstorms and the Draft Packages created from an "
+            "explicitly approved revision. Neither can authorize execution."
         ),
         "href": "categories/brainstorm/",
     },
@@ -90,6 +90,7 @@ TAG_ROLES = {
 # These are browser presentation rules, not domain enums. All enum-valued arrays
 # in schema.js are generated from lib/research_state/schema.json below.
 STATUS_REQUIRED = {
+    "brainstorm": {},
     "in-progress": {
         "_all": ["activeGate", "primaryMetricVsGate", "nextRoute"],
         "_all_exempt": ["STOPPED"],
@@ -110,6 +111,10 @@ STATUS_REQUIRED = {
 }
 
 STATUS_DESCRIPTIONS = {
+    "brainstorm": (
+        "Standalone Brainstorms and non-executable Draft Packages. Explicit "
+        "user approval separates conversion from final Scope activation."
+    ),
     "in-progress": (
         "Active packages. Must declare the active gate, primary metric vs gate, "
         "and next route at all times (STOPPED is terminal-within-lane and is "
@@ -127,6 +132,10 @@ STATUS_DESCRIPTIONS = {
 }
 
 STATUS_FAMILY = {
+    "REFINING": "work",
+    "SCOPE_READY": "analyze",
+    "SCOPE_REVIEW": "analyze",
+    "ARCHIVED_DRAFT": "stop",
     "CONTEXT_LOADED": "work",
     "IMPLEMENTING": "work",
     "IMPLEMENTATION_REVIEW": "work",
@@ -461,7 +470,10 @@ def _default_brainstorm_body(record: Mapping[str, Any], *, chinese: bool) -> str
 
 
 def _archive_notice(record: Mapping[str, Any], *, chinese: bool) -> str:
-    if str(record.get("status") or "").upper() != "ARCHIVED":
+    archive_status = str(
+        record.get("draftStatus") or record.get("status") or ""
+    ).upper()
+    if archive_status not in {"ARCHIVED", "ARCHIVED_DRAFT"}:
         return ""
     reason = html.escape(
         str(record.get("archive_reason") or ("已归档" if chinese else "Archived"))
@@ -471,16 +483,26 @@ def _archive_notice(record: Mapping[str, Any], *, chinese: bool) -> str:
     target = ""
     if merged_into and merged_path:
         relative = PurePosixPath(merged_path)
-        if (
-            relative.is_absolute()
-            or len(relative.parts) != 2
-            or relative.parts[0] != "brainstorm"
-            or relative.suffix.lower() != ".html"
-        ):
+        legacy_path = (
+            len(relative.parts) == 2
+            and relative.parts[0] == "brainstorm"
+            and relative.suffix.lower() == ".html"
+        )
+        draft_path = (
+            len(relative.parts) == 4
+            and relative.parts[0] == "packages"
+            and relative.parts[2:] == ("docs", "proposal.html")
+        )
+        if relative.is_absolute() or not (legacy_path or draft_path):
             raise ValueError(f"unsafe merged Brainstorm detailPath: {merged_path!r}")
         label = "主 Brainstorm" if chinese else "canonical Brainstorm"
+        href = (
+            f"./{relative.name}"
+            if legacy_path
+            else f"../../../{relative.as_posix()}"
+        )
         target = (
-            f' <a href="./{html.escape(relative.name, quote=True)}">{label}</a>:'
+            f' <a href="{html.escape(href, quote=True)}">{label}</a>:'
             f" <code>{html.escape(merged_into)}</code>."
         )
     elif merged_into:
@@ -497,8 +519,15 @@ def render_brainstorm_page(
     *,
     document_html: str | None = None,
     template_text: str | None = None,
+    presentation: str = "brainstorm",
+    asset_prefix: str = "../",
+    back_href: str | None = None,
 ) -> str:
     """Render one full document-style Brainstorm from governed state."""
+    if presentation not in {"brainstorm", "draft-package", "package-reference"}:
+        raise ValueError(f"unknown Brainstorm document presentation: {presentation}")
+    if not re.fullmatch(r"(?:\.\./)+", asset_prefix):
+        raise ValueError(f"unsafe document asset prefix: {asset_prefix!r}")
     language_raw = str(record.get("page_language") or "en")
     language = html.escape(language_raw, quote=True)
     chinese = language_raw.lower().startswith("zh")
@@ -508,8 +537,10 @@ def render_brainstorm_page(
     title = html.escape(title_raw)
     idea_raw = str(record.get("idea") or "").strip()
     abstract_raw = str(record.get("abstract") or idea_raw or title_raw).strip()
-    status_value = str(record.get("status") or "ACTIVE").upper()
-    archived = status_value == "ARCHIVED"
+    status_value = str(
+        record.get("draftStatus") or record.get("status") or "ACTIVE"
+    ).upper()
+    archived = status_value in {"ARCHIVED", "ARCHIVED_DRAFT"}
     updated_raw = str(
         record.get("updated_at")
         or record.get("archived_at")
@@ -517,7 +548,7 @@ def render_brainstorm_page(
         or ""
     )
     updated_date = updated_raw[:10]
-    revision = int(record.get("revision") or 1)
+    revision = int(record.get("draftRevision") or record.get("revision") or 1)
     body_html = (
         validate_brainstorm_document_fragment(document_html)
         if document_html is not None
@@ -553,11 +584,79 @@ def render_brainstorm_page(
             "footer_right": "Generated from governed state · interface remains read-only",
         }
     )
+    if presentation == "package-reference":
+        labels = (
+            {
+                "skip": "跳到正文",
+                "abstract": "这份来源提案探索了什么",
+                "snapshot": "提案快照",
+                "toc": "这是已转入 Package 的历史提案。已批准的 Direction 和 Experiment Scope 才是执行依据。",
+                "footer_left": "来源提案 · 已转入 Package",
+                "status_active": "Package 来源",
+                "status_archived": "Package 来源",
+                "revision": "来源修订版本",
+                "kicker": "来源提案 · Package reference",
+                "document_id": "来源 ID",
+                "footer_right": "由 Package 状态生成 · 界面只读",
+                "page_title_prefix": "来源提案",
+                "back_label": "返回 Package 文档",
+                "navigation_aria": "Package 文档导航",
+            }
+            if chinese
+            else {
+                "skip": "Skip to content",
+                "abstract": "What this source proposal explored",
+                "snapshot": "Proposal snapshot",
+                "toc": (
+                    "This historical proposal now belongs to the Package. "
+                    "The ratified Direction and Experiment Scope are authoritative "
+                    "for execution."
+                ),
+                "footer_left": "Source proposal · converted into Package",
+                "status_active": "Package source",
+                "status_archived": "Package source",
+                "revision": "Source revision",
+                "kicker": "Source proposal · Package reference",
+                "document_id": "Source ID",
+                "footer_right": "Generated from Package state · interface remains read-only",
+                "page_title_prefix": "Source proposal",
+                "back_label": "Back to Package docs",
+                "navigation_aria": "Package document navigation",
+            }
+        )
+    else:
+        labels.update(
+            {
+                "page_title_prefix": (
+                    "Draft Package" if presentation == "draft-package" else "Brainstorm"
+                ),
+                "back_label": (
+                    "返回 Package" if chinese and presentation == "draft-package" else
+                    "Back to Package" if presentation == "draft-package" else
+                    "研究条目 / Brainstorm"
+                    if chinese
+                    else "Research items / Brainstorm"
+                ),
+                "navigation_aria": (
+                    "Package 草案导航"
+                    if chinese and presentation == "draft-package"
+                    else "Draft Package navigation"
+                    if presentation == "draft-package"
+                    else "Brainstorm 导航"
+                    if chinese
+                    else "Brainstorm navigation"
+                ),
+            }
+        )
+    is_package_reference = presentation == "package-reference"
     mapping = {
         "language": language,
         "meta_description": html.escape(abstract_raw[:280], quote=True),
         "title": title,
-        "status_value": html.escape(status_value.lower(), quote=True),
+        "status_value": html.escape(
+            "converted" if is_package_reference else status_value.lower(),
+            quote=True,
+        ),
         "status_class": "archived" if archived else "active",
         "status_label": labels["status_archived"] if archived else labels["status_active"],
         "revision_label": f'{labels["revision"]} {revision}',
@@ -568,7 +667,9 @@ def render_brainstorm_page(
         "deck": html.escape(abstract_raw),
         "idea_id": idea_id,
         "document_id_label": labels["document_id"],
-        "archive_notice": _archive_notice(record, chinese=chinese),
+        "archive_notice": (
+            "" if is_package_reference else _archive_notice(record, chinese=chinese)
+        ),
         "abstract_heading": labels["abstract"],
         "abstract_html": _paragraphs(abstract_raw),
         "snapshot_heading": labels["snapshot"],
@@ -577,6 +678,28 @@ def render_brainstorm_page(
         "body_html": body_html,
         "footer_left": labels["footer_left"],
         "footer_right": labels["footer_right"],
+        "page_title_prefix": labels["page_title_prefix"],
+        "asset_prefix": html.escape(asset_prefix, quote=True),
+        "body_page": (
+            "package-source-proposal"
+            if is_package_reference
+            else "package-draft-proposal"
+            if presentation == "draft-package"
+            else "brainstorm-document"
+        ),
+        "navigation_aria": labels["navigation_aria"],
+        "back_href": html.escape(
+            back_href
+            or (
+                "index.html"
+                if is_package_reference
+                else "../index.html"
+                if presentation == "draft-package"
+                else "../categories/brainstorm/index.html"
+            ),
+            quote=True,
+        ),
+        "back_label": labels["back_label"],
     }
     return Template(template_text or _brainstorm_template_text()).substitute(mapping)
 

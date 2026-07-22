@@ -78,7 +78,11 @@ Project -> Direction -> Experiment
 - `Direction` owns one approved research strategy.
 - `Experiment` is the only executable specification. `Experiment.spec` owns
   purpose, configuration reference, gate, and control mode.
-- `Package` groups working state and Experiments for a bounded research unit. It
+- `Brainstorm` is the standalone idea document before Package authority.
+- `Package` is the governed home for a bounded research unit. Explicit user
+  approval converts an exact Brainstorm revision into `lifecycle=DRAFT` with
+  no execution authority. A later approval atomically commits Direction and
+  Experiments and changes that same aggregate to `ACTIVE / CONTEXT_LOADED`. It
   is not a Scope level.
 - `Run` is one execution attempt for one Experiment.
 
@@ -108,9 +112,13 @@ or the ticket identifies the smallest blocking human decision.
 
 ### 2. Research State and Experiment Contract
 
-Create or materially restructure packages through `research-package`, never
-through ad hoc directories. Materialization reads only ratified Scope. Pending
-Triage proposals do not authorize execution.
+Create and refine standalone ideas through `research-brainstorm`. Use
+`research-package` for the user-approved conversion, Draft refinement, atomic
+Scope finalization, activation, or later restructuring, never ad hoc
+directories. The full Direction-and-Experiments proposal must bind the Draft
+id, revision, and document hash. `package-finalize` preserves Package/document
+identity while committing Scope and activation in one event. Pending Triage
+proposals and Draft Packages do not authorize execution.
 
 All package and Experiment mutations go through `research-op`. Do not hand-edit
 the EventStore, its current projection, audit records, or generated interface.

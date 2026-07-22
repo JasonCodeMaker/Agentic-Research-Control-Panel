@@ -135,9 +135,15 @@ Keep the current human layout and navigation:
 - Global pages remain `index.html`, `live.html`, `scope.html`, and
   `learnings.html`.
 - The four category pages remain separate pages.
-- Each Brainstorm detail route is a full document assembled from the shared
-  `templates/brainstorm-document.html` shell, `assets/brainstorm.css`, and an
-  optional state-backed `document_note` HTML fragment.
+- A Draft Package appears in `RESEARCH_PACKAGES` with category `brainstorm` and
+  uses the same package-card component as every other lane.
+- Its `detailPath` is `packages/<id>/docs/proposal.html`, a full document
+  assembled from `templates/brainstorm-document.html`,
+  `assets/brainstorm.css`, and the state-backed `document_note` fragment.
+- Activation keeps the same route and NoteRef. The renderer changes only the
+  presentation from non-executable draft to Package-owned source context.
+- Legacy standalone Brainstorms remain readable through their historical
+  routes during migration, but new work must not create a second card type.
 - Each package keeps its own plan, implementation, results, analysis, tracker,
   and docs pages.
 - `module.html` remains available. Preserve the existing
@@ -149,9 +155,9 @@ Do not consolidate these pages into a single-page application. Do not remove
 the module route. Do not redesign the UI as part of a storage or authority
 change.
 
-Brainstorm `detail_note` remains a compatibility override for migrated
-self-contained pages. New and revised Brainstorms use `document_note`; do not
-copy the outer page, navigation, ToC, scripts, or CSS into that fragment.
+Legacy Brainstorm `detail_note` remains a compatibility override for migrated
+self-contained pages. Draft Packages use `document_note`; do not copy the
+outer page, navigation, ToC, scripts, or CSS into that fragment.
 
 The DOM hierarchy, contract-bearing attributes, CSS bytes, viewport, browser
 major, and screenshot baselines are frozen by
