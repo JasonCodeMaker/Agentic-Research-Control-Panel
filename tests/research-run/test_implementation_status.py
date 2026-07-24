@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import sys
 from pathlib import Path
 
@@ -230,6 +231,61 @@ def test_launch_readiness_rejects_stale_checkbox_state(tmp_path):
         run_verifications=True,
     )
     assert result["complete"] is True
+    other_experiment_id = "experiment/d1/e2"
+    other_experiment = copy.deepcopy(
+        EventStore(paths).state()["aggregates"]["experiment"][
+            CANONICAL_EXPERIMENT_ID
+        ]
+    )
+    other_experiment.update(
+        {
+            "id": other_experiment_id,
+            "local_id": "P2",
+            "aliases": ["P2"],
+        }
+    )
+    EventStore(paths, fixture_mode=True).commit(
+        event_type="AggregateUpserted",
+        aggregate_type="experiment",
+        aggregate_id=other_experiment_id,
+        payload={"record": other_experiment},
+        actor=ACTOR,
+        idempotency_key="test:other-experiment",
+        expected_version=0,
+    )
+    management.commit_change_operation(
+        paths,
+        "pkg-1",
+        "insert",
+        {
+            "change_id": "future-experiment",
+            "order": 1,
+            "title": "Leave the later Experiment incomplete",
+            "validating_experiments": ["P2"],
+            "plan": {
+                "how_it_changes": "This belongs only to P2.",
+                "code_locations": [
+                    {
+                        "id": "future-module",
+                        "action": "ADD",
+                        "path": "src/future.py",
+                    }
+                ],
+                "verifications": [
+                    {
+                        "id": "future-check",
+                        "label": "The future module exists.",
+                        "command": [
+                            sys.executable,
+                            "-c",
+                            "from pathlib import Path; assert Path('src/future.py').exists()",
+                        ],
+                    }
+                ],
+            },
+        },
+        actor=ACTOR,
+    )
     management.apply_package_operation(
         paths,
         "pkg-1",
@@ -237,6 +293,7 @@ def test_launch_readiness_rejects_stale_checkbox_state(tmp_path):
         target="status",
         payload={
             "to": "READY_TO_LAUNCH",
+            "experiment_id": "P1",
             "review_change_id": "launch-review",
         },
         actor=ACTOR,
