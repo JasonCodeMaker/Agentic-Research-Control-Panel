@@ -266,7 +266,9 @@ def load_workflow_snapshot(
         if isinstance(record, dict) and record.get("package_id") == package_id
     ]
 
-    def implementation_state(record: dict[str, Any]) -> tuple[str, str | None]:
+    def implementation_state(
+        record: dict[str, Any],
+    ) -> tuple[str, str | None, str | None]:
         identities = {
             str(value)
             for value in (
@@ -289,9 +291,9 @@ def load_workflow_snapshot(
         ]
         if not matching:
             return (
-                ("BLOCKED", None)
+                ("BLOCKED", None, None)
                 if record.get("requiresCode") is True
-                else ("NOT_REQUIRED", None)
+                else ("NOT_REQUIRED", None, None)
             )
         for change in matching:
             plan = change.get("plan")
@@ -304,6 +306,7 @@ def load_workflow_snapshot(
                         or change.get("change_id")
                         or change.get("id")
                     ),
+                    None,
                 )
             counts = completion_counts(
                 plan,
@@ -324,18 +327,40 @@ def load_workflow_snapshot(
                         or change.get("change_id")
                         or change.get("id")
                     ),
+                    None,
                 )
-        return "PASS", None
+        reviewed = next(
+            (
+                change
+                for change in reversed(matching)
+                if isinstance(change.get("review"), dict)
+            ),
+            None,
+        )
+        return (
+            "PASS",
+            None,
+            (
+                str(
+                    reviewed.get("local_id")
+                    or reviewed.get("change_id")
+                    or reviewed.get("id")
+                )
+                if reviewed
+                else None
+            ),
+        )
 
     experiment_rows = []
     for record in selected_experiments:
-        readiness, current_change_id = implementation_state(record)
+        readiness, current_change_id, review_change_id = implementation_state(record)
         experiment_rows.append(
             {
                 "expId": record.get("local_id") or record.get("id"),
                 "status": record.get("status"),
                 "implementationReadiness": readiness,
                 "currentChangeId": current_change_id,
+                "reviewChangeId": review_change_id,
             }
         )
     run_rows = [

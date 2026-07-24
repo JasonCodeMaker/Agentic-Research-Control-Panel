@@ -24,22 +24,32 @@ def test_scope_experiment_renderer_uses_formal_spec_fields():
 def test_pipeline_timeline_renders_task_thread_chips():
     js = (ROOT / "skills" / "research-dashboard" / "assets" / "dashboard" /
           "assets" / "research.js").read_text(encoding="utf-8")
+    resource_block = js[
+        js.index("function pipelineResourceHtml"):
+        js.index("function renderPipelineTimeline")
+    ]
     block = js[
         js.index("function renderPipelineTimeline"):
         js.index("function implementationDomId")
     ]
 
+    assert "pipeline-node-resource" in resource_block
+    assert "preset_order" in resource_block
+    assert "system_mem_gb" in resource_block
     assert "e.purpose" in block
     assert "e.config" in block
     assert "e.controlMode" in block
     assert "e.after" in block
     assert "e.output" in block
+    assert "e.resource" in block
+    assert "pipelineResourceHtml(resource)" in block
     assert "e.gatePredicate || e.gate" in block
     assert "Planned order" in block
     sections = [
         "pipeline-node-sequence",
         "pipeline-node-purpose",
         "pipeline-node-contract",
+        "pipelineResourceHtml(resource)",
         "pipeline-operation-fields",
         "pipeline-thread-links",
     ]
@@ -59,6 +69,7 @@ def test_plan_template_uses_the_pipeline_as_its_main_content():
 
     assert 'href="#experiments"' in template
     assert 'data-card="pipeline-timeline"' in template
+    assert "reviewed resource fallback" in template
     assert "Plan invariants" not in template
     assert 'data-card="plan-invariants"' not in template
     assert 'class="plan-legacy-anchor" id="plan-invariants"' in template

@@ -83,10 +83,18 @@ all authored fields required by the current Plan contract:
 - canonical `config_ref`;
 - measurable gate;
 - `control_mode`;
+- reviewed Resource preset order and an ordered capacity profile chain;
 - evidence output destination;
 - whether it measures a result;
 - whether it requires code; and
 - the initial complexity assessment required by the renderer.
+
+Resource choices come from active registered `Resource.presets`. Store them
+in `Package.resourcePolicy.experiments[experiment-id]`, not in
+`Experiment.spec`: Scope still owns exactly purpose, `config_ref`, gate, and
+`control_mode`. The first capacity profile is preferred and each later profile
+is an authorized downgrade with its own `config_ref`. Plan records no queue or
+idle-GPU observation.
 
 Do not move code locations, implementation steps, verification commands, or
 Result-table rows into Phase 1.

@@ -54,6 +54,46 @@ def test_kind_defaults_for_start_latency_and_control(tmp_path):
     assert nectar["start_latency"] == 1
 
 
+def test_execution_presets_are_typed_and_unique_across_resources(tmp_path):
+    saved = ra.register_server(
+        tmp_path,
+        _server(
+            presets=[
+                {
+                    "id": "bunya-sbatch",
+                    "label": "Bunya Sbatch",
+                    "mode": "sbatch",
+                },
+                {
+                    "id": "bunya-interactive",
+                    "label": "Bunya Interactive",
+                    "mode": "interactive",
+                },
+            ]
+        ),
+    )
+    assert [preset["id"] for preset in saved["presets"]] == [
+        "bunya-sbatch",
+        "bunya-interactive",
+    ]
+
+    with pytest.raises(ra.RuleViolation, match="already registered"):
+        ra.register_server(
+            tmp_path,
+            {
+                "name": "other",
+                "kind": "slurm",
+                "presets": [
+                    {
+                        "id": "bunya-interactive",
+                        "label": "Duplicate",
+                        "mode": "interactive",
+                    }
+                ],
+            },
+        )
+
+
 @pytest.mark.parametrize(
     "bad",
     [
@@ -67,6 +107,13 @@ def test_kind_defaults_for_start_latency_and_control(tmp_path):
         {"name": "x", "kind": "local", "gpus": [{"type": "a100", "count": 0}]},
         {"name": "x", "kind": "local", "frobnicate": True},  # unknown field
         {"name": "x", "kind": "local", "tags": "not-a-list"},
+        {
+            "name": "x",
+            "kind": "local",
+            "presets": [
+                {"id": "local-batch", "label": "Local batch", "mode": "sbatch"}
+            ],
+        },
     ],
 )
 def test_validate_rejects_before_write(tmp_path, bad):

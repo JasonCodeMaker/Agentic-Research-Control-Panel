@@ -29,13 +29,15 @@ import management as research_management
 SERVER_KINDS = ("local", "ssh", "slurm")
 SERVER_STATUS = frozenset({"ACTIVE", "DISABLED"})
 CONTROL_PATHS = ("direct", "tmux")
+PRESET_MODES = ("direct", "sbatch", "interactive")
 DEFAULT_START_LATENCY = {"local": 0, "ssh": 1, "slurm": 2}
 
 SERVER_FIELDS = frozenset({
     "name", "kind", "status", "control", "gpus", "slurm", "env",
-    "tags", "skill", "start_latency", "notes",
+    "tags", "skill", "start_latency", "notes", "presets",
 })
 GPU_BLOCK_FIELDS = frozenset({"type", "count", "mem_gb", "ids"})
+PRESET_FIELDS = frozenset({"id", "label", "mode"})
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -162,6 +164,38 @@ def validate_server(server):
         raise RuleViolation(f"control.path must be one of {CONTROL_PATHS}")
     if control.get("path") == "tmux" and not control.get("tmux_session"):
         raise RuleViolation("control.path=tmux requires control.tmux_session")
+    presets = server.get("presets", [])
+    if not isinstance(presets, list):
+        raise RuleViolation("presets must be a list")
+    preset_ids: set[str] = set()
+    for preset in presets:
+        if not isinstance(preset, dict):
+            raise RuleViolation("each preset must be a JSON object")
+        unknown_preset_fields = set(preset) - PRESET_FIELDS
+        if unknown_preset_fields:
+            raise RuleViolation(
+                f"unknown preset fields: {sorted(unknown_preset_fields)}"
+            )
+        preset_id = preset.get("id")
+        if not isinstance(preset_id, str) or not _NAME_RE.match(preset_id):
+            raise RuleViolation(
+                f"preset id must be a non-empty token, got {preset_id!r}"
+            )
+        if preset_id in preset_ids:
+            raise RuleViolation(f"duplicate preset id: {preset_id}")
+        preset_ids.add(preset_id)
+        label = preset.get("label")
+        if not isinstance(label, str) or not label.strip():
+            raise RuleViolation(f"preset {preset_id} requires a label")
+        mode = preset.get("mode")
+        if mode not in PRESET_MODES:
+            raise RuleViolation(
+                f"preset mode must be one of {PRESET_MODES}, got {mode!r}"
+            )
+        if mode in {"sbatch", "interactive"} and server["kind"] != "slurm":
+            raise RuleViolation(
+                f"preset mode {mode} requires kind=slurm"
+            )
     gpus = server.get("gpus", [])
     if not isinstance(gpus, list):
         raise RuleViolation("gpus must be a list of GPU capacity blocks")
@@ -238,6 +272,7 @@ def _normalize_server(server):
         for gpu in out["gpus"]
     ]
     out.setdefault("tags", [])
+    out.setdefault("presets", [])
     out.setdefault("start_latency", DEFAULT_START_LATENCY[out["kind"]])
     return out
 

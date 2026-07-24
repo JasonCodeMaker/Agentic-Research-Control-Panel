@@ -175,7 +175,6 @@ def _tracker_projection(
 ) -> dict[str, Any]:
     """Derive one execution checklist without introducing another state owner."""
 
-    change_tasks: list[dict[str, Any]] = []
     experiment_rows: list[dict[str, Any]] = []
     task_rows_by_experiment: dict[str, list[dict[str, Any]]] = {}
 
@@ -225,7 +224,6 @@ def _tracker_projection(
                 "state": "COMPLETE" if complete else "PENDING",
             }
             tasks.append(task)
-            change_tasks.append(task)
 
         ordered_runs = sorted(
             runs_by_experiment.get(experiment_id, []),
@@ -390,25 +388,16 @@ def _tracker_projection(
         ),
         None,
     )
-    first_incomplete_change = next(
-        (task for task in change_tasks if not task["complete"]),
+    first_incomplete_task = next(
+        (
+            task
+            for experiment in experiment_rows
+            for task in experiment["tasks"]
+            if not task["complete"]
+        ),
         None,
     )
-    execution_tasks = [
-        task
-        for experiment in experiment_rows
-        for task in experiment["tasks"]
-        if task["kind"] == "run"
-    ]
-    first_incomplete_execution = next(
-        (task for task in execution_tasks if not task["complete"]),
-        None,
-    )
-    current = (
-        active_execution
-        or first_incomplete_change
-        or first_incomplete_execution
-    )
+    current = active_execution or first_incomplete_task
     if current is not None:
         current["state"] = "CURRENT"
 
@@ -987,6 +976,14 @@ def package_view_models(
             )
         )
 
+    preset_labels = {
+        str(preset["id"]): str(preset.get("label") or preset["id"])
+        for resource in _bucket(state, "resource").values()
+        if isinstance(resource, Mapping)
+        for preset in resource.get("presets", [])
+        if isinstance(preset, Mapping) and preset.get("id")
+    }
+
     learnings_by_package: dict[str, list[dict[str, Any]]] = {}
     for learning_id, raw in sorted(
         _bucket(state, "learning").items(), key=lambda item: str(item[0])
@@ -1065,6 +1062,23 @@ def package_view_models(
                 str(projected.get("updated_at") or projected.get("created_at") or "")[:10],
             )
         projected["experiments"] = experiments_by_package.get(package_id, [])
+        resource_policy = projected.get("resourcePolicy")
+        resource_plans = (
+            resource_policy.get("experiments")
+            if isinstance(resource_policy, Mapping)
+            and isinstance(resource_policy.get("experiments"), Mapping)
+            else {}
+        )
+        for experiment in projected["experiments"]:
+            resource = resource_plans.get(str(experiment.get("id") or ""))
+            if not isinstance(resource, Mapping):
+                continue
+            experiment["resource"] = copy.deepcopy(dict(resource))
+            experiment["resource"]["presetLabels"] = {
+                preset: preset_labels.get(preset, preset)
+                for preset in resource.get("preset_order", [])
+                if isinstance(preset, str)
+            }
         legacy_facts = legacy_package_fact_projection(projected)
         projected["analysisInsights"] = _merge_rows(
             projected.get("analysisInsights"),

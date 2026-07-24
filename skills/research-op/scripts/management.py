@@ -109,6 +109,27 @@ PACKAGE_RESULT_FIELDS = {
     "resultBlocks",
     "resultGateRows",
 }
+RESOURCE_POLICY_FIELDS = {"experiments"}
+RESOURCE_PLAN_FIELDS = {"preset_order", "profiles"}
+RESOURCE_PROFILE_FIELDS = {
+    "id",
+    "label",
+    "gpu_type",
+    "gpu_count",
+    "min_mem_gb",
+    "system_mem_gb",
+    "min_hours",
+    "config_ref",
+}
+RESOURCE_PROFILE_REQUIRED_FIELDS = {
+    "id",
+    "label",
+    "gpu_type",
+    "gpu_count",
+    "min_mem_gb",
+    "system_mem_gb",
+    "config_ref",
+}
 
 
 def _commit(store: EventStore, /, **command: Any) -> dict[str, Any]:
@@ -691,6 +712,142 @@ def _draft_source_binding(record: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _active_resource_preset_ids(state: dict[str, Any]) -> set[str]:
+    return {
+        str(preset["id"])
+        for resource in state["aggregates"]["resource"].values()
+        if isinstance(resource, dict) and resource.get("status") == "ACTIVE"
+        for preset in resource.get("presets", [])
+        if isinstance(preset, dict) and preset.get("id")
+    }
+
+
+def _validate_resource_policy(
+    state: dict[str, Any],
+    policy: Any,
+    *,
+    experiment_ids: set[str] | None = None,
+) -> None:
+    """Validate one reviewed placement policy without reading live capacity."""
+    if not isinstance(policy, dict) or set(policy) != RESOURCE_POLICY_FIELDS:
+        raise CommandRejected(
+            "package-resource-policy-invalid",
+            "resourcePolicy must contain exactly experiments",
+        )
+    plans = policy.get("experiments")
+    if not isinstance(plans, dict) or not plans:
+        raise CommandRejected(
+            "package-resource-policy-invalid",
+            "resourcePolicy.experiments must be a non-empty object",
+        )
+    if experiment_ids is not None and set(plans) != experiment_ids:
+        raise CommandRejected(
+            "package-resource-policy-invalid",
+            "resourcePolicy.experiments must exactly match the reviewed Experiments",
+        )
+    registered_presets = _active_resource_preset_ids(state)
+    for experiment_id, plan in plans.items():
+        if not isinstance(experiment_id, str) or not experiment_id.strip():
+            raise CommandRejected(
+                "package-resource-policy-invalid",
+                "resourcePolicy experiment ids must be non-empty strings",
+            )
+        if not isinstance(plan, dict) or set(plan) != RESOURCE_PLAN_FIELDS:
+            raise CommandRejected(
+                "package-resource-policy-invalid",
+                f"resource policy for {experiment_id} must contain exactly "
+                "preset_order and profiles",
+            )
+        preset_order = plan.get("preset_order")
+        if (
+            not isinstance(preset_order, list)
+            or not preset_order
+            or any(
+                not isinstance(preset, str) or not preset.strip()
+                for preset in preset_order
+            )
+            or len(preset_order) != len(set(preset_order))
+        ):
+            raise CommandRejected(
+                "package-resource-policy-invalid",
+                f"resource policy for {experiment_id} needs unique preset_order entries",
+            )
+        unknown_presets = set(preset_order) - registered_presets
+        if unknown_presets:
+            raise CommandRejected(
+                "package-resource-policy-invalid",
+                f"resource policy for {experiment_id} uses unregistered active "
+                f"presets: {sorted(unknown_presets)}",
+            )
+        profiles = plan.get("profiles")
+        if not isinstance(profiles, list) or not profiles:
+            raise CommandRejected(
+                "package-resource-policy-invalid",
+                f"resource policy for {experiment_id} needs at least one profile",
+            )
+        profile_ids: set[str] = set()
+        for profile in profiles:
+            if (
+                not isinstance(profile, dict)
+                or not RESOURCE_PROFILE_REQUIRED_FIELDS.issubset(profile)
+                or set(profile) - RESOURCE_PROFILE_FIELDS
+            ):
+                raise CommandRejected(
+                    "package-resource-policy-invalid",
+                    f"resource profiles for {experiment_id} have invalid fields",
+                )
+            profile_id = profile.get("id")
+            label = profile.get("label")
+            config_ref = profile.get("config_ref")
+            if (
+                not isinstance(profile_id, str)
+                or not re.fullmatch(
+                    r"[A-Za-z0-9][A-Za-z0-9._-]*",
+                    profile_id,
+                )
+                or profile_id in profile_ids
+                or not isinstance(label, str)
+                or not label.strip()
+                or not isinstance(config_ref, str)
+                or not config_ref.strip()
+            ):
+                raise CommandRejected(
+                    "package-resource-policy-invalid",
+                    f"resource profiles for {experiment_id} need unique ids, "
+                    "labels, and config_ref values",
+                )
+            profile_ids.add(profile_id)
+            gpu_count = profile.get("gpu_count")
+            if (
+                isinstance(gpu_count, bool)
+                or not isinstance(gpu_count, int)
+                or gpu_count < 1
+            ):
+                raise CommandRejected(
+                    "package-resource-policy-invalid",
+                    f"resource profile {profile_id} gpu_count must be an integer >= 1",
+                )
+            gpu_type = profile.get("gpu_type")
+            if not isinstance(gpu_type, str) or not gpu_type.strip():
+                raise CommandRejected(
+                    "package-resource-policy-invalid",
+                    f"resource profile {profile_id} needs gpu_type",
+                )
+            for field in ("min_mem_gb", "system_mem_gb", "min_hours"):
+                value = profile.get(field)
+                if field == "min_hours" and value is None:
+                    continue
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or value <= 0
+                ):
+                    raise CommandRejected(
+                        "package-resource-policy-invalid",
+                        f"resource profile {profile_id} {field} must be a number > 0",
+                    )
+
+
 def _validate_draft_package_record(paths: ResearchPaths, record: dict[str, Any]) -> None:
     package_id = record.get("id")
     if not isinstance(package_id, str) or not package_id.strip():
@@ -738,6 +895,11 @@ def _validate_draft_package_record(paths: ResearchPaths, record: dict[str, Any])
             "Draft Package proposal document must use docs/proposal.html",
         )
     _validate_note_ref(paths, record.get("document_note"))
+    if record.get("resourcePolicy") is not None:
+        _validate_resource_policy(
+            EventStore(paths).state(),
+            record["resourcePolicy"],
+        )
 
 
 def _validate_source_package_binding(
@@ -1050,6 +1212,7 @@ def _draft_record_from_active_package(
         "resultGateRows",
         "resultBlocks",
         "analysisInsights",
+        "resourcePolicy",
     ):
         if package.get(field) is not None:
             draft[field] = copy.deepcopy(package[field])
@@ -1651,6 +1814,31 @@ def register_resource(
     idempotency_key: str,
 ) -> dict[str, Any]:
     """Research-op gateway for one typed compute resource."""
+    preset_ids = {
+        preset.get("id")
+        for preset in record.get("presets", [])
+        if isinstance(preset, dict) and preset.get("id")
+    }
+
+    def unique_presets(
+        state: dict[str, Any],
+        _command: dict[str, Any],
+    ) -> None:
+        for existing_id, existing in state["aggregates"]["resource"].items():
+            if existing_id == resource_id or not isinstance(existing, dict):
+                continue
+            overlap = preset_ids.intersection(
+                preset.get("id")
+                for preset in existing.get("presets", [])
+                if isinstance(preset, dict) and preset.get("id")
+            )
+            if overlap:
+                raise CommandRejected(
+                    "resource-preset-conflict",
+                    f"preset ids already registered by {existing_id}: "
+                    f"{sorted(overlap)}",
+                )
+
     return _commit(EventStore(paths),
         event_type="ResourceRegistered",
         aggregate_type="resource",
@@ -1660,6 +1848,7 @@ def register_resource(
         idempotency_key=idempotency_key,
         expected_version=expected_version,
         entry_skill="research-op/resource",
+        policy=unique_presets,
     )
 
 
@@ -3984,6 +4173,36 @@ def _build_scope_bundle_transaction(
             )
         seen.add(experiment_id)
 
+    superseded_experiments: list[tuple[str, dict[str, Any]]] = []
+    for experiment_id in sorted(prior_experiment_ids - seen):
+        current = state["aggregates"]["experiment"].get(experiment_id)
+        if (
+            not isinstance(current, dict)
+            or current.get("direction_id") != direction_id
+            or current.get("package_id") not in {None, ""}
+            or current.get("scope_confirmation") != "STALE"
+        ):
+            raise CommandConflict(
+                "scope-bundle-removed-experiment-invalid",
+                f"Removed Experiment is not detached from this reopened Package: {experiment_id}",
+            )
+        record = copy.deepcopy(current)
+        record["scope_status"] = "SUPERSEDED"
+        superseded_experiments.append((experiment_id, record))
+
+    if draft.get("resourcePolicy") is not None:
+        _validate_resource_policy(
+            state,
+            draft["resourcePolicy"],
+            experiment_ids=seen,
+        )
+    elif _active_resource_preset_ids(state):
+        raise CommandRejected(
+            "package-resource-policy-required",
+            "Scope Bundle requires one reviewed resource policy for every "
+            "Experiment when active Resource presets are registered",
+        )
+
     source_package = _draft_source_binding(draft)
     scope_sha256 = _digest(
         {
@@ -4143,6 +4362,17 @@ def _build_scope_bundle_transaction(
         }
         for node, record in zip(experiments, experiment_records, strict=True)
     )
+    participants.extend(
+        {
+            "aggregate_type": "experiment",
+            "aggregate_id": experiment_id,
+            "expected_version": _version(state, "experiment", experiment_id),
+            "aggregate_version": _version(state, "experiment", experiment_id) + 1,
+            "operation": "put",
+            "record": record,
+        }
+        for experiment_id, record in superseded_experiments
+    )
     note = draft.get("document_note") or {}
     payload = build_transaction_payload(
         command_kind="SCOPE_BUNDLE_COMMIT",
@@ -4170,6 +4400,8 @@ def _build_scope_bundle_transaction(
         "experiments": copy.deepcopy(experiments),
         "execution": "Implement and launch only the Experiments in this Scope Bundle",
     }
+    if active.get("resourcePolicy") is not None:
+        review["resources"] = copy.deepcopy(active["resourcePolicy"])
     return payload, event_id, review
 
 
@@ -5454,12 +5686,41 @@ def _launch_review_authority(
     package_id: str,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
+    change_id = _reference_id(
+        state,
+        "change",
+        package_id,
+        payload.get("review_change_id"),
+    )
+    change = state["aggregates"]["change"].get(change_id)
+    if not isinstance(change, dict) or change.get("package_id") != package_id:
+        raise CommandRejected(
+            "launch-review-required",
+            "entering READY_TO_LAUNCH requires review_change_id for a "
+            "committed package Change",
+        )
+    validating_experiments = set(change.get("validating_experiments") or [])
+    if payload.get("experiment_id") is not None:
+        experiment_id, _ = resolve_package_experiment(
+            state,
+            package_id,
+            payload["experiment_id"],
+        )
+        if experiment_id not in validating_experiments:
+            raise CommandRejected(
+                "launch-review-experiment-mismatch",
+                "review_change_id must validate the Experiment entering launch",
+            )
+        validating_experiments = {experiment_id}
     planned_changes = [
         record
         for record in state["aggregates"]["change"].values()
         if isinstance(record, dict)
         and record.get("package_id") == package_id
         and isinstance(record.get("plan"), dict)
+        and validating_experiments.intersection(
+            record.get("validating_experiments") or []
+        )
     ]
     for planned in planned_changes:
         current_observations = planned.get("observations")
@@ -5486,19 +5747,6 @@ def _launch_review_authority(
                 "Every planned code location and verification must be checked "
                 "before READY_TO_LAUNCH",
             )
-    change_id = _reference_id(
-        state,
-        "change",
-        package_id,
-        payload.get("review_change_id"),
-    )
-    change = state["aggregates"]["change"].get(change_id)
-    if not isinstance(change, dict) or change.get("package_id") != package_id:
-        raise CommandRejected(
-            "launch-review-required",
-            "entering READY_TO_LAUNCH requires review_change_id for a "
-            "committed package Change",
-        )
     review = change.get("review")
     if not isinstance(review, dict):
         raise CommandRejected(

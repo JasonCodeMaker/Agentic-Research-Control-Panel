@@ -157,8 +157,10 @@ Keep the current human layout and navigation:
 - The Plan page has no Package-level Plan invariants card. It renders one
   ordered Pipeline timeline whose Experiment nodes preserve status, purpose,
   dependency, output, gate, evidence, lock state, and task links while adding
-  the canonical configuration reference and control mode. Planned order is a
-  presentation sequence; `after` remains the separate Scope dependency.
+  the canonical configuration reference, control mode, and reviewed Resource
+  preset/profile order. Planned order is a presentation sequence; `after`
+  remains the separate Scope dependency. Dynamic availability and the chosen
+  allocation remain Run-time facts.
 - The Implementation page is one code change map grouped by Experiment. Every
   Change renders Code locations, How it changes, and Verification. Native
   disabled checkboxes are checked only for state-backed `PASS` observations;
@@ -176,9 +178,10 @@ Keep the current human layout and navigation:
 - The Tracker page contains only an Experiment-grouped `To-Do` and Artifact
   locations. It derives Change tasks from the same observations as
   Implementation and Run tasks from Run evidence, keeps exactly one current
-  task when tasks exist, and never owns editable checklist state. It does not
-  render latest checks, readiness, allocations, route selection, or agent
-  context.
+  task when tasks exist, and advances tasks within each Experiment before
+  moving to the next Experiment in Plan order. It never owns editable
+  checklist state and does not render latest checks, readiness, allocations,
+  route selection, or agent context.
 - The Docs index preserves its state-backed groups, cards, table of contents,
   metadata, links, and copy while using the shared Package visual system. Its
   table of contents has a compact clay accent; each group spans the content

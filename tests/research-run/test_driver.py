@@ -113,6 +113,7 @@ def test_workflow_snapshot_reads_state_when_interface_is_absent(tmp_path):
             "status": "READY",
             "implementationReadiness": "NOT_REQUIRED",
             "currentChangeId": None,
+            "reviewChangeId": None,
         }
     ]
     assert snapshot["openRuns"] == []

@@ -3,7 +3,7 @@
   "browser_version": "Chromium 150.0.7871.128 snap",
   "css": {
     "assets/brainstorm.css": "ee58f5fec921e4a8a2668c0636a08bf346ae6fa6bb10139316f9a34fb88eea06",
-    "assets/research.css": "2d606df56d08c2017979026f1a0f018d0c47a6d20158d24c40c142cb4f76cd6e",
+    "assets/research.css": "6282f366137892c9aca2b9e24888e2f63b0410c1573347608fdcd912dedb553d",
     "assets/toc.css": "a7ce4705f4c71a9e03cc7a9ce41337d4008d5faa31655be98dab6d0d412fbce4"
   },
   "dom": {
@@ -16,7 +16,7 @@
     "packages/fixture/docs/index.html": "713ffe5566c5242a93d5d276b9f153daaabc7fb5d8e1cd9bd7611a6fbfa6942d",
     "packages/fixture/implementation.html": "da32ef699ecb71d6c558305b0e99e2eee594a73cf32cc7867606b0b444b85f74",
     "packages/fixture/index.html": "6d59dbf075d788c5d17a6eb33170e014084c7a8fb7cf47743d7ec99e0b32cb81",
-    "packages/fixture/plan.html": "7ee63940c28f2e0e79f634cfff0f9d0b812b4f742590102fdcb4efda5d2ed0b2",
+    "packages/fixture/plan.html": "9e6c0c0f01dc4ec2f451d653ee575ccfcb45e5304ee03109bb77622096a402bc",
     "packages/fixture/results.html": "429c3a44f541aec4c82dbc897f87c93d1e27fe089c204522539f698d55aea535",
     "packages/fixture/tracker.html": "89cf1ea1e76599e177366ffc5d903616020541bd1739af1e9694d60c276e28a6",
     "scope.html": "e435f76040bbb0bba192d98c56cdb68536ecfd7a316f291abf13bfc4f8a8d170"
@@ -136,7 +136,7 @@
     "packages/fixture/docs/index.html": "fffffffffbfffff7c00003ffc00003ffc0000fffc000ffffffffffffe1803c3fe1fffdffffffffffe1fffffff0ffffffffffffffffffffffe007ffffe003ffffc0000007ffffffffc3ffffffd73fffffdfffffffe1ffffefe0007fffd03fffffd1ffffffdfffffffffffffffc0000003c0000003c0000007c0000003ffffffff",
     "packages/fixture/implementation.html": "fffffffffffffff3c000001fc000001fc00007ffc3ffffffffffffffc1803c3fe1fffdffffffffffe17ffffff0ffffffffffffffffffffffc007fffff807ffffc1ffffffc0ffffffcfffffffdfffffffd1fdffefdf9dffffd71fffffdfffffffd0000007d000000fd003ffffdfffffffffffffffffffffffffffffffcfffffff",
     "packages/fixture/index.html": "e19f7ff7f3ffffe3c0003fffc0003fffc07fffffffffffffc1803c3fc1c07c3fffffffffc17ffffff07fffffd0fffffffffdffffc007ffffc0020f87e3fff87fe3fff87ffc0ff98fecfffbf7ec07f9f7ec0ffffffc3fffffffffffffe1ffffffe6ffffffe61fffffffffffffffffffffffffffffcfffffffffffffffffffffff",
-    "packages/fixture/plan.html": "ffffffffebfffff3c00007ffc00007ffc00003ffc01fffffffffffffc1803c3fe1fffdffffffffffe17ffffff0ffffffffffffffffffffffc007ffffc007ffffdfffffffc1ffffffc0000007c000000fdfffffffd1ffffffd1ffffffd71fffffd01fffffd0000007d0000007d0000007dfffffffd33fffffd7ffffffdfffffff",
+    "packages/fixture/plan.html": "fffffffffbfffff7c00007ffc00007ffc00013ffc001ffffffffffffc1803c3fe1fffdffffffffffe1fffffff0ffffffffffffffffffffffc007ffffe5ffffffdfffffffc1ffffffc0000007c000007fdfffffffd1ffffffd1ffffffdf1fffffd01fffffd0000007d000000fd000000fdfffffffdf45ffffdf0003efdf4002ef",
     "packages/fixture/results.html": "fffffffffbfffff3c00003ffc00003ffc0001fffffffffffe1807c3fc1f57cbfffffffffe3fffffff0fffffff8ffffffffffffffe007ffffc007ffffffffffffc1fffff3e07fffffc83fffc3cff3e3ffc7ffffffc3fff7ffe77fffffc0ffffc3e8ffffefffffffffffffffffffffffffcfffffffffffffffffffffffffffffff",
     "packages/fixture/tracker.html": "fffffffffffffff3c00001ffc00001ffc0003fffffffffffe1807c3fc1f57cbfffffffffe3fffffff0fffffff8ffffffffffffffe007ffffc007ffffdfffffffc7ffffffc00000ffc0000007de7fffffc1ffffffc19fffffce3fffffc63fffffc0000007c0000007dfffffffc1ffffffc000003fdfffffffc3ffffffc0000007",
     "scope.html": "fffffffff07fffffe27fffffa003ffffe0024fffe0000fffe0000fffe0000fffe03fffffe027fffff080000fe00cceeff331311fe333711fe7dfffffe3133fffefff7ffff0ffffffe01ffffff119bfffff713ffff1fffffff1ffffffe0fffffff01ffffff333fffff111fffffff3fffffffffffff1ffffefe03ffffff000ffff"

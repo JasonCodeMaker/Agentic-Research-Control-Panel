@@ -20,7 +20,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 
 from lib.interface import build_interface
-from lib.interface.package import PHASE_TRANSITION_CONDITIONS
+from lib.interface.package import PHASE_TRANSITION_CONDITIONS, _tracker_projection
 from lib.interface.serve import make_handler, static_document_root
 from lib.research_state import EventStore, ResearchPaths
 from lib.research_state.schema import load_schema, transition_map
@@ -220,6 +220,104 @@ process.stdout.write(JSON.stringify(context.window));
         text=True,
     )
     return json.loads(result.stdout)
+
+
+def test_tracker_finishes_earlier_experiment_before_later_changes() -> None:
+    tracker = _tracker_projection(
+        "package-one",
+        [
+            {"id": "experiment-zero", "local_id": "P0"},
+            {"id": "experiment-one", "local_id": "P1"},
+        ],
+        [
+            {
+                "id": "p0-ready",
+                "title": "Prepare P0",
+                "anchor": "p0-ready",
+                "validatingExperiments": ["P0"],
+                "complete": True,
+            },
+            {
+                "id": "p1-change",
+                "title": "Implement P1",
+                "anchor": "p1-change",
+                "validatingExperiments": ["P1"],
+                "complete": False,
+            },
+        ],
+        {},
+    )
+
+    assert tracker["currentTaskId"] == "execute:P0"
+    assert tracker["experiments"][0]["tasks"][-1]["state"] == "CURRENT"
+    assert tracker["experiments"][1]["tasks"][0]["state"] == "PENDING"
+
+
+def test_plan_projects_reviewed_resource_policy_with_preset_labels(
+    tmp_path: Path,
+) -> None:
+    paths, store = _workspace(tmp_path)
+    store.commit(
+        event_type="ResourceRegistered",
+        aggregate_type="resource",
+        aggregate_id="bunya",
+        payload={
+            "record": {
+                "id": "bunya",
+                "name": "bunya",
+                "kind": "slurm",
+                "status": "ACTIVE",
+                "presets": [
+                    {
+                        "id": "bunya-interactive",
+                        "label": "Bunya Interactive",
+                        "mode": "interactive",
+                    }
+                ],
+            }
+        },
+        actor=ACTOR,
+        idempotency_key="interface-test:resource",
+    )
+    store.commit(
+        event_type="AggregatePatched",
+        aggregate_type="package",
+        aggregate_id="package-one",
+        payload={
+            "patch": {
+                "resourcePolicy": {
+                    "experiments": {
+                        "scope-exp-one": {
+                            "preset_order": ["bunya-interactive"],
+                            "profiles": [
+                                {
+                                    "id": "preferred",
+                                    "label": "2 H100 SXM",
+                                    "gpu_type": "h100-sxm",
+                                    "gpu_count": 2,
+                                    "min_mem_gb": 80,
+                                    "system_mem_gb": 120,
+                                    "config_ref": "configs/p0-h100x2.yaml",
+                                }
+                            ],
+                        }
+                    },
+                }
+            }
+        },
+        actor=ACTOR,
+        idempotency_key="interface-test:resource-policy",
+    )
+
+    build_interface(paths)
+    package = _browser_globals(
+        paths.interface / "data" / "research-packages.js"
+    )["RESEARCH_PACKAGES"][0]
+    resource = package["experiments"][0]["resource"]
+    assert resource["presetLabels"] == {
+        "bunya-interactive": "Bunya Interactive"
+    }
+    assert resource["profiles"][0]["system_mem_gb"] == 120
 
 
 def test_rebuild_is_deterministic_and_does_not_trust_destination(tmp_path: Path) -> None:

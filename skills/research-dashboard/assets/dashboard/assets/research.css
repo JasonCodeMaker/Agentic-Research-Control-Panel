@@ -2876,6 +2876,126 @@ body[data-page="overview"] .plan-status-row .exp-run-link {
   color: var(--slate);
 }
 
+.pipeline-node-resource {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 16px;
+  padding-top: 15px;
+  border-top: 1px solid var(--g200);
+}
+
+.pipeline-resource-body {
+  min-width: 0;
+}
+
+.pipeline-resource-empty {
+  margin: 0;
+  color: var(--g500);
+  font-size: 13px;
+}
+
+.pipeline-resource-preset-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: start;
+  gap: 8px 12px;
+}
+
+.pipeline-resource-key,
+.pipeline-resource-profile-rank {
+  color: var(--g600);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.pipeline-resource-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.pipeline-resource-preset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--g300);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--slate);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 7px 5px 5px;
+}
+
+.pipeline-resource-rank {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  background: var(--oat);
+  color: var(--clay-text);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.pipeline-resource-profiles {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--g200);
+}
+
+.pipeline-resource-profile {
+  display: grid;
+  grid-template-columns: 78px minmax(160px, 0.8fr) minmax(190px, 1.2fr);
+  gap: 10px 14px;
+  align-items: start;
+  min-width: 0;
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--g200);
+}
+
+.pipeline-resource-profile[data-resource-priority="preferred"] {
+  box-shadow: inset 3px 0 0 var(--clay);
+  background: #fbf4ee;
+}
+
+.pipeline-resource-profile-rank {
+  padding-top: 2px;
+}
+
+.pipeline-resource-profile-capacity,
+.pipeline-resource-profile-config {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.pipeline-resource-profile-capacity strong {
+  color: var(--slate);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.pipeline-resource-profile-capacity span,
+.pipeline-resource-profile-config span {
+  color: var(--g600);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.pipeline-resource-profile-config code {
+  color: var(--g700);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .pipeline-thread-links {
   display: flex;
   flex-wrap: wrap;
@@ -2928,13 +3048,20 @@ body[data-page="overview"] .plan-status-row .exp-run-link {
   }
 
   .pipeline-node-purpose,
+  .pipeline-node-resource,
   .pipeline-node-fields {
     grid-template-columns: 1fr;
     gap: 2px 0;
   }
 
-  .pipeline-node-purpose {
+  .pipeline-node-purpose,
+  .pipeline-node-resource {
     gap: 6px;
+  }
+
+  .pipeline-resource-preset-row,
+  .pipeline-resource-profile {
+    grid-template-columns: 1fr;
   }
 
   .pipeline-node-fields dt {

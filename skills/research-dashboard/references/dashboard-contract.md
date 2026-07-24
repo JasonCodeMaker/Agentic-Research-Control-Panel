@@ -157,10 +157,13 @@ The Plan page renders the Package's Experiments as one ordered Pipeline
 timeline. It has no Package-level Plan invariants card. Every node keeps the
 existing Experiment identity, status, purpose, `after`, output, gate, evidence,
 lock state, and task links, and also renders the canonical `config_ref` and
-`control_mode`. Node order communicates the planned execution sequence;
-`after` communicates only a declared Scope dependency. The projection never
-extracts comparison, metric, budget, or fixed-condition facts from free text.
-Those details remain in the immutable configuration or linked contract.
+`control_mode`. A Resource section renders the reviewed preset order and
+ordered capacity profiles from `Package.resourcePolicy`; it never renders a
+queue snapshot or implies that capacity is currently available. Node order
+communicates the planned execution sequence; `after` communicates only a
+declared Scope dependency. The projection never extracts comparison, metric,
+budget, or fixed-condition facts from free text. Those details remain in the
+immutable configuration or linked contract.
 
 The Implementation page answers one question: what must change in the
 codebase to complete each Experiment? It renders one Experiment-grouped code
@@ -214,12 +217,13 @@ are intermediate Run files stored? It contains two sections:
    `metrics.jsonl`, `log.txt`, and `result.json` paths.
 
 For a nonempty To-Do, the projection marks exactly one task current: prefer an
-active Run, otherwise use the first incomplete Change in Plan order, then the
-first incomplete Run task. It derives totals and native disabled checkbox
-states from Experiment, Change, Run, and Result authority; it never reads
-another page, stores a To-Do boolean, or accepts browser input. A canonical
-path states where a file belongs, not that the file exists without
-corresponding evidence.
+active Run; otherwise, in Plan order, choose the first Experiment with
+unfinished work and its first incomplete Change or Run task. It never advances
+to a later Experiment's Change while an earlier Experiment's Run task remains
+incomplete. It derives totals and native disabled checkbox states from
+Experiment, Change, Run, and Result authority; it never reads another page,
+stores a To-Do boolean, or accepts browser input. A canonical path states where
+a file belongs, not that the file exists without corresponding evidence.
 
 Do not render Latest live check, launch readiness, resource allocation, chosen
 route, Exp directory atlas, Resume Block, per-Run metric cards, or agent

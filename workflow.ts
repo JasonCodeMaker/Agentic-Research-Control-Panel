@@ -88,6 +88,7 @@ export type ExperimentSnapshot = {
   status: RunStatus | "NOT_STARTED" | string;
   implementationReadiness?: "PASS" | "BLOCKED" | "NOT_REQUIRED" | string;
   currentChangeId?: string | null;
+  reviewChangeId?: string | null;
 };
 
 export type RunSnapshot = {
@@ -298,6 +299,14 @@ export function evaluateWorkflow(snapshot: WorkflowSnapshot): RunTicket {
         kind: "REPAIR",
         reason: `${nextQueued.expId} implementation is incomplete${currentChange}`,
       };
+    } else if (readiness === "PASS" && !nextQueued.reviewChangeId) {
+      packagePhase = currentState;
+      route = "FIX_IMPLEMENTATION";
+      expId = nextQueued.expId;
+      nextAction = {
+        kind: "REPAIR",
+        reason: `${nextQueued.expId} implementation requires an independent review`,
+      };
     } else if (canMoveTo(currentState, "READY_TO_LAUNCH")) {
       packagePhase = "READY_TO_LAUNCH";
       route = "RUN_NEXT_EXPERIMENT";
@@ -416,11 +425,16 @@ function mutationsForWorkflowState(
     || current.phase !== phase
     || JSON.stringify(current.blocker) !== JSON.stringify(packageBlocker)
   ) {
-    const payload: Record<string, unknown> = {
-      lifecycle,
-      phase,
-      blocker: packageBlocker,
-    };
+    const payload: Record<string, unknown> = { to: phase ?? lifecycle };
+    if (phase === "READY_TO_LAUNCH" && nextAction.kind === "LAUNCH_EXPERIMENT") {
+      const experiment = (snapshot.experiments || []).find(
+        (row) => row.expId === nextAction.expId,
+      );
+      payload.experiment_id = nextAction.expId;
+      if (experiment?.reviewChangeId) {
+        payload.review_change_id = experiment.reviewChangeId;
+      }
+    }
     if (snapshot.packageVersion !== undefined) {
       payload.expected_version = snapshot.packageVersion;
     }

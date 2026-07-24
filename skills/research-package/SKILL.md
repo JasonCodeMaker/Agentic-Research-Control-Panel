@@ -88,9 +88,10 @@ launch a Run, or bypass a missing Draft writer with an active-only mutation.
 
 ### 3. Review and commit the Scope Bundle
 
-Prepare one review containing the complete Direction and every selected
-Experiment. The review also shows the exact four-field Research Intent; the
-Package Hypothesis must match `Direction.spec.hypothesis`:
+Prepare one review containing the complete Direction, every selected
+Experiment, and `Package.resourcePolicy` when active Resource presets exist.
+The review also shows the exact four-field Research Intent; the Package
+Hypothesis must match `Direction.spec.hypothesis`:
 
 ```bash
 python3 skills/research-package/scripts/draft_package.py \

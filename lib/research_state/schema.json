@@ -150,6 +150,7 @@
         "identityDate": {"type": "string"},
         "identityRationale": {"type": "string"},
         "identityHistory": {"type": "array"},
+        "resourcePolicy": {"type": "object"},
         "slug": {"type": "string"},
         "name": {"type": "string"},
         "title": {"type": "string"}
@@ -264,7 +265,8 @@
       "required": ["id"],
       "properties": {
         "id": {"type": "string"},
-        "status": {"type": "string", "enum": "resource_status"}
+        "status": {"type": "string", "enum": "resource_status"},
+        "presets": {"type": "array"}
       }
     },
     "resource_allocation": {

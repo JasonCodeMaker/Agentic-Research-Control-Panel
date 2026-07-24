@@ -1899,6 +1899,69 @@
     return { nextEligible: next, runningNow: running.length ? running.join(", ") : null };
   }
 
+  function pipelineResourceHtml(resource) {
+    if (!resource || !Array.isArray(resource.profiles) || !resource.profiles.length) {
+      return [
+        '<section class="pipeline-node-resource" aria-label="Experiment resource policy">',
+        '<div class="pipeline-node-section-label">Resource</div>',
+        '<p class="pipeline-resource-empty">No reviewed resource policy.</p>',
+        "</section>",
+      ].join("");
+    }
+    var labels = resource.presetLabels || {};
+    var presets = Array.isArray(resource.preset_order) ? resource.preset_order : [];
+    var presetHtml = presets.map(function (preset, index) {
+      return '<span class="pipeline-resource-preset" data-preset-id="' +
+        htmlEscape(preset) + '"><span class="pipeline-resource-rank">' +
+        (index + 1) + '</span>' + htmlEscape(labels[preset] || preset) + "</span>";
+    }).join("");
+    var profiles = resource.profiles.map(function (profile, index) {
+      var gpuCount = Number(profile && profile.gpu_count) || 0;
+      var hardware = gpuCount
+        ? gpuCount + " x " + String(profile.gpu_type || "GPU")
+        : "CPU only";
+      var capacity = [htmlEscape(hardware)];
+      if (gpuCount && profile.min_mem_gb) {
+        capacity.push(htmlEscape(profile.min_mem_gb) + " GB VRAM each");
+      }
+      if (profile && profile.system_mem_gb) {
+        capacity.push(htmlEscape(profile.system_mem_gb) + " GB system RAM");
+      }
+      if (profile && profile.min_hours) {
+        capacity.push(htmlEscape(profile.min_hours) + " h minimum");
+      }
+      return [
+        '<li class="pipeline-resource-profile"' +
+          (index === 0 ? ' data-resource-priority="preferred"' : "") + ">",
+        '<span class="pipeline-resource-profile-rank">' +
+          (index === 0 ? "Preferred" : "Fallback " + index) + "</span>",
+        '<div class="pipeline-resource-profile-capacity">',
+        "<strong>" + htmlEscape(profile.label || profile.id || "Profile") + "</strong>",
+        '<span>' + capacity.join(" &middot; ") + "</span>",
+        "</div>",
+        '<div class="pipeline-resource-profile-config">',
+        "<span>Config</span>",
+        '<code>' + htmlEscape(profile.config_ref || "unmeasured") + "</code>",
+        "</div>",
+        "</li>",
+      ].join("");
+    }).join("");
+    return [
+      '<section class="pipeline-node-resource" aria-label="Experiment resource policy">',
+      '<div class="pipeline-node-section-label">Resource</div>',
+      '<div class="pipeline-resource-body">',
+      '<div class="pipeline-resource-preset-row">',
+      '<span class="pipeline-resource-key">Preset order</span>',
+      '<div class="pipeline-resource-presets">' + presetHtml + "</div>",
+      "</div>",
+      '<ol class="pipeline-resource-profiles" aria-label="Approved capacity order">',
+      profiles,
+      "</ol>",
+      "</div>",
+      "</section>",
+    ].join("");
+  }
+
   function renderPipelineTimeline() {
     var host = document.querySelector('[data-card="pipeline-timeline"] [data-field="pipeline-timeline-list"]');
     if (!host) return;
@@ -1924,6 +1987,7 @@
       var controlMode = e && e.controlMode ? String(e.controlMode) : "unmeasured";
       var output = e && e.output ? String(e.output) : "unmeasured";
       var gate = e && (e.gatePredicate || e.gate) ? String(e.gatePredicate || e.gate) : "unmeasured";
+      var resource = e && e.resource ? e.resource : null;
       var after = Array.isArray(e && e.after) ? e.after : [];
       var afterText = after.length
         ? after.map(function (ref) { return htmlEscape(experimentReferenceLabel(exps, ref)); }).join(", ")
@@ -1966,6 +2030,7 @@
         "</dl>",
         '<a class="pipeline-node-doc" href="' + htmlEscape(docsAnchor) + '">Contract detail: ' + htmlEscape(docsAnchor) + "</a>",
         "</section>",
+        pipelineResourceHtml(resource),
         '<dl class="pipeline-node-fields pipeline-operation-fields">',
         '<dt>Control mode</dt><dd>' + htmlEscape(controlMode) + "</dd>",
         '<dt>Output</dt><dd><code>' + htmlEscape(output) + "</code></dd>",

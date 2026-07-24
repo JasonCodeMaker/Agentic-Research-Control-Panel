@@ -98,6 +98,7 @@ def test_sync_tracks_code_and_invalidates_stale_verification(tmp_path):
     assert projected_change["howItChanges"] == "Add one deterministic module."
     ready_snapshot = driver.load_workflow_snapshot(paths, "pkg-1")
     assert ready_snapshot["experiments"][0]["implementationReadiness"] == "PASS"
+    assert ready_snapshot["experiments"][0]["reviewChangeId"] is None
     ready_tracker = package_view_models(EventStore(paths).state())[0]["tracker"]
     assert ready_tracker["currentTaskId"] == "execute:P1"
     assert ready_tracker["experiments"][0]["tasks"][0]["complete"] is True

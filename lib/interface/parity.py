@@ -328,6 +328,34 @@ def _seed_fixture(paths: ResearchPaths) -> None:
     )
     store.commit(
         event_type="AggregateUpserted",
+        aggregate_type="resource",
+        aggregate_id="bunya",
+        payload={
+            "record": {
+                "id": "bunya",
+                "name": "bunya",
+                "kind": "slurm",
+                "status": "ACTIVE",
+                "presets": [
+                    {
+                        "id": "bunya-interactive",
+                        "label": "Bunya Interactive",
+                        "mode": "interactive",
+                    },
+                    {
+                        "id": "bunya-sbatch",
+                        "label": "Bunya Sbatch",
+                        "mode": "sbatch",
+                    },
+                ],
+            }
+        },
+        actor=ACTOR,
+        idempotency_key="interface-fixture:resource",
+        expected_version=0,
+    )
+    store.commit(
+        event_type="AggregateUpserted",
         aggregate_type="package",
         aggregate_id="fixture",
         payload={
@@ -356,6 +384,38 @@ def _seed_fixture(paths: ResearchPaths) -> None:
                 "baseline": "Frozen interface contract",
                 "budget": "one deterministic fixture",
                 "noChangeBoundary": "DOM hierarchy, selectors, classes, and CSS",
+                "resourcePolicy": {
+                    "experiments": {
+                        "layout": {
+                            "preset_order": [
+                                "bunya-interactive",
+                                "bunya-sbatch",
+                            ],
+                            "profiles": [
+                                {
+                                    "id": "preferred",
+                                    "label": "2 H100 SXM",
+                                    "gpu_type": "h100-sxm",
+                                    "gpu_count": 2,
+                                    "min_mem_gb": 80,
+                                    "system_mem_gb": 120,
+                                    "min_hours": 24,
+                                    "config_ref": "configs/layout-h100x2.yaml",
+                                },
+                                {
+                                    "id": "fallback-a100",
+                                    "label": "2 A100 80GB",
+                                    "gpu_type": "a100-80gb",
+                                    "gpu_count": 2,
+                                    "min_mem_gb": 80,
+                                    "system_mem_gb": 120,
+                                    "min_hours": 24,
+                                    "config_ref": "configs/layout-a100x2.yaml",
+                                },
+                            ],
+                        }
+                    },
+                },
                 "lastAction": "Run interface parity",
                 "lastUpdated": "2026-07-20",
                 "resultBlocks": [

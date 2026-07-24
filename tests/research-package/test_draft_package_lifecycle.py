@@ -27,6 +27,7 @@ from lib.research_state import (  # noqa: E402
     ResearchPaths,
     StateQuery,
 )
+from lib import resource_alloc as ra  # noqa: E402
 import brainstorm  # noqa: E402
 import draft_package  # noqa: E402
 import management  # noqa: E402
@@ -185,6 +186,98 @@ def test_scope_bundle_is_one_approval_and_one_atomic_event(tmp_path):
     assert len(EventStore(paths).events()) == before_count + 1
 
 
+def test_scope_bundle_binds_reviewed_resource_policy(tmp_path):
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    _draft(paths)
+    ra.register_server(
+        paths,
+        {
+            "name": "bunya",
+            "kind": "slurm",
+            "control": {"path": "tmux", "tmux_session": "bunya"},
+            "presets": [
+                {
+                    "id": "bunya-interactive",
+                    "label": "Bunya Interactive",
+                    "mode": "interactive",
+                },
+                {
+                    "id": "bunya-sbatch",
+                    "label": "Bunya Sbatch",
+                    "mode": "sbatch",
+                },
+            ],
+        },
+    )
+    direction = direction_node(source="draft-package:package-one")
+    experiment = experiment_node(source="draft-package:package-one")
+    with pytest.raises(
+        CommandRejected,
+        match="requires one reviewed resource policy",
+    ):
+        management.prepare_scope_bundle(
+            paths,
+            "package-one",
+            direction,
+            [experiment],
+        )
+    resource_policy = {
+        "experiments": {
+            experiment["id"]: {
+                "preset_order": [
+                    "bunya-interactive",
+                    "bunya-sbatch",
+                ],
+                "profiles": [
+                    {
+                        "id": "preferred",
+                        "label": "2 H100 SXM",
+                        "gpu_type": "h100-sxm",
+                        "gpu_count": 2,
+                        "min_mem_gb": 80,
+                        "system_mem_gb": 120,
+                        "config_ref": "configs/p0-h100x2.yaml",
+                    },
+                    {
+                        "id": "fallback-a100",
+                        "label": "2 A100 80GB",
+                        "gpu_type": "a100-80gb",
+                        "gpu_count": 2,
+                        "min_mem_gb": 80,
+                        "system_mem_gb": 120,
+                        "config_ref": "configs/p0-a100x2.yaml",
+                    },
+                ],
+            }
+        },
+    }
+    draft_package.revise(
+        paths,
+        package_id="package-one",
+        patch={"resourcePolicy": resource_policy},
+        actor_id="test",
+    )
+
+    review = management.prepare_scope_bundle(
+        paths,
+        "package-one",
+        direction,
+        [experiment],
+    )
+    assert review["review"]["resources"] == resource_policy
+    management.finalize_scope_bundle(
+        paths,
+        "package-one",
+        direction,
+        [experiment],
+        review["receipt"]["content_sha256"],
+        actor=USER,
+        review_id="resource-policy-review",
+    )
+    package = EventStore(paths).state()["aggregates"]["package"]["package-one"]
+    assert package["resourcePolicy"] == resource_policy
+
+
 @pytest.mark.parametrize(
     ("patch", "message"),
     [
@@ -227,18 +320,22 @@ def test_reopened_package_revises_scope_in_one_atomic_bundle(tmp_path):
     paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
     _draft(paths)
     direction_v1 = direction_node(source="draft-package:package-one")
-    experiment_v1 = experiment_node(source="draft-package:package-one")
+    retained_v1 = experiment_node(source="draft-package:package-one")
+    removed_v1 = experiment_node(
+        node_id="experiment/retrieval-v2/M1-removed",
+        source="draft-package:package-one",
+    )
     initial_review = management.prepare_scope_bundle(
         paths,
         "package-one",
         direction_v1,
-        [experiment_v1],
+        [retained_v1, removed_v1],
     )
     management.finalize_scope_bundle(
         paths,
         "package-one",
         direction_v1,
-        [experiment_v1],
+        [retained_v1, removed_v1],
         initial_review["receipt"]["content_sha256"],
         actor=USER,
         review_id="initial-scope-review",
@@ -277,15 +374,19 @@ def test_reopened_package_revises_scope_in_one_atomic_bundle(tmp_path):
         source="draft-package:package-one:v2",
         hypothesis=revised_hypothesis,
     )
-    experiment_v2 = experiment_node(
+    retained_v2 = experiment_node(
         version=2,
+        source="draft-package:package-one:v2",
+    )
+    replacement_v1 = experiment_node(
+        node_id="experiment/retrieval-v2/M1-replacement",
         source="draft-package:package-one:v2",
     )
     revised_review = management.prepare_scope_bundle(
         paths,
         "package-one",
         direction_v2,
-        [experiment_v2],
+        [retained_v2, replacement_v1],
     )
 
     assert revised_review["review"]["scope_operation"] == "revise"
@@ -293,7 +394,7 @@ def test_reopened_package_revises_scope_in_one_atomic_bundle(tmp_path):
         paths,
         "package-one",
         direction_v2,
-        [experiment_v2],
+        [retained_v2, replacement_v1],
         revised_review["receipt"]["content_sha256"],
         actor=USER,
         review_id="revised-scope-review",
@@ -302,18 +403,26 @@ def test_reopened_package_revises_scope_in_one_atomic_bundle(tmp_path):
     state = EventStore(paths).state()
     package = state["aggregates"]["package"]["package-one"]
     direction = state["aggregates"]["direction"][direction_v2["id"]]
-    experiment = state["aggregates"]["experiment"][experiment_v2["id"]]
+    retained = state["aggregates"]["experiment"][retained_v2["id"]]
+    replacement = state["aggregates"]["experiment"][replacement_v1["id"]]
+    removed = state["aggregates"]["experiment"][removed_v1["id"]]
     assert package["lifecycle"] == "ACTIVE"
     assert package["sourceVersion"] == 2
     assert package["hypothesis"] == revised_hypothesis
     assert direction["version"] == 2
-    assert experiment["scope_version"] == 2
-    assert experiment["scope_confirmation"] == "CONFIRMED"
-    assert experiment["package_id"] == "package-one"
+    assert retained["scope_version"] == 2
+    assert retained["scope_confirmation"] == "CONFIRMED"
+    assert retained["package_id"] == "package-one"
+    assert replacement["scope_status"] == "ACTIVE"
+    assert replacement["package_id"] == "package-one"
+    assert removed["scope_status"] == "SUPERSEDED"
+    assert removed["package_id"] is None
     for aggregate_type, aggregate_id in (
         ("package", "package-one"),
         ("direction", direction_v2["id"]),
-        ("experiment", experiment_v2["id"]),
+        ("experiment", retained_v2["id"]),
+        ("experiment", replacement_v1["id"]),
+        ("experiment", removed_v1["id"]),
     ):
         assert StateQuery(paths).history(aggregate_type, aggregate_id)["data"][-1][
             "event_id"

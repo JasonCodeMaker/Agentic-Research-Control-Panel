@@ -73,9 +73,7 @@ test("tracks a long wrapper run with adaptive next check and stop-gate reentry p
     "lastAction",
   ]);
   assert.deepEqual(ticket.requiredMutations[0].payload, {
-    lifecycle: "ACTIVE",
-    phase: "LIVE_ANALYSIS",
-    blocker: null,
+    to: "LIVE_ANALYSIS",
   });
   assert.deepEqual(ticket.perRun[0].requiredMutations.map((m) => m.target), [
     "tracker-live-check-row",
@@ -220,6 +218,56 @@ test("keeps an implementation-incomplete experiment out of launch", () => {
   assert.equal(ticket.packageBlocker, null);
   assert.equal(ticket.nextAction.kind, "REPAIR");
   assert.match(ticket.nextAction.reason, /p0-integration/);
+});
+
+test("routes one reviewed Experiment through the canonical launch mutation", () => {
+  const ticket = evaluateWorkflow({
+    pkgId: "pkg",
+    packageLifecycle: "ACTIVE",
+    packagePhase: "CONTEXT_LOADED",
+    packageBlocker: null,
+    packageVersion: 4,
+    openRuns: [],
+    experiments: [{
+      expId: "P0",
+      status: "READY",
+      implementationReadiness: "PASS",
+      reviewChangeId: "p0-review",
+    }],
+  });
+
+  assert.equal(ticket.nextAction.kind, "LAUNCH_EXPERIMENT");
+  assert.deepEqual(ticket.requiredMutations[0], {
+    op: "update",
+    target: "status",
+    payload: {
+      to: "READY_TO_LAUNCH",
+      experiment_id: "P0",
+      review_change_id: "p0-review",
+      expected_version: 4,
+    },
+  });
+});
+
+test("does not launch a completed implementation before independent review", () => {
+  const ticket = evaluateWorkflow({
+    pkgId: "pkg",
+    packageLifecycle: "ACTIVE",
+    packagePhase: "CONTEXT_LOADED",
+    packageBlocker: null,
+    openRuns: [],
+    experiments: [{
+      expId: "P0",
+      status: "READY",
+      implementationReadiness: "PASS",
+      reviewChangeId: null,
+    }],
+  });
+
+  assert.equal(ticket.packagePhase, "CONTEXT_LOADED");
+  assert.equal(ticket.route, "FIX_IMPLEMENTATION");
+  assert.equal(ticket.nextAction.kind, "REPAIR");
+  assert.match(ticket.nextAction.reason, /independent review/);
 });
 
 test("does not skip implementation review to launch a queued experiment", () => {

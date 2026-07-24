@@ -89,6 +89,7 @@ Ask for the typed fields that affect placement:
 - `control`: direct access or an existing tmux gateway;
 - declared GPU type, count, and memory;
 - scheduler account, partitions, and maximum duration when applicable;
+- stable execution presets exposed during Package review;
 - working directory and environment;
 - data-locality and capability tags;
 - the execution skill that owns remote work.
@@ -102,11 +103,42 @@ Example:
 python3 lib/resource_alloc/cli.py --research-root "$RESEARCH_ROOT" register <<'EOF'
 {"name":"local","kind":"local",
  "gpus":[{"type":"a6000","count":2,"mem_gb":48}],
+ "presets":[{"id":"local","label":"Local","mode":"direct"}],
  "tags":["dataset-local"]}
 EOF
 ```
 
 See [registry schema](references/registry-schema.md) for the full record.
+
+For Bunya, register one physical `slurm` Resource with both
+`bunya-sbatch` and `bunya-interactive` presets. Do not register two physical
+Resources for the same cluster. Interactive mode first reuses a valid existing
+allocation and requests one only when none exists.
+
+## Freeze Package placement
+
+Before the Scope Bundle review, show the active preset range and confirm one
+ordered preset list and capacity profile chain for every selected Experiment.
+If the user already gave the exact choices, use them without reopening the
+decision.
+
+Store the result in `Package.resourcePolicy`, not `Experiment.spec`. Every
+profile carries its own `config_ref`, GPU type and count, per-GPU memory, host
+RAM, and minimum duration. Create the referenced config before activation.
+Omitted presets and profiles are forbidden fallbacks.
+
+Keep these three facts separate:
+
+- the Resource registry defines stable servers, presets, and scheduler maps;
+- `Package.resourcePolicy` defines the reviewed per-Experiment allowlist and
+  fallback order;
+- probes, queue state, and the chosen allocation are run-time observations.
+
+At run time, reuse a compatible open interactive allocation first. If none
+exists, request the first reviewed profile. When Slurm rejects that request,
+inspect the live partition, QoS, GRES, memory, and duration constraint, then
+try only the next reviewed profile or preset. Stop when the allowlist is
+exhausted; never invent a hardware downgrade.
 
 ## Probe before placement
 
