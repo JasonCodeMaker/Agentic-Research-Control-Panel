@@ -179,8 +179,10 @@ def _parse_key_values(line: str) -> dict[str, Any] | None:
             "rate": rate,
             "unit": "it/s",
         }
+    if total is not None:
+        values["total"] = total
     if values:
-        return _metric(values, source="kv-metrics", step=step, total=total)
+        return _metric(values, source="kv-metrics", step=step)
     return None
 
 
@@ -195,6 +197,12 @@ def _parse_phase(line: str) -> dict[str, Any] | None:
 def _parse_anomaly(line: str) -> dict[str, Any] | None:
     match = _ANOMALY_RE.search(line)
     if not match:
+        return None
+    if match.group(0).lower() == "inf" and re.search(
+        r"""["']?steps_per_print["']?\s*[:=]\s*inf\b""",
+        line,
+        re.I,
+    ):
         return None
     return {
         "kind": "anomaly",

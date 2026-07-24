@@ -75,12 +75,35 @@ test("tracks a long wrapper run with adaptive next check and stop-gate reentry p
   assert.deepEqual(ticket.requiredMutations[0].payload, {
     to: "LIVE_ANALYSIS",
   });
-  assert.deepEqual(ticket.perRun[0].requiredMutations.map((m) => m.target), [
-    "tracker-live-check-row",
-  ]);
-  assertLiveCheckPayload(ticket.perRun[0].requiredMutations[0].payload);
+  assert.deepEqual(ticket.perRun[0].requiredMutations, []);
   assert.deepEqual(ticket.stopGate.ok, true);
   assert.equal(ticket.stopGate.openRuns[0].reentryArmed, true);
+});
+
+test("records the launch phase before entering live analysis", () => {
+  const ticket = evaluateWorkflow({
+    ...baseSnapshot,
+    packageStatus: "READY_TO_LAUNCH",
+    openRuns: [
+      {
+        runId: "P1-r1",
+        expId: "P1",
+        status: "RUNNING",
+        health: "OK",
+        runtimeRoot: "outputs/2026-06-11-demo/runs/P1-r1",
+      },
+    ],
+    armedReentries: {
+      "P1-r1": "2026-06-11T00:05:00.000Z",
+    },
+  });
+
+  assert.equal(ticket.workflowState, "EXPERIMENT_RUNNING");
+  assert.deepEqual(ticket.requiredMutations[0], {
+    op: "update",
+    target: "status",
+    payload: { to: "EXPERIMENT_RUNNING" },
+  });
 });
 
 test("blocks stop gate when an open run lacks reentry or scan-events has pending facts", () => {
@@ -168,7 +191,7 @@ test("keeps monitoring other experiments while routing terminal runs to result e
   assert.equal(ticket.perRun.find((r) => r.runId === "P1-r1")?.liveAction, "CONTINUE_RUN");
   assert.deepEqual(
     ticket.perRun.find((r) => r.runId === "P1-r1")?.requiredMutations.map((m) => m.target),
-    ["tracker-live-check-row", "results-gate-row", "experiments-status"],
+    ["results-gate-row", "experiments-status"],
   );
   assert.deepEqual(
     ticket.perRun.find((r) => r.runId === "P1-r1")?.requiredMutations.find((m) => m.target === "experiments-status")?.payload,
@@ -382,23 +405,3 @@ test("loads workflow enums from the central research-state schema", () => {
   assert.equal(workflowSchema.workflowStates.includes("BLOCKED"), false);
   assert.equal(workflowSchema.workflowStates.includes("STOPPED"), false);
 });
-
-function assertLiveCheckPayload(payload: Record<string, unknown>): void {
-  assert.deepEqual(
-    [
-      "time",
-      "exp_id",
-      "agent",
-      "run_state",
-      "last_log",
-      "progress",
-      "metrics",
-      "resource",
-      "artifacts",
-      "eta",
-      "action",
-      "next_check",
-    ].filter((key) => !(key in payload)),
-    [],
-  );
-}

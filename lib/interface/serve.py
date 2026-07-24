@@ -165,6 +165,60 @@ def _status_payload(
     status["status"] = project_run_record(
         run_id, {**dict(record), "status": canonical}
     ).get("final_status") or canonical
+    progress = status.get("progress")
+    if isinstance(progress, dict):
+        step = progress.get("step")
+        total = progress.get("total")
+        pct = progress.get("pct")
+        invalid = (
+            not isinstance(step, (int, float))
+            or not isinstance(total, (int, float))
+            or total <= 0
+            or step < 0
+            or step > total
+            or (
+                isinstance(pct, (int, float))
+                and abs(float(pct) - float(step) / float(total) * 100) > 0.02
+            )
+        )
+        if invalid:
+            events_path = run_dir / "events.jsonl"
+            try:
+                lines = events_path.read_bytes()[-1_048_576:].splitlines()
+            except OSError:
+                lines = []
+            for line in reversed(lines):
+                try:
+                    event = json.loads(line)
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    continue
+                event_step = event.get("step")
+                event_total = event.get("total")
+                if (
+                    event.get("kind") == "progress"
+                    and event.get("source") != "kv-metrics"
+                    and isinstance(event_step, (int, float))
+                    and isinstance(event_total, (int, float))
+                    and event_total > 0
+                    and 0 <= event_step <= event_total
+                ):
+                    status["progress"] = {
+                        "step": int(event_step),
+                        "total": int(event_total),
+                        "pct": round(float(event_step) / float(event_total) * 100, 2),
+                        **(
+                            {"epoch": event["epoch"]}
+                            if event.get("epoch") is not None
+                            else {}
+                        ),
+                    }
+                    if event.get("rate") is not None:
+                        status["throughput"] = {
+                            "rate": event["rate"],
+                            "unit": event.get("unit") or "it/s",
+                        }
+                    status["progress_recovered_from"] = "events.jsonl"
+                    break
     return status, None
 
 

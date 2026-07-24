@@ -72,6 +72,123 @@ def test_run_state_writes_canonical_status_inside_its_run_dir(tmp_path):
     assert status["progress"]["pct"] == 2.4
 
 
+def test_debug_totals_cannot_overwrite_progress_boundary(tmp_path):
+    event = harvest.parse_line(
+        "[search][dbg] payload shape=(64, 3, 160, 224) "
+        "fps=1.0 total=64 idx_len=64 idx_last=63"
+    )
+    assert event["kind"] == "metric"
+    assert event["values"]["total"] == 64
+    assert "total" not in event
+
+    state = harvest.RunState(
+        run_dir=tmp_path / "run",
+        run=_run(),
+        status="RUNNING",
+    )
+    state.apply_event(
+        {
+            "kind": "progress",
+            "source": "tqdm",
+            "step": 125,
+            "total": 40492,
+            "rate": 6.14,
+            "unit": "s/it",
+        },
+        at=1.0,
+    )
+    state.apply_event(
+        {
+            "kind": "metric",
+            "source": "kv-metrics",
+            "step": 125,
+            "total": 64,
+            "values": {"fps": 1.0},
+        },
+        at=2.0,
+    )
+
+    assert state.progress == {"step": 125, "total": 40492, "pct": 0.31}
+
+
+def test_authorized_total_steps_owns_progress_boundary(tmp_path):
+    state = harvest.RunState(
+        run_dir=tmp_path / "run",
+        run=_run(),
+        status="RUNNING",
+        total_steps=40492,
+    )
+    state.apply_event(
+        {
+            "kind": "progress",
+            "source": "tqdm",
+            "step": 125,
+            "total": 64,
+            "rate": 6.14,
+            "unit": "s/it",
+        },
+        at=1.0,
+    )
+
+    assert state.progress == {"step": 125, "total": 40492, "pct": 0.31}
+
+
+def test_all_metric_sources_are_progress_attribution_only(tmp_path):
+    state = harvest.RunState(
+        run_dir=tmp_path / "run",
+        run=_run(),
+        status="RUNNING",
+    )
+    state.apply_event(
+        {
+            "kind": "progress",
+            "source": "tqdm",
+            "step": 125,
+            "total": 40492,
+        },
+        at=1.0,
+    )
+    for source in ("jsonl", "custom", "kv-metrics"):
+        state.apply_event(
+            {
+                "kind": "metric",
+                "source": source,
+                "step": 999,
+                "total": 64,
+                "values": {"loss": 0.4},
+            },
+            at=2.0,
+        )
+
+    assert state.progress == {"step": 125, "total": 40492, "pct": 0.31}
+
+
+def test_progress_boundary_and_step_are_monotonic(tmp_path):
+    state = harvest.RunState(
+        run_dir=tmp_path / "run",
+        run=_run(),
+        status="RUNNING",
+    )
+    state.apply_event(
+        {"kind": "progress", "step": 125, "total": 40492},
+        at=1.0,
+    )
+    state.apply_event(
+        {"kind": "progress", "step": 126, "total": 64},
+        at=2.0,
+    )
+    state.apply_event(
+        {"kind": "progress", "step": 124, "total": 40492},
+        at=3.0,
+    )
+
+    assert state.progress == {"step": 125, "total": 40492, "pct": 0.31}
+    assert state.warning_reasons == [
+        "conflicting progress boundary ignored",
+        "invalid progress ignored",
+    ]
+
+
 def test_stale_and_terminal_states_are_mechanical(tmp_path):
     state = harvest.RunState(
         run_dir=tmp_path / ".research" / "experiments" / "pkg" / "P1" / "run",
@@ -97,3 +214,5 @@ def test_anomaly_word_boundaries_ignore_routine_logging():
     assert harvest.parse_line("running inference on shard 2") is None
     assert harvest.parse_line("collecting information about the corpus") is None
     assert harvest.parse_line("killed 3 zombie dataloader workers") is None
+    assert harvest.parse_line('    "steps_per_print": inf,') is None
+    assert harvest.parse_line("loss=inf")["kind"] == "anomaly"

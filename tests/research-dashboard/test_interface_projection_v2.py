@@ -21,7 +21,7 @@ sys.path.insert(0, str(REPO))
 
 from lib.interface import build_interface
 from lib.interface.package import PHASE_TRANSITION_CONDITIONS, _tracker_projection
-from lib.interface.serve import make_handler, static_document_root
+from lib.interface.serve import _status_payload, make_handler, static_document_root
 from lib.research_state import EventStore, ResearchPaths
 from lib.research_state.schema import load_schema, transition_map
 
@@ -1268,6 +1268,75 @@ def test_live_api_reads_state_and_experiment_runtime_not_interface(
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_live_api_recovers_invalid_progress_from_run_events(tmp_path: Path) -> None:
+    paths, store = _workspace(tmp_path)
+    run_dir = paths.run_dir("package-one", "exp-one", "run-one")
+    run_dir.mkdir(parents=True)
+    (run_dir / "status.json").write_text(
+        json.dumps(
+            {
+                "run_id": "run-one",
+                "status": "RUNNING",
+                "progress": {"step": 233, "total": 64, "pct": 364.06},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "events.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "kind": "progress",
+                        "source": "tqdm",
+                        "step": 233,
+                        "total": 40492,
+                        "rate": 6.83,
+                        "unit": "s/it",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "kind": "metric",
+                        "source": "kv-metrics",
+                        "step": 233,
+                        "total": 64,
+                        "values": {"fps": 1.0},
+                    }
+                ),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    record = {
+        "id": "run-one",
+        "package_id": "package-one",
+        "experiment_id": "package-one::exp-one",
+        "status": "RUNNING",
+        "dir": run_dir.relative_to(paths.root).as_posix(),
+    }
+    store.commit(
+        event_type="AggregateUpserted",
+        aggregate_type="run",
+        aggregate_id="run-one",
+        payload={"record": record},
+        actor=ACTOR,
+        idempotency_key="interface-test:recover-progress",
+    )
+
+    status, error = _status_payload(paths, "run-one", record)
+
+    assert error is None
+    assert status["progress"] == {
+        "step": 233,
+        "total": 40492,
+        "pct": 0.58,
+    }
+    assert status["throughput"] == {"rate": 6.83, "unit": "s/it"}
+    assert status["progress_recovered_from"] == "events.jsonl"
 
 
 def test_dashboard_entrypoint_refuses_implicit_legacy_upgrade(tmp_path: Path) -> None:

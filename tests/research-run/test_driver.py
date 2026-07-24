@@ -82,6 +82,10 @@ def test_direct_write_and_unknown_target_are_refused():
     )
     assert any("direct writes" in error for error in errors)
     assert any("target" in error for error in errors)
+    errors = driver.validate_mutation(
+        {"op": "insert", "target": "tracker-live-check-row", "payload": {}}
+    )
+    assert any("not a supported research-op target" in error for error in errors)
 
 
 def test_valid_research_op_envelope_compiles_to_canonical_cli(tmp_path):

@@ -90,12 +90,43 @@ class RunState:
         kind = event.get("kind")
         if kind == "progress":
             step = event.get("step")
-            total = event.get("total") or self.total_steps
+            total = (
+                self.total_steps
+                if self.total_steps is not None
+                else self.progress.get("total", event.get("total"))
+            )
             rate = event.get("rate")
+            step = int(step) if step is not None else None
+            total = int(total) if total is not None else None
+            prior_step = self.progress.get("step")
+            event_total = event.get("total")
+            invalid = (
+                step is not None
+                and (
+                    step < 0
+                    or (total is not None and (total <= 0 or step > total))
+                    or (prior_step is not None and step < prior_step)
+                )
+            )
+            conflicting = (
+                event_total is not None
+                and total is not None
+                and int(event_total) != total
+                and self.total_steps is None
+            )
+            if invalid or conflicting:
+                reason = (
+                    "invalid progress ignored"
+                    if invalid
+                    else "conflicting progress boundary ignored"
+                )
+                if reason not in self.warning_reasons:
+                    self.warning_reasons.append(reason)
+                return
             if step is not None:
-                self.progress["step"] = int(step)
+                self.progress["step"] = step
             if total is not None:
-                self.progress["total"] = int(total)
+                self.progress["total"] = total
             if "epoch" in event:
                 self.progress["epoch"] = event["epoch"]
             if step is not None and total:
@@ -112,17 +143,6 @@ class RunState:
                     "stable_since": stable_since,
                 }
         elif kind == "metric":
-            step = event.get("step")
-            total = event.get("total") or self.total_steps
-            if step is not None:
-                self.progress["step"] = int(step)
-            if total is not None:
-                self.progress["total"] = int(total)
-                if self.progress.get("step") is not None:
-                    self.progress["pct"] = round(
-                        float(self.progress["step"]) / float(total) * 100,
-                        2,
-                    )
             source = str(event.get("source") or "unknown")
             for key, value in (event.get("values") or {}).items():
                 self.latest_metrics[str(key)] = value

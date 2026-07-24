@@ -43,7 +43,6 @@ REQUIRED_ENVELOPE_FIELDS = {"op", "target", "payload"}
 OPTIONAL_ENVELOPE_FIELDS = {"idempotency_key", "expected_version"}
 ALLOWED_OPS = {"insert", "update", "delete", "check", "scan-events"}
 RESEARCH_OP_TARGETS = {
-    "tracker-live-check-row",
     "tracker-resource-allocation-row",
     "tracker-impl-review-row",
     "tracker-chosen-route",

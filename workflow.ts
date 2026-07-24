@@ -123,7 +123,6 @@ export type DashboardServerSnapshot = {
 export type ResearchOpEnvelope = {
   op: "insert" | "update" | "delete" | "check" | "scan-events";
   target:
-    | "tracker-live-check-row"
     | "tracker-resource-allocation-row"
     | "results-gate-row"
     | "results-block"
@@ -267,7 +266,8 @@ export function evaluateWorkflow(snapshot: WorkflowSnapshot): RunTicket {
       reason: `package lifecycle is ${packageState.lifecycle}`,
     };
   } else if (nonTerminal.length > 0) {
-    packagePhase = "LIVE_ANALYSIS";
+    packagePhase =
+      currentState === "READY_TO_LAUNCH" ? "EXPERIMENT_RUNNING" : "LIVE_ANALYSIS";
     route = "RUN_NEXT_EXPERIMENT";
     expId = nonTerminal[0].expId;
     nextAction = {
@@ -512,7 +512,7 @@ function buildPerRunTicket(run: RunSnapshot, now: number, pkgId: string): PerRun
     runtimeRoot,
     nextCheck,
     statusLine: formatStatusLine(run, liveAction),
-    requiredMutations: mutationsForRun(run, status, terminal, liveAction, nextCheck, now, pkgId),
+    requiredMutations: mutationsForRun(run, status, terminal, pkgId),
     evidence,
   };
 }
@@ -555,37 +555,13 @@ function mutationsForRun(
   run: RunSnapshot,
   status: string,
   terminal: boolean,
-  liveAction: LiveAction,
-  nextCheck: string | null,
-  now: number,
   pkgId: string,
 ): ResearchOpEnvelope[] {
   const runtimeRoot = run.runtimeRoot || `.research/experiments/${pkgId}/${run.expId}/${run.runId}`;
-  const liveCheck: ResearchOpEnvelope = {
-    op: "insert",
-    target: "tracker-live-check-row",
-    payload: {
-      time: localIso(now),
-      run_id: run.runId,
-      exp_id: run.expId,
-      agent: "workflow.ts",
-      run_state: status,
-      last_log: run.lastOutputAt ?? "unmeasured",
-      progress: stringifyField(run.progress),
-      metrics: stringifyField(run.latestMetrics),
-      resource: stringifyField(run.resource),
-      artifacts: stringifyField(run.artifacts),
-      eta: run.eta ?? (run.etaSeconds == null ? "unknown" : `${run.etaSeconds}s`),
-      action: liveAction,
-      next_check: nextCheck ?? "none",
-      source_artifact: `${runtimeRoot}/status.json`,
-    },
-  };
   if (!terminal) {
-    return [liveCheck];
+    return [];
   }
   return [
-    liveCheck,
     {
       op: "insert",
       target: "results-gate-row",
@@ -801,32 +777,6 @@ function parseTime(value: string | number | Date): number {
 
 function iso(ms: number): string {
   return new Date(ms).toISOString();
-}
-
-function localIso(ms: number): string {
-  const date = new Date(ms);
-  const offsetMinutes = -date.getTimezoneOffset();
-  const sign = offsetMinutes >= 0 ? "+" : "-";
-  const absOffset = Math.abs(offsetMinutes);
-  const offset = `${sign}${pad(Math.floor(absOffset / 60))}:${pad(absOffset % 60)}`;
-  return [
-    date.getFullYear(),
-    "-",
-    pad(date.getMonth() + 1),
-    "-",
-    pad(date.getDate()),
-    "T",
-    pad(date.getHours()),
-    ":",
-    pad(date.getMinutes()),
-    ":",
-    pad(date.getSeconds()),
-    offset,
-  ].join("");
-}
-
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
 }
 
 function earliest(values: string[]): string | null {
