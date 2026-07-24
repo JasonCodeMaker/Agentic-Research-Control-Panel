@@ -296,7 +296,7 @@ def _build_interface_unlocked(
             "workspace with research-init before building the interface"
         )
     state = EventStore(paths).state()
-    packages = package_view_models(state)
+    packages = package_view_models(state, paths=paths)
     brainstorms = brainstorm_views(state)
     self_evolution = self_evolution_projection(
         paths,

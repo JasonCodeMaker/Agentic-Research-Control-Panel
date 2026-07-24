@@ -251,12 +251,33 @@ def test_package_overview_toolbar_only_links_dashboard(tmp_path: Path) -> None:
     intent_fields = [
         'data-field="problem-tldr"',
         'data-field="motivation-tldr"',
-        'data-field="objective-tldr"',
         'data-field="hypothesis-tldr"',
+        'data-field="objective-tldr"',
     ]
     assert all(field in page for field in intent_fields)
     assert [page.index(field) for field in intent_fields] == sorted(
         page.index(field) for field in intent_fields
+    )
+    assert '<article class="module-card" data-card="source-evidence">' in page
+    assert "<h2>Source &amp; evidence</h2>" in page
+    assert 'data-artifact="source-package"' in page
+    assert 'data-artifact="artifact-root"' in page
+    for removed in (
+        "Agent Content",
+        "Agent context",
+        'data-section="agent-zone"',
+        'data-card="identity-full"',
+        'data-card="overview-paths"',
+        'data-card="page-index"',
+    ):
+        assert removed not in page
+
+    package_pages = (paths.interface / "packages" / "package-one").glob("*.html")
+    assert all(
+        "Agent Content" not in package_page.read_text(encoding="utf-8")
+        and "Agent context" not in package_page.read_text(encoding="utf-8")
+        and 'data-section="agent-zone"' not in package_page.read_text(encoding="utf-8")
+        for package_page in package_pages
     )
 
 
@@ -452,10 +473,38 @@ def test_package_tracker_rows_are_derived_from_run_and_resource_state(
     assert projected["resourceAllocations"][0]["assigned"] == "0"
     assert projected["resourceAllocations"][0]["capacity"] == "1 x RTX-4090"
     assert projected["openRuns"] == "run-one"
+    tracker = projected["tracker"]
+    assert tracker["currentTaskId"] == "execute:exp-one"
+    assert tracker["completeTasks"] == 0
+    assert tracker["totalTasks"] == 1
+    tracker_experiment = tracker["experiments"][0]
+    assert tracker_experiment["tasks"][0]["state"] == "CURRENT"
+    assert tracker_experiment["artifacts"]["planned"][0]["path"] == (
+        ".research/experiments/package-one/exp-one/<run-id>/"
+    )
+    run = tracker_experiment["artifacts"]["runs"][0]
+    assert run["root"] == ".research/experiments/package-one/exp-one/run-one"
+    assert [item["path"].rsplit("/", 1)[-1] for item in run["files"]] == [
+        "run.json",
+        "context.json",
+        "status.json",
+        "events.jsonl",
+        "metrics.jsonl",
+        "log.txt",
+        "result.json",
+    ]
     assert projected["currentProcess"] == {
         "step": "Implement the scoped changes and produce reviewable artifacts.",
         "evidence": "",
     }
+    tracker_page = (
+        paths.interface / "packages" / "package-one" / "tracker.html"
+    ).read_text(encoding="utf-8")
+    assert "Latest live check" not in tracker_page
+    assert "Exp directory atlas" not in tracker_page
+    assert "Agent context" not in tracker_page
+    assert 'data-card="execution-checklist"' in tracker_page
+    assert 'src="../../assets/live-data.js"' in tracker_page
 
 
 def test_concurrent_rebuilds_cannot_publish_a_stale_snapshot(

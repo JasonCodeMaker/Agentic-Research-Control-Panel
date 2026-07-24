@@ -200,15 +200,16 @@
       "required": [
         "id",
         "package_id",
-        "owned_files",
-        "review",
         "validating_experiments"
       ],
       "properties": {
         "id": {"type": "string"},
         "package_id": {"type": "string"},
+        "order": {"type": "integer"},
         "owned_files": {"type": "array"},
         "review": {"type": "object"},
+        "plan": {"type": "object"},
+        "observations": {"type": "object"},
         "validating_experiments": {"type": "array"}
       }
     },

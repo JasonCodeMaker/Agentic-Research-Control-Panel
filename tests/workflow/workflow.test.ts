@@ -197,6 +197,31 @@ test("selects the next queued experiment after all open runs are terminal", () =
   assert.equal(ticket.nextAction.expId, "P2");
 });
 
+test("keeps an implementation-incomplete experiment out of launch", () => {
+  const ticket = evaluateWorkflow({
+    ...baseSnapshot,
+    packageStatus: "CONTEXT_LOADED",
+    openRuns: [],
+    experiments: [
+      {
+        expId: "P0",
+        status: "QUEUED",
+        implementationReadiness: "BLOCKED",
+        currentChangeId: "p0-integration",
+      },
+    ],
+    armedReentries: {},
+  });
+
+  assert.equal(ticket.workflowState, "IMPLEMENTING");
+  assert.equal(ticket.route, "FIX_IMPLEMENTATION");
+  assert.equal(ticket.readiness, "BLOCKED");
+  assert.equal(ticket.expId, "P0");
+  assert.equal(ticket.packageBlocker, null);
+  assert.equal(ticket.nextAction.kind, "REPAIR");
+  assert.match(ticket.nextAction.reason, /p0-integration/);
+});
+
 test("does not skip implementation review to launch a queued experiment", () => {
   const ticket = evaluateWorkflow({
     ...baseSnapshot,

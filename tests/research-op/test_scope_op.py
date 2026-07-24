@@ -633,6 +633,14 @@ def test_direction_revision_blocks_child_until_experiment_reconfirmation(
             "lifecycle": "ACTIVE",
             "phase": "CONTEXT_LOADED",
             "blocker": None,
+            "problem": "The current retrieval workflow has no validated transfer path.",
+            "motivation": (
+                "A matched comparison can test whether shared structure enables transfer."
+            ),
+            "objective": (
+                "Collect bounded evidence that determines whether transfer is realized."
+            ),
+            "hypothesis": direction["spec"]["hypothesis"],
             "direction_id": direction["id"],
             "sourceVersion": 1,
             "sourceChange": direction_event["event_id"],

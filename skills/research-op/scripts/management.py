@@ -39,6 +39,12 @@ from lib.research_state import (
 )
 from lib.research_state.io import canonical_json
 from lib.research_state import lifecycle as lifecycle_policy
+from lib.implementation import (
+    ImplementationPlanError,
+    completion_counts,
+    normalize_plan,
+    sync_observations,
+)
 from lib.research_state.package_identity import (
     PackageIdentityViolation,
     package_id as canonical_package_id,
@@ -56,6 +62,7 @@ from lib.research_state.schema import (
     status_group,
     transition_map,
 )
+from lib.result_schema import result_schema_sha256, validate_result_schema
 from lib.self_evolve import state as self_evolve_state
 from lib import verifier
 
@@ -999,7 +1006,7 @@ def _draft_record_from_active_package(
         "created_at": source.get("created_at") or package.get("lastUpdated") or now,
         "updated_at": now,
         "page_language": source.get("page_language") or "en",
-        "tag": "brainstorm",
+        "tag": package.get("tag") or "brainstorm",
         "lifecycle": "DRAFT",
         "phase": None,
         "blocker": None,
@@ -1013,11 +1020,37 @@ def _draft_record_from_active_package(
         "scopeBinding": None,
         "documentPath": "docs/proposal.html",
         "document_note": copy.deepcopy(source["document_note"]),
-        "pages": ["overview", "plan", "experiments", "results", "docs"],
+        "pages": copy.deepcopy(
+            package.get("pages")
+            or ["overview", "plan", "experiments", "results", "docs"]
+        ),
         "detailPath": f"packages/{package['id']}/docs/proposal.html",
         "reopen_reason": reason,
     }
     for field in ("problem", "motivation", "objective", "hypothesis"):
+        if package.get(field) is not None:
+            draft[field] = copy.deepcopy(package[field])
+    for field in (
+        "identityContractVersion",
+        "identityDate",
+        "identityHistory",
+        "identityRationale",
+        "tagMeaning",
+        "sourceBrainstorms",
+        "interface_notes",
+        "docsGroups",
+        "objectiveContract",
+        "budget",
+        "noChangeBoundary",
+        "sourcePath",
+        "artifactRoot",
+        "runtime",
+        "contributionSpineFlag",
+        "methodsTried",
+        "resultGateRows",
+        "resultBlocks",
+        "analysisInsights",
+    ):
         if package.get(field) is not None:
             draft[field] = copy.deepcopy(package[field])
     for field in ("idea_snapshot", "lit_refs"):
@@ -3091,6 +3124,13 @@ def propagate_run_result(
         "metric": normalized["metric"],
         "measured": copy.deepcopy(normalized["measured"]),
     }
+    for field in (
+        "result_schema_sha256",
+        "result_table_manifest_uri",
+        "result_tables",
+    ):
+        if field in raw_result:
+            summary[field] = copy.deepcopy(raw_result[field])
     causation_id = str(
         run.get("result_finalized_event_id") or run.get("terminal_event_id") or ""
     )
@@ -3217,12 +3257,21 @@ def normalize_experiment_binding(
         "requiresCode",
         "complex",
         "resultSchemaRef",
-        "resultSchema",
         "runLink",
         "docsAnchor",
     ):
         if field in row:
             patch[field] = copy.deepcopy(row[field])
+    if "resultSchema" in row:
+        try:
+            patch["resultSchema"] = validate_result_schema(
+                row["resultSchema"]
+            )
+        except ValueError as exc:
+            raise CommandRejected(
+                "result-schema-invalid",
+                str(exc),
+            ) from exc
     # Dependency edges are retained only when the caller supplied them.
     if "after" in row:
         after = row["after"]
@@ -3850,15 +3899,46 @@ def _build_scope_bundle_transaction(
             f"Scope commit requires a REFINING Draft Package: {package_id}",
         )
     scope_ssot.validate_node(direction)
-    if direction.get("level") != "direction" or direction.get("version") != 1:
+    direction_id = str(direction.get("id") or "")
+    current_direction = state["aggregates"]["direction"].get(direction_id)
+    reopen_event = next(
+        (
+            event
+            for event in reversed(store.events())
+            if event.get("event_type") == "PackageReopenedAsDraft"
+            and event.get("aggregate_type") == "package"
+            and event.get("aggregate_id") == package_id
+        ),
+        None,
+    )
+    prior_scope = (
+        reopen_event.get("payload", {}).get("prior_scope")
+        if isinstance(reopen_event, dict)
+        else None
+    )
+    revising_scope = isinstance(current_direction, dict)
+    expected_direction_version = (
+        int(current_direction.get("version") or 0) + 1
+        if revising_scope
+        else 1
+    )
+    if (
+        direction.get("level") != "direction"
+        or direction.get("version") != expected_direction_version
+    ):
         raise CommandRejected(
             "scope-bundle-direction-invalid",
-            "Scope Bundle requires one new Direction at version 1",
+            "Scope Bundle requires a new Direction at version 1 or the next "
+            "version of the reopened Package's Direction",
         )
-    if _version(state, "direction", str(direction.get("id") or "")) != 0:
+    if revising_scope and (
+        not isinstance(prior_scope, dict)
+        or prior_scope.get("direction_id") != direction_id
+        or current_direction.get("status") != "ACTIVE"
+    ):
         raise CommandConflict(
-            "scope-bundle-direction-exists",
-            f"Direction already exists: {direction.get('id')}",
+            "scope-bundle-revision-source-invalid",
+            "An existing Direction can be revised only through its reopened Package",
         )
     if not isinstance(experiments, list) or not experiments:
         raise CommandRejected(
@@ -3866,25 +3946,41 @@ def _build_scope_bundle_transaction(
             "Scope Bundle requires at least one Experiment",
         )
     seen: set[str] = set()
+    prior_experiment_ids = set(
+        prior_scope.get("experiment_ids") or []
+        if isinstance(prior_scope, dict)
+        else []
+    )
     for node in experiments:
         scope_ssot.validate_node(node)
         experiment_id = str(node.get("id") or "")
+        current_experiment = state["aggregates"]["experiment"].get(experiment_id)
+        expected_experiment_version = (
+            int(current_experiment.get("scope_version") or 0) + 1
+            if isinstance(current_experiment, dict)
+            else 1
+        )
         if (
             node.get("level") != "experiment"
             or node.get("parents") != [direction["id"]]
-            or node.get("version") != 1
+            or node.get("version") != expected_experiment_version
             or not experiment_id
             or experiment_id in seen
         ):
             raise CommandRejected(
                 "scope-bundle-experiment-invalid",
-                "every Scope Bundle Experiment must be unique, version 1, "
-                "and parented by its Direction",
+                "every Scope Bundle Experiment must be unique, use its next "
+                "Scope version, and be parented by its Direction",
             )
-        if _version(state, "experiment", experiment_id) != 0:
+        if isinstance(current_experiment, dict) and (
+            not revising_scope
+            or experiment_id not in prior_experiment_ids
+            or current_experiment.get("direction_id") != direction_id
+            or current_experiment.get("package_id") not in {None, ""}
+        ):
             raise CommandConflict(
-                "scope-bundle-experiment-exists",
-                f"Experiment already exists: {experiment_id}",
+                "scope-bundle-experiment-revision-invalid",
+                f"Experiment cannot be revised through this reopened Package: {experiment_id}",
             )
         seen.add(experiment_id)
 
@@ -3898,7 +3994,7 @@ def _build_scope_bundle_transaction(
     )
     event_id = f"evt_scope_{scope_sha256[:32]}"
     transition = {
-        "op": "create",
+        "op": "revise" if revising_scope else "create",
         "gate": scope_ssot.REQUIRED_GATE["direction"],
         "trigger": f"scope-bundle:{package_id}",
         "cause": f"draft-package:{package_id}:v{draft['draftRevision']}",
@@ -3906,14 +4002,20 @@ def _build_scope_bundle_transaction(
     direction_record = _scope_record(direction, transition)
     experiment_records: list[dict[str, Any]] = []
     for index, node in enumerate(experiments):
+        current_experiment = state["aggregates"]["experiment"].get(node["id"])
         record = _scope_record(
             node,
             {
-                "op": "create",
+                "op": "revise" if isinstance(current_experiment, dict) else "create",
                 "gate": scope_ssot.REQUIRED_GATE["experiment"],
                 "trigger": f"scope-bundle:{package_id}",
                 "cause": f"draft-package:{package_id}:v{draft['draftRevision']}",
             },
+            current=(
+                current_experiment
+                if isinstance(current_experiment, dict)
+                else None
+            ),
             direction_version=int(direction["version"]),
         )
         _, binding = normalize_experiment_binding(
@@ -3998,7 +4100,9 @@ def _build_scope_bundle_transaction(
             "runtime": active.get("runtime")
             or f".research/experiments/{package_id}/",
             "openRuns": "none",
-            "lastAction": "Scope Bundle committed",
+            "lastAction": (
+                "Scope Bundle revised" if revising_scope else "Scope Bundle committed"
+            ),
             "lastUpdated": str(
                 draft.get("lastUpdated") or draft.get("updated_at") or ""
             )[:10],
@@ -4020,8 +4124,9 @@ def _build_scope_bundle_transaction(
         {
             "aggregate_type": "direction",
             "aggregate_id": direction["id"],
-            "expected_version": 0,
-            "aggregate_version": 1,
+            "expected_version": _version(state, "direction", direction["id"]),
+            "aggregate_version": _version(state, "direction", direction["id"])
+            + 1,
             "operation": "put",
             "record": direction_record,
         },
@@ -4030,8 +4135,9 @@ def _build_scope_bundle_transaction(
         {
             "aggregate_type": "experiment",
             "aggregate_id": node["id"],
-            "expected_version": 0,
-            "aggregate_version": 1,
+            "expected_version": _version(state, "experiment", node["id"]),
+            "aggregate_version": _version(state, "experiment", node["id"])
+            + 1,
             "operation": "put",
             "record": record,
         }
@@ -4054,6 +4160,7 @@ def _build_scope_bundle_transaction(
     review = {
         "package_id": package_id,
         "draft_revision": draft["draftRevision"],
+        "scope_operation": "revise" if revising_scope else "create",
         "question": draft.get("idea") or draft.get("problem"),
         "research_intent": {
             field: copy.deepcopy(active[field])
@@ -5342,10 +5449,43 @@ def _reference_id(
 
 
 def _launch_review_authority(
+    paths: ResearchPaths,
     state: dict[str, Any],
     package_id: str,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
+    planned_changes = [
+        record
+        for record in state["aggregates"]["change"].values()
+        if isinstance(record, dict)
+        and record.get("package_id") == package_id
+        and isinstance(record.get("plan"), dict)
+    ]
+    for planned in planned_changes:
+        current_observations = planned.get("observations")
+        synchronized = sync_observations(
+            paths.workspace,
+            paths.root,
+            planned["plan"],
+            current_observations,
+        )
+        if current_observations != synchronized:
+            raise CommandRejected(
+                "implementation-status-stale",
+                "Implementation inputs changed after the last checkbox sync; "
+                "run implementation_status.py sync",
+            )
+        counts = completion_counts(planned["plan"], synchronized)
+        if (
+            counts["code_complete"] != counts["code_total"]
+            or counts["verification_passed"]
+            != counts["verification_total"]
+        ):
+            raise CommandRejected(
+                "implementation-incomplete",
+                "Every planned code location and verification must be checked "
+                "before READY_TO_LAUNCH",
+            )
     change_id = _reference_id(
         state,
         "change",
@@ -5514,6 +5654,7 @@ def _verifier_decision_authority(
 
 
 def _status_command(
+    paths: ResearchPaths,
     state: dict[str, Any],
     package_id: str,
     payload: dict[str, Any],
@@ -5540,7 +5681,7 @@ def _status_command(
         desired_status == "READY_TO_LAUNCH"
         and current_status != desired_status
     ):
-        authority = _launch_review_authority(state, package_id, payload)
+        authority = _launch_review_authority(paths, state, package_id, payload)
         operations.append(
             {
                 "operation": "set",
@@ -5618,6 +5759,7 @@ def _status_command(
 
 
 def package_operations_for_target(
+    paths: ResearchPaths,
     state: dict[str, Any],
     package_id: str,
     operation: str,
@@ -5629,7 +5771,7 @@ def package_operations_for_target(
     timestamp = datetime.now(timezone.utc).date().isoformat()
     operations: list[dict[str, Any]]
     if operation == "update" and target == "status":
-        operations, _ = _status_command(state, package_id, payload)
+        operations, _ = _status_command(paths, state, package_id, payload)
         projected = {
             item["target"]: item["value"]
             for item in operations
@@ -5877,6 +6019,169 @@ def apply_package_operation(
             f"{target} is a read projection owned by {canonical_owner}; "
             "commit the canonical aggregate instead of mutating Package state",
         )
+    if target == "experiment-result-schema":
+        if operation != "update":
+            raise CommandRejected(
+                "result-schema-update-required",
+                "experiment-result-schema supports only update",
+            )
+        if set(payload) != {"scope_experiment_id", "resultSchema"}:
+            raise CommandRejected(
+                "result-schema-payload-invalid",
+                "experiment-result-schema requires only scope_experiment_id "
+                "and resultSchema",
+            )
+        aggregate_id = str(payload.get("scope_experiment_id") or "").strip()
+        if not aggregate_id:
+            raise CommandRejected(
+                "scope-experiment-id-required",
+                "experiment-result-schema requires scope_experiment_id",
+            )
+        try:
+            result_schema = validate_result_schema(payload["resultSchema"])
+        except ValueError as exc:
+            raise CommandRejected("result-schema-invalid", str(exc)) from exc
+        experiment = state["aggregates"]["experiment"].get(aggregate_id)
+        if not isinstance(experiment, dict):
+            raise CommandRejected(
+                "accepted-experiment-required",
+                f"accepted Experiment not found: {aggregate_id}",
+            )
+        experiment_expected_version = _version(
+            state,
+            "experiment",
+            aggregate_id,
+        )
+        package_version = _version(state, "package", package_id)
+        patch = {
+            "local_id": experiment.get("local_id"),
+            "package_id": package_id,
+            "status": experiment.get("status"),
+            "resultSchema": result_schema,
+        }
+        provenance = {
+            "id": aggregate_id,
+            "version": experiment.get("scope_version"),
+            "source": experiment.get("scope_source"),
+        }
+        selected_key = idempotency_key or (
+            f"package:{package_id}:result-schema:{aggregate_id}:"
+            f"{result_schema_sha256(result_schema)}"
+        )
+        prior = next(
+            (
+                event
+                for event in store.events()
+                if event.get("idempotency_key") == selected_key
+            ),
+            None,
+        )
+        if prior is not None:
+            bindings = prior.get("payload", {}).get(
+                "experiment_bindings",
+                [],
+            )
+            if (
+                prior.get("event_type") != "PackageExperimentBound"
+                or prior.get("aggregate_id") != package_id
+                or prior.get("payload", {}).get("target") != target
+                or len(bindings) != 1
+                or bindings[0].get("aggregate_id") != aggregate_id
+                or bindings[0].get("patch", {}).get("resultSchema")
+                != result_schema
+            ):
+                raise CommandConflict(
+                    "idempotency-conflict",
+                    "idempotency_key was already committed with different "
+                    "Result schema content",
+                )
+            return [copy.deepcopy(prior)]
+
+        binding_payload = {
+            "operation": operation,
+            "target": target,
+            "operations": [
+                {
+                    "operation": "upsert_by_id",
+                    "target": "sourceExperiments",
+                    "value": provenance,
+                },
+                {
+                    "operation": "set",
+                    "target": "lastUpdated",
+                    "value": datetime.now(timezone.utc).date().isoformat(),
+                },
+            ],
+            "experiment_bindings": [
+                {
+                    "aggregate_id": aggregate_id,
+                    "expected_version": experiment_expected_version,
+                    "aggregate_version": experiment_expected_version + 1,
+                    "patch": patch,
+                }
+            ],
+        }
+
+        def result_schema_policy(
+            before: dict[str, Any],
+            _command: dict[str, Any],
+        ) -> None:
+            package = _package(before, package_id)
+            if (
+                package.get("lifecycle") != "ACTIVE"
+                or package.get("phase") != "CONTEXT_LOADED"
+                or package.get("blocker") is not None
+            ):
+                raise CommandRejected(
+                    "result-schema-design-phase-required",
+                    "Result schema can be updated only for an unblocked ACTIVE "
+                    "Package in CONTEXT_LOADED",
+                )
+            current = before["aggregates"]["experiment"].get(aggregate_id)
+            if (
+                not isinstance(current, dict)
+                or current.get("package_id") != package_id
+                or current.get("scope_status") != "ACTIVE"
+                or current.get("scope_confirmation") != "CONFIRMED"
+            ):
+                raise CommandRejected(
+                    "result-schema-experiment-not-bound",
+                    f"Experiment is not an active confirmed binding: "
+                    f"{aggregate_id}",
+                )
+            if _version(before, "experiment", aggregate_id) != (
+                experiment_expected_version
+            ):
+                raise CommandConflict(
+                    "experiment-version-conflict",
+                    f"Experiment {aggregate_id} changed before Result schema "
+                    "update",
+                )
+            if any(
+                isinstance(run, dict)
+                and run.get("experiment_id") == aggregate_id
+                for run in before["aggregates"]["run"].values()
+            ):
+                raise CommandRejected(
+                    "result-schema-run-locked",
+                    "Result schema cannot change after the Experiment has a Run",
+                )
+
+        event = _commit(
+            store,
+            event_type="PackageExperimentBound",
+            aggregate_type="package",
+            aggregate_id=package_id,
+            payload=binding_payload,
+            actor=_actor(actor),
+            idempotency_key=selected_key,
+            expected_version=(
+                package_version if expected_version is None else expected_version
+            ),
+            entry_skill="research-op",
+            policy=result_schema_policy,
+        )
+        return [event]
     if target == "experiments-row":
         _package_policy(
             package_id=package_id,
@@ -6180,6 +6485,7 @@ def apply_package_operation(
         ]
 
     operations = package_operations_for_target(
+        paths,
         state,
         package_id,
         operation,
@@ -6189,7 +6495,12 @@ def apply_package_operation(
     causation_id: str | None = None
     semantic_policy = None
     if operation == "update" and target == "status":
-        _, status_authority = _status_command(state, package_id, payload)
+        _, status_authority = _status_command(
+            paths,
+            state,
+            package_id,
+            payload,
+        )
         if status_authority is not None:
             causation_event = _latest_aggregate_event(
                 store.events(),
@@ -6204,6 +6515,7 @@ def apply_package_operation(
             _command: dict[str, Any],
         ) -> None:
             fresh_operations = package_operations_for_target(
+                paths,
                 before,
                 package_id,
                 operation,
@@ -6211,6 +6523,7 @@ def apply_package_operation(
                 payload,
             )
             _, fresh_authority = _status_command(
+                paths,
                 before,
                 package_id,
                 payload,
@@ -6979,26 +7292,70 @@ def commit_change_operation(
     }
     if not payload.get("recorded_at"):
         record.pop("recorded_at", None)
-    owned_files = record.get("owned_files", record.get("ownedFiles"))
-    if not isinstance(owned_files, list) or not owned_files or not all(
-        isinstance(path, str) and path.strip() for path in owned_files
-    ):
-        raise CommandRejected(
-            "change-owned-files-required",
-            "Change requires a non-empty owned_files list",
+    plan = record.get("plan")
+    if isinstance(plan, dict):
+        current_plan = (
+            current.get("plan")
+            if isinstance(current, dict) and isinstance(current.get("plan"), dict)
+            else None
         )
-    record["owned_files"] = list(dict.fromkeys(owned_files))
+        try:
+            record["plan"] = normalize_plan(
+                paths.workspace,
+                paths.root,
+                plan,
+                previous_plan=current_plan,
+            )
+        except ImplementationPlanError as exc:
+            raise CommandRejected(
+                "change-plan-invalid",
+                str(exc),
+            ) from exc
+        if "plan" in payload and current_plan != record["plan"]:
+            record["observations"] = {}
+        if not str(record.get("title") or "").strip():
+            raise CommandRejected(
+                "change-title-required",
+                "A planned Change requires a concise title",
+            )
+        order = record.get("order")
+        if isinstance(order, bool) or not isinstance(order, int) or order < 1:
+            raise CommandRejected(
+                "change-order-required",
+                "A planned Change requires a positive integer order",
+            )
+        record["owned_files"] = list(
+            dict.fromkeys(
+                str(location["path"])
+                for location in record["plan"]["code_locations"]
+            )
+        )
+    else:
+        owned_files = record.get("owned_files", record.get("ownedFiles"))
+        if not isinstance(owned_files, list) or not owned_files or not all(
+            isinstance(path, str) and path.strip() for path in owned_files
+        ):
+            raise CommandRejected(
+                "change-owned-files-required",
+                "Legacy Change requires a non-empty owned_files list",
+            )
+        record["owned_files"] = list(dict.fromkeys(owned_files))
     review = record.get("review")
-    if not isinstance(review, dict):
+    if not isinstance(review, dict) and not isinstance(plan, dict):
         summary = str(record.get("summary") or "").strip()
         status = str(record.get("status") or "").strip()
         review = {"status": status, "summary": summary}
-    if not any(str(value or "").strip() for value in review.values()):
+    if isinstance(review, dict) and not any(
+        str(value or "").strip() for value in review.values()
+    ):
         raise CommandRejected(
             "change-review-required",
             "Change requires a non-empty review record",
         )
-    record["review"] = copy.deepcopy(review)
+    if isinstance(review, dict):
+        record["review"] = copy.deepcopy(review)
+    else:
+        record.pop("review", None)
     validating = record.get(
         "validating_experiments",
         record.get("validatingExperiments"),
@@ -7019,6 +7376,23 @@ def commit_change_operation(
     record["validating_experiments"] = list(
         dict.fromkeys(canonical_validating)
     )
+    if isinstance(record.get("plan"), dict):
+        validating_set = set(record["validating_experiments"])
+        for other_id, other in state["aggregates"]["change"].items():
+            if (
+                other_id == change_aggregate_id
+                or not isinstance(other, dict)
+                or other.get("package_id") != package_id
+                or not isinstance(other.get("plan"), dict)
+                or other.get("order") != record["order"]
+            ):
+                continue
+            other_validating = set(other.get("validating_experiments") or [])
+            if validating_set & other_validating:
+                raise CommandRejected(
+                    "change-order-conflict",
+                    "Planned Change order must be unique within each Experiment",
+                )
     version = _version(state, "change", change_aggregate_id)
     return _commit(store,
         event_type="AggregateUpserted",

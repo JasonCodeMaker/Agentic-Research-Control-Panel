@@ -7,40 +7,27 @@
   <link rel="stylesheet" href="../../assets/research.css">
 </head>
 <body data-page="plan" data-package-id="$package_id">
-  <a class="skip-link" href="#plan-invariants">Skip to main content</a>
+  <a class="skip-link" href="#experiments">Skip to main content</a>
   <div class="shell">
 
     <header class="masthead" data-section="masthead">
       <div class="eyebrow">plan</div>
-      <h1>Plan &mdash; $name</h1>
-      <p class="lead">The frozen Objective Integrity Contract and the pipeline timeline. Long-form detail (full metric formula, baseline ckpt paths, no-change boundary file list, seed plan) lives in <a href="docs/objective-contract.html">docs/objective-contract.html</a>.</p>
+      <h1>Plan: $name</h1>
+      <p class="lead">The ordered Experiment pipeline. Each node keeps its purpose, immutable configuration, gate, execution controls, dependency, and evidence destination together.</p>
       <div class="toolbar"><a class="pill" href="index.html">Overview</a><a class="pill" href="../../index.html">Dashboard</a><a class="pill" href="docs/objective-contract.html">Contract detail</a></div>
       <div class="status-strip" data-status-strip aria-label="Package status (T2)"></div>
     </header>
 
     <nav class="package-nav" data-package-nav aria-label="Package pages"></nav>
 
-    <section data-section="plan-invariants" id="plan-invariants" aria-label="Plan invariants">
-      <article class="module-card plan-invariants-card" data-card="plan-invariants">
-        <h2>Plan invariants</h2>
-        <p class="card-text">Five painted &le; 15-word lines from <code>objectiveContract</code> &mdash; the canonical T8 string-equal source. Each line drops detail into <a href="docs/objective-contract.html">docs/objective-contract.html</a>.</p>
-        <ol class="plan-invariants-list" data-list="plan-invariants" data-field="plan-invariants-list">
-          <li class="plan-invariant" data-field="hypothesis-one-line" data-invariant="hypothesis"><span class="invariant-k">Hypothesis</span> <span class="invariant-v">$hypothesis</span></li>
-          <li class="plan-invariant" data-field="metric-one-line" data-invariant="metric"><span class="invariant-k">Metric</span> <span class="invariant-v">$primary_metric</span></li>
-          <li class="plan-invariant" data-field="baseline-one-line" data-invariant="baseline"><span class="invariant-k">Baseline</span> <span class="invariant-v">$baseline</span></li>
-          <li class="plan-invariant" data-field="budget-one-line" data-invariant="budget"><span class="invariant-k">Budget</span> <span class="invariant-v">$budget</span></li>
-          <li class="plan-invariant" data-field="success-predicate" data-invariant="success-predicate"><span class="invariant-k">Success predicate</span> <span class="invariant-v">unmeasured</span></li>
-        </ol>
-      </article>
-    </section>
-
+    <span class="plan-legacy-anchor" id="plan-invariants" aria-hidden="true"></span>
     <section data-section="pipeline-timeline" id="experiments" aria-label="Pipeline timeline" data-fact-projection="plan">
       <article class="module-card pipeline-card" data-card="pipeline-timeline">
         <h2>Pipeline timeline</h2>
         <p class="pipeline-next-up" data-field="pipeline-next-up" aria-label="Next-up banner"><em>Next eligible: unmeasured</em></p>
-        <p class="card-text">Single home for per-experiment spec + status, painted from <code>experiments[]</code> in <code>data/research-packages.js</code>. Each node carries 5 spec fields (<code>id</code>, <code>purpose</code>, <code>after</code>, <code>output</code>, <code>gatePredicate</code>) + 3 painted indicators (<code>status</code> chip, <code>[&#9989; evidence]</code> chip when locked, <code>[&#128274; locked]</code> chip when frozen). Update inventory, not this slot. Hand-coded experiments tables are forbidden (lint rule <code>plan-static-experiments-table</code>).</p>
+        <p class="card-text">Experiments appear in planned execution order. Each node projects its own governed contract and keeps long-form protocol detail behind the linked configuration reference.</p>
         <ol class="pipeline-timeline" data-field="pipeline-timeline-list" aria-label="Pipeline phases"></ol>
-        <p class="card-text"><em>Brainstorm or single-phase packages:</em> leave <code>experiments[]</code> empty (or with one node) and the timeline renders an empty-state.</p>
+        <p class="card-text pipeline-empty-note">Packages without declared Experiments show an empty timeline.</p>
       </article>
     </section>
 

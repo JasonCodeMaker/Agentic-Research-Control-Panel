@@ -8,6 +8,11 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from lib.implementation import (
+    ImplementationPlanError,
+    validate_change_plan_record,
+)
+
 from .package_identity import PackageIdentityViolation
 from .package_identity import validate_record as validate_package_identity
 
@@ -483,14 +488,6 @@ def validate_aggregate_record(
         validating = record.get("validating_experiments")
         review = record.get("review")
         if (
-            not isinstance(owned_files, list)
-            or not owned_files
-            or not all(isinstance(path, str) and path.strip() for path in owned_files)
-        ):
-            raise SchemaViolation(
-                "change.owned_files must be a non-empty string list"
-            )
-        if (
             not isinstance(validating, list)
             or not validating
             or not all(
@@ -501,8 +498,27 @@ def validate_aggregate_record(
             raise SchemaViolation(
                 "change.validating_experiments must be a non-empty string list"
             )
-        if not isinstance(review, dict) or not review:
-            raise SchemaViolation("change.review must be a non-empty object")
+        if isinstance(record.get("plan"), dict):
+            try:
+                validate_change_plan_record(record)
+            except ImplementationPlanError as exc:
+                raise SchemaViolation(str(exc)) from exc
+        else:
+            if (
+                not isinstance(owned_files, list)
+                or not owned_files
+                or not all(
+                    isinstance(path, str) and path.strip()
+                    for path in owned_files
+                )
+            ):
+                raise SchemaViolation(
+                    "legacy change.owned_files must be a non-empty string list"
+                )
+            if not isinstance(review, dict) or not review:
+                raise SchemaViolation(
+                    "legacy change.review must be a non-empty object"
+                )
     if aggregate_type in {"decision", "learning"}:
         evidence = record.get("evidence")
         if not isinstance(evidence, list) or not evidence:

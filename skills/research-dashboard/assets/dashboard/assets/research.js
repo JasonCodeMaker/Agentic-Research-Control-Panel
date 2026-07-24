@@ -1798,8 +1798,8 @@
     var map = {
       "problem-tldr": pkg.problem,
       "motivation-tldr": pkg.motivation,
-      "objective-tldr": pkg.objective,
       "hypothesis-tldr": pkg.hypothesis,
+      "objective-tldr": pkg.objective,
     };
     Object.keys(map).forEach(function (field) {
       var v = map[field];
@@ -1857,26 +1857,6 @@
     if (slot) slot.textContent = v;
   }
 
-  function renderObjectiveContract() {
-    var card = document.querySelector('[data-card="plan-invariants"]');
-    if (!card) return;
-    var pkg = currentPackage();
-    if (!pkg || !pkg.objectiveContract) return;
-    var c = pkg.objectiveContract;
-    var map = {
-      "hypothesis-one-line": c.hypothesisOneLine,
-      "metric-one-line": c.metric,
-      "baseline-one-line": c.baseline,
-      "budget-one-line": c.budget,
-      "success-predicate": c.successPredicate,
-    };
-    Object.keys(map).forEach(function (field) {
-      if (map[field] == null) return;
-      var node = card.querySelector('[data-field="' + field + '"] .invariant-v');
-      if (node) node.textContent = String(map[field]);
-    });
-  }
-
   function computeNextUp(exps) {
     if (!Array.isArray(exps) || !exps.length) return { nextEligible: null, runningNow: null };
     var byId = {};
@@ -1911,332 +1891,408 @@
       host.innerHTML = '<li class="empty-state">No experiments in inventory.</li>';
       return;
     }
-    host.innerHTML = exps.map(function (e) {
-      var internalId = e && e.id ? String(e.id) : "unmeasured";
+    host.innerHTML = exps.map(function (e, index) {
       var id = experimentDisplayId(e);
       var label = e && e.label ? String(e.label) : "";
       var status = e && e.status ? String(e.status) : "QUEUED";
+      var statusKey = status.toLowerCase();
       var purpose = e && e.purpose ? String(e.purpose) : "unmeasured";
+      var config = e && e.config ? String(e.config) : "unmeasured";
+      var controlMode = e && e.controlMode ? String(e.controlMode) : "unmeasured";
       var output = e && e.output ? String(e.output) : "unmeasured";
       var gate = e && (e.gatePredicate || e.gate) ? String(e.gatePredicate || e.gate) : "unmeasured";
       var after = Array.isArray(e && e.after) ? e.after : [];
+      var afterText = after.length
+        ? after.map(function (ref) { return htmlEscape(experimentReferenceLabel(exps, ref)); }).join(", ")
+        : "<em>none</em>";
       var locked = e && e.lockedAt ? true : false;
       var hasEvidence = e && e.gateEvidence && e.gateEvidence.artifactPath;
       var docsAnchor = e && e.docsAnchor ? String(e.docsAnchor) : ("docs/pipeline.html#" + id.toLowerCase());
-      var threadLinks = ['<a href="tracker.html#todo">tracker</a>'];
+      var threadLinks = ['<a href="tracker.html#execution-checklist">tracker</a>'];
       if (!e || e.measures !== false) {
         threadLinks.push('<a href="results.html#result-slot-' + htmlEscape(id.toLowerCase()) + '">result</a>');
       }
       if (e && e.requiresCode) {
-        threadLinks.push('<a href="implementation.html#changes">impl</a>');
+        threadLinks.push('<a href="implementation.html#implementation-map">impl</a>');
       }
       if (e && (e.complex || e.docsAnchor)) {
         threadLinks.push('<a href="' + htmlEscape(docsAnchor) + '">docs</a>');
       }
       return [
-        '<li class="pipeline-node" data-phase-id="' + htmlEscape(id) + '" data-phase-status="' + htmlEscape(status) + '">',
+        '<li class="pipeline-node" data-phase-id="' + htmlEscape(id) + '" data-phase-status="' + htmlEscape(statusKey) + '">',
         '<div class="pipeline-node-head">',
         '<code class="phase-id">' + htmlEscape(id) + "</code>",
         label ? '<span class="pipeline-node-title">' + htmlEscape(label) + "</span>" : "",
-        '<span class="chip" data-status="' + htmlEscape(status) + '">' + htmlEscape(status) + "</span>",
-        hasEvidence ? '<span class="chip" title="' + htmlEscape(e.gateEvidence.artifactPath) + '">&#9989; evidence</span>' : "",
-        locked ? '<span class="chip">&#128274; locked</span>' : "",
+        '<span class="chip" data-status="' + htmlEscape(statusKey) + '">' + htmlEscape(status) + "</span>",
+        hasEvidence ? '<span class="chip" title="' + htmlEscape(e.gateEvidence.artifactPath) + '">evidence</span>' : "",
+        locked ? '<span class="chip">locked</span>' : "",
         "</div>",
-        '<dl class="pipeline-node-fields">',
-        '<dt>Purpose</dt><dd>' + htmlEscape(purpose) + "</dd>",
-        '<dt>After</dt><dd>' + (after.length ? after.map(function (ref) { return htmlEscape(experimentReferenceLabel(exps, ref)); }).join(", ") : "<em>none</em>") + "</dd>",
+        '<div class="pipeline-node-sequence">',
+        '<span>Planned order <strong>' + (index + 1) + " of " + exps.length + "</strong></span>",
+        '<span><span class="pipeline-sequence-k">After</span> ' + afterText + "</span>",
+        "</div>",
+        '<section class="pipeline-node-purpose" aria-label="Experiment purpose">',
+        '<div class="pipeline-node-section-label">Purpose</div>',
+        "<p>" + htmlEscape(purpose) + "</p>",
+        "</section>",
+        '<section class="pipeline-node-contract" aria-label="Experiment evaluation contract">',
+        '<div class="pipeline-node-section-label">Evaluation contract</div>',
+        '<dl class="pipeline-node-fields pipeline-contract-fields">',
+        '<dt>Config / protocol</dt><dd><code>' + htmlEscape(config) + "</code></dd>",
+        '<dt>Gate</dt><dd class="pipeline-gate">' + htmlEscape(gate) + "</dd>",
+        "</dl>",
+        '<a class="pipeline-node-doc" href="' + htmlEscape(docsAnchor) + '">Contract detail: ' + htmlEscape(docsAnchor) + "</a>",
+        "</section>",
+        '<dl class="pipeline-node-fields pipeline-operation-fields">',
+        '<dt>Control mode</dt><dd>' + htmlEscape(controlMode) + "</dd>",
         '<dt>Output</dt><dd><code>' + htmlEscape(output) + "</code></dd>",
-        '<dt>Gate</dt><dd>' + htmlEscape(gate) + "</dd>",
         "</dl>",
         '<nav class="pipeline-thread-links" aria-label="Task thread links">' + threadLinks.join("") + "</nav>",
-        '<a class="pipeline-node-doc" href="' + htmlEscape(docsAnchor) + '">' + htmlEscape(docsAnchor) + "</a>",
         "</li>",
       ].join("");
     }).join("");
   }
 
-  function renderImplementationPhaseStrip() {
-    var host = document.querySelector('[data-card="phase-strip"] [data-list="phase-strip"]');
+  function implementationDomId(value) {
+    return String(value || "implementation")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "implementation";
+  }
+
+  function implementationMatchesExperiment(change, experiment) {
+    var references = Array.isArray(change && change.validatingExperiments)
+      ? change.validatingExperiments.map(String)
+      : [];
+    var identities = [
+      experiment && experiment.id,
+      experiment && experiment.local_id,
+      experiment && experiment.localId,
+      experimentDisplayId(experiment),
+    ].filter(Boolean).map(String);
+    return references.some(function (reference) {
+      return identities.indexOf(reference) !== -1;
+    });
+  }
+
+  function implementationCheckbox(kind, state, label) {
+    var passed = String(state || "PENDING").toUpperCase() === "PASS";
+    var aria = passed ? "Complete: " : "Incomplete: ";
+    return '<input class="completion-check" data-completion-kind="' +
+      htmlEscape(kind) + '" type="checkbox"' + (passed ? " checked" : "") +
+      ' disabled aria-label="' + htmlEscape(aria + label) + '">';
+  }
+
+  function implementationChangeHtml(change, index) {
+    var id = String(change && change.id || "change-" + (index + 1));
+    var domId = implementationDomId(id);
+    var title = String(change && change.title || "Implementation change");
+    var locations = Array.isArray(change && change.codeLocations)
+      ? change.codeLocations
+      : [];
+    var verifications = Array.isArray(change && change.verifications)
+      ? change.verifications
+      : [];
+    var locationHtml = locations.map(function (location) {
+      var action = String(location && location.action || "REUSE").toLowerCase();
+      var path = String(location && (location.displayPath || location.path) || "unmeasured");
+      var state = String(location && location.state || "PENDING").toUpperCase();
+      var reason = String(location && location.reason || "");
+      var showReason = state === "FAIL" || state === "STALE" ||
+        (state !== "PASS" && action === "reuse") ||
+        reason.indexOf("does not resolve") !== -1;
+      var note = showReason && reason
+        ? '<span class="completion-note">' + htmlEscape(reason) + "</span>"
+        : "";
+      return [
+        "<dt>",
+        implementationCheckbox("code", state, path),
+        '<span class="path-action" data-action="' + htmlEscape(action) + '">' + htmlEscape(action) + "</span>",
+        "</dt>",
+        "<dd><code>" + htmlEscape(path) + "</code>" + note + "</dd>",
+      ].join("");
+    }).join("");
+    var verificationHtml = verifications.map(function (verification) {
+      var label = String(verification && verification.label || "Verification");
+      var state = String(verification && verification.state || "PENDING").toUpperCase();
+      var reason = String(verification && verification.reason || "");
+      var note = (state === "FAIL" || state === "STALE") && reason
+        ? '<span class="completion-note">' + htmlEscape(reason) + "</span>"
+        : "";
+      return "<li>" + implementationCheckbox("verification", state, label) +
+        "<span>" + htmlEscape(label) + note + "</span></li>";
+    }).join("");
+    return [
+      '<li class="implementation-change" id="' + htmlEscape(domId) + '">',
+      '<header class="implementation-change-head">',
+      '<span class="implementation-change-id">Change ' + String(index + 1).padStart(2, "0") + "</span>",
+      "<h4>" + htmlEscape(title) + "</h4>",
+      "</header>",
+      '<div class="implementation-change-grid">',
+      '<section class="implementation-change-section implementation-locations" aria-labelledby="' + htmlEscape(domId) + '-locations">',
+      '<span class="pipeline-node-section-label" id="' + htmlEscape(domId) + '-locations">Code locations</span>',
+      '<dl class="implementation-paths">' + (locationHtml || "<dd><em>No code locations declared.</em></dd>") + "</dl>",
+      "</section>",
+      '<section class="implementation-change-section" aria-labelledby="' + htmlEscape(domId) + '-change">',
+      '<span class="pipeline-node-section-label" id="' + htmlEscape(domId) + '-change">How it changes</span>',
+      "<p>" + htmlEscape(change && change.howItChanges || "unmeasured") + "</p>",
+      "</section>",
+      '<section class="implementation-change-section" aria-labelledby="' + htmlEscape(domId) + '-verification">',
+      '<span class="pipeline-node-section-label" id="' + htmlEscape(domId) + '-verification">Verification</span>',
+      '<ol class="implementation-checks">' + (verificationHtml || "<li><em>No verifications declared.</em></li>") + "</ol>",
+      "</section>",
+      "</div>",
+      "</li>",
+    ].join("");
+  }
+
+  function renderImplementationMap() {
+    var host = document.querySelector('[data-list="implementation-experiments"]');
     if (!host) return;
     var pkg = currentPackage();
     var exps = pkg && Array.isArray(pkg.experiments) ? pkg.experiments : [];
-    var changes = pkg && pkg.implementation && Array.isArray(pkg.implementation.changes) ? pkg.implementation.changes : [];
+    var changes = pkg && pkg.implementation && Array.isArray(pkg.implementation.changes)
+      ? pkg.implementation.changes
+      : [];
     if (!exps.length) {
-      host.innerHTML = '<li class="empty-state">No experiments in inventory.</li>';
+      host.innerHTML = '<li class="empty-state">No Experiments are declared.</li>';
       return;
     }
-    var byPhase = {};
-    changes.forEach(function (c, idx) {
-      var ids = Array.isArray(c && c.phaseIds) ? c.phaseIds : [];
-      ids.forEach(function (p) {
-        if (!byPhase[p]) byPhase[p] = [];
-        byPhase[p].push(idx + 1);
+    host.innerHTML = exps.map(function (experiment, experimentIndex) {
+      var id = experimentDisplayId(experiment);
+      var status = String(experiment && experiment.status || "PLANNED");
+      var statusKey = status.toLowerCase();
+      var sourceId = String(experiment && experiment.id || id);
+      var sourceSlug = sourceId.split("/").pop().replace(/^e\d+-/, "");
+      var fallbackTitle = sourceSlug.replace(/-/g, " ").replace(/^./, function (letter) {
+        return letter.toUpperCase();
       });
-    });
-    host.innerHTML = exps.map(function (e) {
-      var internalId = e && e.id ? String(e.id) : "unmeasured";
-      var id = experimentDisplayId(e);
-      var status = e && e.status ? String(e.status) : "QUEUED";
-      var nums = byPhase[internalId] || byPhase[id] || [];
-      var reuse = nums.length === 0 ? "true" : "false";
-      var nlabel = nums.length ? nums.join("+") : "&mdash;";
-      return [
-        '<li class="phase-strip-cell"',
-        ' data-phase-id="' + htmlEscape(id) + '"',
-        ' data-phase-status="' + htmlEscape(status) + '"',
-        ' data-reuse-only="' + reuse + '">',
-        '<code>' + htmlEscape(id) + "</code>",
-        '<span class="phase-strip-changes">' + nlabel + "</span>",
-        '<span class="chip" data-status="' + htmlEscape(status) + '">' + htmlEscape(status) + "</span>",
-        "</li>",
-      ].join("");
-    }).join("");
-  }
-
-  var PSEUDO_TOKEN_RE = /(#[^\n]*)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|(\b\d+(?:\.\d+)?\b)|(\b(?:if|else|elif|for|while|def|return|import|from|as|in|with|class|try|except|finally|raise|pass|break|continue|lambda|yield|and|or|not|True|False|None)\b)|(--?[A-Za-z][\w-]*)/g;
-
-  function tokenizePseudoCode(src) {
-    return String(src == null ? "" : src).replace(/[&<>]/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c];
-    }).replace(PSEUDO_TOKEN_RE, function (_, comment, str, num, kw, flag) {
-      if (comment) return '<span class="tok-comment">' + comment + "</span>";
-      if (str)     return '<span class="tok-string">' + str + "</span>";
-      if (num)     return '<span class="tok-number">' + num + "</span>";
-      if (kw)      return '<span class="tok-keyword">' + kw + "</span>";
-      if (flag)    return '<span class="tok-flag">' + flag + "</span>";
-      return "";
-    });
-  }
-
-  function rollupTestState(tests) {
-    // Change-block test.state input values use the EXPERIMENT_VERDICT vocabulary
-    // (PASS/FAIL/NOT_APPLICABLE); "pending" is a test-not-yet-run state.
-    if (!Array.isArray(tests) || !tests.length) return { state: "pending", text: "0 tests" };
-    var pass = 0, fail = 0, pending = 0, na = 0;
-    tests.forEach(function (t) {
-      var s = t && t.state ? String(t.state).toUpperCase() : "PENDING";
-      if (s === "PASS") pass++;
-      else if (s === "FAIL") fail++;
-      else if (s === "NOT_APPLICABLE") na++;
-      else pending++;
-    });
-    var state = fail ? "fail" : (pending ? (pass ? "partial" : "pending") : (pass ? "pass" : "pending"));
-    var icon = state === "pass" ? "&#128994;" : state === "fail" ? "&#128308;" : state === "partial" ? "&#128992;" : "&#9675;";
-    return { state: state, text: icon + " " + pass + " pass &middot; " + pending + " pending" + (fail ? " &middot; " + fail + " fail" : "") };
-  }
-
-  function changeTestsTodoHtml(tests) {
-    if (!Array.isArray(tests) || !tests.length) {
-      return '<li class="test-row" data-state="PENDING"><span class="test-state-icon">&#9675;</span> <em>no tests declared</em></li>';
-    }
-    var icons = { PASS: "&#9989;", FAIL: "&#10060;", PENDING: "&#9675;", NOT_APPLICABLE: "&oslash;" };
-    return tests.map(function (t) {
-      var s = t && t.state ? String(t.state).toUpperCase() : "PENDING";
-      var id = t && t.testId ? String(t.testId) : "test-id";
-      var note = t && t.note ? String(t.note) : "";
-      var ev = t && t.evidencePath ? String(t.evidencePath) : "";
-      return '<li class="test-row" data-state="' + htmlEscape(s) + '">' +
-             '<span class="test-state-icon">' + (icons[s] || icons.PENDING) + "</span> " +
-             '<code>' + htmlEscape(id) + "</code>" +
-             (note ? " &mdash; " + htmlEscape(note) : "") +
-             (ev ? ' &middot; <code>' + htmlEscape(ev) + "</code>" : "") +
-             "</li>";
-    }).join("");
-  }
-
-  function renderImplementationChanges() {
-    var host = document.querySelector('[data-list="change-blocks"]');
-    if (!host) return;
-    var pkg = currentPackage();
-    var changes = pkg && pkg.implementation && Array.isArray(pkg.implementation.changes) ? pkg.implementation.changes : [];
-    var owned = [];
-    changes.forEach(function (change) {
-      var anchors = Array.isArray(change && change.codeAnchors) ? change.codeAnchors : [];
-      anchors.forEach(function (anchor) {
-        anchor = String(anchor || "");
-        if (anchor && owned.indexOf(anchor) === -1) owned.push(anchor);
+      var title = String(experiment && experiment.label || fallbackTitle || ("Experiment " + id));
+      var purpose = String(experiment && experiment.purpose || "unmeasured");
+      var docsAnchor = String(
+        experiment && experiment.docsAnchor ||
+        ("docs/pipeline.html#" + id.toLowerCase())
+      );
+      var experimentChanges = changes.filter(function (change) {
+        return implementationMatchesExperiment(change, experiment);
       });
-    });
-    var ownedHost = document.querySelector('[data-field="owned-files-list"]');
-    if (ownedHost && owned.length) {
-      ownedHost.innerHTML = owned.map(function (path) {
-        return "<li><code>" + htmlEscape(path) + "</code></li>";
-      }).join("");
-    }
-    var diffSummary = document.querySelector('[data-field="diff-summary"]');
-    if (diffSummary && changes.length) {
-      diffSummary.textContent = changes.length + " governed change(s), " +
-        owned.length + " owned file(s).";
-    }
-    if (!changes.length) return;
-    var h2 = host.querySelector("h2.section-h2");
-    host.innerHTML = (h2 ? h2.outerHTML : "<h2 class=\"section-h2\">Change blocks</h2>") + changes.map(function (c, i) {
-      var id = c && c.id ? String(c.id) : "change-" + (i + 1);
-      var title = c && c.title ? String(c.title) : "unmeasured";
-      var critical = c && c.critical === true;
-      var reason = c && c.criticalReason ? String(c.criticalReason) : "wiring";
-      var summary = c && (critical ? c.blockSummary : c.oneLineSummary) || "unmeasured";
-      var serves = Array.isArray(c && c.phaseIds) ? c.phaseIds : [];
-      var rollup = rollupTestState(c && c.tests);
-      var locked = c && c.lockedAt ? true : false;
-      var pseudo = c && c.pseudoCode ? String(c.pseudoCode) : "";
-      var firstLine = pseudo.split("\n")[0] || "";
-      var fnameMatch = firstLine.match(/^#\s*([\w./-]+\.[a-z]+)/);
-      var fname = fnameMatch ? fnameMatch[1] : "code";
-      return [
-        '<article class="change-block module-card" data-change-id="' + htmlEscape(id) + '" data-critical="' + (critical ? "true" : "false") + '" data-critical-reason="' + htmlEscape(reason) + '">',
-        '<header class="change-block-header">',
-        "<h3>" + htmlEscape(title) + "</h3>",
-        '<div class="change-chips">',
-        '<span class="chip change-chip change-chip-critical" data-critical="' + (critical ? "true" : "false") + '">' + (critical ? "critical &middot; " + htmlEscape(reason) : "wiring") + "</span>",
-        '<span class="chip change-chip change-chip-rollup" data-rollup="' + htmlEscape(rollup.state) + '">' + rollup.text + "</span>",
-        locked ? '<span class="chip change-chip change-chip-lock">&#128274; locked</span>' : "",
-        "</div>",
-        "</header>",
-        '<p class="change-serves"><strong>serves:</strong> ' + (serves.length ? serves.map(function (p) {
-          return '<a href="plan.html#' + htmlEscape(p) + '"><code>' + htmlEscape(p) + "</code></a>";
-        }).join(" &middot; ") : "<em>no phases declared</em>") + "</p>",
-        '<p class="change-summary">' + htmlEscape(summary) + "</p>",
-        pseudo ? ([
-          '<details class="change-pseudo-details"><summary>Pseudo-code</summary>',
-          '<div class="pseudo-block">',
-          '<header class="pseudo-block-header">',
-          '<span class="pseudo-dot pseudo-dot--r"></span>',
-          '<span class="pseudo-dot pseudo-dot--y"></span>',
-          '<span class="pseudo-dot pseudo-dot--g"></span>',
-          '<span class="pseudo-filename">' + htmlEscape(fname) + "</span>",
-          "</header>",
-          '<pre class="pseudo-body"><code>' + tokenizePseudoCode(pseudo) + "</code></pre>",
-          "</div></details>",
-        ].join("")) : "",
-        '<details class="change-tests-details"><summary>Test todo</summary>',
-        '<ol class="test-rows">' + changeTestsTodoHtml(c && c.tests) + "</ol>",
-        "</details>",
-        "</article>",
-      ].join("");
-    }).join("");
-  }
-
-  function renderImplementationAdjudication() {
-    var card = document.querySelector('[data-card="adjudication"]');
-    if (!card) return;
-    var pkg = currentPackage();
-    var a = pkg && pkg.implementation && pkg.implementation.adjudication;
-    if (!a) return;
-    var map = {
-      "main-decision": a.decision,
-      "evidence-used": a.evidenceUsed,
-      "user-ack": a.userAck,
-    };
-    Object.keys(map).forEach(function (field) {
-      if (map[field] == null) return;
-      var node = card.querySelector('[data-field="' + field + '"]');
-      if (node) node.textContent = String(map[field]);
-    });
-    if (a.ackLockedAt) {
-      var t = card.querySelector('[data-field="ack-locked-at"]');
-      if (t) { t.textContent = String(a.ackLockedAt); t.setAttribute("datetime", String(a.ackLockedAt)); }
-      card.setAttribute("data-ack-value", String(a.ackLockedAt));
-    }
-  }
-
-  function renderImplementationAgentDetail() {
-    var host = document.querySelector('[data-list="changes-agent-detail"]');
-    if (!host) return;
-    var pkg = currentPackage();
-    var changes = pkg && pkg.implementation && Array.isArray(pkg.implementation.changes) ? pkg.implementation.changes : [];
-    if (!changes.length) return;
-    host.innerHTML = changes.map(function (c, i) {
-      var id = c && c.id ? String(c.id) : "change-" + (i + 1);
-      var anchors = Array.isArray(c && c.codeAnchors) ? c.codeAnchors : [];
-      return [
-        "<li>",
-        '<strong data-field="change-id">' + htmlEscape(id) + "</strong>",
-        '<div class="kv-grid">',
-        '<div class="k">Code anchors</div><div>' + (anchors.length ? anchors.map(function (a) { return "<code>" + htmlEscape(a) + "</code>"; }).join(" &middot; ") : "<em>none</em>") + "</div>",
-        '<div class="k">Expected sign</div><div>' + htmlEscape(c && c.expectedSign || "unmeasured") + "</div>",
-        '<div class="k">Magnitude band</div><div>' + htmlEscape(c && c.magnitudeBand || "unmeasured") + "</div>",
-        '<div class="k">Validating exps</div><div>' + htmlEscape(c && c.validatingExp || "unmeasured") + "</div>",
-        "</div>",
-        "</li>",
-      ].join("");
-    }).join("");
-  }
-
-  function renderDirectoryAtlas() {
-    var host = document.querySelector('[data-list="directory-atlas"]');
-    if (!host) return;
-    var pkg = currentPackage();
-    var dirs = pkg && pkg.tracker && Array.isArray(pkg.tracker.experimentDirectories) ? pkg.tracker.experimentDirectories : [];
-    if (!dirs.length) return;
-    var byPhase = {};
-    dirs.forEach(function (d) {
-      var p = d && d.phase ? String(d.phase) : "unphased";
-      if (!byPhase[p]) byPhase[p] = [];
-      byPhase[p].push(d);
-    });
-    var html = "";
-    Object.keys(byPhase).forEach(function (phase) {
-      html += '<section class="phase-group" data-phase="' + htmlEscape(phase) + '">';
-      html += "<h3>" + htmlEscape(phase) + "</h3>";
-      byPhase[phase].forEach(function (d) {
-        var paths = (d && d.paths) || {};
-        var state = d && d.state ? String(d.state) : "QUEUED";
-        html += '<div class="exp-block" data-exp-id="' + htmlEscape(d.expId || "unmeasured") + '" data-state="' + htmlEscape(state) + '">';
-        html += '<header class="exp-block-header"><code>' + htmlEscape(d.expId || "unmeasured") + '</code><span class="chip exp-state-chip">' + htmlEscape(state) + "</span></header>";
-        html += '<dl class="path-lines">';
-        ["runtimeRoot", "logs", "outputs", "ckpts", "launcher"].forEach(function (k) {
-          var label = k === "runtimeRoot" ? "runtime root" : k;
-          html += "<dt>" + label + "</dt><dd><code>" + htmlEscape(paths[k] || "unmeasured") + "</code></dd>";
+      var codeTotal = 0, codeComplete = 0;
+      var verificationTotal = 0, verificationPassed = 0;
+      experimentChanges.forEach(function (change) {
+        (change.codeLocations || []).forEach(function (location) {
+          codeTotal++;
+          if (String(location && location.state || "").toUpperCase() === "PASS") codeComplete++;
         });
-        html += "</dl></div>";
+        (change.verifications || []).forEach(function (verification) {
+          verificationTotal++;
+          if (String(verification && verification.state || "").toUpperCase() === "PASS") verificationPassed++;
+        });
       });
-      html += "</section>";
-    });
-    host.innerHTML = html;
+      var current = codeComplete + " of " + codeTotal +
+        " planned code locations currently satisfy their declared action.";
+      return [
+        '<li class="pipeline-node implementation-experiment" id="' + htmlEscape(implementationDomId(id)) + '" data-phase-status="' + htmlEscape(statusKey) + '">',
+        '<header class="pipeline-node-head">',
+        '<code class="phase-id">' + htmlEscape(id) + "</code>",
+        '<h3 class="pipeline-node-title">' + htmlEscape(title) + "</h3>",
+        '<span class="chip" data-status="' + htmlEscape(statusKey) + '">' + htmlEscape(status) + "</span>",
+        "</header>",
+        '<div class="pipeline-node-sequence">',
+        '<span><span class="pipeline-sequence-k">Planned order</span><strong>' + (experimentIndex + 1) + " of " + exps.length + "</strong></span>",
+        '<span><span class="pipeline-sequence-k">Code</span><strong>' + codeComplete + " of " + codeTotal + " complete</strong></span>",
+        '<span><span class="pipeline-sequence-k">Verification</span><strong>' + verificationPassed + " of " + verificationTotal + " passed</strong></span>",
+        "</div>",
+        '<div class="pipeline-node-purpose"><span class="pipeline-node-section-label">Purpose</span><p>' + htmlEscape(purpose) + "</p></div>",
+        '<a class="pipeline-node-doc" href="' + htmlEscape(docsAnchor) + '">Contract detail: ' + htmlEscape(id) + "</a>",
+        '<div class="pipeline-node-contract implementation-current"><div class="pipeline-node-section-label">Current codebase</div><p>' + htmlEscape(current) + "</p></div>",
+        experimentChanges.length
+          ? '<ol class="implementation-change-list" aria-label="' + htmlEscape(id) + ' code changes">' +
+            experimentChanges.map(implementationChangeHtml).join("") + "</ol>"
+          : '<p class="implementation-empty">No implementation Changes are declared for this Experiment.</p>',
+        "</li>",
+      ].join("");
+    }).join("");
   }
 
-  function renderChosenRoutePanel() {
-    var card = document.querySelector('[data-card="chosen-route"]');
-    if (!card) return;
+  function trackerTaskHtml(task, experimentId, index) {
+    var state = String(task && task.state || "PENDING").toUpperCase();
+    var complete = Boolean(task && task.complete);
+    var title = String(task && task.title || "Execution task");
+    var inputId = "tracker-" + implementationDomId(
+      experimentId + "-" + (task && task.id || index)
+    );
+    var stateLabel = state === "COMPLETE"
+      ? "Done"
+      : state === "CURRENT"
+        ? "Current"
+        : state === "RUNNING"
+          ? "Running"
+          : "Pending";
+    return [
+      '<li class="tracker-task" data-task-kind="' +
+        htmlEscape(task && task.kind || "task") + '" data-task-state="' +
+        htmlEscape(state.toLowerCase()) + '">',
+      '<input class="completion-check" id="' + htmlEscape(inputId) +
+        '" type="checkbox"' + (complete ? " checked" : "") +
+        ' disabled aria-label="' + htmlEscape(
+          (complete ? "Complete: " : "Incomplete: ") + title
+        ) + '">',
+      '<div class="tracker-task-body">',
+      '<div class="tracker-task-title-row">',
+      '<label for="' + htmlEscape(inputId) + '">' + htmlEscape(title) + "</label>",
+      '<span class="tracker-task-state">' + htmlEscape(stateLabel) + "</span>",
+      "</div>",
+      '<p class="tracker-task-detail">' +
+        htmlEscape(task && task.detail || "") +
+        (task && task.href
+          ? ' <a href="' + htmlEscape(task.href) + '">' +
+            htmlEscape(task.linkLabel || "Open source") + "</a>"
+          : "") +
+        "</p>",
+      "</div>",
+      "</li>",
+    ].join("");
+  }
+
+  function trackerExperimentHtml(experiment, index, total) {
+    var localId = String(experiment && experiment.localId || "P" + index);
+    var state = String(experiment && experiment.trackerState || "PENDING");
+    var tasks = Array.isArray(experiment && experiment.tasks)
+      ? experiment.tasks
+      : [];
+    return [
+      '<li class="pipeline-node tracker-experiment" id="tracker-' +
+        htmlEscape(implementationDomId(localId)) + '" data-phase-status="' +
+        htmlEscape(state.toLowerCase()) + '">',
+      '<header class="pipeline-node-head">',
+      '<code class="phase-id">' + htmlEscape(localId) + "</code>",
+      '<h3 class="pipeline-node-title">' +
+        htmlEscape(experiment && experiment.title || "Experiment") + "</h3>",
+      '<span class="tracker-experiment-state" data-tracker-state="' +
+        htmlEscape(state.toLowerCase()) + '">' +
+        htmlEscape(state === "COMPLETE" ? "Complete" : state === "CURRENT" ? "Current" : "Pending") +
+        "</span>",
+      "</header>",
+      '<div class="pipeline-node-sequence">',
+      '<span><span class="pipeline-sequence-k">Planned order</span><strong>' +
+        (index + 1) + " of " + total + "</strong></span>",
+      '<span><span class="pipeline-sequence-k">Checklist</span><strong>' +
+        Number(experiment && experiment.completeTasks || 0) + " of " +
+        Number(experiment && experiment.totalTasks || tasks.length) +
+        " complete</strong></span>",
+      "</div>",
+      experiment && experiment.purpose
+        ? '<div class="pipeline-node-purpose"><span class="pipeline-node-section-label">Purpose</span><p>' +
+          htmlEscape(experiment.purpose) + "</p></div>"
+        : "",
+      '<ol class="tracker-task-list" aria-label="' + htmlEscape(localId) +
+        ' execution tasks">' +
+        tasks.map(function (task, taskIndex) {
+          return trackerTaskHtml(task, localId, taskIndex);
+        }).join("") +
+        "</ol>",
+      "</li>",
+    ].join("");
+  }
+
+  function trackerPathRows(items) {
+    return (Array.isArray(items) ? items : []).map(function (item) {
+      return "<dt>" + htmlEscape(item && item.label || "Path") +
+        "</dt><dd><code>" + htmlEscape(item && item.path || "unmeasured") +
+        "</code></dd>";
+    }).join("");
+  }
+
+  function trackerRunHtml(run) {
+    var runId = String(run && run.runId || "run");
+    var status = String(run && run.status || "UNKNOWN");
+    return [
+      '<details class="tracker-run"' + (run && run.latest ? " open" : "") + ">",
+      "<summary>",
+      '<span class="tracker-run-summary"><code>' + htmlEscape(runId) +
+        '</code><span data-run-status="' + htmlEscape(status.toLowerCase()) +
+        '">' + htmlEscape(status) + "</span></span>",
+      "</summary>",
+      '<p class="tracker-run-root"><span>Run directory</span><code>' +
+        htmlEscape(run && run.root || "unmeasured") + "</code></p>",
+      '<dl class="tracker-path-list tracker-run-files">' +
+        trackerPathRows(run && run.files) + "</dl>",
+      "</details>",
+    ].join("");
+  }
+
+  function trackerArtifactHtml(experiment) {
+    var localId = String(experiment && experiment.localId || "Experiment");
+    var artifacts = experiment && experiment.artifacts || {};
+    var planned = Array.isArray(artifacts.planned) ? artifacts.planned : [];
+    var runs = Array.isArray(artifacts.runs) ? artifacts.runs : [];
+    return [
+      '<section class="tracker-artifact-experiment" id="artifacts-' +
+        htmlEscape(implementationDomId(localId)) + '">',
+      '<header class="tracker-artifact-head">',
+      '<code class="phase-id">' + htmlEscape(localId) + "</code>",
+      "<h3>" + htmlEscape(experiment && experiment.title || "Artifact locations") + "</h3>",
+      '<span class="tracker-run-count">' + runs.length +
+        (runs.length === 1 ? " Run" : " Runs") + "</span>",
+      "</header>",
+      '<section class="tracker-planned-paths" aria-label="' +
+        htmlEscape(localId) + ' planned destinations">',
+      '<span class="pipeline-node-section-label">Planned destinations</span>',
+      '<dl class="tracker-path-list">' + trackerPathRows(planned) + "</dl>",
+      "</section>",
+      runs.length
+        ? '<div class="tracker-run-list">' + runs.map(trackerRunHtml).join("") + "</div>"
+        : '<p class="tracker-no-run"><strong>No Run has started.</strong> Actual Run files will appear here after launch.</p>',
+      "</section>",
+    ].join("");
+  }
+
+  function renderTracker() {
+    var checklist = document.querySelector('[data-list="tracker-experiments"]');
+    var artifactsHost = document.querySelector('[data-list="tracker-artifacts"]');
+    if (!checklist && !artifactsHost) return;
     var pkg = currentPackage();
-    var cr = pkg && pkg.chosenRoute;
-    if (!cr) return;
-    var map = {
-      "chosen-route": cr.route,
-      "chosen-route-reason": cr.reason,
-      "user-ack": cr.userAck,
-    };
-    Object.keys(map).forEach(function (field) {
-      if (map[field] == null) return;
-      var node = card.querySelector('[data-field="' + field + '"]');
-      if (node) node.textContent = String(map[field]);
-    });
-    if (cr.evidencePath) {
-      var ep = card.querySelector('[data-artifact="chosen-route-evidence"]');
-      if (ep) ep.textContent = String(cr.evidencePath);
+    var tracker = pkg && pkg.tracker || {};
+    var experiments = Array.isArray(tracker.experiments)
+      ? tracker.experiments
+      : [];
+    if (checklist) {
+      checklist.innerHTML = experiments.length
+        ? experiments.map(function (experiment, index) {
+            return trackerExperimentHtml(experiment, index, experiments.length);
+          }).join("")
+        : '<li class="empty-state">No Experiments are attached to this Package.</li>';
     }
-    // Resume Block headline cell sync.
-    var rbCell = document.querySelector('[data-card="resume-block"] [data-field="next-action"]');
-    if (rbCell && cr.route) {
-      rbCell.innerHTML = "<b>Chosen route:</b> <code>" + htmlEscape(cr.route) + "</code> &mdash; " +
-                        htmlEscape(cr.reason || "unmeasured") +
-                        '. Full panel <a href="#chosen-route">below</a>.';
+    if (artifactsHost) {
+      artifactsHost.innerHTML = experiments.length
+        ? experiments.map(trackerArtifactHtml).join("")
+        : '<p class="empty-state">No Experiment artifact locations are available.</p>';
     }
-    // Considered routes table.
-    var considered = Array.isArray(pkg.consideredRoutes) ? pkg.consideredRoutes : [];
-    if (considered.length) {
-      var tbody = document.querySelector('[data-table-body="considered-routes"]');
-      if (tbody) {
-        tbody.innerHTML = considered.map(function (r) {
-          return "<tr>" +
-                 '<td data-route="' + htmlEscape(r.route || "") + '"><code>' + htmlEscape(r.route || "unmeasured") + "</code></td>" +
-                 "<td>" + htmlEscape(r.considered || "unmeasured") + "</td>" +
-                 "<td>" + htmlEscape(r.reason || "unmeasured") + "</td>" +
-                 '<td><code>' + htmlEscape(r.evidencePath || "unmeasured") + "</code></td>" +
-                 "</tr>";
-        }).join("");
-      }
+    var count = document.querySelector('[data-field="tracker-count"]');
+    if (count) {
+      count.textContent = Number(tracker.completeTasks || 0) + " of " +
+        Number(tracker.totalTasks || 0) + " complete";
+    }
+    var current = document.querySelector('[data-field="tracker-current-task"]');
+    if (current) {
+      var currentTask = null;
+      experiments.some(function (experiment) {
+        return (experiment.tasks || []).some(function (task) {
+          if (task.id !== tracker.currentTaskId) return false;
+          currentTask = task;
+          return true;
+        });
+      });
+      current.innerHTML = '<span class="tracker-current-label">Current task</span><strong>' +
+        htmlEscape(
+          currentTask && currentTask.title ||
+          tracker.currentTaskTitle ||
+          "Package checklist complete"
+        ) + "</strong>" +
+        (currentTask && currentTask.href
+          ? '<a href="' + htmlEscape(currentTask.href) + '">' +
+            htmlEscape(currentTask.linkLabel || "Open source") + "</a>"
+          : "");
     }
   }
 
@@ -2352,47 +2408,197 @@
     }).join("");
   }
 
-  function renderResultBlocks() {
-    var host = document.querySelector('[data-list="result-blocks"]');
+  function resultTables(block) {
+    if (Array.isArray(block && block.tables)) {
+      return block.tables.filter(function (table) {
+        return table && Array.isArray(table.rows);
+      });
+    }
+    var tables = [];
+    if (block && block.mainTable && Array.isArray(block.mainTable.rows)) {
+      tables.push(Object.assign({
+        id: String(block.id || "result") + "-main",
+        type: "main",
+        title: block.title || "Main result",
+      }, block.mainTable));
+    }
+    (Array.isArray(block && block.ablations) ? block.ablations : []).forEach(function (table, index) {
+      if (!table || !Array.isArray(table.rows)) return;
+      tables.push(Object.assign({
+        id: String(block.id || "result") + "-ablation-" + (index + 1),
+        type: "ablation",
+        title: table.title || "Ablation",
+      }, table));
+    });
+    return tables;
+  }
+
+  function resultTableHtml(table, index) {
+    var type = String(table.type || "main").toLowerCase() === "ablation"
+      ? "ablation"
+      : "main";
+    var rows = Array.isArray(table.rows) ? table.rows : [];
+    var columns = Array.isArray(table.columns) && table.columns.length
+      ? table.columns.map(function (column) {
+          return column && typeof column === "object"
+            ? {
+                key: String(column.key || column.id || column.label || ""),
+                label: String(column.label || column.key || column.id || ""),
+              }
+            : { key: String(column), label: String(column) };
+        })
+      : Object.keys(rows[0] || {}).filter(function (key) {
+          return key !== "_cells" && key !== "row_id";
+        }).map(function (key) {
+          return { key: key, label: key };
+        });
+    var title = String(table.title || (type === "main" ? "Main result" : "Ablation"));
+    var tableId = implementationDomId(table.id || title || ("result-table-" + (index + 1)));
+    var state = String(table.state || "unverified").toLowerCase();
+    var stateLabels = {
+      planned: "Planned",
+      verified: "Verified",
+      unverified: "Unverified",
+      "schema-mismatch": "Schema mismatch",
+    };
+    var stateLabel = stateLabels[state] || state;
+    function cellHtml(row, column) {
+      var value = row && row[column.key];
+      var cells = row && row._cells && typeof row._cells === "object"
+        ? row._cells
+        : {};
+      var meta = cells[column.key] && typeof cells[column.key] === "object"
+        ? cells[column.key]
+        : {};
+      var status = String(
+        meta.status || (value == null ? "PENDING" : "MEASURED")
+      ).toUpperCase();
+      var reason = String(meta.reason || "");
+      var shown = value == null || value === "" ? "/" : displayValue(value);
+      var classes = [];
+      if (typeof value === "number") classes.push("num");
+      if (value == null || value === "") classes.push("result-cell-null");
+      if (status !== "MEASURED") {
+        classes.push("result-cell-" + status.toLowerCase());
+      }
+      var explanation = status + (reason ? " — " + reason : "");
+      return "<td" +
+        (classes.length
+          ? ' class="' + htmlEscape(classes.join(" ")) + '"'
+          : "") +
+        (status !== "MEASURED"
+          ? ' title="' + htmlEscape(explanation) + '"'
+          : "") +
+        ">" + htmlEscape(shown) + "</td>";
+    }
+    var body = rows.length && columns.length
+      ? '<div class="result-table-scroll"><table class="data-table" data-table="result-' +
+          htmlEscape(tableId) + '"><thead><tr>' +
+          columns.map(function (column) {
+            return "<th>" + htmlEscape(column.label) + "</th>";
+          }).join("") +
+          "</tr></thead><tbody>" +
+          rows.map(function (row) {
+            return "<tr>" + columns.map(function (column) {
+              return cellHtml(row, column);
+            }).join("") + "</tr>";
+          }).join("") +
+          "</tbody></table></div>"
+      : '<p class="result-table-empty">No measured rows.</p>';
+    var provenance = state === "verified"
+      ? '<p class="result-table-source">Verified CSV · <code>' +
+          htmlEscape(table.runId || "run") + "</code> · <code>" +
+          htmlEscape(String(table.sourceSha256 || "").slice(0, 12)) +
+        "</code></p>"
+      : '<p class="result-table-source result-table-source-' +
+          htmlEscape(state) + '">' +
+          htmlEscape(
+            table.stateReason ||
+            (state === "planned"
+              ? "Awaiting evaluation; planned cells are shown as /."
+              : "No hash-bound Result table CSV is attached.")
+          ) +
+        "</p>";
+    return [
+      '<details class="result-table result-table-' + type + '" data-result-table="' +
+        htmlEscape(tableId) + '" data-result-table-type="' + type + '"' +
+        ' data-result-table-state="' + htmlEscape(state) + '"' +
+        (type === "main" ? " open" : "") + ">",
+      "<summary>",
+      '<span class="result-table-summary">',
+      '<span class="result-table-kind">' + (type === "main" ? "Main" : "Ablation") + "</span>",
+      '<span class="result-table-title">' + htmlEscape(title) + "</span>",
+      '<span class="result-table-state result-table-state-' +
+        htmlEscape(state) + '">' + htmlEscape(stateLabel) + "</span>",
+      '<span class="result-table-count">' + rows.length + (rows.length === 1 ? " row" : " rows") + "</span>",
+      "</span>",
+      "</summary>",
+      body,
+      provenance,
+      "</details>",
+    ].join("");
+  }
+
+  function resultMatchesExperiment(block, experiment) {
+    var reference = String(
+      block && (block.experimentId || block.phaseId || block.exp_id) || ""
+    );
+    return [
+      experiment && experiment.id,
+      experiment && experiment.local_id,
+      experiment && experiment.localId,
+      experimentDisplayId(experiment),
+    ].filter(Boolean).map(String).indexOf(reference) !== -1;
+  }
+
+  function renderResultExperiments() {
+    var host = document.querySelector('[data-list="result-experiments"]');
     if (!host) return;
     var pkg = currentPackage();
     var blocks = pkg && Array.isArray(pkg.resultBlocks) ? pkg.resultBlocks : [];
-    if (!blocks.length) return;
-    host.innerHTML = blocks.map(function (b) {
-      var phaseId = b && b.phaseId ? String(b.phaseId) : "unmeasured";
-      var title = b && b.title ? String(b.title) : (phaseId + " — result");
-      var summary = b && b.summary ? String(b.summary) : "unmeasured";
-      var detail = b && b.detail ? String(b.detail) : "";
-      var main = b && b.mainTable;
-      var insights = Array.isArray(b && b.insights) ? b.insights : [];
-      var ablations = Array.isArray(b && b.ablations) ? b.ablations : [];
-      var mainHtml = "";
-      if (main && Array.isArray(main.rows)) {
-        var headers = Array.isArray(main.columns) ? main.columns : Object.keys(main.rows[0] || {});
-        mainHtml = '<table class="data-table block-main-table"><thead><tr>' +
-                   headers.map(function (h) { return "<th>" + htmlEscape(h) + "</th>"; }).join("") +
-                   "</tr></thead><tbody>" +
-                   main.rows.map(function (row) {
-                     return "<tr>" + headers.map(function (h) {
-                       var v = row[h];
-                       return '<td' + (typeof v === "number" ? ' class="num"' : "") + ">" + htmlEscape(v == null ? "—" : v) + "</td>";
-                     }).join("") + "</tr>";
-                   }).join("") +
-                   "</tbody></table>";
-      }
+    var experiments = pkg && Array.isArray(pkg.experiments) ? pkg.experiments.slice() : [];
+    blocks.forEach(function (block) {
+      if (experiments.some(function (experiment) {
+        return resultMatchesExperiment(block, experiment);
+      })) return;
+      experiments.push({
+        id: block.experimentId || block.phaseId || block.exp_id || block.id,
+        local_id: block.phaseId || block.exp_id || block.id,
+      });
+    });
+    if (!experiments.length) {
+      host.innerHTML = '<p class="result-page-empty">No Experiments are attached to this Package.</p>';
+      return;
+    }
+    host.innerHTML = experiments.map(function (experiment) {
+      var id = experimentDisplayId(experiment);
+      var title = experiment && experiment.label
+        ? String(experiment.label)
+        : "Result tables";
+      var tables = [];
+      blocks.filter(function (block) {
+        return resultMatchesExperiment(block, experiment);
+      }).forEach(function (block) {
+        tables = tables.concat(resultTables(block));
+      });
+      tables.sort(function (left, right) {
+        var leftOrder = String(left.type || "main").toLowerCase() === "ablation" ? 1 : 0;
+        var rightOrder = String(right.type || "main").toLowerCase() === "ablation" ? 1 : 0;
+        return leftOrder - rightOrder;
+      });
       return [
-        '<article class="result-block" data-result-block data-phase-id="' + htmlEscape(phaseId) + '">',
+        '<article class="result-experiment" id="result-slot-' +
+          htmlEscape(implementationDomId(id)) + '" data-exp-id="' + htmlEscape(id) + '">',
+        '<header class="result-experiment-head">',
+        '<code class="phase-id">' + htmlEscape(id) + "</code>",
         "<h2>" + htmlEscape(title) + "</h2>",
-        '<p class="block-summary">' + htmlEscape(summary) + "</p>",
-        detail ? '<details class="block-detail"><summary>Full methodology &amp; provenance</summary><p class="card-text">' + htmlEscape(detail) + "</p></details>" : "",
-        mainHtml,
-        '<section class="block-insight"><h4>Insight</h4><ul class="block-insight-bullets">' +
-          (insights.length ? insights.map(function (s) { return "<li>" + htmlEscape(s) + "</li>"; }).join("") :
-                             '<li><em>No cells measured yet.</em></li>') +
-          "</ul></section>",
-        ablations.length ? '<details class="block-ablation"><summary>Ablations / peer tables</summary><ul>' +
-          ablations.map(function (a) { return "<li>" + htmlEscape(a.title || "ablation") + "</li>"; }).join("") +
-          "</ul></details>" : "",
+        '<span class="result-experiment-count">' + tables.length +
+          (tables.length === 1 ? " table" : " tables") + "</span>",
+        "</header>",
+        tables.length
+          ? '<div class="result-table-list">' +
+              tables.map(resultTableHtml).join("") + "</div>"
+          : '<p class="result-experiment-empty">No result tables yet.</p>',
         "</article>",
       ].join("");
     }).join("");
@@ -2504,15 +2710,10 @@
     renderUserZoneIdentity();
     renderHeadline();
     renderKeyInsight();
-    renderObjectiveContract();
     renderPipelineTimeline();
-    renderImplementationPhaseStrip();
-    renderImplementationChanges();
-    renderImplementationAdjudication();
-    renderImplementationAgentDetail();
-    renderDirectoryAtlas();
-    renderChosenRoutePanel();
-    renderResultBlocks();
+    renderImplementationMap();
+    renderTracker();
+    renderResultExperiments();
     renderInsightSubblocks();
     renderDocsIndex();
     setupCopyButtons();

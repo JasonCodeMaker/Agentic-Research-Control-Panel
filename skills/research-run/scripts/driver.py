@@ -18,6 +18,7 @@ if str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
 
 from lib.experiments.report import open_runs  # noqa: E402
+from lib.implementation import completion_counts  # noqa: E402
 from lib.research_state import (  # noqa: E402
     ResearchPaths,
     StateQuery,
@@ -44,6 +45,7 @@ ALLOWED_OPS = {"insert", "update", "delete", "check", "scan-events"}
 RESEARCH_OP_TARGETS = {
     "tracker-live-check-row",
     "tracker-resource-allocation-row",
+    "tracker-impl-review-row",
     "tracker-chosen-route",
     "results-gate-row",
     "results-block",
@@ -231,10 +233,11 @@ def load_workflow_snapshot(
     query = StateQuery(paths)
     package = query.show("package", package_id)
     experiments = query.show("experiment")
+    changes = query.show("change")
     opened = query.show("open_run")
     stamps = {
         (item["source_seq"], item["source_hash"])
-        for item in (package, experiments, opened)
+        for item in (package, experiments, changes, opened)
     }
     if len(stamps) != 1:
         raise RuntimeError("research state changed while building workflow snapshot")
@@ -245,6 +248,96 @@ def load_workflow_snapshot(
         for _, record in sorted(experiments["data"].items())
         if isinstance(record, dict) and record.get("package_id") == package_id
     ]
+    package_changes = [
+        record
+        for _, record in sorted(
+            changes["data"].items(),
+            key=lambda item: (
+                (
+                    int(item[1].get("order"))
+                    if isinstance(item[1], dict)
+                    and isinstance(item[1].get("order"), int)
+                    and not isinstance(item[1].get("order"), bool)
+                    else 10**9
+                ),
+                str(item[0]),
+            ),
+        )
+        if isinstance(record, dict) and record.get("package_id") == package_id
+    ]
+
+    def implementation_state(record: dict[str, Any]) -> tuple[str, str | None]:
+        identities = {
+            str(value)
+            for value in (
+                record.get("id"),
+                record.get("local_id"),
+                record.get("localId"),
+            )
+            if value
+        }
+        aliases = record.get("aliases")
+        if isinstance(aliases, list):
+            identities.update(str(value) for value in aliases if value)
+        matching = [
+            change
+            for change in package_changes
+            if identities.intersection(
+                str(value)
+                for value in (change.get("validating_experiments") or [])
+            )
+        ]
+        if not matching:
+            return (
+                ("BLOCKED", None)
+                if record.get("requiresCode") is True
+                else ("NOT_REQUIRED", None)
+            )
+        for change in matching:
+            plan = change.get("plan")
+            observations = change.get("observations")
+            if not isinstance(plan, dict):
+                return (
+                    "BLOCKED",
+                    str(
+                        change.get("local_id")
+                        or change.get("change_id")
+                        or change.get("id")
+                    ),
+                )
+            counts = completion_counts(
+                plan,
+                observations if isinstance(observations, dict) else None,
+            )
+            complete = (
+                counts["code_total"] > 0
+                and counts["code_complete"] == counts["code_total"]
+                and counts["verification_total"] > 0
+                and counts["verification_passed"]
+                == counts["verification_total"]
+            )
+            if not complete:
+                return (
+                    "BLOCKED",
+                    str(
+                        change.get("local_id")
+                        or change.get("change_id")
+                        or change.get("id")
+                    ),
+                )
+        return "PASS", None
+
+    experiment_rows = []
+    for record in selected_experiments:
+        readiness, current_change_id = implementation_state(record)
+        experiment_rows.append(
+            {
+                "expId": record.get("local_id") or record.get("id"),
+                "status": record.get("status"),
+                "implementationReadiness": readiness,
+                "currentChangeId": current_change_id,
+            }
+        )
     run_rows = [
         row for row in open_runs(paths) if row.get("package_id") == package_id
     ]
@@ -270,13 +363,7 @@ def load_workflow_snapshot(
         "packageBlocker": package_record.get("blocker"),
         "packageVersion": history[-1]["aggregate_version"] if history else 0,
         "nextRoute": package_record.get("nextRoute"),
-        "experiments": [
-            {
-                "expId": record.get("local_id") or record.get("id"),
-                "status": record.get("status"),
-            }
-            for record in selected_experiments
-        ],
+        "experiments": experiment_rows,
         "openRuns": [
             {
                 "runId": row["run_id"],

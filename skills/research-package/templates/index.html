@@ -29,8 +29,8 @@
         <ul class="identity-tldr-list" data-list="identity-tldr">
           <li class="identity-tldr-line" data-field="problem-tldr"><span class="identity-tldr-k">Problem</span> <span class="identity-tldr-v">$problem</span></li>
           <li class="identity-tldr-line" data-field="motivation-tldr"><span class="identity-tldr-k">Motivation</span> <span class="identity-tldr-v">$motivation</span></li>
-          <li class="identity-tldr-line" data-field="objective-tldr"><span class="identity-tldr-k">Objective</span> <span class="identity-tldr-v">$objective</span></li>
           <li class="identity-tldr-line" data-field="hypothesis-tldr"><span class="identity-tldr-k">Hypothesis</span> <span class="identity-tldr-v">$hypothesis</span></li>
+          <li class="identity-tldr-line" data-field="objective-tldr"><span class="identity-tldr-k">Objective</span> <span class="identity-tldr-v">$objective</span></li>
         </ul>
       </article>
 
@@ -45,6 +45,14 @@
         <div class="plan-progress-chips" data-field="plan-status-list"></div>
       </article>
 
+      <article class="module-card" data-card="source-evidence">
+        <h2>Source &amp; evidence</h2>
+        <div class="artifact-list">
+          <div class="artifact-row"><div class="kind">source package</div><code data-artifact="source-package">$source_path</code></div>
+          <div class="artifact-row"><div class="kind">evidence root</div><code data-artifact="artifact-root">$artifact_root</code></div>
+        </div>
+      </article>
+
       <article class="module-card key-insight-card" data-card="key-insight" data-empty="true" hidden>
         <h2>Key insight so far</h2>
         <p class="card-text" data-field="key-insight">
@@ -54,47 +62,6 @@
       </article>
 
     </section>
-
-    <details data-audience="agent" data-section="agent-zone" id="agent-zone">
-      <summary>Agent context</summary>
-
-      <article class="module-card" data-card="identity-full">
-        <h2>Identity (full)</h2>
-        <div class="kv-grid">
-          <div class="k">Problem</div>
-          <div data-field="problem">$problem</div>
-          <div class="k">Objective</div>
-          <div data-field="objective">$objective</div>
-          <div class="k">Motivation</div>
-          <div data-field="motivation">$motivation</div>
-          <div class="k">Primary metric (summary)</div>
-          <div data-field="primary-metric-summary">See <a href="plan.html#plan-invariants">Plan / invariants</a></div>
-        </div>
-      </article>
-
-      <article class="module-card" data-card="overview-paths">
-        <h2>Path anchors</h2>
-        <div class="artifact-list">
-          <div class="artifact-row"><div class="kind">source package</div><code data-artifact="source-package">$source_path</code></div>
-          <div class="artifact-row"><div class="kind">artifact root</div><code data-artifact="artifact-root">$artifact_root</code></div>
-          <div class="artifact-row"><div class="kind">html package</div><code data-artifact="html-package">.research/interface/packages/$package_id/</code></div>
-        </div>
-      </article>
-
-      <article class="module-card" data-card="page-index">
-        <h2>Pages</h2>
-        <p class="card-text">One concern per page. Open the page that owns the next decision. Pages not yet created render as disabled in the package nav above.</p>
-        <ul>
-          <li><a href="plan.html">Plan</a>: objective contract (5 invariants) and the pipeline timeline.</li>
-          <li><a href="implementation.html">Implementation</a>: plan coverage map, change blocks (T14), test rule catalog, adjudication.</li>
-          <li><a href="results.html">Results</a>: per-phase result blocks (user) + result-gate ledger (agent).</li>
-          <li><a href="tracker.html">Tracker</a>: to-do, exp directory atlas, live check, Resume Block, Launch readiness, <a href="tracker.html#chosen-route">chosen route</a>, resource allocation, run cards.</li>
-          <li><a href="analysis.html">Analysis</a>: manual Rules + Insight (single-audience).</li>
-          <li><a href="docs/">Docs</a>: grouped source documents with 5-attr agent metadata.</li>
-        </ul>
-      </article>
-
-    </details>
 
     <footer class="footer-note">
       <time data-field="last-updated" datetime="$last_updated">$last_updated</time>

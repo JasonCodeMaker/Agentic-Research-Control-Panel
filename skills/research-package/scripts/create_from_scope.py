@@ -556,7 +556,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--scope",
-        default="index,plan,implementation,results,tracker,docs,_agent",
+        default="all",
     )
     parser.add_argument(
         "--status",

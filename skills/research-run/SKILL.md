@@ -2,7 +2,6 @@
 name: research-run
 description: "Use when the user invokes /research-run or asks to execute, continue, monitor, verify, or finish an existing research package."
 allowed-tools: Bash(python3 *), Bash(node *), Read, Edit, Write, Grep, Glob, Agent
-disable-model-invocation: false
 ---
 
 # research-run
@@ -53,6 +52,9 @@ It may not:
 | Launch | `lib/experiments/launch.py` |
 | Monitor | `lib/experiments/report.py` |
 | Reconcile callbacks | `lib/experiments/reconcile.py` |
+| Result table extraction | `lib/experiments/result_tables.py` |
+| Result finalization | `lib/experiments/extract.py` |
+| Implementation checkbox sync | `skills/research-run/scripts/implementation_status.py` |
 | Workflow routing | `workflow.ts` |
 
 Admission and dispatch resolve the workspace with `ResearchPaths` and read bounded snapshots through
@@ -178,7 +180,38 @@ state files yourself.
 If `research-op` rejects the command, use its rule and detail fields to repair the input or select the
 correct handoff. Do not patch a projection to hide the rejection.
 
-### 5. Check readiness and launch
+### 5. Keep Implementation and Tracker current
+
+Materialize each Change plan before its first code edit. After every logical
+edit batch, synchronize its code-location predicates:
+
+```bash
+python3 skills/research-run/scripts/implementation_status.py sync \
+  --workspace . --research-root .research \
+  --package <package-id>
+```
+
+Run declared TDD checks through the same helper; it records PASS or FAIL
+against the current dependency fingerprint:
+
+```bash
+python3 skills/research-run/scripts/implementation_status.py verify \
+  --workspace . --research-root .research \
+  --package <package-id>
+```
+
+If a dependency changes after a passing check, the next sync marks that check
+STALE and unchecks it. Before implementation review or launch readiness, run
+`implementation_status.py check`; it fails unless every planned code location
+and verification is currently PASS. Do not add a watcher, edit checkbox state
+by hand, or infer completion from the generated page.
+
+After every completed `To-Do` task, update its owner before selecting the next
+task: synchronize and verify a Change, or reconcile the Run with `scan-events`.
+Tracker then derives the same status automatically. Never write a separate
+Tracker row, completion boolean, or current-task marker.
+
+### 6. Check readiness and launch
 
 Before launch, verify:
 
@@ -204,7 +237,7 @@ python3 lib/experiments/launch.py \
 
 Use `--foreground` for a short command. Long runs should use the default tmux transport.
 
-### 6. Monitor and reconcile
+### 7. Monitor and reconcile
 
 List management-open Runs:
 
@@ -234,11 +267,46 @@ python3 skills/research-op/scripts/research_op.py \
 
 This repairs lost launch or terminal callbacks without introducing a second live index.
 
-### 7. Verify and route
+### 8. Extract and finalize Result tables
 
-Read measured values from `result.json`, `metrics.jsonl`, or another hashed EvidenceRef owned by the
-Run. Compare them with the Experiment gate. Record the result through `research-op`; the verifier must
-not rewrite the gate. A success route requires a state-backed
+Read `skills/research-package/references/results-page-pattern.md` before
+finalizing a schema-backed Result.
+
+When the selected Experiment has a frozen `result_schema`, require its
+evaluation script to write one comprehensive CSV with
+`metric,value,unit,status,reason` plus every selector field used by the schema.
+The file may contain extra metrics and rows.
+
+After the Run is terminal, extract the exact human tables:
+
+```bash
+python3 -m lib.experiments.result_tables \
+  --workspace . --research-root .research \
+  --run-dir <run-dir> \
+  --source <comprehensive-metrics.csv>
+```
+
+Then finalize the Run result with the returned manifest:
+
+```bash
+python3 -m lib.experiments.extract \
+  --workspace . --research-root .research \
+  --run-dir <run-dir> \
+  --payload <result-payload.json> \
+  --result-table-manifest <run-dir>/files/result-tables/manifest.json
+```
+
+Do not hand-write a derived table, copy values into HTML, or finalize a
+schema-backed result without the manifest. Missing cells, duplicate matches,
+unit mismatch, invalid cell status, schema drift, or hash drift are blockers,
+not blank values to repair manually. After finalization, let
+`research-dashboard` rebuild the human projection.
+
+### 9. Verify and route
+
+Read measured values from the verified `result.json` and its EvidenceRefs.
+Compare them with the Experiment gate. Record the result through `research-op`;
+the verifier must not rewrite the gate. A success route requires a state-backed
 `VERIFIER_VERDICT` Decision bound to the finalized Run event, result hash,
 Experiment scope version, gate, measured value, and control mode.
 

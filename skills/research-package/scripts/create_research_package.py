@@ -255,7 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--next-action", default="", dest="next_action")
     parser.add_argument(
         "--scope",
-        default="index,tracker,docs,_agent",
+        default="all",
         help="comma list of stage pages or 'all'",
     )
     parser.add_argument("--status", default="")

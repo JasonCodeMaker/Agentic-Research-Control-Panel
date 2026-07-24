@@ -1,9 +1,9 @@
 {
   "browser_major": 150,
-  "browser_version": "Chromium 150.0.7871.114 snap",
+  "browser_version": "Chromium 150.0.7871.128 snap",
   "css": {
     "assets/brainstorm.css": "ee58f5fec921e4a8a2668c0636a08bf346ae6fa6bb10139316f9a34fb88eea06",
-    "assets/research.css": "7e1c2b55f5b27a2b12f1552585451eefb17e170bc4bb08388bcd5a3bf0502971",
+    "assets/research.css": "01c878f894262d557412b4ef74d44278d9a8d11090d96fed5f06ddc2bb20d19c",
     "assets/toc.css": "a7ce4705f4c71a9e03cc7a9ce41337d4008d5faa31655be98dab6d0d412fbce4"
   },
   "dom": {
@@ -13,12 +13,12 @@
     "live.html": "b5fa5404b96ca89007f66f5b826a148534602fed7a3a98cd4e64232c85f59568",
     "module.html": "e2922501a0641196233546ba081ada7b5ab75f2fa0a334ed43b3134735864c9a",
     "packages/fixture/analysis.html": "fcae90dce856725846f4945b54163c2077b75688a2711ec07b22f8f5c1481beb",
-    "packages/fixture/docs/index.html": "d99da53441379cfed7142ed538b55a1e03a9b3c05d9587a62224ab55898f4d21",
-    "packages/fixture/implementation.html": "d12d63522467a91d63d03fa235e63c232364a9bdf666a0eedf397d9d88ee571c",
-    "packages/fixture/index.html": "e714eafebceae295e62d358bbbc0e9dbeb728db3e86792a4865d9a1542adff78",
-    "packages/fixture/plan.html": "a80271ba57157373be758bbd1594dd58cf0eb0dfb0ee2d0b30b9d42dbfe07f39",
-    "packages/fixture/results.html": "5ffba80d5d47010860eb65a020d3163929e570910bda8dec576ce4f3a53ac13c",
-    "packages/fixture/tracker.html": "3cdb7f14db5c805bdee5a91cdc1b1244536fac18014742f13b67477ca5764a26",
+    "packages/fixture/docs/index.html": "2dab370d5f6772bc7532fe862dcf64c99f572c0efcf785ad1cc2f42828cc7471",
+    "packages/fixture/implementation.html": "b47c83f436a5dca3c14ac458f381c9862ce32eeb476b13cbc2ee7baadb6c98f0",
+    "packages/fixture/index.html": "5e79c98faeb08791280af82e08353c3d00373a8356927f32ea0cb2f0a3dd0f90",
+    "packages/fixture/plan.html": "4eed7cc56b4024b1f120fb32f4aecdc2e11b809494d83a221fb0fde93540647c",
+    "packages/fixture/results.html": "65ed0dcf65432720901d2c6e685019369a1fa3532a0bf5e369882ae043913dcd",
+    "packages/fixture/tracker.html": "720b37d4cd3ab15a5f8101578d53f59be0c54ef024bcca0bda34548910ff944b",
     "scope.html": "e435f76040bbb0bba192d98c56cdb68536ecfd7a316f291abf13bfc4f8a8d170"
   },
   "fonts": {
@@ -81,7 +81,7 @@
     },
     "sha256": "1d614f97c7220c8759a439ac3b899b6cf841154e33c29775a3e482d8d6880bcb"
   },
-  "render_environment_sha256": "f53db6142e5fc92500436d5cf9df93227514ee42e80843e6c698befbc16524d3",
+  "render_environment_sha256": "05ff7ab6bfc80ab81fdd40919313cd3610cea4f8708687f56161f2157ae709e2",
   "runtime": {
     "libc": [
       "glibc",
@@ -133,12 +133,12 @@
     "live.html": "fffffffff0ffffffe0ffffffe03fffffe03fffffe0000fffe0001ffff03d7ffff03fffffffffffffe00ffffff00fffffffffffffe777719fe777719fffffffffe1ffffffe0001fffe0001fffe00003ffffe003ffe0ffffffe0ffffffe0000fffe0fffffffffc3fffffffffffe0fffffff07ffffff03fffffffffffffffffffff",
     "module.html?package=fixture&module=plan": "fffffffff1e7ffffe397ffffe787ffffe787e8ffe780007fff801fffffc27fffffffffffff83ffffff83ffffffcfe0ffffcc601ffffc7f1ffffc3f1ffffcf71ffffc3e5ffffc771fffffff1fffcfe1ffffcfe1ffffc0700fffc0701fffc0301fffc0200fffc1e03ffffffcffffc7f7ffffc7e3ffffc0200fffc07fffffcfffff",
     "packages/fixture/analysis.html": "fffffffff3fffffff1dbffffe000ffffe000ffffe001fffff0001fffe0000ffff07ffffff01ffffffffffffff0c0383ff0fffdfffffffffff0bffffff87fffffffffffffffffffffffffffffe003fffff003ffffffffffffe7ffffffe3ffffffe000000fe0ffffffefffffffefffffffe3ffffffe000001fe000003fe07fbfff",
-    "packages/fixture/docs/index.html": "fffffffffbffffffe76fffffe003ffffe001ffffe001fffff0029fffe0001fffe3fffffff5fffffffffffffff1cffcfff0c0383ff1fffffffffffffff83ffffff87fffffffffffffffffffffffffffffe001fffff0007fffe3feffffe001fffff001ffffe1ffffffe01fffffe01fffffe5ffffffe5ffffffe0000007e0000007",
-    "packages/fixture/implementation.html": "fffffffff1ffffffe1efffffe001ffffe000ffffe000ffffe0cfffffe0fffffff0000fffe0000fffe1fffffff07ffffffffffffff0c7fcfff0c0383ffffffffff0fffffff83ffffffc7ffffffffffffffffffffff413ffffe001fffffffffffff007fffff007fffff80fffffffffffffe0ffffffe07fffffe000001fe0ffffff",
-    "packages/fixture/index.html": "e0fffffffafffff3c0003fffc0003fffc07fffffffffffffe1807c3fc1c07cbfffffffffe1fffffff0fffffff0ffffffffffffffc007ffffc003fffffffffdffe3fff87ffc0ff98fec1ffbf7ecfffbf7ffffffffc0000007c0000003f8000007ffffffffffffffffcfffffffffffffffffffffffffffffffffffffffffffffff",
-    "packages/fixture/plan.html": "fffffffffbffffffe76fffffe003ffffe001ffffe001fffff0001fffe0001fffe0407ffff03fffffff3ffffff1cffcfff0c0383ff0fffffff5fffffff83ffffff87fffffffffffffffffffffffffffffe001ffffefffffffe1ffffffe0ffffffe200007fe701ffffe73fffffe71fffffe70fffffe71fffffeb3fffffefffffff",
-    "packages/fixture/results.html": "fffffffff3ffffffe493ffffe000ffffe001ffffe001fffff0001fffe0001ffff07ffffff07ffffffffffffff0c0383ff0fffdfffffffffff03ffffff87fffffffffffffffffffffffffffffe001fffff001fffffffffffff003fffff00ffffff8dfffffefffffffe1ffffffe00fefffefe007ffe01fffffe0001fffe07fffff",
-    "packages/fixture/tracker.html": "fffffffff8ffffffe5dbffffe000ffffe000ffffe001fffff0003fffe0000fffe0001ffff09fffffffbffffff1cffcfff0c0383ff0fffffffffffffff83ffffff87fffffffffffffffffffffffffffffe001fffffffffffffffffffff3fffffff000021ff07ffffffd3fffffefffffffe07fffffe07fffffe000001fe1ffffff",
+    "packages/fixture/docs/index.html": "fffffffff9ffffffe76fffffe003ffffe001ffffe001fffff0001fffe0000fffe3d37ffff1fffffffffffffff1cffcfff0c0383ff0fffffffffffffff83ffffff87fffffffffffffffffffffffffffffe001fffff000000ff000000febffffffe1ffffffefffffffe0ffffdfe0003fdfe0003fffe8bfffffe8ffffffefffffff",
+    "packages/fixture/implementation.html": "fffffffff1ffffffe1efffffe003ffffe000ffffe000ffffe0cfffffe0fffffff0000fffe0001ffff6fffffffefffffff3cffdfff0c0383ff0fffffffffffffff83ffffff87fffffffffffffffffffffffffffffe001ffffffffffffe0ffffffe000001fe3ffffffe8ffffdfe8ccffffef8fffffeb8fffffecffffffe800001f",
+    "packages/fixture/index.html": "e05f7ff7f2ffffe3c0003fffc0003fffc07fffffffffffffc1803c3fc1c07c3fffffffffc17ffffff07fffffd0fffffffffdffffc007ffffc0020f87e3fff87fe3fff87ffc0ff98fecfffbf7ec07f9f7ec0ffffffc3fffffffffffffe1ffffffe6ffffffe61fffffffffffffffffffffffffffffcfffffffffffffffffffffff",
+    "packages/fixture/plan.html": "ffffffffffffffffe6dfffffe007ffffe001ffffe001fffff0001fffe0001ffff03efffff03ffffffffffffff0c0383ff0fffdfffffffffff0bffffff87fffffffffffffffffffffffffffffe001fffff003ffffefffffffe0ffffffe000000fe000001fe3ffffffefffffffe8ffffffefffffffeb8fffffe800001fe800001f",
+    "packages/fixture/results.html": "fffffffff3ffffffe5afffffe001ffffe001ffffe001fffff0001fffe0001ffff7fffffff07ffffffffffffff0c0383ff0fffdfffffffffff0bffffff87fffffffffffffffffffffffffffffe003fffff603fffff8ffffffe0ffffeff41fff8fe41bf38fe3f3e3fff3ffeffff03ffffff07fffffe07fff8fffffffffffffffff",
+    "packages/fixture/tracker.html": "fffffffff8ffffffe5b7ffffe001ffffe001ffffe001fffff0001fffe0001ffff7fffffff01ffffffffffffff0c0383ff0fffdfffffffffff0bffffff87ffffffffffffffffffffffffffffff003fffffcf3ffffe3ffffffe3ffffffe000007fe000000fefffffffe07fffffe7cfffffe71fffffe000000fe000000fe7003fff",
     "scope.html": "fffffffff07fffffe27fffffa003ffffe0024fffe0000fffe0000fffe0000fffe03fffffe027fffff080000fe00cceeff331311fe333711fe7dfffffe3133fffefff7ffff0ffffffe01ffffff119bfffff713ffff1fffffff1ffffffe0fffffff01ffffff333fffff111fffffff3fffffffffffff1ffffefe03ffffff000ffff"
   },
   "visual_digest": "mean-threshold-32x32-v1",

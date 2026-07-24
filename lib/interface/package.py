@@ -10,10 +10,19 @@ import string
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
 
+from lib.experiments.result_tables import verify_finalized_result_tables
+from lib.implementation import completion_counts
 from lib.research_state.migration_facts import legacy_package_fact_projection
 from lib.research_state.paths import ResearchPaths
 from lib.research_state.policy import to_legacy
 from lib.research_state.schema import compatibility_map, transition_map
+from lib.result_schema import (
+    parse_result_table_csv,
+    planned_result_table,
+    project_verified_result_table,
+    result_schema_sha256,
+    validate_result_schema,
+)
 from lib.interface.project import render_brainstorm_page
 
 
@@ -122,6 +131,16 @@ PHASE_TRANSITION_CONDITIONS = {
     ),
 }
 
+RUN_ARTIFACTS = (
+    ("Run contract", "run.json"),
+    ("Frozen context", "context.json"),
+    ("Live status", "status.json"),
+    ("Run events", "events.jsonl"),
+    ("Metrics stream", "metrics.jsonl"),
+    ("Process log", "log.txt"),
+    ("Final result", "result.json"),
+)
+
 
 def _run_sort_key(
     item: tuple[str, Mapping[str, Any]],
@@ -137,6 +156,292 @@ def _run_sort_key(
         return (0, float(value), run_id)
     except (TypeError, ValueError):
         return (1, str(value), run_id)
+
+
+def _research_display_path(value: Any) -> str:
+    path = str(value or "").strip().replace("\\", "/").rstrip("/")
+    if not path:
+        return ""
+    if path.startswith("/") or path == ".research" or path.startswith(".research/"):
+        return path
+    return f".research/{path.lstrip('/')}"
+
+
+def _tracker_projection(
+    package_id: str,
+    experiments: list[dict[str, Any]],
+    changes: list[dict[str, Any]],
+    runs_by_experiment: Mapping[str, list[tuple[str, Mapping[str, Any]]]],
+) -> dict[str, Any]:
+    """Derive one execution checklist without introducing another state owner."""
+
+    change_tasks: list[dict[str, Any]] = []
+    experiment_rows: list[dict[str, Any]] = []
+    task_rows_by_experiment: dict[str, list[dict[str, Any]]] = {}
+
+    for experiment_index, experiment in enumerate(experiments):
+        experiment_id = str(experiment.get("id") or "")
+        local_id = str(
+            experiment.get("local_id")
+            or experiment.get("localId")
+            or experiment_id
+        )
+        identities = {experiment_id, local_id}
+        experiment_changes = [
+            change
+            for change in changes
+            if identities.intersection(
+                str(value)
+                for value in change.get("validatingExperiments", [])
+            )
+        ]
+        experiment_changes.sort(
+            key=lambda change: (
+                (
+                    change["order"]
+                    if isinstance(change.get("order"), int)
+                    and not isinstance(change.get("order"), bool)
+                    else 10**9
+                ),
+                str(change.get("id") or ""),
+            )
+        )
+        tasks = []
+        for change in experiment_changes:
+            complete = bool(change.get("complete"))
+            task = {
+                "id": f"change:{change['id']}",
+                "kind": "change",
+                "title": str(change.get("title") or "Implementation change"),
+                "detail": (
+                    f"{change.get('codeComplete', 0)} of "
+                    f"{change.get('codeTotal', 0)} code locations complete; "
+                    f"{change.get('verificationPassed', 0)} of "
+                    f"{change.get('verificationTotal', 0)} checks passed."
+                ),
+                "href": f"implementation.html#{change['anchor']}",
+                "linkLabel": "Open Implementation",
+                "complete": complete,
+                "state": "COMPLETE" if complete else "PENDING",
+            }
+            tasks.append(task)
+            change_tasks.append(task)
+
+        ordered_runs = sorted(
+            runs_by_experiment.get(experiment_id, []),
+            key=_run_sort_key,
+        )
+        active_runs = [
+            (run_id, run)
+            for run_id, run in ordered_runs
+            if str(run.get("status") or "") in {"QUEUED", "RUNNING", "STALE"}
+        ]
+        verified_runs = [
+            (run_id, run)
+            for run_id, run in ordered_runs
+            if isinstance(run.get("latest_scientific_result"), Mapping)
+            and run["latest_scientific_result"].get("validity") == "VALID"
+        ]
+        latest_run = ordered_runs[-1] if ordered_runs else None
+        if active_runs:
+            active_run_id, active_run = active_runs[0]
+            execution_title = f"Monitor {local_id} run {active_run_id}"
+            execution_detail = (
+                f"Run state is {active_run.get('status') or 'RUNNING'}."
+            )
+            execution_complete = False
+            execution_state = "RUNNING"
+        elif verified_runs:
+            verified_run_id, _ = verified_runs[-1]
+            execution_title = f"Result recorded for {local_id}"
+            execution_detail = f"Verified result is bound to run {verified_run_id}."
+            execution_complete = True
+            execution_state = "COMPLETE"
+        elif latest_run is not None:
+            latest_run_id, latest = latest_run
+            latest_status = str(latest.get("status") or "TERMINAL")
+            if latest_status in {"FAILED", "HALTED", "SKIPPED"}:
+                execution_title = f"Repair or rerun {local_id}"
+                execution_detail = (
+                    f"Latest run {latest_run_id} ended as {latest_status} "
+                    "without a verified result."
+                )
+            else:
+                execution_title = f"Finalize {local_id} result"
+                execution_detail = (
+                    f"Latest run {latest_run_id} is {latest_status}; "
+                    "a verified result is not recorded."
+                )
+            execution_complete = False
+            execution_state = "PENDING"
+        else:
+            execution_title = f"Launch {local_id}"
+            if experiment_changes and not all(
+                bool(change.get("complete"))
+                for change in experiment_changes
+            ):
+                execution_detail = (
+                    "Available after the implementation checklist is complete."
+                )
+            elif experiment_changes:
+                execution_detail = (
+                    "Implementation checks pass; complete launch readiness "
+                    "and start the Run."
+                )
+            else:
+                execution_detail = (
+                    "No implementation Changes are required; complete launch "
+                    "readiness and start the Run."
+                )
+            execution_complete = False
+            execution_state = "PENDING"
+
+        execution_task = {
+            "id": f"execute:{local_id}",
+            "kind": "run",
+            "title": execution_title,
+            "detail": execution_detail,
+            "href": "results.html"
+            if execution_complete
+            else f"#artifacts-{local_id.lower()}",
+            "linkLabel": (
+                "Open Results" if execution_complete else "View artifacts"
+            ),
+            "complete": execution_complete,
+            "state": execution_state,
+        }
+        tasks.append(execution_task)
+        task_rows_by_experiment[experiment_id] = tasks
+
+        planned = [
+            {
+                "label": "Run directory",
+                "path": (
+                    f".research/experiments/{package_id}/{local_id}/"
+                    "<run-id>/"
+                ),
+            }
+        ]
+        output = str(experiment.get("output") or "").strip()
+        if output:
+            planned.append({"label": "Experiment output", "path": output})
+        for change in experiment_changes:
+            for location in change.get("codeLocations", []):
+                if str(location.get("action") or "").upper() != "OUTPUT":
+                    continue
+                path = str(
+                    location.get("displayPath")
+                    or location.get("path")
+                    or ""
+                )
+                if path and not any(item["path"] == path for item in planned):
+                    planned.append({"label": "Expected output", "path": path})
+
+        projected_runs = []
+        for run_index, (run_id, run) in enumerate(reversed(ordered_runs)):
+            root = _research_display_path(run.get("dir"))
+            if not root:
+                root = (
+                    f".research/experiments/{package_id}/{local_id}/{run_id}"
+                )
+            projected_runs.append(
+                {
+                    "runId": run_id,
+                    "status": str(run.get("status") or "UNKNOWN"),
+                    "root": root,
+                    "latest": run_index == 0,
+                    "files": [
+                        {
+                            "label": label,
+                            "path": f"{root}/{filename}",
+                        }
+                        for label, filename in RUN_ARTIFACTS
+                    ],
+                }
+            )
+
+        source_id = experiment_id.rsplit("/", 1)[-1]
+        source_slug = re.sub(r"^e\d+-", "", source_id)
+        title = str(experiment.get("label") or "").strip()
+        if not title:
+            title = source_slug.replace("-", " ").strip().capitalize()
+        experiment_rows.append(
+            {
+                "experimentId": experiment_id,
+                "localId": local_id,
+                "title": title or f"Experiment {local_id}",
+                "purpose": str(experiment.get("purpose") or ""),
+                "status": str(experiment.get("status") or "QUEUED"),
+                "order": experiment_index + 1,
+                "tasks": tasks,
+                "artifacts": {
+                    "planned": planned,
+                    "runs": projected_runs,
+                },
+            }
+        )
+
+    active_execution = next(
+        (
+            task
+            for experiment in experiment_rows
+            for task in experiment["tasks"]
+            if task["kind"] == "run" and task["state"] == "RUNNING"
+        ),
+        None,
+    )
+    first_incomplete_change = next(
+        (task for task in change_tasks if not task["complete"]),
+        None,
+    )
+    execution_tasks = [
+        task
+        for experiment in experiment_rows
+        for task in experiment["tasks"]
+        if task["kind"] == "run"
+    ]
+    first_incomplete_execution = next(
+        (task for task in execution_tasks if not task["complete"]),
+        None,
+    )
+    current = (
+        active_execution
+        or first_incomplete_change
+        or first_incomplete_execution
+    )
+    if current is not None:
+        current["state"] = "CURRENT"
+
+    total = sum(len(experiment["tasks"]) for experiment in experiment_rows)
+    complete = sum(
+        1
+        for experiment in experiment_rows
+        for task in experiment["tasks"]
+        if task["complete"]
+    )
+    for experiment in experiment_rows:
+        experiment_tasks = experiment["tasks"]
+        if all(task["complete"] for task in experiment_tasks):
+            tracker_state = "COMPLETE"
+        elif any(task["state"] in {"CURRENT", "RUNNING"} for task in experiment_tasks):
+            tracker_state = "CURRENT"
+        else:
+            tracker_state = "PENDING"
+        experiment["trackerState"] = tracker_state
+        experiment["completeTasks"] = sum(
+            1 for task in experiment_tasks if task["complete"]
+        )
+        experiment["totalTasks"] = len(experiment_tasks)
+
+    return {
+        "completeTasks": complete,
+        "totalTasks": total,
+        "currentTaskId": current.get("id") if current else None,
+        "currentTaskTitle": (
+            current.get("title") if current else "Package checklist complete"
+        ),
+        "experiments": experiment_rows,
+    }
 
 
 def _bucket(state: Mapping[str, Any], aggregate_type: str) -> Mapping[str, Any]:
@@ -368,33 +673,117 @@ def _result_projection(
         "source_artifact": result.get("result_json") or evidence_path,
         "result_sha256": result.get("result_sha256"),
     }
+    tables = []
+    if measurements:
+        tables.append(
+            {
+                "id": f"{row_id}-main",
+                "type": "main",
+                "title": str(result.get("method") or f"Run {run_id}"),
+                "columns": [str(name) for name in measurements],
+                "rows": [
+                    {
+                        str(name): copy.deepcopy(value)
+                        for name, value in measurements.items()
+                    }
+                ],
+            }
+        )
     block = {
         "id": row_id,
+        "experimentId": str(experiment.get("id") or run.get("experiment_id") or ""),
         "phaseId": local_id,
-        "title": f"{local_id} — {method}",
-        "summary": (
-            f"{result.get('verdict')}: {metric}={measured} vs {gate}"
-        ),
-        "detail": (
-            f"Run {run_id} · validity {result.get('validity')} · evidence "
-            f"{evidence_path}"
-        ),
-        "mainTable": {
-            "columns": ["metric", "measured", "gate", "verdict", "validity"],
-            "rows": [
-                {
-                    "metric": metric,
-                    "measured": copy.deepcopy(measured),
-                    "gate": gate,
-                    "verdict": result.get("verdict"),
-                    "validity": result.get("validity"),
-                }
-            ],
-        },
-        "insights": copy.deepcopy(result.get("supported_claims") or []),
-        "ablations": [],
+        "tables": tables,
     }
     return method_row, gate_row, block
+
+
+def _schema_result_block(
+    experiment_id: str,
+    experiment: Mapping[str, Any],
+    runs: list[tuple[str, Mapping[str, Any]]],
+    *,
+    paths: ResearchPaths | None,
+) -> dict[str, Any]:
+    schema = validate_result_schema(experiment["resultSchema"])
+    local_id = str(
+        experiment.get("local_id")
+        or experiment.get("localId")
+        or experiment_id
+    )
+    tables = [
+        planned_result_table(table)
+        for table in schema["tables"]
+    ]
+    finalized = [
+        (run_id, run, run.get("latest_scientific_result"))
+        for run_id, run in sorted(runs, key=_run_sort_key)
+        if isinstance(run.get("latest_scientific_result"), Mapping)
+    ]
+    if finalized:
+        run_id, run, result = finalized[-1]
+        expected_digest = result_schema_sha256(schema)
+        if result.get("result_schema_sha256") != expected_digest:
+            state = (
+                "unverified"
+                if result.get("result_schema_sha256") is None
+                else "schema-mismatch"
+            )
+            reason = (
+                "Latest run has no verified Result table CSV."
+                if state == "unverified"
+                else "Latest run used a different Result schema."
+            )
+            for table in tables:
+                table.update(
+                    {
+                        "state": state,
+                        "stateReason": reason,
+                        "runId": run_id,
+                    }
+                )
+        elif paths is not None:
+            run_record = copy.deepcopy(dict(run))
+            run_record.setdefault("id", run_id)
+            run_record.setdefault("run_id", run_id)
+            table_paths = verify_finalized_result_tables(
+                paths,
+                run_record,
+                result,
+            )
+            result_tables = {
+                str(row.get("id")): str(row.get("uri"))
+                for row in result.get("result_tables", [])
+                if isinstance(row, Mapping)
+            }
+            evidence = {
+                str(ref.get("uri")): ref
+                for ref in result.get("evidence", [])
+                if isinstance(ref, Mapping) and ref.get("uri")
+            }
+            tables = []
+            for table in schema["tables"]:
+                uri = result_tables[table["id"]]
+                ref = evidence[uri]
+                decoded = parse_result_table_csv(
+                    table,
+                    table_paths[table["id"]].read_bytes(),
+                )
+                tables.append(
+                    project_verified_result_table(
+                        table,
+                        decoded,
+                        run_id=run_id,
+                        source_uri=uri,
+                        source_sha256=str(ref["sha256"]),
+                    )
+                )
+    return {
+        "id": f"{local_id}::schema",
+        "experimentId": experiment_id,
+        "phaseId": local_id,
+        "tables": tables,
+    }
 
 
 def _blocker(record: Mapping[str, Any]) -> dict[str, str] | None:
@@ -559,7 +948,11 @@ def _next_state_conditions_projection(
     ]
 
 
-def package_view_models(state: Mapping[str, Any]) -> list[dict[str, Any]]:
+def package_view_models(
+    state: Mapping[str, Any],
+    *,
+    paths: ResearchPaths | None = None,
+) -> list[dict[str, Any]]:
     """Join canonical aggregates into the existing, read-only browser shape."""
     runs_by_experiment: dict[str, list[tuple[str, Mapping[str, Any]]]] = {}
     runs_by_package: dict[str, list[tuple[str, Mapping[str, Any]]]] = {}
@@ -677,30 +1070,46 @@ def package_view_models(state: Mapping[str, Any]) -> list[dict[str, Any]]:
             projected.get("analysisInsights"),
             learnings_by_package.get(package_id, []),
         )
-        package_changes = changes_by_package.get(package_id, [])
-        projected["implementationReviews"] = _merge_rows(
-            projected.get("implementationReviews"),
-            package_changes,
-        )
-        implementation = (
-            copy.deepcopy(projected.get("implementation"))
-            if isinstance(projected.get("implementation"), Mapping)
-            else {}
+        package_changes = sorted(
+            changes_by_package.get(package_id, []),
+            key=lambda row: (
+                (
+                    int(row["order"])
+                    if isinstance(row.get("order"), int)
+                    and not isinstance(row.get("order"), bool)
+                    else 10**9
+                ),
+                str(row.get("id") or ""),
+            ),
         )
         implementation_changes: list[dict[str, Any]] = []
         for change in package_changes:
+            plan = (
+                change.get("plan")
+                if isinstance(change.get("plan"), Mapping)
+                else None
+            )
+            observations = (
+                change.get("observations")
+                if isinstance(change.get("observations"), Mapping)
+                else {}
+            )
+            code_observations = observations.get("code_locations")
+            code_observations = (
+                code_observations
+                if isinstance(code_observations, Mapping)
+                else {}
+            )
+            verification_observations = observations.get("verifications")
+            verification_observations = (
+                verification_observations
+                if isinstance(verification_observations, Mapping)
+                else {}
+            )
             review = (
                 change.get("review")
                 if isinstance(change.get("review"), Mapping)
                 else {}
-            )
-            tests = review.get("tests")
-            tests = copy.deepcopy(tests) if isinstance(tests, list) else []
-            owned_files = change.get("owned_files")
-            owned_files = (
-                [str(path) for path in owned_files]
-                if isinstance(owned_files, list)
-                else []
             )
             validating = change.get("validating_experiments")
             validating = (
@@ -708,31 +1117,158 @@ def package_view_models(state: Mapping[str, Any]) -> list[dict[str, Any]]:
                 if isinstance(validating, list)
                 else []
             )
+            if plan is not None:
+                counts = completion_counts(plan, observations)
+                code_locations = []
+                for location in plan.get("code_locations", []):
+                    if not isinstance(location, Mapping):
+                        continue
+                    location_id = str(location.get("id") or "")
+                    observation = code_observations.get(location_id)
+                    observation = (
+                        observation if isinstance(observation, Mapping) else {}
+                    )
+                    root = str(location.get("root") or "workspace")
+                    path = str(location.get("path") or "")
+                    code_locations.append(
+                        {
+                            "id": location_id,
+                            "action": str(location.get("action") or "REUSE"),
+                            "path": path,
+                            "displayPath": (
+                                f".research/{path}"
+                                if root == "research"
+                                else path
+                            ),
+                            "root": root,
+                            "state": str(
+                                observation.get("state") or "PENDING"
+                            ),
+                            "reason": str(observation.get("reason") or ""),
+                        }
+                    )
+                verifications = []
+                for verification in plan.get("verifications", []):
+                    if not isinstance(verification, Mapping):
+                        continue
+                    verification_id = str(verification.get("id") or "")
+                    observation = verification_observations.get(verification_id)
+                    observation = (
+                        observation if isinstance(observation, Mapping) else {}
+                    )
+                    verifications.append(
+                        {
+                            "id": verification_id,
+                            "label": str(verification.get("label") or ""),
+                            "state": str(
+                                observation.get("state") or "PENDING"
+                            ),
+                            "reason": str(observation.get("reason") or ""),
+                        }
+                    )
+                how_it_changes = str(plan.get("how_it_changes") or "")
+            else:
+                counts = {
+                    "code_complete": 0,
+                    "code_total": 0,
+                    "verification_passed": 0,
+                    "verification_total": 0,
+                }
+                owned_files = change.get("owned_files")
+                owned_files = (
+                    [str(path) for path in owned_files]
+                    if isinstance(owned_files, list)
+                    else []
+                )
+                code_locations = [
+                    {
+                        "id": f"legacy-location-{index + 1}",
+                        "action": "REUSE",
+                        "path": path,
+                        "displayPath": path,
+                        "root": "workspace",
+                        "state": "PENDING",
+                        "reason": "legacy Change has no observable predicate",
+                    }
+                    for index, path in enumerate(owned_files)
+                ]
+                tests = review.get("tests")
+                tests = tests if isinstance(tests, list) else []
+                verifications = [
+                    {
+                        "id": str(
+                            test.get("testId")
+                            or test.get("id")
+                            or f"legacy-verification-{index + 1}"
+                        ),
+                        "label": str(
+                            test.get("label")
+                            or test.get("note")
+                            or test.get("testId")
+                            or "Legacy verification"
+                        ),
+                        "state": str(test.get("state") or "PENDING").upper(),
+                        "reason": "legacy review observation",
+                    }
+                    for index, test in enumerate(tests)
+                    if isinstance(test, Mapping)
+                ]
+                if not verifications:
+                    verifications = [
+                        {
+                            "id": "legacy-verification",
+                            "label": "Replace this legacy Change with a structured verification",
+                            "state": "PENDING",
+                            "reason": "legacy Change has no structured verification",
+                        }
+                    ]
+                how_it_changes = str(
+                    change.get("summary")
+                    or review.get("summary")
+                    or "Legacy Change; migrate its implementation detail."
+                )
+            complete = (
+                counts["code_total"] > 0
+                and counts["code_complete"] == counts["code_total"]
+                and counts["verification_total"] > 0
+                and counts["verification_passed"]
+                == counts["verification_total"]
+            )
+            change_local_id = str(
+                change.get("local_id")
+                or change.get("change_id")
+                or change.get("id")
+            )
             implementation_changes.append(
                 {
-                    **copy.deepcopy(change),
-                    "id": str(
-                        change.get("local_id")
-                        or change.get("change_id")
-                        or change.get("id")
-                    ),
+                    "id": change_local_id,
+                    "anchor": re.sub(
+                        r"^-+|-+$",
+                        "",
+                        re.sub(
+                            r"[^a-z0-9_-]+",
+                            "-",
+                            change_local_id.lower(),
+                        ),
+                    )
+                    or "implementation",
+                    "order": change.get("order"),
                     "title": change.get("title")
                     or change.get("purpose")
                     or change.get("summary")
                     or "Implementation change",
-                    "oneLineSummary": change.get("summary")
-                    or review.get("summary")
-                    or review.get("status")
-                    or "unmeasured",
-                    "codeAnchors": owned_files,
-                    "validatingExp": ", ".join(validating),
-                    "tests": tests,
+                    "validatingExperiments": validating,
+                    "howItChanges": how_it_changes,
+                    "codeLocations": code_locations,
+                    "verifications": verifications,
+                    "codeComplete": counts["code_complete"],
+                    "codeTotal": counts["code_total"],
+                    "verificationPassed": counts["verification_passed"],
+                    "verificationTotal": counts["verification_total"],
+                    "complete": complete,
                 }
             )
-        implementation["changes"] = _merge_rows(
-            implementation.get("changes"),
-            implementation_changes,
-        )
+        implementation = {"changes": implementation_changes}
         package_decisions = sorted(
             decisions_by_package.get(package_id, []),
             key=lambda row: (
@@ -758,25 +1294,6 @@ def package_view_models(state: Mapping[str, Any]) -> list[dict[str, Any]]:
             projected.get("acknowledgements"),
             acknowledgements,
         )
-        launch_acknowledgements = [
-            row
-            for row in acknowledgements
-            if row.get("kind") in {"LAUNCH_ACK", "READY_TO_LAUNCH_ACK"}
-            or row.get("ack_type") in {"LAUNCH_ACK", "READY_TO_LAUNCH_ACK"}
-        ]
-        if launch_acknowledgements:
-            latest_ack = launch_acknowledgements[-1]
-            ack_actor = latest_ack.get("actor")
-            ack_actor = ack_actor if isinstance(ack_actor, Mapping) else {}
-            implementation["adjudication"] = {
-                "decision": latest_ack.get("kind")
-                or latest_ack.get("ack_type"),
-                "evidenceUsed": _first_evidence_path(latest_ack),
-                "userAck": ack_actor.get("id")
-                or latest_ack.get("value")
-                or "unmeasured",
-                "ackLockedAt": latest_ack.get("recorded_at") or "",
-            }
         projected["implementation"] = implementation
         if route_decisions:
             latest = route_decisions[-1]
@@ -803,6 +1320,22 @@ def package_view_models(state: Mapping[str, Any]) -> list[dict[str, Any]]:
         gate_rows: list[dict[str, Any]] = []
         result_blocks: list[dict[str, Any]] = []
         experiment_bucket = _bucket(state, "experiment")
+        schema_experiments = {
+            experiment_id
+            for experiment_id, experiment in experiments_by_id.items()
+            if experiment.get("package_id") == package_id
+            and experiment.get("resultSchema") is not None
+        }
+        for experiment_id in sorted(schema_experiments):
+            experiment = experiments_by_id[experiment_id]
+            result_blocks.append(
+                _schema_result_block(
+                    experiment_id,
+                    experiment,
+                    runs_by_experiment.get(experiment_id, []),
+                    paths=paths,
+                )
+            )
         for run_id, run in sorted(
             (
                 (str(run_id), run)
@@ -821,7 +1354,8 @@ def package_view_models(state: Mapping[str, Any]) -> list[dict[str, Any]]:
             method_row, gate_row, block = rows
             method_rows.append(method_row)
             gate_rows.append(gate_row)
-            result_blocks.append(block)
+            if str(run.get("experiment_id") or "") not in schema_experiments:
+                result_blocks.append(block)
         legacy_methods = legacy_facts["methodsTried"]
         methods_base = (
             legacy_methods
@@ -927,6 +1461,12 @@ def package_view_models(state: Mapping[str, Any]) -> list[dict[str, Any]]:
         )
         projected["lastTransition"] = _last_transition_projection(projected)
         projected["nextStateConditions"] = _next_state_conditions_projection(projected)
+        projected["tracker"] = _tracker_projection(
+            package_id,
+            projected["experiments"],
+            implementation_changes,
+            runs_by_experiment,
+        )
 
         allocation_rows: list[dict[str, Any]] = []
         for allocation_id, allocation in sorted(

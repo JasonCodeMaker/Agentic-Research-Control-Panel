@@ -181,21 +181,16 @@
         </article>
 
         <article class="rule-card" data-rule="R18" data-kind="benefit">
-          <div class="id">R18 - Audience-tagged context</div>
-          <h3 class="title">Collapse agent-only context by default</h3>
+          <div class="id">R18 - Package audience boundary</div>
+          <h3 class="title">Keep agent-only context out of Package pages</h3>
           <p>
-            Content that is agent-important only - continuity notes, internal
-            reasoning, file-map pointers, "remember for next turn" - must be
-            wrapped in
-            <code>&lt;details data-audience="agent"&gt;&lt;summary&gt;agent context&lt;/summary&gt;...&lt;/details&gt;</code>
-            so the browser collapses it for human readers while it stays in
-            the source for agents. Both-audience and human-only content
-            renders inline without <code>&lt;details&gt;</code>. The
-            <code>data-audience="agent"</code> attribute extends the R6
-            stable-anchor taxonomy. The chat-output form of this rule wraps
-            agent-only blocks in a markdown <code>&gt;</code> blockquote.
+            Package pages are user projections. Do not render Agent Content,
+            Agent context, internal reasoning, continuity instructions, or
+            duplicated identity for agents. Agents load bounded state through
+            research-op and inspect Run evidence instead of reading the
+            interface.
           </p>
-          <p class="applies">Applies to: every package page that carries agent continuity notes; dashboard chrome that exposes agent context.</p>
+          <p class="applies">Applies to: every Package page and generated Package template.</p>
         </article>
 
       </div>

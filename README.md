@@ -371,6 +371,8 @@ The interface is intentionally for people:
 - It preserves the current dashboard, package-page, module, table, and visual
   layout.
 - It is rebuilt from state and run evidence on demand, never edited as authority.
+- Its Implementation page groups Changes by Experiment and projects read-only
+  code-location and verification checkboxes from state-backed observations.
 - It may be deleted and regenerated without losing research truth.
 - Agents may report its URL, but they do not read it to form context, infer
   status, verify a claim, or choose the next action.

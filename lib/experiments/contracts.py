@@ -109,6 +109,13 @@ def context_sha256(snapshot: dict[str, Any]) -> str:
             "selected_experiment_local_id"
         ),
     }
+    # Keep pre-result-schema run envelopes verifiable while binding the two
+    # new fields whenever a new launcher writes them.
+    if "result_schema" in snapshot or "result_schema_sha256" in snapshot:
+        payload["result_schema"] = snapshot.get("result_schema")
+        payload["result_schema_sha256"] = snapshot.get(
+            "result_schema_sha256"
+        )
     return _sha256(payload)
 
 
@@ -290,3 +297,31 @@ def verify_result_evidence(
         if not isinstance(ref, dict):
             raise ValueError("result.json evidence entries must be objects")
         verify_evidence_ref(paths, ref, run=run)
+
+    from lib.experiments.result_tables import verify_finalized_result_tables
+    from lib.research_state.io import read_json
+    from lib.result_schema import result_schema_from_context
+
+    context_path = paths.root / str(run.get("context_json") or "")
+    context = read_json(context_path)
+    if not isinstance(context, dict):
+        raise ValueError("run context_json is missing or invalid")
+    result_schema = result_schema_from_context(context)
+    result_table_fields = {
+        "result_schema_sha256",
+        "result_table_manifest_uri",
+        "result_tables",
+    }
+    present = result_table_fields.intersection(result)
+    if result_schema is not None and result.get("kind") == "experiment-result":
+        missing = sorted(result_table_fields - set(result))
+        if missing:
+            raise ValueError(
+                "schema-backed result is missing table fields: "
+                + ", ".join(missing)
+            )
+        verify_finalized_result_tables(paths, run, result)
+    elif present:
+        raise ValueError(
+            "result table fields require a frozen schema-backed experiment result"
+        )

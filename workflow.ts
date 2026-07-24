@@ -86,6 +86,8 @@ export type NextRoute = string;
 export type ExperimentSnapshot = {
   expId: string;
   status: RunStatus | "NOT_STARTED" | string;
+  implementationReadiness?: "PASS" | "BLOCKED" | "NOT_REQUIRED" | string;
+  currentChangeId?: string | null;
 };
 
 export type RunSnapshot = {
@@ -247,6 +249,7 @@ export function evaluateWorkflow(snapshot: WorkflowSnapshot): RunTicket {
   let expId: string | null = null;
   let nextAction: NextAction;
   let packageBlocker = packageState.blocker;
+  let readiness = snapshot.readiness || "NOT_RUN";
 
   if (packageState.lifecycle === "DRAFT") {
     packagePhase = null;
@@ -281,7 +284,21 @@ export function evaluateWorkflow(snapshot: WorkflowSnapshot): RunTicket {
     route = "ASK_USER";
     nextAction = { kind: "ASK_USER", reason: packageBlocker.summary };
   } else if (nextQueued) {
-    if (canMoveTo(currentState, "READY_TO_LAUNCH")) {
+    readiness = nextQueued.implementationReadiness || "NOT_REQUIRED";
+    if (!["PASS", "NOT_REQUIRED"].includes(readiness)) {
+      packagePhase = canMoveTo(currentState, "IMPLEMENTING")
+        ? "IMPLEMENTING"
+        : currentState;
+      route = "FIX_IMPLEMENTATION";
+      expId = nextQueued.expId;
+      const currentChange = nextQueued.currentChangeId
+        ? `; continue Change ${nextQueued.currentChangeId}`
+        : "; declare and complete its implementation Change";
+      nextAction = {
+        kind: "REPAIR",
+        reason: `${nextQueued.expId} implementation is incomplete${currentChange}`,
+      };
+    } else if (canMoveTo(currentState, "READY_TO_LAUNCH")) {
       packagePhase = "READY_TO_LAUNCH";
       route = "RUN_NEXT_EXPERIMENT";
       expId = nextQueued.expId;
@@ -347,7 +364,7 @@ export function evaluateWorkflow(snapshot: WorkflowSnapshot): RunTicket {
     packageBlocker,
     workflowState,
     route,
-    readiness: snapshot.readiness || "NOT_RUN",
+    readiness,
     perRun,
     requiredMutations,
     stopGate,

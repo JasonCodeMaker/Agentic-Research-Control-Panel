@@ -7,106 +7,30 @@
   <link rel="stylesheet" href="../../assets/research.css">
 </head>
 <body data-page="results" data-package-id="$package_id">
-  <!-- Pattern reference: skills/research-package/references/results-page-pattern.md -->
   <a class="skip-link" href="#user-zone">Skip to main content</a>
   <div class="shell">
 
     <header class="masthead" data-section="masthead">
       <div class="eyebrow">results</div>
-      <h1>Results &mdash; $name</h1>
-      <p class="lead">N canonical result blocks (one per measurable phase). The result-gate ledger and validity counts live in the agent zone.</p>
-      <div class="toolbar"><a class="pill" href="index.html">Overview</a><a class="pill" href="plan.html">Plan</a><a class="pill" href="tracker.html#chosen-route">Chosen route</a></div>
+      <h1>Results: $name</h1>
+      <p class="lead">Measured outputs grouped by Experiment. Main tables open by default; ablations stay collapsed.</p>
+      <div class="toolbar"><a class="pill" href="index.html">Overview</a><a class="pill" href="plan.html">Plan</a><a class="pill" href="implementation.html">Implementation</a></div>
       <div class="status-strip" data-status-strip aria-label="Package status (T2)"></div>
     </header>
 
     <nav class="package-nav" data-package-nav aria-label="Package pages"></nav>
 
     <section data-audience="user" data-section="user-zone" id="user-zone" aria-label="User zone">
-
-      <article class="module-card" data-card="hypothesis-restated">
-        <h2>Hypothesis (re-stated for transition, T8)</h2>
-        <p data-hypothesis-restated data-field="hypothesis-text">$hypothesis</p>
-      </article>
-
-      <article class="module-card eval-contract-card" data-card="eval-contract">
-        <h2>Eval contract</h2>
-        <p class="card-text" data-field="eval-contract">unmeasured &mdash; one explainer paragraph for the protocol(s). Cite <code>objectiveContract.metric</code> and the seed/split rule.</p>
-      </article>
-
-      <section class="result-blocks" data-list="result-blocks" data-fact-projection="results" id="result-blocks" aria-label="Result blocks">
-        <article class="result-block" data-result-block data-phase-id="unmeasured">
-          <h2 data-field="result-block-title">Phase &mdash; one-clause purpose</h2>
-          <p class="block-summary" data-field="result-block-summary"><em>unmeasured</em> &mdash; one sentence (&le; 25 words) stating what this phase measures + the headline finding.</p>
-          <details class="block-detail">
-            <summary>Full methodology &amp; provenance</summary>
-            <p class="card-text" data-field="result-block-detail">unmeasured &mdash; long-form methodology, baselines, re-run dates, launcher / manifest paths.</p>
-          </details>
-          <table class="data-table block-main-table" data-table="result-block-main">
-            <thead><tr><th>Setting / split</th><th>Metric</th><th>Value</th><th>Artifact</th></tr></thead>
-            <tbody data-table-body="result-block-main">
-              <tr><td data-field="row-setting">unmeasured</td><td data-field="row-metric">unmeasured</td><td class="num" data-field="row-value">&mdash;</td><td><code data-artifact="row-artifact">unmeasured</code></td></tr>
-            </tbody>
-          </table>
-          <section class="block-insight" data-block="block-insight">
-            <h4>Insight</h4>
-            <ul class="block-insight-bullets" data-list="block-insight-bullets">
-              <li class="block-insight-bullet" data-field="insight-headline"><em>No cells measured yet; awaiting phase launch.</em></li>
-            </ul>
-          </section>
-          <details class="block-ablation">
-            <summary>Ablations / peer tables</summary>
-            <p class="card-text"><em>No ablation tables yet. Add peer tables here; each follows the same 6-part shape with <code>&lt;h3&gt;</code> and a 1-line block-summary.</em></p>
-          </details>
-        </article>
+      <section
+        class="result-experiments"
+        data-list="result-experiments"
+        data-fact-projection="results"
+        id="results-by-experiment"
+        aria-label="Results by Experiment"
+      >
+        <p class="result-page-empty">No Experiments are attached to this Package.</p>
       </section>
-
     </section>
-
-    <details data-audience="agent" data-section="agent-zone" id="agent-zone">
-      <summary>Agent context</summary>
-
-      <article class="module-card" data-card="result-gate">
-        <h2>Result gate (T10, T23)</h2>
-        <p class="card-text">10-column verdict ledger &mdash; one row per planned exp. Agent-only by canon (width + reviewer-defense content). User's verdict view is the per-block Insight bullets above.</p>
-        <table class="data-table" data-table="result-gate">
-          <thead><tr><th>Exp ID</th><th>Validity</th><th>Baseline</th><th>PLAN gate</th><th>Observed metric</th><th>Budget use</th><th>Seed status</th><th>Artifacts</th><th>Verdict</th><th>Reason</th></tr></thead>
-          <tbody data-table-body="result-gate">
-            <tr data-ack="result-pass" data-ack-value="">
-              <td data-field="exp-id">unmeasured</td>
-              <td data-validity="missing">missing</td>
-              <td data-field="baseline">unmeasured</td>
-              <td data-field="plan-gate">unmeasured</td>
-              <td data-field="observed-metric">unmeasured</td>
-              <td data-field="budget-use">unmeasured</td>
-              <td data-field="seed-status">unmeasured</td>
-              <td data-field="artifact-completeness">unmeasured</td>
-              <td data-decision data-field="verdict">unmeasured</td>
-              <td data-field="reason">unmeasured</td>
-            </tr>
-          </tbody>
-        </table>
-      </article>
-
-      <article class="module-card" data-card="validity-summary">
-        <h2>Validity counts (T10, R16: never aggregated across classes)</h2>
-        <p>
-          <span class="chip" data-validity="valid">valid 0</span>
-          <span class="chip" data-validity="diagnostic_only">diagnostic_only 0</span>
-          <span class="chip" data-validity="failed">failed 0</span>
-          <span class="chip" data-validity="missing">missing 0</span>
-        </p>
-      </article>
-
-      <article class="module-card" data-card="no-change-affirmation">
-        <h2>No-change affirmation (T16)</h2>
-        <div class="kv-grid">
-          <div class="k">Affirmed</div><div data-field="affirmed">unmeasured</div>
-          <div class="k">Commit hash</div><code data-field="commit-hash">unmeasured</code>
-          <div class="k">Owned files</div><div><a href="implementation.html#owned-files">implementation / owned files</a></div>
-        </div>
-      </article>
-
-    </details>
 
     <footer class="footer-note">
       <time data-field="last-updated" datetime="$last_updated">$last_updated</time>

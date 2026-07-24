@@ -90,6 +90,14 @@ execution phase, and blocker. Legacy Packages retain the historical matrix.
 The `abstract` target updates the Package-level Abstract / TLDR used by the
 Overview Hero lead; it does not update `problem`, `objective`, or Direction
 Scope.
+The `tracker-impl-review-row` target owns each state-backed Change. New Changes
+carry a structured `plan` with code locations and verifications; the gateway
+captures their baselines before edits. Later checkbox observations are updated
+through `research-run`'s implementation-status helper, never through HTML.
+The `experiment-result-schema` target attaches one pre-run Result schema to a
+bound Experiment without changing its four-field `spec`. It is available only
+for an unblocked `ACTIVE / CONTEXT_LOADED` Package and rejects changes after
+the Experiment has any Run.
 Never mutate `Experiment.spec` through a Package command. Intent changes need a
 new Scope review. Package identity changes use the dedicated
 `research-package` transaction.
@@ -105,6 +113,12 @@ Management callbacks authorize launch, register the immutable Run, record its
 terminal observation, and ingest a verified result. Result ingest checks Run
 identity, status, gate, EvidenceRef hashes, and Package policy before changing
 management state.
+
+For a schema-backed Run, launch freezes the schema and its SHA-256 in
+`context.json`. Result ingest additionally requires the verified Result-table
+manifest, its comprehensive source CSV, and every declared derived table as
+hash-bound EvidenceRefs. The gateway rejects missing tables, schema mismatch,
+source or table hash drift, and manually assembled summaries.
 
 Checkpoint, sentinel, phase-marker, candidate, metric, and terminal files are
 observations. They become scientific claims only through the result and

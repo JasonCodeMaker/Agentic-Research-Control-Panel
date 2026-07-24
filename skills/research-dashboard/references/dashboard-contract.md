@@ -120,8 +120,8 @@ the same neutral treatment until the transition is recorded. Empty optional
 headline content stays hidden, while declared experiments render in the
 Experiment queue.
 
-The Research Intent card renders exactly four state-backed rows in causal
-order: **Problem**, **Motivation**, **Objective**, and **Hypothesis**. Problem
+The Research Intent card renders exactly four state-backed rows in presentation
+order: **Problem**, **Motivation**, **Hypothesis**, and **Objective**. Problem
 states the known or high-probability research gap; Motivation gives its value
 and high-level solution rationale; Objective gives the verifiable target for
 judging that rationale; Hypothesis is the falsifiable natural-language
@@ -129,6 +129,101 @@ synthesis of Motivation and Objective. The renderer never hides a row because
 its text duplicates another field and never invents `*Tldr` alternatives.
 Missing or duplicated content is an upstream Package/Scope validation error,
 not a presentation rule.
+
+Package pages do not render modules labeled Agent Content or Agent context, or
+any other agent-only module. The Overview keeps the source package and evidence
+root in one user-facing Source & Evidence card. It does not duplicate Research
+Intent, navigation, interface paths, or agent continuity instructions.
+
+The Plan page renders the Package's Experiments as one ordered Pipeline
+timeline. It has no Package-level Plan invariants card. Every node keeps the
+existing Experiment identity, status, purpose, `after`, output, gate, evidence,
+lock state, and task links, and also renders the canonical `config_ref` and
+`control_mode`. Node order communicates the planned execution sequence;
+`after` communicates only a declared Scope dependency. The projection never
+extracts comparison, metric, budget, or fixed-condition facts from free text.
+Those details remain in the immutable configuration or linked contract.
+
+The Implementation page answers one question: what must change in the
+codebase to complete each Experiment? It renders one Experiment-grouped code
+change map. Each Change has exactly three human sections:
+
+1. Code locations, with a planned action and a read-only checkbox.
+2. How it changes.
+3. Verification, with one read-only checkbox per declared check.
+
+A checkbox is checked only when its state-backed observation is `PASS`.
+`PENDING`, `FAIL`, and `STALE` remain unchecked. The projection never accepts
+browser input and never derives completion from file existence on its own.
+Hypothesis restatement, Plan coverage maps, critical/rollup chips, pseudo-code,
+test rule catalogs, adjudication, and agent-only technical mirrors are not part
+of this page.
+
+The Results page answers one question: what did each Experiment measure? It
+renders one Experiment block with zero or more schema-backed tables and no
+Hypothesis restatement, evaluation-contract banner, or package-level result
+gate. Main tables are open by default; ablation tables are collapsed.
+
+Before a verified Run exists, the renderer preserves the frozen rows and
+columns, marks the table `planned`, and displays null cells as `/`. A finalized
+Run may replace those cells only when its frozen schema digest and Result-table
+manifest verify against the comprehensive source CSV and every derived table
+EvidenceRef. `MEASURED` cells display finite numbers. `FAILED` cells remain
+null with a reason. `UNDEFINED` is allowed only for schema-nullable columns and
+also requires a reason. Legacy or mismatched results remain explicitly
+unverified and never become the source for a schema-backed table.
+
+Wide Result tables remain inside the Package content width. When their columns
+need more space, only that table's scroll container moves horizontally; the
+document itself must not overflow. Keep every schema-declared metric visible
+rather than hiding columns or converting comparison rows into cards.
+
+The Tracker page answers only two questions: what task is current, and where
+are intermediate Run files stored? It contains two sections:
+
+1. **To-Do**, grouped by Experiment in Plan order. Each Experiment has one task
+   per Implementation Change followed by one Run task. A Change task is
+   complete only when every code location and verification observation is
+   `PASS`. The Run task changes from launch, to monitor, to repair or finalize,
+   to complete as Run and verified Result evidence arrive.
+2. **Artifact locations**, grouped by the same Experiments. Planned locations
+   include the Run directory pattern, the Experiment output, and Change
+   locations whose action is `OUTPUT`. Once a Run exists, show its root and the
+   canonical `run.json`, `context.json`, `status.json`, `events.jsonl`,
+   `metrics.jsonl`, `log.txt`, and `result.json` paths.
+
+For a nonempty To-Do, the projection marks exactly one task current: prefer an
+active Run, otherwise use the first incomplete Change in Plan order, then the
+first incomplete Run task. It derives totals and native disabled checkbox
+states from Experiment, Change, Run, and Result authority; it never reads
+another page, stores a To-Do boolean, or accepts browser input. A canonical
+path states where a file belongs, not that the file exists without
+corresponding evidence.
+
+Do not render Latest live check, launch readiness, resource allocation, chosen
+route, Exp directory atlas, Resume Block, per-Run metric cards, or agent
+context on Tracker. Other pages link to the owning Plan, Implementation, or
+Results content instead of copying it. `assets/live-data.js` may refresh the
+projection in place; do not add a watcher or another state source.
+
+The Docs index is a visual-consistency projection, not a content rewrite.
+Preserve its state-backed content, DOM order, groups, anchors, links, metadata,
+and document cards. Use the same masthead, status strip, navigation, spacing,
+typography, and color tokens as the other Package pages.
+
+Its table of contents is compact and uses the shared clay left accent. Each
+document group is one full-width container with a restrained clay rail; inner
+document cards stay neutral so the hierarchy is unambiguous. A group containing
+one document renders that card across the full available width. A group with
+multiple documents uses exactly two equal columns. At viewport widths of
+`720px` or less, every group becomes one column. Doc-source pages reuse the
+same table-of-contents treatment.
+
+Do not add a Docs-specific component system, dependency, motion layer, or
+second information architecture. A visual consistency pass must not rewrite
+the documents or change their links. The shared `research.css` asset implements
+this contract, and Docs DOM and visual parity baselines enforce it for future
+scaffolds.
 
 ## Required generated data
 

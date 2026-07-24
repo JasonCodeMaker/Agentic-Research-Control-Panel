@@ -19,6 +19,7 @@ def seed(
     experiment: bool = True,
     package: bool = True,
     legacy_experiment: bool = False,
+    vnext: bool = False,
     phase: str = "CONTEXT_LOADED",
 ) -> ResearchPaths:
     paths = ResearchPaths.resolve(workspace=root, environ={})
@@ -130,6 +131,22 @@ def seed(
                 "lifecycle": "ACTIVE",
                 "phase": phase,
                 "blocker": None,
+                **(
+                    {
+                        "executionLease": {
+                            "status": "OPEN",
+                            "experiment_ids": [
+                                (
+                                    LEGACY_EXPERIMENT_ID
+                                    if legacy_experiment
+                                    else CANONICAL_EXPERIMENT_ID
+                                )
+                            ],
+                        }
+                    }
+                    if vnext
+                    else {}
+                ),
             },
         )
     return paths

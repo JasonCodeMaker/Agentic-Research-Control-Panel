@@ -415,6 +415,13 @@ def commit_run_result_finalized(
         "evidence": evidence,
         "evidence_count": len(evidence),
     }
+    for field in (
+        "result_schema_sha256",
+        "result_table_manifest_uri",
+        "result_tables",
+    ):
+        if field in persisted:
+            summary[field] = copy.deepcopy(persisted[field])
     causation_id = str(
         current.get("result_finalized_event_id")
         or current["terminal_event_id"]

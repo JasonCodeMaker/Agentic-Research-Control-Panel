@@ -15,6 +15,7 @@ from lib.experiments.contracts import (
     verify_run_files,
 )
 from lib.experiments.callbacks import commit_run_result_finalized
+from lib.experiments.result_tables import verify_result_table_manifest
 from lib.experiments.status import canonical_status, is_terminal
 from lib.research_state import EventStore, ResearchPaths
 from lib.research_state.io import read_json, write_json_atomic
@@ -52,6 +53,7 @@ def extract_result(
     *,
     payload: dict[str, Any],
     evidence_files: Iterable[Path] = (),
+    result_table_manifest: Path | None = None,
 ) -> dict[str, Any]:
     """Merge scientific result fields without changing run intent or status."""
     unknown = sorted(set(payload) - RESULT_FIELDS)
@@ -106,6 +108,22 @@ def extract_result(
             raise ValueError(f"{field} must be a list of non-empty strings")
         result[field] = value
 
+    table_evidence: list[dict[str, Any]] = []
+    if result_table_manifest is not None:
+        verified_tables = verify_result_table_manifest(
+            paths,
+            run,
+            context,
+            Path(result_table_manifest).resolve(),
+        )
+        for field in (
+            "result_schema_sha256",
+            "result_table_manifest_uri",
+            "result_tables",
+        ):
+            result[field] = copy.deepcopy(verified_tables[field])
+        table_evidence = copy.deepcopy(verified_tables["evidence"])
+
     refs = result.get("evidence", [])
     if not isinstance(refs, list):
         raise ValueError("existing result evidence must be a list")
@@ -116,6 +134,8 @@ def extract_result(
         by_identity[(str(ref.get("kind")), str(ref.get("uri")))] = copy.deepcopy(ref)
     for path in evidence_files:
         ref = file_evidence_ref(paths, run, Path(path))
+        by_identity[(ref["kind"], ref["uri"])] = ref
+    for ref in table_evidence:
         by_identity[(ref["kind"], ref["uri"])] = ref
     result["evidence"] = [
         by_identity[key] for key in sorted(by_identity, key=lambda item: (item[0], item[1]))
@@ -142,6 +162,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--payload", required=True, type=_load_object)
     parser.add_argument("--evidence", action="append", default=[])
+    parser.add_argument("--result-table-manifest")
     args = parser.parse_args(argv)
     paths = ResearchPaths.resolve(
         workspace=args.workspace,
@@ -152,6 +173,11 @@ def main(argv: list[str] | None = None) -> int:
         Path(args.run_dir),
         payload=args.payload,
         evidence_files=[Path(value) for value in args.evidence],
+        result_table_manifest=(
+            Path(args.result_table_manifest)
+            if args.result_table_manifest
+            else None
+        ),
     )
     print(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False))
     return 0

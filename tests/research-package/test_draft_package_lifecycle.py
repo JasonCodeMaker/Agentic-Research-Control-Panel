@@ -84,6 +84,9 @@ def _draft(paths: ResearchPaths, package_id: str = "package-one") -> dict:
     assert package["lifecycle"] == "DRAFT"
     assert package["draftStatus"] == "REFINING"
     assert package["executionAuthorized"] is False
+    assert package["pages"] == list(
+        draft_package.create_research_package.STAGE_PAGES
+    )
     assert [
         row["event_type"]
         for row in StateQuery(paths).history("brainstorm", package_id)["data"]
@@ -218,6 +221,103 @@ def test_scope_bundle_rejects_invalid_research_intent(tmp_path, patch, message):
             direction_node(source="draft-package:package-one"),
             [experiment_node(source="draft-package:package-one")],
         )
+
+
+def test_reopened_package_revises_scope_in_one_atomic_bundle(tmp_path):
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    _draft(paths)
+    direction_v1 = direction_node(source="draft-package:package-one")
+    experiment_v1 = experiment_node(source="draft-package:package-one")
+    initial_review = management.prepare_scope_bundle(
+        paths,
+        "package-one",
+        direction_v1,
+        [experiment_v1],
+    )
+    management.finalize_scope_bundle(
+        paths,
+        "package-one",
+        direction_v1,
+        [experiment_v1],
+        initial_review["receipt"]["content_sha256"],
+        actor=USER,
+        review_id="initial-scope-review",
+    )
+
+    state = EventStore(paths).state()
+    management.commit_package_reopen_as_draft(
+        paths,
+        "package-one",
+        reason="Revise the Research Intent before any Run starts.",
+        expected_version=state["aggregate_versions"]["package/package-one"],
+        actor=USER,
+    )
+    revised_hypothesis = (
+        "Because both tasks rank videos from text, candidate-conditioned soft "
+        "query refinement should improve retrieval under the same fixed retriever "
+        "and matched two-call budget."
+    )
+    draft_package.revise(
+        paths,
+        package_id="package-one",
+        patch={
+            "problem": "The method has not been validated on the target retrieval task.",
+            "motivation": (
+                "The shared text-to-corpus interface makes a controlled transfer plausible."
+            ),
+            "objective": (
+                "Measure the transfer against matched controls and record its repair and harm."
+            ),
+            "hypothesis": revised_hypothesis,
+        },
+        actor_id="test",
+    )
+    direction_v2 = direction_node(
+        version=2,
+        source="draft-package:package-one:v2",
+        hypothesis=revised_hypothesis,
+    )
+    experiment_v2 = experiment_node(
+        version=2,
+        source="draft-package:package-one:v2",
+    )
+    revised_review = management.prepare_scope_bundle(
+        paths,
+        "package-one",
+        direction_v2,
+        [experiment_v2],
+    )
+
+    assert revised_review["review"]["scope_operation"] == "revise"
+    event = management.finalize_scope_bundle(
+        paths,
+        "package-one",
+        direction_v2,
+        [experiment_v2],
+        revised_review["receipt"]["content_sha256"],
+        actor=USER,
+        review_id="revised-scope-review",
+    )
+
+    state = EventStore(paths).state()
+    package = state["aggregates"]["package"]["package-one"]
+    direction = state["aggregates"]["direction"][direction_v2["id"]]
+    experiment = state["aggregates"]["experiment"][experiment_v2["id"]]
+    assert package["lifecycle"] == "ACTIVE"
+    assert package["sourceVersion"] == 2
+    assert package["hypothesis"] == revised_hypothesis
+    assert direction["version"] == 2
+    assert experiment["scope_version"] == 2
+    assert experiment["scope_confirmation"] == "CONFIRMED"
+    assert experiment["package_id"] == "package-one"
+    for aggregate_type, aggregate_id in (
+        ("package", "package-one"),
+        ("direction", direction_v2["id"]),
+        ("experiment", experiment_v2["id"]),
+    ):
+        assert StateQuery(paths).history(aggregate_type, aggregate_id)["data"][-1][
+            "event_id"
+        ] == event["event_id"]
 
 
 def test_scope_bundle_review_is_invalidated_by_draft_revision(tmp_path):

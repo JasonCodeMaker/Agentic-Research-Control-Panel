@@ -15,7 +15,7 @@ import pytest
 from lib.experiments.launch import launch_run
 from lib.interface import build_interface
 from lib.interface.package import package_view_models
-from lib.research_state import EventStore, ResearchPaths
+from lib.research_state import CommandRejected, EventStore, ResearchPaths
 from tests.scope_fixtures import (
     commit_accepted_scope,
     direction_node,
@@ -34,6 +34,12 @@ ACTOR = {"type": "agent", "id": "test"}
 USER = {"type": "user", "id": "test-user"}
 DIRECTION_ID = "dir/retrieval-v2"
 EXPERIMENT_ID = "experiment/retrieval-v2/M0-baseline-validity"
+RESEARCH_INTENT = {
+    "problem": "The current retrieval workflow has no validated transfer path.",
+    "motivation": "A matched comparison can test whether shared structure enables transfer.",
+    "objective": "Collect bounded evidence that determines whether transfer is realized.",
+    "hypothesis": direction_node()["spec"]["hypothesis"],
+}
 
 
 def _evolution_ref() -> dict[str, object]:
@@ -70,7 +76,7 @@ def _create(paths: ResearchPaths, *, phase: str) -> EventStore:
             "lifecycle": "ACTIVE",
             "phase": "CONTEXT_LOADED",
             "blocker": None,
-            "hypothesis": "loss decreases",
+            **RESEARCH_INTENT,
             "direction_id": DIRECTION_ID,
             "sourceDirection": DIRECTION_ID,
             "sourceVersion": 1,
@@ -117,6 +123,100 @@ def _create(paths: ResearchPaths, *, phase: str) -> EventStore:
     return store
 
 
+def test_result_schema_has_a_narrow_pre_run_update_gateway(tmp_path):
+    paths = ResearchPaths.resolve(workspace=tmp_path, environ={})
+    store = _create(paths, phase="CONTEXT_LOADED")
+    before = store.state()["aggregates"]["experiment"][EXPERIMENT_ID]
+    original_spec = before["spec"]
+    schema = {
+        "version": 1,
+        "tables": [
+            {
+                "id": "main-result",
+                "type": "main",
+                "title": "Main result",
+                "rowLabel": "Method",
+                "rows": [
+                    {
+                        "id": "baseline",
+                        "label": "Baseline",
+                        "selector": {"method": "baseline"},
+                    }
+                ],
+                "columns": [
+                    {
+                        "id": "r1",
+                        "label": "R@1 (%)",
+                        "metric": "r_at_1_pct",
+                        "unit": "percent",
+                    }
+                ],
+            }
+        ],
+    }
+    events = management.apply_package_operation(
+        paths,
+        "pkg",
+        operation="update",
+        target="experiment-result-schema",
+        payload={
+            "scope_experiment_id": EXPERIMENT_ID,
+            "resultSchema": schema,
+        },
+        actor=ACTOR,
+        idempotency_key="pkg-result-schema-v1",
+    )
+    repeated = management.apply_package_operation(
+        paths,
+        "pkg",
+        operation="update",
+        target="experiment-result-schema",
+        payload={
+            "scope_experiment_id": EXPERIMENT_ID,
+            "resultSchema": schema,
+        },
+        actor=ACTOR,
+        idempotency_key="pkg-result-schema-v1",
+    )
+    assert repeated[0]["event_id"] == events[0]["event_id"]
+    experiment = store.state()["aggregates"]["experiment"][EXPERIMENT_ID]
+    assert experiment["spec"] == original_spec
+    assert experiment["resultSchema"]["tables"][0]["columns"][0][
+        "nullable"
+    ] is False
+
+    EventStore(paths, fixture_mode=True).commit(
+        event_type="AggregateImported",
+        aggregate_type="run",
+        aggregate_id="schema-lock",
+        payload={
+            "record": {
+                "id": "schema-lock",
+                "package_id": "pkg",
+                "experiment_id": EXPERIMENT_ID,
+                "status": "QUEUED",
+            }
+        },
+        actor=ACTOR,
+        idempotency_key="schema-lock-run",
+    )
+    changed = json.loads(json.dumps(schema))
+    changed["tables"][0]["title"] = "Changed after launch"
+    with pytest.raises(CommandRejected, match="cannot change after"):
+        management.apply_package_operation(
+            paths,
+            "pkg",
+            operation="update",
+            target="experiment-result-schema",
+            payload={
+                "scope_experiment_id": EXPERIMENT_ID,
+                "resultSchema": changed,
+            },
+            actor=ACTOR,
+            idempotency_key="pkg-result-schema-v2",
+        )
+
+
 def test_competing_package_materializations_cannot_leave_an_orphan_package(
     tmp_path,
 ):
@@ -143,6 +243,7 @@ def test_competing_package_materializations_cannot_leave_an_orphan_package(
             "lifecycle": "ACTIVE",
             "phase": "CONTEXT_LOADED",
             "blocker": None,
+            **RESEARCH_INTENT,
             "direction_id": DIRECTION_ID,
             "sourceVersion": 1,
             "sourceChange": direction_event["event_id"],
@@ -676,14 +777,14 @@ def test_management_facades_emit_semantic_events_and_package_projection(tmp_path
     assert "acknowledgements" not in package
     projected = package_view_models(state)[0]
     assert len(projected["analysisInsights"]) == 1
-    assert len(projected["implementationReviews"]) == 1
+    assert "implementationReviews" not in projected
     assert len(projected["acknowledgements"]) == 1
-    assert projected["implementation"]["changes"][0]["codeAnchors"] == [
+    assert projected["implementation"]["changes"][0]["codeLocations"][0]["path"] == (
         "src/model.py"
-    ]
-    assert projected["implementation"]["changes"][0]["validatingExp"] == (
-        EXPERIMENT_ID
     )
+    assert projected["implementation"]["changes"][0][
+        "validatingExperiments"
+    ] == [EXPERIMENT_ID]
     build_interface(paths)
     assert (paths.interface / "packages/pkg/analysis.html").is_file()
     rendered = [
@@ -1053,7 +1154,18 @@ def test_terminal_run_result_is_the_only_fact_source(tmp_path):
     projected = package_view_models(state)[0]
     assert projected["resultGateRows"][0]["run_id"] == "run-smoke"
     assert projected["methodsTried"][0]["run_id"] == "run-smoke"
-    assert projected["resultBlocks"][0]["id"] == "P0::run-smoke"
+    result_block = projected["resultBlocks"][0]
+    assert result_block["id"] == "P0::run-smoke"
+    assert result_block["experimentId"] == EXPERIMENT_ID
+    assert result_block["tables"] == []
+
+    measurements = {"R@1": 31.2, "R@5": 58.4, "R@10": 69.7}
+    state["aggregates"]["run"]["run-smoke"][
+        "latest_scientific_result"
+    ]["measurements"] = measurements
+    measured_block = package_view_models(state)[0]["resultBlocks"][0]
+    assert measured_block["tables"][0]["type"] == "main"
+    assert measured_block["tables"][0]["columns"] == list(measurements)
     assert projected["liveChecks"][0]["run_id"] == "run-smoke"
     assert projected["openRuns"] == "none"
     experiment = state["aggregates"]["experiment"][EXPERIMENT_ID]

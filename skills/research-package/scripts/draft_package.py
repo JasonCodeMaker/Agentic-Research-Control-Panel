@@ -164,7 +164,7 @@ def convert(
             "document_note": note,
             "sourceBrainstorms": [descriptor],
             "interface_notes": {"docs/proposal.html": note},
-            "pages": ["index", "tracker", "docs", "_agent"],
+            "pages": list(create_research_package.STAGE_PAGES),
             "docsGroups": [],
             "methodsTried": [],
             "resultGateRows": [],

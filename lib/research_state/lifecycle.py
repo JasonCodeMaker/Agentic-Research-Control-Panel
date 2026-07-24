@@ -48,6 +48,7 @@ ACTIVE_UPDATE_TARGETS = {
     "results-verdict",
     "rule",
     "status",
+    "tracker-impl-review-row",
 }
 
 ACTIVE_DELETE_TARGETS = {

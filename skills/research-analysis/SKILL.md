@@ -70,7 +70,8 @@ interface is not an execution prerequisite.
 
 ### `init <package-id>`
 
-Enable the Analysis page in Package state:
+New Packages include Analysis in their standard page set. Use `init` only to
+repair an older Package whose state-backed `pages[]` omitted it:
 
 ```bash
 python skills/research-analysis/scripts/init_analysis_page.py \
@@ -79,8 +80,8 @@ python skills/research-analysis/scripts/init_analysis_page.py \
 ```
 
 The command appends `"analysis"` to `Package.pages[]` through a
-`PackageMutationApplied` event. It is idempotent. The management gateway then
-rebuilds the interface and reports whether the projection was written.
+`PackageMutationApplied` event. It is idempotent and marks the interface stale;
+the Dashboard or next static-page request rebuilds the projection.
 
 ### `add-insight <package-id> <insight-id>`
 

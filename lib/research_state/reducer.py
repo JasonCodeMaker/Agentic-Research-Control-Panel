@@ -6,6 +6,8 @@ import copy
 import hashlib
 from typing import Any, Iterable
 
+from lib.result_schema import validate_result_schema
+
 from .io import canonical_json
 from .schema import (
     enum,
@@ -144,6 +146,14 @@ def _experiment_bindings(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 f"experiment binding patch has forbidden or missing fields "
                 f"for {aggregate_id}: {unknown}"
             )
+        if "resultSchema" in patch:
+            try:
+                validate_result_schema(patch["resultSchema"])
+            except ValueError as exc:
+                raise EventIntegrityError(
+                    f"experiment binding resultSchema is invalid for "
+                    f"{aggregate_id}: {exc}"
+                ) from exc
         seen.add(aggregate_id)
         normalized.append(copy.deepcopy(binding))
     return normalized
@@ -953,6 +963,58 @@ def _scientific_result_summary(
             raise EventIntegrityError(
                 "RunResultFinalized evidence size_bytes must be non-negative"
             )
+    table_fields = {
+        "result_schema_sha256",
+        "result_table_manifest_uri",
+        "result_tables",
+    }
+    present = table_fields.intersection(summary)
+    if present and present != table_fields:
+        raise EventIntegrityError(
+            "RunResultFinalized schema-backed result table fields are incomplete"
+        )
+    if present:
+        schema_digest = str(summary["result_schema_sha256"] or "").lower()
+        if len(schema_digest) != 64 or any(
+            character not in "0123456789abcdef"
+            for character in schema_digest
+        ):
+            raise EventIntegrityError(
+                "RunResultFinalized result_schema_sha256 is invalid"
+            )
+        evidence_uris = {
+            str(ref.get("uri"))
+            for ref in evidence
+            if isinstance(ref, dict) and ref.get("uri")
+        }
+        manifest_uri = summary["result_table_manifest_uri"]
+        if (
+            not isinstance(manifest_uri, str)
+            or manifest_uri not in evidence_uris
+        ):
+            raise EventIntegrityError(
+                "RunResultFinalized result table manifest is not evidence"
+            )
+        tables = summary["result_tables"]
+        if not isinstance(tables, list) or not tables:
+            raise EventIntegrityError(
+                "RunResultFinalized result_tables must be non-empty"
+            )
+        table_ids: set[str] = set()
+        for table in tables:
+            if (
+                not isinstance(table, dict)
+                or set(table) != {"id", "uri"}
+                or not isinstance(table.get("id"), str)
+                or not table["id"]
+                or table["id"] in table_ids
+                or not isinstance(table.get("uri"), str)
+                or table["uri"] not in evidence_uris
+            ):
+                raise EventIntegrityError(
+                    "RunResultFinalized result_tables entry is invalid"
+                )
+            table_ids.add(table["id"])
     return copy.deepcopy(summary)
 
 

@@ -358,6 +358,46 @@ def _seed_fixture(paths: ResearchPaths) -> None:
                 "noChangeBoundary": "DOM hierarchy, selectors, classes, and CSS",
                 "lastAction": "Run interface parity",
                 "lastUpdated": "2026-07-20",
+                "resultBlocks": [
+                    {
+                        "id": "layout-result",
+                        "phaseId": "layout",
+                        "tables": [
+                            {
+                                "id": "layout-main",
+                                "type": "main",
+                                "title": "Canonical layout comparison",
+                                "columns": [
+                                    "Variant",
+                                    "DOM parity",
+                                    "Visual distance",
+                                ],
+                                "rows": [
+                                    {
+                                        "Variant": "Frozen baseline",
+                                        "DOM parity": 1,
+                                        "Visual distance": 0,
+                                    },
+                                    {
+                                        "Variant": "Current projection",
+                                        "DOM parity": 1,
+                                        "Visual distance": 0.04,
+                                    },
+                                ],
+                            },
+                            {
+                                "id": "layout-ablation",
+                                "type": "ablation",
+                                "title": "Viewport sensitivity",
+                                "columns": ["Viewport", "DOM parity"],
+                                "rows": [
+                                    {"Viewport": "Mobile", "DOM parity": 1},
+                                    {"Viewport": "Desktop", "DOM parity": 1},
+                                ],
+                            },
+                        ],
+                    }
+                ],
             }
         },
         actor=ACTOR,

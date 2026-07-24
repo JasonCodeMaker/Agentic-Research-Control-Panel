@@ -107,7 +107,14 @@ def test_workflow_snapshot_reads_state_when_interface_is_absent(tmp_path):
     remove_interface(paths)
     snapshot = driver.load_workflow_snapshot(paths, "pkg-1")
     assert snapshot["sourceDirection"] == "dir/d1"
-    assert snapshot["experiments"] == [{"expId": "P1", "status": "READY"}]
+    assert snapshot["experiments"] == [
+        {
+            "expId": "P1",
+            "status": "READY",
+            "implementationReadiness": "NOT_REQUIRED",
+            "currentChangeId": None,
+        }
+    ]
     assert snapshot["openRuns"] == []
     assert not paths.interface.exists()
 

@@ -187,6 +187,9 @@ def test_materializes_scope_as_package_scoped_experiment(tmp_path):
     package = state["aggregates"]["package"]["retrieval-package"]
     experiment = state["aggregates"]["experiment"][EXPERIMENT_ID]
     assert package["sourceDirection"] == "dir/retrieval-v2"
+    assert package["pages"] == list(
+        create_from_scope.create_research_package.STAGE_PAGES
+    )
     assert package["sourceExperiments"] == [
         {
             "id": EXPERIMENT_ID,
@@ -401,6 +404,10 @@ def test_reopens_never_run_activated_package_as_same_draft(tmp_path):
     assert package["scopeBinding"] is None
     assert package["documentPath"] == "docs/proposal.html"
     assert package["document_note"] == reviewed["document_note"]
+    for field in ("problem", "motivation", "objective", "hypothesis"):
+        assert package[field] == active_package[field]
+    for field in ("pages", "sourceBrainstorms", "interface_notes", "docsGroups"):
+        assert package[field] == active_package[field]
     assert experiment["package_id"] is None
     assert experiment["scope_confirmation"] == "STALE"
     assert experiment["status"] == "BLOCKED"

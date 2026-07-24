@@ -67,7 +67,7 @@ def test_manual_creation_commits_package_and_experiment_state(tmp_path):
             "--motivation",
             "Pin evidence before method changes",
             "--hypothesis",
-            "The declared baseline is reproducible",
+            direction_node()["spec"]["hypothesis"],
             "--primary-metric",
             "Recall@10",
             "--source-direction",
@@ -101,6 +101,7 @@ def test_manual_creation_commits_package_and_experiment_state(tmp_path):
         ".research/experiments/2026-07-20-manual-package/"
     )
     assert package["direction_id"] == "dir/retrieval-v2"
+    assert package["pages"] == list(create_research_package.STAGE_PAGES)
     assert package["sourceExperiments"] == [
         {
             "id": "experiment/retrieval-v2/M0-baseline",

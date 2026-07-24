@@ -147,9 +147,42 @@ Keep the current human layout and navigation:
   its Abstract / TLDR. Only legacy Packages without `abstract` fall back to
   `problem`; the renderer never derives this copy from Direction Scope.
 - The Research Intent card renders the canonical state-backed Problem,
-  Motivation, Objective, and Hypothesis in that order. It neither hides
+  Motivation, Hypothesis, and Objective in that order. It neither hides
   duplicate rows nor reads optional `*Tldr` aliases; invalid intent is repaired
   through Package and Scope authority rather than in the projection.
+- A Package Overview contains no Agent Content or Agent context module.
+  Source package and evidence root remain visible to the user in one compact
+  Source & Evidence card; duplicated identity, page indexes, and agent-only
+  continuity instructions do not render in Package pages.
+- The Plan page has no Package-level Plan invariants card. It renders one
+  ordered Pipeline timeline whose Experiment nodes preserve status, purpose,
+  dependency, output, gate, evidence, lock state, and task links while adding
+  the canonical configuration reference and control mode. Planned order is a
+  presentation sequence; `after` remains the separate Scope dependency.
+- The Implementation page is one code change map grouped by Experiment. Every
+  Change renders Code locations, How it changes, and Verification. Native
+  disabled checkboxes are checked only for state-backed `PASS` observations;
+  unchecked means pending, failed, or stale. Hypothesis restatement, Plan
+  coverage, pseudo-code, test catalogs, and adjudication do not appear here.
+- The Results page contains only Experiment-grouped Result tables. It does not
+  restate the Hypothesis, repeat the evaluation contract, or maintain a
+  package-level gate ledger. A frozen schema pre-renders every planned row and
+  column with `/` for null values. Main tables are open; ablation tables are
+  collapsed. Wide tables scroll inside their own container without widening
+  the document. Measured values render only from a finalized Run whose schema,
+  manifest, source CSV, table CSVs, and hashes verify.
+- The Tracker page contains only an Experiment-grouped `To-Do` and Artifact
+  locations. It derives Change tasks from the same observations as
+  Implementation and Run tasks from Run evidence, keeps exactly one current
+  task when tasks exist, and never owns editable checklist state. It does not
+  render latest checks, readiness, allocations, route selection, or agent
+  context.
+- The Docs index preserves its state-backed groups, cards, table of contents,
+  metadata, links, and copy while using the shared Package visual system. Its
+  table of contents has a compact clay accent; each group spans the content
+  width; one document spans its group, while multiple documents use two equal
+  columns. The layout becomes one column below `720px`. Doc-source pages reuse
+  the same table-of-contents treatment.
 - Legacy standalone Brainstorms remain readable through their historical
   routes, but new work must not create a second card type.
 - Each package keeps its own plan, implementation, results, analysis, tracker,

@@ -80,6 +80,11 @@ Scope review binds the exact `{id, draft_revision, document_sha256}` shown to
 the user and contains the complete Direction plus all selected Experiments.
 Review commit fails closed if this source changes.
 
+Materialization seeds the complete standard Package page set. Empty Results and
+Analysis pages render their planned or empty states; they do not require a
+later page-selection mutation. The Analysis initializer remains only as an
+idempotent repair path for older Package records.
+
 Activation preserves the same Package id, `documentPath`, and `document_note`.
 One `TransactionCommitted` event records the exact Draft as `SCOPE_READY`,
 commits Direction and Experiment Scope, sets the Package to
@@ -96,13 +101,17 @@ proposal NoteRef, clears Package execution and Scope bindings, and detaches its
 Experiments. Their accepted Scope remains visible in history, while
 `scope_confirmation=STALE` and `status=BLOCKED` prevent accidental reuse. Any
 later activation therefore requires a fresh hash-bound Scope review of the
-revised Draft.
+revised Draft. That Scope Bundle may atomically commit the next version of the
+same Direction and re-confirm the next versions of its detached Experiments;
+it does not require replacement ids or separate approvals.
 
 ## Scope activation
 
-On the normal path, each proposed Experiment is new, version 1, parented by the
-new Direction, and committed in the same composite event that binds it to the
-Package. The compatibility path for already committed Scope accepts an
+On first activation, each proposed Experiment is new, version 1, parented by
+the new Direction, and committed in the same composite event that binds it to
+the Package. After a pre-run reopen, the same composite review may revise the
+existing Direction and detached Experiments at their next Scope versions. The
+compatibility path for independently committed Scope accepts an
 existing Experiment only when all three predicates hold:
 
 ```text
@@ -158,7 +167,7 @@ store.
 ### Research Intent
 
 Research Intent records the reasoning chain that makes a Package worth
-executing. The four fields have different jobs and appear in this order:
+executing. The four fields have different jobs:
 
 - **Problem** identifies a known or high-probability research limitation, gap,
   or unresolved capability. It says what is wrong or missing at the research
@@ -245,53 +254,132 @@ stores:
 `aliases` may exist only on migrated legacy records and is read-only
 compatibility data.
 
+## Implementation Change aggregate
+
+Implementation intent and its observable status live in the existing `Change`
+aggregate; there is no second checklist or UI-state aggregate:
+
+```json
+{
+  "id": "<package>::change::<local-id>",
+  "local_id": "<local-id>",
+  "package_id": "<package-id>",
+  "order": 1,
+  "title": "Concise implementation unit",
+  "validating_experiments": ["<canonical-experiment-id>"],
+  "plan": {
+    "how_it_changes": "Concrete behavioral and structural delta.",
+    "code_locations": [
+      {
+        "id": "stable-location-id",
+        "action": "REUSE | ADD | MODIFY | LINK | OUTPUT",
+        "root": "workspace | research",
+        "path": "relative/path",
+        "predicate": "exists | git_clean",
+        "baseline": {"kind": "MISSING | FILE | DIRECTORY | SYMLINK"}
+      }
+    ],
+    "verifications": [
+      {
+        "id": "stable-check-id",
+        "label": "What correctness means",
+        "depends_on": ["stable-location-id"],
+        "command": ["python3", "-m", "pytest", "-q", "tests/test_unit.py"]
+      }
+    ]
+  },
+  "observations": {
+    "code_locations": {
+      "stable-location-id": {
+        "state": "PASS | PENDING",
+        "fingerprint": "<current-input-digest>",
+        "reason": "predicate result"
+      }
+    },
+    "verifications": {
+      "stable-check-id": {
+        "state": "PASS | FAIL | PENDING | STALE",
+        "input_fingerprint": "<dependency-digest>",
+        "reason": "check result"
+      }
+    }
+  }
+}
+```
+
+The gateway freezes baselines when the plan is first committed, before code is
+edited. `ADD` passes only when an absent baseline now exists; `MODIFY` passes
+only when content differs from its baseline; `LINK` requires a resolving
+symlink; `OUTPUT` requires the declared artifact; and `REUSE` requires the
+declared source, optionally with a clean Git predicate.
+
+After each logical edit batch, `research-run` recomputes code observations.
+Verification PASS is bound to its dependency fingerprint. A later input change
+makes that observation STALE. The generated checkbox is therefore a projection
+of reproducible state, never a stored boolean or user-editable control.
+
+Tracker has no aggregate of its own. Its `To-Do` joins the ordered Package
+Experiments, these Change observations, and Run/Result evidence. Progress and
+the current task are derived values; completing work means updating the owning
+Change or Run, not writing a Tracker row.
+
 ## Result evidence
 
-The canonical run result path is:
+Each Experiment may declare zero or more human Result tables through its
+optional `resultSchema`. The schema fixes table type, rows, selectors, metrics,
+units, and nullability before the first Run. It contains no measured values.
+Once any Run exists for that Experiment, the schema is immutable.
+
+The canonical finalized result path is:
 
 ```text
 .research/experiments/<package-id>/<experiment-id>/<run-id>/result.json
 ```
 
-`result.json` should identify the metric reading, gate outcome, validity,
-config reference, code revision, checkpoint or model reference, dataset
-reference, and paths to supporting evidence. Large checkpoints, logs, plots,
-and tables may sit beside it or below the same run directory.
+The evaluation script writes a comprehensive metric CSV inside the Run
+evidence boundary. The Result extractor uses the schema frozen in
+`context.json` to produce one derived CSV per declared table plus a manifest.
+`result.json` binds that manifest, every derived table, and the comprehensive
+source as hashed EvidenceRefs.
 
-A human result table is a projection of these records. It never owns a value.
-If the displayed value cannot be traced to a run record and its evidence, it
-must remain `unmeasured`.
+A human Result table is a projection of those verified files. It never owns a
+value. Before measurement, the complete table shape renders with null values.
+After finalization, a value renders only when the schema hash, Run identity,
+source, manifest, and table hashes verify. Read
+[Results page pattern](results-page-pattern.md) for the exact schema and
+extraction contract.
 
 ## Human page contract
 
-The storage change does not alter the human layout. Preserve page names,
-navigation, section order, cards, tables, and stable `data-*` anchors.
+Preserve all page names and navigation while keeping each stage page limited
+to its approved content model.
 
 | Page | Human decision it supports |
 | --- | --- |
 | `index.html` | Research Intent, status summary, source path, and evidence root |
-| `plan.html` | hypothesis, metric contract, baseline, and Experiment plan |
-| `implementation.html` | owned files, change review, tests, and adjudication |
-| `results.html` | result gates, Experiment results, validity, and figures |
+| `plan.html` | ordered Experiment contracts, gates, dependencies, controls, and evidence destinations |
+| `implementation.html` | code locations, intended changes, and verification status by Experiment |
+| `results.html` | schema-backed Result tables grouped by Experiment |
 | `analysis.html` | evidence-backed insights and adopted rules |
-| `tracker.html` | execution state, readiness, allocation, live checks, and route |
+| `tracker.html` | current `To-Do` task and intermediate artifact locations by Experiment |
 | `docs/index.html` | source and contract document index |
-| `_agent/context.html` | human continuity and verification summary under a retained historical filename |
+| `_agent/context.html` | retained historical compatibility route; not a Package module or context source |
 
 The `_agent` filename and legacy `data-audience="agent"` selectors may remain
-for DOM compatibility. They denote collapsed audit detail for the human
-reader. They are not an agent context source and do not grant HTML authority.
+for route and DOM compatibility. Package pages do not render Agent Content or
+Agent context modules. The compatibility route is not an agent context source
+and does not grant HTML authority.
 
 ### Single-home rule
 
 Each field has one human home:
 
 - Research Intent, identity, and evidence roots: `index.html`;
-- the executable plan and its reference to the canonical hypothesis: `plan.html`;
-- owned files and implementation decisions: `implementation.html`;
-- result verdicts and validity classes: `results.html`;
+- the ordered executable Experiment contracts and their canonical configuration references: `plan.html`;
+- code locations, implementation decisions, and verification status: `implementation.html`;
+- verified Result tables and their cell states: `results.html`;
 - insights and rules: `analysis.html`;
-- live execution state and chosen route: `tracker.html`; and
+- current task and intermediate Run file locations: `tracker.html`; and
 - source document summaries: `docs/index.html`.
 
 Other pages link to that home. They do not maintain another copy.
@@ -299,15 +387,18 @@ Other pages link to that home. They do not maintain another copy.
 ### Stable layout rules
 
 - Keep the status strip and package navigation on every stage page.
-- Keep the current conditional collapsed-detail structure.
-- Keep the strict tracker checkbox markup.
-- Keep result-gate rows at one row per planned Experiment.
-- Keep supplementary result tables collapsed by default.
+- Keep the Implementation map grouped by Experiment with native disabled
+  checkboxes.
+- Keep Tracker titled `To-Do`, grouped by Experiment, with one current task
+  when tasks exist and native disabled checkboxes derived from Change and Run
+  evidence.
+- Keep Result tables grouped by Experiment.
+- Keep main tables open and ablation tables collapsed by default.
 - Keep all existing stable anchors unless a renderer migration updates every
   caller in the same change.
 
-Copy may change to reflect the new storage contract. Page structure and visual
-design do not.
+Copy may change to reflect the storage contract. Further page-structure or
+visual changes require explicit user approval.
 
 ## Rendering boundary
 

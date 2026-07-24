@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enable the state-backed Analysis page and leave interface rebuild lazy."""
+"""Repair a Package missing its standard state-backed Analysis page."""
 
 from __future__ import annotations
 

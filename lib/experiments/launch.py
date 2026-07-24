@@ -44,6 +44,10 @@ from lib.research_state import (  # noqa: E402
 )
 from lib.research_state.io import read_json, write_json_atomic  # noqa: E402
 from lib.research_state.paths import add_research_root_argument  # noqa: E402
+from lib.result_schema import (  # noqa: E402
+    result_schema_sha256,
+    validate_result_schema,
+)
 
 
 DEFAULT_ACTOR = {"type": "agent", "id": "research-exp-live"}
@@ -116,6 +120,7 @@ def freeze_context(
     *,
     experiment_id: str,
     experiment_local_id: str | None = None,
+    result_schema: dict[str, Any] | None = None,
     captured_at: float,
 ) -> dict[str, Any]:
     """Create a readable snapshot whose hash excludes wall-clock metadata."""
@@ -141,6 +146,12 @@ def freeze_context(
         "schema_version": 1,
         "captured_at": _iso(captured_at),
         **frozen,
+        "result_schema": copy.deepcopy(result_schema),
+        "result_schema_sha256": (
+            result_schema_sha256(result_schema)
+            if result_schema is not None
+            else None
+        ),
     }
     snapshot["context_sha256"] = context_sha256(snapshot)
     return snapshot
@@ -642,10 +653,20 @@ def prepare_run(
     supplied_context_matches = (
         context is None or context == authoritative_context
     )
+    selected_experiment = store.state()["aggregates"]["experiment"][
+        experiment_key
+    ]
+    raw_result_schema = selected_experiment.get("resultSchema")
+    result_schema = (
+        validate_result_schema(raw_result_schema)
+        if raw_result_schema is not None
+        else None
+    )
     frozen_context = freeze_context(
         authoritative_context,
         experiment_id=experiment_key,
         experiment_local_id=experiment_local_id,
+        result_schema=result_schema,
         captured_at=timestamp,
     )
     environment = dict(os.environ if environment is None else environment)
