@@ -159,11 +159,6 @@
     ].join("");
   }
 
-  function tagSummaryHtml(pkg) {
-    var role = tagRoleForCategory(pkg.category);
-    return '<p class="card-text tag-summary"><strong>' + htmlEscape(role.label) + ":</strong> " + htmlEscape(packageTag(pkg)) + "</p>";
-  }
-
   function renderDashboardSummary() {
     // The lane summary section uses id="lanes" (for the dashboard-nav anchor)
     // and class="dashboard-summary" (for styling). Query by class so the
@@ -187,8 +182,6 @@
     target.innerHTML = [
       objectivePanelHtml(),
       routesPanelHtml(),
-      protocolLinksHtml(),
-      tagLegendHtml(),
     ].join("");
   }
 
@@ -520,48 +513,6 @@
     ].join("");
   }
 
-  function protocolLinksHtml() {
-    return [
-      '<section class="protocol-panel" data-panel="protocol-links">',
-      "<h2>Operating Protocols</h2>",
-      '<p class="card-text">The dashboard owns no protocol prose. The owners:</p>',
-      '<ul class="constraint-list">',
-      '<li><code>workflow.ts</code> — the executable controller and evidence gates.</li>',
-      '<li><code>CLAUDE.md</code> — the five universal protocols and agent rules.</li>',
-      '<li><a href="rules/html-rules.html">html-rules.html</a> + <a href="rules/trustworthy-research-rules.html">trustworthy-research-rules.html</a> — the binding R/T rule corpus (mirrored in <code>data/rules.js</code>).</li>',
-      "</ul>",
-      "</section>",
-    ].join("");
-  }
-
-  function tagLegendHtml() {
-    var roles = tagRoles();
-    var items = categories().map(function (category) {
-      var role = roles[category.id];
-      if (!role) return "";
-      var examples = role.examples && role.examples.length
-        ? '<div class="examples">Examples: ' + htmlEscape(role.examples.join(", ")) + "</div>"
-        : "";
-      return [
-        '<article class="tag-role-card" data-category="' + htmlEscape(category.id) + '" data-tag-role="' + htmlEscape(role.role) + '">',
-        '<div class="k">' + htmlEscape(category.title) + "</div>",
-        '<div class="v">' + htmlEscape(role.label) + "</div>",
-        '<p>' + htmlEscape(role.meaning) + "</p>",
-        examples,
-        "</article>",
-      ].join("");
-    }).join("");
-    if (!items) return "";
-    return [
-      '<details class="details-panel small-details tag-legend">',
-      "<summary>Category-scoped tag legend</summary>",
-      '<div class="details-body tag-role-grid">',
-      items,
-      "</div>",
-      "</details>",
-    ].join("");
-  }
-
   function unmeasuredHtml() {
     return '<span class="unmeasured" data-unmeasured="true">unmeasured</span>';
   }
@@ -737,6 +688,85 @@
     ].join("");
   }
 
+  function currentExperimentMeta(pkg) {
+    var experiments = pkg && Array.isArray(pkg.experiments) ? pkg.experiments : [];
+    var tracker = pkg && pkg.tracker ? pkg.tracker : {};
+    var trackerExperiments = Array.isArray(tracker.experiments) ? tracker.experiments : [];
+
+    function trackerExperimentFor(experiment) {
+      return trackerExperiments.find(function (item) {
+        return item && (
+          item.experimentId === experiment.id ||
+          item.localId === experiment.localId ||
+          item.localId === experiment.local_id
+        );
+      });
+    }
+
+    function displayLabel(experiment, trackerExperiment) {
+      var id = experimentDisplayId(experiment || trackerExperiment || {});
+      var title = trackerExperiment && trackerExperiment.title ||
+        experiment && (experiment.title || experiment.label) || "";
+      return title && title !== id ? id + ": " + title : id;
+    }
+
+    var running = experiments.filter(function (experiment) {
+      return experiment && experiment.status === "RUNNING";
+    });
+    if (running.length) {
+      return {
+        kind: "running",
+        label: "Running",
+        value: running.map(function (experiment) {
+          return displayLabel(experiment, trackerExperimentFor(experiment));
+        }).join(", "),
+      };
+    }
+
+    var currentTaskId = tracker.currentTaskId;
+    var focused = trackerExperiments.find(function (experiment) {
+      return currentTaskId && Array.isArray(experiment.tasks) &&
+        experiment.tasks.some(function (task) { return task && task.id === currentTaskId; });
+    });
+    if (focused) {
+      var source = experiments.find(function (experiment) {
+        return experiment && (
+          experiment.id === focused.experimentId ||
+          experiment.localId === focused.localId ||
+          experiment.local_id === focused.localId
+        );
+      });
+      return {
+        kind: "focus",
+        label: "Current focus",
+        value: displayLabel(source, focused),
+      };
+    }
+
+    var next = computeNextUp(experiments).nextEligible;
+    var nextExperiment = experiments.find(function (experiment) {
+      return experiment && experimentDisplayId(experiment) === next;
+    });
+    return {
+      kind: next ? "focus" : "none",
+      label: "Current focus",
+      value: nextExperiment
+        ? displayLabel(nextExperiment, trackerExperimentFor(nextExperiment))
+        : "No active experiment",
+    };
+  }
+
+  function currentExperimentFooterHtml(pkg) {
+    var current = currentExperimentMeta(pkg);
+    return [
+      '<span class="card-footer-meta" data-field="current-experiment"',
+      ' data-focus-kind="' + htmlEscape(current.kind) + '">',
+      "<strong>" + htmlEscape(current.label) + ":</strong> ",
+      htmlEscape(current.value),
+      "</span>",
+    ].join("");
+  }
+
   function packageCardHtml(pkg) {
     var status = packageStatus(pkg) || "unmeasured";
     var cat = normalizeCategory(pkg.category);
@@ -746,18 +776,11 @@
     var problem = summary ? summary.question : pkg.problem;
     var objective = summary ? summary.hypothesis : pkg.objective;
     var motivation = summary ? summary.motivation : pkg.motivation;
-    var gate = summary ? summary.completionGate : pkg.activeGate;
-    var metric = summary ? summary.measurements : pkg.primaryMetricVsGate;
     var body = [
-      tagSummaryHtml(pkg),
       '<p class="card-text"><strong>' + (summary ? "Question" : "Problem") + ':</strong> ' + fieldOrUnmeasured(problem) + "</p>",
       '<p class="card-text"><strong>' + (summary ? "Hypothesis" : "Objective") + ':</strong> ' + fieldOrUnmeasured(objective) + "</p>",
-      '<p class="card-text"><strong>' + (summary ? "Why now" : "Motivation") + ':</strong> ' + fieldOrUnmeasured(motivation) + "</p>",
+      '<p class="card-text"><strong>Motivation:</strong> ' + fieldOrUnmeasured(motivation) + "</p>",
       isTerminal ? terminalTileHtml(pkg) : "",
-      cat === "in-progress" ? [
-        '<p class="card-text card-strip"><span><strong>' + (summary ? "Completion gate" : "Gate") + ':</strong> ' + fieldOrUnmeasured(gate) + "</span> ",
-        '<span><strong>' + (summary ? "Measurements" : "Metric vs gate") + ':</strong> ' + fieldOrUnmeasured(metric) + "</span></p>",
-      ].join("") : "",
     ].join("");
     return researchItemCardHtml({
       open: [
@@ -775,7 +798,7 @@
       headerHtml: tagBadgeHtml(pkg) + statusPillHtml(pkg) + missingFieldsChipHtml(pkg),
       bodyHtml: body,
       footerHtml: [
-        '<span class="card-footer-meta"><strong>Next route:</strong> ' + chipHtml("route", pkg.nextRoute) + "</span>",
+        currentExperimentFooterHtml(pkg),
         '<span class="card-footer-meta"><strong>Updated:</strong> ' + lastUpdatedHtml(pkg) + "</span>",
       ].join(""),
     });
@@ -2464,6 +2487,8 @@
     var stateLabel = stateLabels[state] || state;
     function cellHtml(row, column) {
       var value = row && row[column.key];
+      var reference = row && row._reference &&
+        typeof row._reference === "object" ? row._reference : null;
       var cells = row && row._cells && typeof row._cells === "object"
         ? row._cells
         : {};
@@ -2475,6 +2500,13 @@
       ).toUpperCase();
       var reason = String(meta.reason || "");
       var shown = value == null || value === "" ? "/" : displayValue(value);
+      if (column.key === "row" && reference) {
+        return '<td class="result-cell-reference"><a href="' +
+          htmlEscape(reference.url || "#") +
+          '" target="_blank" rel="noopener noreferrer" title="' +
+          htmlEscape(reference.citation || "Reported source") + '">' +
+          htmlEscape(shown) + "</a></td>";
+      }
       var classes = [];
       if (typeof value === "number") classes.push("num");
       if (value == null || value === "") classes.push("result-cell-null");

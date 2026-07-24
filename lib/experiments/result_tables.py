@@ -18,7 +18,7 @@ from lib.experiments.contracts import (
 from lib.research_state.io import read_json, write_bytes_atomic, write_json_atomic
 from lib.research_state.paths import ResearchPaths, add_research_root_argument
 from lib.result_schema import (
-    RESULT_CELL_STATUSES,
+    RESULT_MEASUREMENT_STATUSES,
     parse_result_table_csv,
     result_schema_from_context,
     result_schema_sha256,
@@ -86,7 +86,24 @@ def _table_csv(
     writer.writeheader()
     for schema_row in table["rows"]:
         output: dict[str, str] = {"row_id": schema_row["id"]}
+        reference = schema_row.get("reference")
         for column in table["columns"]:
+            if reference is not None:
+                metric = column["metric"]
+                citation = reference["citation"]
+                if metric in reference["values"]:
+                    output[column["id"]] = json.dumps(
+                        reference["values"][metric]
+                    )
+                    output[f"{column['id']}__status"] = "REPORTED"
+                    output[f"{column['id']}__reason"] = citation
+                else:
+                    output[column["id"]] = ""
+                    output[f"{column['id']}__status"] = "NOT_REPORTED"
+                    output[f"{column['id']}__reason"] = (
+                        f"Not reported in {citation}"
+                    )
+                continue
             matches = [
                 row
                 for row in source_rows
@@ -104,7 +121,7 @@ def _table_csv(
                     f"got {match.get('unit')!r}"
                 )
             status = str(match.get("status") or "").upper()
-            if status not in RESULT_CELL_STATUSES:
+            if status not in RESULT_MEASUREMENT_STATUSES:
                 raise ValueError(f"{cell} has unknown status {status!r}")
             output[column["id"]] = str(match.get("value") or "")
             output[f"{column['id']}__status"] = status

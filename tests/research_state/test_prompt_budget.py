@@ -25,6 +25,10 @@ def test_bootloaders_are_independently_bounded() -> None:
     assert "Do not automatically read" in agents
     assert "Required Read Order" not in agents
     assert "independently sufficient" in claude
+    for bootloader in (agents, claude):
+        assert "invoke `humanizer` and use its final rewrite" in bootloader
+        assert "invoke `ponytail`" in bootloader
+        assert "invoke `ponytail-review` on the resulting diff" in bootloader
 
 
 def test_bootloader_plus_one_common_skill_stays_below_prompt_budget() -> None:

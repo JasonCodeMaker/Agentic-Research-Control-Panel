@@ -60,6 +60,11 @@ The generated root keeps these human-facing pages:
 - `categories/success/index.html`
 - `categories/fail/index.html`
 
+The Dashboard homepage keeps Learnings in the global toolbar, but does not
+repeat a Read-first Learnings card in Snapshot. Its global context renders the
+Scope objective and allowed next routes without an Operating Protocols panel
+or category-tag legend.
+
 Each state-backed Brainstorm also keeps one stable generated route:
 
 - `brainstorm/<created-date>-<brainstorm-id>.html`
@@ -92,6 +97,11 @@ must not be collapsed into a single-page application.
 
 ### Package status strip
 
+Every user-facing Package page uses the same compact masthead structure,
+`Research Package` eyebrow, single Dashboard action, status strip, and Package
+navigation. Only its page title and head abstract vary. Page-specific shortcuts
+belong in the shared Package navigation or page body, not in the masthead.
+
 The first viewport of every Package page uses one shared status projection:
 
 - **Current state** renders the lifecycle or active phase. The UI folds a
@@ -119,6 +129,14 @@ Last Transition are supporting context, and every legal next-state branch uses
 the same neutral treatment until the transition is recorded. Empty optional
 headline content stays hidden, while declared experiments render in the
 Experiment queue.
+
+Dashboard and category Package cards keep the Package tag and workflow status
+in the header, followed by the title, Question or Problem, Hypothesis or
+Objective, and Motivation. They do not repeat the tag as a Current status row
+or render Gate, Measurements, or Next route. The footer shows every running
+Experiment when one exists; otherwise it shows the Experiment owning the
+Tracker's current task, then the next eligible Experiment, or `No active
+experiment`. The update date remains visible.
 
 The Research Intent card renders exactly four state-backed rows in presentation
 order: **Problem**, **Motivation**, **Hypothesis**, and **Objective**. Problem
@@ -165,9 +183,12 @@ Hypothesis restatement, evaluation-contract banner, or package-level result
 gate. Main tables are open by default; ablation tables are collapsed.
 
 Before a verified Run exists, the renderer preserves the frozen rows and
-columns, marks the table `planned`, and displays null cells as `/`. A finalized
-Run may replace those cells only when its frozen schema digest and Result-table
-manifest verify against the comprehensive source CSV and every derived table
+columns, marks the table `planned`, and displays null cells as `/`. A cited
+reference row may supply finite `REPORTED` values directly from the frozen
+schema; omitted source metrics display `/` as `NOT_REPORTED`. These values link
+to their source and never become local measurements. A finalized Run may
+replace local cells only when its frozen schema digest and Result-table manifest
+verify against the comprehensive source CSV and every derived table
 EvidenceRef. `MEASURED` cells display finite numbers. `FAILED` cells remain
 null with a reason. `UNDEFINED` is allowed only for schema-nullable columns and
 also requires a reason. Legacy or mismatched results remain explicitly

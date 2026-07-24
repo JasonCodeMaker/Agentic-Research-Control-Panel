@@ -1,8 +1,8 @@
-# Package compatibility and repair
+# Pre-run Package revision and compatibility
 
-Read this reference only for imported state or an explicit repair. These paths
-are not part of the normal Brainstorm, Draft, Scope Bundle, execution, and
-outcome loop.
+Read this reference only for a bounded user-requested revision before the first
+Run, imported state, or an explicit repair. These paths are not part of initial
+Draft refinement or the normal execution and outcome loop.
 
 ## Reopen a pre-run Package
 
@@ -17,6 +17,29 @@ python3 skills/research-package/scripts/reopen_as_draft.py \
 
 The composite event revokes execution authority and detaches bound Experiments
 as stale. Any revised Draft needs a fresh Scope Bundle.
+
+For a bounded revision, query the Package, bound Scope, Run and result state,
+and exact replacement config in one batch. If the request already resolves the
+material choice, it authorizes the reopen and revision but not the unseen
+replacement Scope Bundle. Do not ask for a preliminary confirmation or repeat
+the full two-phase Draft interview. Ask only when an unresolved choice would
+materially change Scope.
+
+Keep the existing Package, Direction, and Experiment ids. Revise only the
+affected Research Intent, Experiment spec, Direction gate, and current
+proposal. Preserve unrelated reviewed content and historical provenance.
+Present one complete revised Scope Bundle, then commit it only after one
+explicit user confirmation.
+
+After the commit, verify the transaction in the Package, Direction, and
+Experiment histories and verify that the lease contains exactly the reviewed
+Experiment ids. Rebuild the Dashboard projection. Run full visual parity only
+if Dashboard code or its rendering contract changed.
+
+Do not add or rebuild Result schemas, Implementation Changes, metric contracts,
+launch checks, or experiment infrastructure unless the user explicitly asks
+for execution readiness or an existing active surface would otherwise remain
+inconsistent with the revised intent.
 
 If the latest reopen was a mistake and nothing changed, the user may restore
 the exact previous Package and Experiment records:

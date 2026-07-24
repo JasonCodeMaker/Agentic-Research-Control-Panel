@@ -167,10 +167,12 @@ Keep the current human layout and navigation:
 - The Results page contains only Experiment-grouped Result tables. It does not
   restate the Hypothesis, repeat the evaluation contract, or maintain a
   package-level gate ledger. A frozen schema pre-renders every planned row and
-  column with `/` for null values. Main tables are open; ablation tables are
-  collapsed. Wide tables scroll inside their own container without widening
-  the document. Measured values render only from a finalized Run whose schema,
-  manifest, source CSV, table CSVs, and hashes verify.
+  column with `/` for null values. A schema row may render cited paper values
+  as `REPORTED`; those cells remain distinct from local `MEASURED` Run values.
+  Main tables are open; ablation tables are collapsed. Wide tables scroll
+  inside their own container without widening the document. Measured values
+  render only from a finalized Run whose schema, manifest, source CSV, table
+  CSVs, and hashes verify.
 - The Tracker page contains only an Experiment-grouped `To-Do` and Artifact
   locations. It derives Change tasks from the same observations as
   Implementation and Run tasks from Run evidence, keeps exactly one current
@@ -196,6 +198,9 @@ Keep the current human layout and navigation:
   graph and remain neutral until a verified transition occurs. Gates and
   measurements remain in Scope, Plan, and Results rather than the universal
   status strip.
+- Every user-facing Package page uses the same compact masthead structure,
+  `Research Package` eyebrow, single Dashboard action, status strip, and
+  Package navigation. Only the page title and head abstract vary by page.
 - The Package Overview keeps identity compact enough for the complete status
   strip to remain in the first viewport. Current State has the strongest
   emphasis; Current Process and Last Transition are supporting context; legal

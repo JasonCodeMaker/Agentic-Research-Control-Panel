@@ -41,6 +41,20 @@ def test_dashboard_build_installs_empty_brainstorms_store(tmp_path):
     )
 
 
+def test_dashboard_home_omits_secondary_context_blocks(tmp_path):
+    root = _scaffold(tmp_path)
+    homepage = (root / "index.html").read_text(encoding="utf-8")
+    renderer = (root / "assets" / "research.js").read_text(encoding="utf-8")
+
+    for removed in (
+        "learnings-read-first",
+        "Operating Protocols",
+        "Category-scoped tag legend",
+    ):
+        assert removed not in homepage
+        assert removed not in renderer
+
+
 def test_dashboard_build_has_no_python_execution_surface(tmp_path):
     root = _scaffold(tmp_path)
 

@@ -224,28 +224,28 @@ h1 em {
   cursor: pointer;
 }
 
-/* Package overview: identity stays compact so the operational state remains
-   visible in the first viewport. */
-body[data-page="overview"] .shell {
+/* Package pages share one compact head so operational state remains visible
+   in the first viewport. */
+body[data-package-id]:not([data-page="doc-source"]) .shell {
   max-width: 1280px;
   padding-top: 42px;
 }
 
-body[data-page="overview"] .masthead {
+body[data-package-id]:not([data-page="doc-source"]) .masthead {
   position: relative;
   margin-bottom: 0;
   padding-bottom: 28px;
   border-bottom: 0;
 }
 
-body[data-page="overview"] .masthead h1 {
+body[data-package-id]:not([data-page="doc-source"]) .masthead h1 {
   max-width: none;
   font-size: clamp(40px, 4.2vw, 58px);
   line-height: 1.02;
   letter-spacing: -0.035em;
 }
 
-body[data-page="overview"] .masthead > .lead {
+body[data-package-id]:not([data-page="doc-source"]) .masthead > .lead {
   max-width: 880px;
   margin-top: 18px;
   color: var(--g600);
@@ -253,39 +253,39 @@ body[data-page="overview"] .masthead > .lead {
   line-height: 1.65;
 }
 
-body[data-page="overview"] .masthead > .toolbar {
+body[data-package-id]:not([data-page="doc-source"]) .masthead > .toolbar {
   position: absolute;
   top: -4px;
   right: 0;
   margin: 0;
 }
 
-body[data-page="overview"] .masthead > .toolbar .pill {
+body[data-package-id]:not([data-page="doc-source"]) .masthead > .toolbar .pill {
   padding: 8px 12px;
   border-color: var(--g400);
   transition: border-color 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
-body[data-page="overview"] .masthead > .toolbar .pill:hover {
+body[data-package-id]:not([data-page="doc-source"]) .masthead > .toolbar .pill:hover {
   border-color: var(--slate);
   color: var(--slate);
 }
 
-body[data-page="overview"] .masthead > .toolbar .pill:active {
+body[data-package-id]:not([data-page="doc-source"]) .masthead > .toolbar .pill:active {
   transform: translateY(1px);
 }
 
 @media (max-width: 760px) {
-  body[data-page="overview"] .shell {
+  body[data-package-id]:not([data-page="doc-source"]) .shell {
     padding: 28px 18px 80px;
   }
 
-  body[data-page="overview"] .masthead h1 {
+  body[data-package-id]:not([data-page="doc-source"]) .masthead h1 {
     font-size: clamp(36px, 11vw, 48px);
     line-height: 1.04;
   }
 
-  body[data-page="overview"] .masthead > .toolbar {
+  body[data-package-id]:not([data-page="doc-source"]) .masthead > .toolbar {
     position: static;
     margin-top: 20px;
   }
@@ -843,51 +843,6 @@ body[data-page="live"] .details-panel {
   margin: 0;
   padding-left: 18px;
   font-size: 12.5px;
-}
-
-.tag-legend {
-  margin-top: 16px;
-}
-
-.tag-role-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-@media (max-width: 720px) {
-  .tag-role-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.tag-role-card {
-  border: 1px solid var(--g200);
-  border-radius: 8px;
-  padding: 12px 13px;
-}
-
-.tag-role-card .k {
-  color: var(--g600);
-  font-family: var(--mono);
-  font-size: 10px;
-  text-transform: uppercase;
-}
-
-.tag-role-card .v {
-  margin-top: 3px;
-  color: var(--slate);
-  font-weight: 700;
-}
-
-.tag-role-card p,
-.tag-role-card .examples {
-  margin: 6px 0 0;
-  font-size: 12px;
-}
-
-.tag-role-card .examples {
-  color: var(--g600);
 }
 
 .small-details {
@@ -2223,19 +2178,6 @@ html[data-stale="true"] .masthead {
   border: 1px solid var(--g300);
   border-radius: 6px;
   background: var(--paper);
-  color: var(--slate);
-}
-
-.card-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  font-size: 12px;
-  color: var(--g600);
-  margin: 6px 0;
-}
-
-.card-strip strong {
   color: var(--slate);
 }
 

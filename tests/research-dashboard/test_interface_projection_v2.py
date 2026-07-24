@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -1022,6 +1023,51 @@ def test_package_hero_lead_uses_the_package_abstract(tmp_path: Path) -> None:
         '<span class="identity-tldr-v">Can the method transfer to another task?</span>'
         in overview
     )
+
+
+def test_package_pages_share_one_masthead_except_title_and_abstract(
+    tmp_path: Path,
+) -> None:
+    paths, _ = _workspace(tmp_path)
+    root = build_interface(paths).root / "packages" / "package-one"
+    pages = (
+        root / "index.html",
+        root / "plan.html",
+        root / "implementation.html",
+        root / "results.html",
+        root / "analysis.html",
+        root / "tracker.html",
+        root / "docs" / "index.html",
+    )
+    normalized = []
+
+    for page in pages:
+        text = page.read_text(encoding="utf-8")
+        match = re.search(
+            r'<header class="masthead" data-section="masthead">.*?</header>',
+            text,
+            flags=re.DOTALL,
+        )
+        assert match is not None
+        head = match.group(0)
+        assert '<div class="eyebrow">research package</div>' in head
+        assert head.count('class="pill"') == 1
+        assert ">Dashboard</a>" in head
+        head = re.sub(r"<h1>.*?</h1>", "<h1>PAGE TITLE</h1>", head)
+        head = re.sub(
+            r'<p class="lead">.*?</p>',
+            '<p class="lead">HEAD ABSTRACT</p>',
+            head,
+            flags=re.DOTALL,
+        )
+        head = re.sub(
+            r'href="(?:\.\./)+index\.html"',
+            'href="DASHBOARD"',
+            head,
+        )
+        normalized.append(head)
+
+    assert len(set(normalized)) == 1
 
 
 def test_browser_schema_is_generated_from_central_schema(tmp_path: Path) -> None:

@@ -61,11 +61,27 @@ A non-empty schema uses version 1:
 }
 ```
 
-Table, row, and column ids are stable lowercase identifiers. Row selectors are
-unique scalar maps. Columns name the exact source metric and unit; set
+Table, row, and column ids are stable lowercase identifiers. Measured-row
+selectors are unique scalar maps. A paper comparison may instead use one cited
+reference row:
+
+```json
+{
+  "id": "paper",
+  "label": "Paper baseline",
+  "reference": {
+    "citation": "Paper title, Table 2",
+    "url": "https://arxiv.org/abs/0000.00000",
+    "values": {"recall_at_1": 50.0}
+  }
+}
+```
+
+Reference keys are exact column metric names. Omitted metrics render `/` as
+`NOT_REPORTED`; supplied finite values render as `REPORTED`, never `MEASURED`.
+Columns name the exact source metric and unit; set
 `nullable: true` only when the metric can be legitimately undefined.
-The schema contains no measured value, verdict, prose summary, or evidence
-path.
+The schema contains no local measured value, verdict, or prose summary.
 
 After Package activation and before the first Run, write the schema through
 `research-op`:

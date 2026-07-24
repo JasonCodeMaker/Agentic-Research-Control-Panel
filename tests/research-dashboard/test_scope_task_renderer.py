@@ -157,6 +157,8 @@ def test_results_renderer_groups_metric_tables_by_experiment():
     assert 'table.state || "unverified"' in block
     assert 'value == null || value === "" ? "/"' in block
     assert "Verified CSV" in block
+    assert "result-cell-reference" in block
+    assert 'target="_blank" rel="noopener noreferrer"' in block
     assert "No hash-bound Result table CSV is attached." in block
     assert "No result tables yet." in block
     assert 'data-list="result-experiments"' in template

@@ -59,6 +59,8 @@ launch-ack flows are compatibility paths, not the normal loop.
 
 - Validate and reject before write. Never hand-edit SQLite, compatibility
   exports, audit rows, or generated interface files.
+- Before writing user-visible prose, invoke `humanizer` and use its final rewrite. Preserve code, paths, IDs, metrics, evidence, citations, equations, logs, and user-authored text; if unavailable, stop.
+- Before any codebase design, implementation, refactor, or fix, invoke `ponytail`. Before completion, invoke `ponytail-review` on the resulting diff; if either is unavailable, stop.
 - A Run freezes current governed context into its `context.json`; later Scope
   changes apply only to later Runs.
 - Every result binds its declared gate and protocol to hashed evidence.

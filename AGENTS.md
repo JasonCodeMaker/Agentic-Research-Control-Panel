@@ -77,6 +77,8 @@ them explicitly.
   `config_ref`, `gate`, and `control_mode`.
 - Validate and reject before write. Use the transaction kernel for a semantic
   operation that changes several aggregates.
+- Before writing user-visible prose, invoke `humanizer` and use its final rewrite. Preserve code, paths, IDs, metrics, evidence, citations, equations, logs, and user-authored text; if unavailable, stop.
+- Before any codebase design, implementation, refactor, or fix, invoke `ponytail`. Before completion, invoke `ponytail-review` on the resulting diff; if either is unavailable, stop.
 - A Run freezes its launch context. Later state changes never rewrite it.
 - Results must bind protocol, gate, and hashed evidence. Measurements are not
   verdicts, and producers do not prove their own success.

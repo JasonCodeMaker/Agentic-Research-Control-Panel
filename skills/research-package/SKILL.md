@@ -118,9 +118,6 @@ The transaction fails closed if the Draft revision, document hash, Scope
 content, or participant versions changed. An identical retry is idempotent. A
 successful commit writes Package, Direction, and Experiments together, keeps
 the same Package and proposal document, and opens the bounded Execution Lease.
-For a never-run Package reopened as Draft, the same review command accepts the
-next version of its existing Direction and detached Experiments, so revised
-intent does not require new ids or multiple compatibility approvals.
 
 ### 4. Freeze Result schemas
 
@@ -214,13 +211,13 @@ Read only the reference needed by the request:
   authoring and review.
 - [Package contract](references/package-contract.md): record fields, evidence,
   result, and projection contracts.
-- [Compatibility and repair](references/compatibility-workflows.md): imported
-  Scope activation, pre-run reopen/reactivation, identity rename, legacy
-  Brainstorm transfer, and manual creation.
+- [Pre-run revision and compatibility](references/compatibility-workflows.md):
+  bounded pre-run revision, imported Scope activation, reopen/reactivation,
+  identity rename, legacy Brainstorm transfer, and manual creation.
 - [Results page pattern](references/results-page-pattern.md): Result schema,
   CSV extraction, evidence, and rendering work.
 
-Do not load compatibility guidance during a normal Package loop.
+Do not load compatibility guidance during initial Draft refinement.
 
 ## Stop conditions
 

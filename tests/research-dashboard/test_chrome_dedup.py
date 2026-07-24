@@ -98,12 +98,33 @@ def test_overview_painters_hide_empty_content_and_bind_the_experiment_queue(tmp_
 def test_index_keeps_required_anchors(tmp_path):
     root = _scaffold(tmp_path)
     html = (root / "index.html").read_text()
-    js = (root / "assets" / "research.js").read_text(encoding="utf-8")
     for anchor in ("snapshot", "lanes", "packages", "protocol", "profile", "rules"):
         assert f'data-section="{anchor}"' in html
-    assert "rules/html-rules.html" in js and "rules/trustworthy-research-rules.html" in js
     assert 'id="rules-registry-root"' in html
     assert "data/rules.js" in html  # the registry is loaded on the homepage
+
+
+def test_package_cards_show_current_experiment_without_duplicate_summary(tmp_path):
+    root = _scaffold(tmp_path)
+    js = (root / "assets" / "research.js").read_text(encoding="utf-8")
+
+    for removed in (
+        "tagSummaryHtml",
+        '"Why now"',
+        '"Completion gate"',
+        "<strong>Next route:",
+        "card-strip",
+    ):
+        assert removed not in js
+    for required in (
+        "function currentExperimentMeta",
+        'experiment.status === "RUNNING"',
+        "tracker.currentTaskId",
+        '"Current focus"',
+        'data-field="current-experiment"',
+        "<strong>Motivation:</strong>",
+    ):
+        assert required in js
 
 
 def _block(html, selector):

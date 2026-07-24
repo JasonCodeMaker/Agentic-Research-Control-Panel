@@ -10,11 +10,14 @@ import json
 import math
 import re
 from typing import Any, Mapping
+from urllib.parse import urlparse
 
 
 RESULT_SCHEMA_VERSION = 1
 RESULT_TABLE_TYPES = {"main", "ablation"}
-RESULT_CELL_STATUSES = {"MEASURED", "UNDEFINED", "FAILED"}
+RESULT_MEASUREMENT_STATUSES = {"MEASURED", "UNDEFINED", "FAILED"}
+RESULT_REFERENCE_STATUSES = {"REPORTED", "NOT_REPORTED"}
+RESULT_CELL_STATUSES = RESULT_MEASUREMENT_STATUSES | RESULT_REFERENCE_STATUSES
 _ID_PATTERN = re.compile(r"[a-z0-9][a-z0-9-]*")
 
 
@@ -91,7 +94,12 @@ def validate_result_schema(value: Any) -> dict[str, Any]:
         row_ids: set[str] = set()
         selectors: set[str] = set()
         for row_index, raw_row in enumerate(raw_rows):
-            if not isinstance(raw_row, Mapping) or set(raw_row) != {
+            if not isinstance(raw_row, Mapping):
+                raise ValueError(
+                    f"resultSchema table {table_id} row {row_index} is invalid"
+                )
+            is_reference = set(raw_row) == {"id", "label", "reference"}
+            if not is_reference and set(raw_row) != {
                 "id",
                 "label",
                 "selector",
@@ -109,11 +117,70 @@ def validate_result_schema(value: Any) -> dict[str, Any]:
                 )
             row_ids.add(row_id)
             label = raw_row.get("label")
-            selector = raw_row.get("selector")
             if not isinstance(label, str) or not label.strip():
                 raise ValueError(
                     f"resultSchema table {table_id} row {row_id} needs a label"
                 )
+            if is_reference:
+                raw_reference = raw_row.get("reference")
+                if not isinstance(raw_reference, Mapping) or set(
+                    raw_reference
+                ) != {"citation", "url", "values"}:
+                    raise ValueError(
+                        f"resultSchema table {table_id} row {row_id} "
+                        "reference is invalid"
+                    )
+                citation = raw_reference.get("citation")
+                url = raw_reference.get("url")
+                values = raw_reference.get("values")
+                parsed_url = urlparse(url) if isinstance(url, str) else None
+                if not isinstance(citation, str) or not citation.strip():
+                    raise ValueError(
+                        f"resultSchema table {table_id} row {row_id} "
+                        "reference needs citation"
+                    )
+                if (
+                    parsed_url is None
+                    or parsed_url.scheme != "https"
+                    or not parsed_url.netloc
+                ):
+                    raise ValueError(
+                        f"resultSchema table {table_id} row {row_id} "
+                        "reference needs an https URL"
+                    )
+                if not isinstance(values, Mapping) or not values:
+                    raise ValueError(
+                        f"resultSchema table {table_id} row {row_id} "
+                        "reference needs values"
+                    )
+                normalized_values: dict[str, int | float] = {}
+                for metric, value in values.items():
+                    if (
+                        not isinstance(metric, str)
+                        or not metric.strip()
+                        or isinstance(value, bool)
+                        or not isinstance(value, (int, float))
+                        or not math.isfinite(float(value))
+                    ):
+                        raise ValueError(
+                            f"resultSchema table {table_id} row {row_id} "
+                            "reference values must map metrics to finite numbers"
+                        )
+                    normalized_values[metric.strip()] = value
+                rows.append(
+                    {
+                        "id": row_id,
+                        "label": label.strip(),
+                        "reference": {
+                            "citation": citation.strip(),
+                            "url": url,
+                            "values": normalized_values,
+                        },
+                    }
+                )
+                continue
+
+            selector = raw_row.get("selector")
             if not isinstance(selector, Mapping) or not selector:
                 raise ValueError(
                     f"resultSchema table {table_id} row {row_id} needs selector"
@@ -215,6 +282,16 @@ def validate_result_schema(value: Any) -> dict[str, Any]:
                     "nullable": nullable,
                 }
             )
+        for row in rows:
+            reference = row.get("reference")
+            if reference is None:
+                continue
+            unknown = set(reference["values"]) - metrics
+            if unknown:
+                raise ValueError(
+                    f"resultSchema table {table_id} row {row['id']} "
+                    f"references unknown metrics: {', '.join(sorted(unknown))}"
+                )
         tables.append(
             {
                 "id": table_id,
@@ -274,17 +351,19 @@ def _metric_value(
     if status not in RESULT_CELL_STATUSES:
         raise ValueError(f"{cell} has unknown status {status!r}")
     stripped = raw.strip()
-    if status == "MEASURED":
+    if status in {"MEASURED", "REPORTED"}:
         try:
             value = json.loads(stripped)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"{cell} measured value must be numeric") from exc
+            raise ValueError(f"{cell} numeric value must be numeric") from exc
         if (
             isinstance(value, bool)
             or not isinstance(value, (int, float))
             or not math.isfinite(float(value))
         ):
-            raise ValueError(f"{cell} measured value must be finite numeric")
+            raise ValueError(f"{cell} numeric value must be finite")
+        if status == "REPORTED" and not reason.strip():
+            raise ValueError(f"{cell} reported value needs a citation")
         return value
     if status == "UNDEFINED" and not nullable:
         raise ValueError(f"{cell} is not nullable but has status {status}")
@@ -329,11 +408,22 @@ def parse_result_table_csv(
             "row": expected["label"],
             "_cells": {},
         }
+        if "reference" in expected:
+            row["_reference"] = copy.deepcopy(expected["reference"])
         for column in table["columns"]:
             column_id = column["id"]
             status = str(source[f"{column_id}__status"] or "").upper()
             reason = str(source[f"{column_id}__reason"] or "")
             cell = f"{table['id']}/{row_id}/{column_id}"
+            allowed_statuses = (
+                RESULT_REFERENCE_STATUSES
+                if "reference" in expected
+                else RESULT_MEASUREMENT_STATUSES
+            )
+            if status not in allowed_statuses:
+                raise ValueError(
+                    f"{cell} has status {status!r} for the wrong row type"
+                )
             row[column_id] = _metric_value(
                 str(source[column_id] or ""),
                 status=status,
@@ -357,20 +447,39 @@ def planned_result_table(table: Mapping[str, Any]) -> dict[str, Any]:
         for column in table["columns"]
     )
     rows = []
+    has_reference = False
     for schema_row in table["rows"]:
         row: dict[str, Any] = {
             "row_id": schema_row["id"],
             "row": schema_row["label"],
             "_cells": {},
         }
+        reference = schema_row.get("reference")
+        if reference is not None:
+            has_reference = True
+            row["_reference"] = copy.deepcopy(reference)
         for column in table["columns"]:
-            row[column["id"]] = None
-            row["_cells"][column["id"]] = {
-                "status": "PENDING",
-                "reason": "Awaiting evaluation",
-            }
+            metric = column["metric"]
+            if reference is not None and metric in reference["values"]:
+                row[column["id"]] = reference["values"][metric]
+                row["_cells"][column["id"]] = {
+                    "status": "REPORTED",
+                    "reason": reference["citation"],
+                }
+            elif reference is not None:
+                row[column["id"]] = None
+                row["_cells"][column["id"]] = {
+                    "status": "NOT_REPORTED",
+                    "reason": f"Not reported in {reference['citation']}",
+                }
+            else:
+                row[column["id"]] = None
+                row["_cells"][column["id"]] = {
+                    "status": "PENDING",
+                    "reason": "Awaiting evaluation",
+                }
         rows.append(row)
-    return {
+    projected = {
         "id": table["id"],
         "type": table["type"],
         "title": table["title"],
@@ -378,6 +487,11 @@ def planned_result_table(table: Mapping[str, Any]) -> dict[str, Any]:
         "columns": columns,
         "rows": rows,
     }
+    if has_reference:
+        projected["stateReason"] = (
+            "Reported reference values are shown; local cells await evaluation."
+        )
+    return projected
 
 
 def project_verified_result_table(
